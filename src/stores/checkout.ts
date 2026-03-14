@@ -10,6 +10,8 @@ export type DeliveryAddress = {
   state: string
   postal_code: string
   country?: string
+  latitude?: number
+  longitude?: number
 }
 
 export type DeliveryQuoteFee = {

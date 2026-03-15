@@ -1,4 +1,9 @@
-import { getServerClient } from '../supabase/server'
+import { createClient } from '../supabase/client'
+import { unstable_cache } from 'next/cache'
+
+function createPublicClient() {
+  return createClient()
+}
 
 export type StoreSettings = {
   id: string
@@ -11,8 +16,8 @@ export type StoreSettings = {
   delivery_fee: number
 }
 
-export async function getStoreSettings(): Promise<StoreSettings | null> {
-  const supabase = await getServerClient()
+async function fetchStoreSettings(): Promise<StoreSettings | null> {
+  const supabase = createPublicClient()
 
   const { data, error } = await supabase
     .from('store_settings')
@@ -27,3 +32,9 @@ export async function getStoreSettings(): Promise<StoreSettings | null> {
 
   return data
 }
+
+export const getStoreSettings = unstable_cache(
+  fetchStoreSettings,
+  ['store-settings'],
+  { revalidate: 60 }
+)

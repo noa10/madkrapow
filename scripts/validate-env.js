@@ -41,7 +41,23 @@ const envSchema = {
   STORE_PHONE: (v) => v && v.startsWith('+60'),
 };
 
-console.log('🔍 Validating environment variables...');
+const ciEnvVars = ['CI', 'VERCEL_ENV', 'VERCEL_URL', 'VERCEL_GIT_PROVIDER', 'VERCEL_GIT_REPO_SLUG'];
+
+function isCI() {
+  return ciEnvVars.some(key => process.env[key]) || process.env.CI === 'true' || process.env.CI === '1';
+}
+
+function isVercelPreview() {
+  return process.env.VERCEL_ENV === 'preview' || process.env.VERCEL_URL;
+}
+
+console.log('🔍 Validating environment variables...\n');
+
+if (isCI() && process.env.SKIP_ENV_VALIDATION === 'true') {
+  console.log('⏭️  SKIP_ENV_VALIDATION is set - skipping validation');
+  console.log('✅ Environment validation skipped for CI/Preview environment');
+  process.exit(0);
+}
 
 const missing = [];
 const invalid = [];
@@ -57,17 +73,47 @@ for (const envVar of requiredEnvVars) {
 }
 
 if (missing.length > 0) {
-  console.error('❌ Missing required environment variables:');
+  console.error('❌ Missing required environment variables:\n');
   missing.forEach(v => console.error(`   - ${v}`));
-  console.error('\nPlease copy .env.local.example to .env.local and fill in the values.');
+  
+  if (isCI() || isVercelPreview()) {
+    console.error('\n📦 Vercel/CI Environment Detected');
+    console.error('   To skip validation in CI/Preview, set SKIP_ENV_VALIDATION=true');
+    console.error('   In Vercel: Project Settings → Environment Variables → Add VAR_NAME=value');
+    console.error('   Or add to vercel.json: { "env": { "SKIP_ENV_VALIDATION": "true" } }');
+  } else {
+    console.error('\n📝 To fix locally:');
+    console.error('   1. Copy .env.local.example to .env.local');
+    console.error('   2. Fill in your actual values');
+    console.error('   3. Restart your development server');
+  }
+  
   process.exit(1);
 }
 
 if (invalid.length > 0) {
-  console.error('❌ Invalid environment variables:');
+  console.error('❌ Invalid environment variables:\n');
   invalid.forEach(v => console.error(`   - ${v}`));
-  console.error('\nPlease check the values in .env.local.');
+  
+  const hints = {
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'Should start with "pk_"',
+    STRIPE_SECRET_KEY: 'Should start with "sk_"',
+    STRIPE_WEBHOOK_SECRET: 'Should start with "whsec_"',
+    NEXT_PUBLIC_GOOGLE_MAPS_KEY: 'Should start with "AIza"',
+    RESEND_API_KEY: 'Should start with "re_"',
+    LALAMOVE_ENV: 'Should be "sandbox" or "production"',
+    STORE_PHONE: 'Should start with "+60" (Malaysia)',
+  };
+  
+  console.error('\n💡 Value hints:');
+  invalid.forEach(v => {
+    if (hints[v]) {
+      console.error(`   - ${v}: ${hints[v]}`);
+    }
+  });
+  
+  console.error('\n📝 Please check your values in .env.local and try again.');
   process.exit(1);
 }
 
-console.log('✅ All required environment variables are set!');
+console.log('✅ All required environment variables are set correctly!');

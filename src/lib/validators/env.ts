@@ -20,12 +20,40 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
 })
 
-const parsed = envSchema.safeParse(process.env)
+type Env = z.infer<typeof envSchema>
 
-if (!parsed.success) {
-  console.error('❌ Invalid environment variables:')
-  console.error(parsed.error.flatten().fieldErrors)
-  throw new Error('Invalid environment variables. Check .env.local.example for required values.')
+let env: Env
+
+if (process.env.SKIP_ENV_VALIDATION === 'true') {
+  env = {
+    NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'mock-anon-key',
+    SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-key',
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_mock',
+    STRIPE_SECRET_KEY: 'sk_test_mock',
+    STRIPE_WEBHOOK_SECRET: 'whsec_mock',
+    LALAMOVE_API_KEY: 'mock-api-key',
+    LALAMOVE_API_SECRET: 'mock-api-secret',
+    LALAMOVE_ENV: 'sandbox' as const,
+    NEXT_PUBLIC_GOOGLE_MAPS_KEY: 'AIzaMockKey',
+    NEXT_PUBLIC_URL: 'https://localhost:3000',
+    RESEND_API_KEY: 're_mock',
+    STORE_LATITUDE: '3.1390' as unknown as number,
+    STORE_LONGITUDE: '101.6869' as unknown as number,
+    STORE_ADDRESS: 'Mock Store Address',
+    STORE_PHONE: '+60123456789',
+    SENTRY_DSN: undefined,
+  }
+} else {
+  const parsed = envSchema.safeParse(process.env)
+
+  if (!parsed.success) {
+    console.error('❌ Invalid environment variables:')
+    console.error(parsed.error.flatten().fieldErrors)
+    throw new Error('Invalid environment variables. Check .env.local.example for required values.')
+  }
+
+  env = parsed.data
 }
 
-export const env = parsed.data
+export { env }

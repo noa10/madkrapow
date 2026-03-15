@@ -17,6 +17,7 @@ import {
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DriverInfo } from '@/components/order/DriverInfo'
 
 interface OrderItem {
   id: string
@@ -43,6 +44,9 @@ interface Order {
   delivery_address: DeliveryAddress | null
   lalamove_order_id: string | null
   lalamove_status: string | null
+  driver_name: string | null
+  driver_phone: string | null
+  driver_plate_number: string | null
   created_at: string
   order_items?: OrderItem[]
 }
@@ -355,6 +359,12 @@ export default function OrderTrackingPage() {
               </CardContent>
             </Card>
           )}
+
+          <DriverInfo 
+            driver_name={order.driver_name}
+            driver_phone={order.driver_phone}
+            driver_plate_number={order.driver_plate_number}
+          />
         </div>
       </div>
     </main>

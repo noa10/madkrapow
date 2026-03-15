@@ -214,6 +214,129 @@ export default function AdminMenuPage() {
     }
   };
 
+  // Category management functions
+  const openCreateForm = () => {
+    setFormData({ name: "", description: "" });
+    setEditingCategory(null);
+    setIsFormOpen(true);
+  };
+
+  const openEditForm = (category: Category) => {
+    setFormData({
+      name: category.name,
+      description: category.description || "",
+    });
+    setEditingCategory(category);
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingCategory(null);
+    setFormData({ name: "", description: "" });
+  };
+
+  const handleCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) return;
+
+    setSaving(true);
+    const supabase = getBrowserClient();
+
+    try {
+      if (editingCategory) {
+        const { error } = await supabase
+          .from("categories")
+          .update({
+            name: formData.name.trim(),
+            description: formData.description.trim() || null,
+          })
+          .eq("id", editingCategory.id);
+
+        if (error) throw error;
+      } else {
+        const maxSortOrder = categories.length > 0
+          ? Math.max(...categories.map((c) => c.sort_order))
+          : -1;
+
+        const { error } = await supabase.from("categories").insert({
+          name: formData.name.trim(),
+          description: formData.description.trim() || null,
+          sort_order: maxSortOrder + 1,
+        });
+
+        if (error) throw error;
+      }
+
+      const categoriesRes = await supabase
+        .from("categories")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      setCategories(categoriesRes.data || []);
+      closeForm();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deletingCategory) return;
+
+    setSaving(true);
+    const supabase = getBrowserClient();
+
+    try {
+      const { error } = await supabase
+        .from("categories")
+        .delete()
+        .eq("id", deletingCategory.id);
+
+      if (error) throw error;
+
+      const [menuItemsRes, categoriesRes] = await Promise.all([
+        supabase.from("menu_items").select("*").order("sort_order", { ascending: true }),
+        supabase.from("categories").select("*").order("sort_order", { ascending: true }),
+      ]);
+      setMenuItems(menuItemsRes.data || []);
+      setCategories(categoriesRes.data || []);
+      setDeletingCategory(null);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const moveCategory = async (category: Category, direction: "up" | "down") => {
+    const currentIndex = categories.findIndex((c) => c.id === category.id);
+    if (direction === "up" && currentIndex === 0) return;
+    if (direction === "down" && currentIndex === categories.length - 1) return;
+
+    const otherCategory = direction === "up"
+      ? categories[currentIndex - 1]
+      : categories[currentIndex + 1];
+
+    const supabase = getBrowserClient();
+
+    try {
+      await supabase.from("categories").update({ sort_order: otherCategory.sort_order }).eq("id", category.id);
+      await supabase.from("categories").update({ sort_order: category.sort_order }).eq("id", otherCategory.id);
+
+      const categoriesRes = await supabase
+        .from("categories")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      setCategories(categoriesRes.data || []);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+    }
+  };
+
   // Modifier group functions
   const toggleGroupExpanded = (groupId: string) => {
     setExpandedGroups((prev) => {
@@ -621,17 +744,27 @@ export default function AdminMenuPage() {
       {/* Categories Section */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Categories</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Categories</CardTitle>
+            <Button size="sm" onClick={openCreateForm}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Category
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {categories.length === 0 ? (
             <div className="text-center py-8">
               <Tag className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">No categories yet</p>
+              <Button className="mt-4" onClick={openCreateForm}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Your First Category
+              </Button>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {categories.map((category) => {
+            <div className="space-y-2">
+              {categories.map((category, index) => {
                 const itemCount = menuItems.filter(
                   (item) => item.category_id === category.id
                 ).length;
@@ -640,19 +773,73 @@ export default function AdminMenuPage() {
                     key={category.id}
                     className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
                   >
-                    <div>
-                      <div className="font-medium">{category.name}</div>
-                      {category.description && (
-                        <div className="text-sm text-muted-foreground">
-                          {category.description}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline">{itemCount} items</Badge>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Order: {category.sort_order}
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => moveCategory(category, "up")}
+                          disabled={index === 0}
+                        >
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => moveCategory(category, "down")}
+                          disabled={index === categories.length - 1}
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
                       </div>
+                      <div>
+                        <div className="font-medium">{category.name}</div>
+                        {category.description && (
+                          <div className="text-sm text-muted-foreground">
+                            {category.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{itemCount} items</Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditForm(category)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {deletingCategory?.id === category.id ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleDeleteCategory}
+                            disabled={saving}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDeletingCategory(null)}
+                            disabled={saving}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeletingCategory(category)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -661,6 +848,67 @@ export default function AdminMenuPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Category Form Modal */}
+      {isFormOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>
+                  {editingCategory ? "Edit Category" : "New Category"}
+                </CardTitle>
+                <Button variant="ghost" size="icon" onClick={closeForm}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCategorySubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Name
+                  </label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="Category name"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Description (optional)
+                  </label>
+                  <Input
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    placeholder="Brief description"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeForm}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {editingCategory ? "Save" : "Create"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Modifier Groups Section */}
       <Card>

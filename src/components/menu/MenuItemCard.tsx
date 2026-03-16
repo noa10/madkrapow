@@ -1,3 +1,5 @@
+'use client'
+
 import { memo } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -28,14 +30,14 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
     : null
 
   return (
-    <Card className="overflow-hidden flex flex-col h-full">
-      <div className="relative w-full aspect-square">
+    <Card className="overflow-hidden flex flex-col h-full group cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-transparent hover:border-primary/30">
+      <div className="relative w-full aspect-square overflow-hidden">
         {item.image_url ? (
           <Image
             src={item.image_url}
             alt={item.name}
             fill
-            className="object-cover"
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
         ) : (
@@ -44,17 +46,19 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
       </div>
       
       <CardContent className="flex-1 p-4">
-        <h3 className="font-semibold text-lg line-clamp-1">{item.name}</h3>
+        <h3 className="font-heading font-semibold text-lg line-clamp-1 group-hover:text-primary transition-colors">
+          {item.name}
+        </h3>
         {descriptionSnippet && (
           <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
             {descriptionSnippet}
           </p>
         )}
-        <p className="font-medium mt-2">{formatPrice(item.price_cents)}</p>
+        <p className="font-medium mt-2 text-primary">{formatPrice(item.price_cents)}</p>
       </CardContent>
       
       <CardFooter className="p-4 pt-0">
-        <Button className="w-full" size="sm">
+        <Button className="w-full group-hover:bg-primary/90 transition-colors" size="sm">
           Add
         </Button>
       </CardFooter>

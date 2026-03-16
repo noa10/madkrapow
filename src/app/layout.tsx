@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { CartProvider, Header } from "@/components/layout/Header";
 
@@ -8,9 +8,10 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-const plusJakarta = Plus_Jakarta_Sans({
+const cormorantGaramond = Cormorant_Garamond({
   subsets: ["latin"],
-  variable: "--font-plus-jakarta",
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-cormorant",
 });
 
 export const metadata: Metadata = {
@@ -25,10 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body
-        className={`${inter.variable} ${plusJakarta.variable} font-body antialiased`}
-      >
+    <html lang="en" className="dark">
+        <body
+          className={`${inter.variable} ${cormorantGaramond.variable} font-body antialiased`}
+        >
         <CartProvider>
           <Header />
           {children}

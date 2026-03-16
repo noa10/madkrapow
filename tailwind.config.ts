@@ -16,6 +16,20 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        display: ["var(--font-cormorant)", "serif"],
+        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
+      boxShadow: {
+        ambient: "0 24px 80px rgba(0,0,0,0.45)",
+        gold: "0 12px 40px rgba(210,176,123,0.18)",
+      },
+      borderRadius: {
+        "4xl": "2rem",
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -50,11 +64,8 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-      },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        gold: "hsl(var(--color-gold))",
+        "gold-muted": "hsl(var(--color-gold-muted))",
       },
       keyframes: {
         "accordion-down": {

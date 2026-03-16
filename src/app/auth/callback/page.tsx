@@ -25,7 +25,8 @@ export default function AuthCallbackPage() {
         }
 
         if (session) {
-          window.location.href = '/'
+          const userRole = session.user.user_metadata?.role
+          window.location.href = userRole === 'admin' ? '/admin' : '/'
           return
         }
 
@@ -42,12 +43,13 @@ export default function AuthCallbackPage() {
         }
 
         if (code) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          const { data: { session: newSession }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
           if (exchangeError) {
             console.error('Code exchange error:', exchangeError)
             setError(exchangeError.message)
-          } else {
-            window.location.href = '/'
+          } else if (newSession) {
+            const userRole = newSession.user.user_metadata?.role
+            window.location.href = userRole === 'admin' ? '/admin' : '/'
             return
           }
         }

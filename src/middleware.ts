@@ -43,6 +43,7 @@ export async function middleware(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
   const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+  const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
 
   if (
     isProtectedRoute &&
@@ -53,6 +54,15 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth'
     return NextResponse.redirect(url)
+  }
+
+  if (isAdminRoute && user) {
+    const userRole = user.user_metadata?.role
+    if (userRole !== 'admin') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse

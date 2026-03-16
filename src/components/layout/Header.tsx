@@ -1,11 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
-import { ShoppingCart, User, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useCartStore } from "@/stores/cart";
+import { getBrowserClient } from "@/lib/supabase/client";
 
 interface CartItem {
   id: string;
@@ -35,16 +35,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
     return [];
   });
-  const mountedRef = useRef(false);
 
   useEffect(() => {
-    mountedRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    if (mountedRef.current) {
-      localStorage.setItem("cart", JSON.stringify(items));
-    }
+    localStorage.setItem("cart", JSON.stringify(items));
   }, [items]);
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -97,73 +90,129 @@ interface HeaderProps {
 }
 
 export function Header({ className }: HeaderProps) {
-  const items = useCartStore((state) => state.items);
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const [isScrolled, setIsScrolled] = useState(false);
+  const { totalItems } = useCart();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<{ email?: string; user_metadata?: { role?: string } } | null>(null);
+  const supabase = getBrowserClient();
+
+  const isAdmin = user?.user_metadata?.role === "admin";
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10);
+    const checkAuth = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setUser(user);
     };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+
+    checkAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const navLinks = ["Menu", "Signature", "Experience", "Reserve"];
+
+  const authLink = isAdmin ? (
+    <Link
+      href="/admin"
+      className="hidden rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold sm:block"
+    >
+      Admin
+    </Link>
+  ) : user ? (
+    <Link
+      href="/profile"
+      className="hidden rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold sm:block"
+    >
+      Profile
+    </Link>
+  ) : (
+    <Link
+      href="/auth"
+      className="hidden rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold sm:block"
+    >
+      Login
+    </Link>
+  );
+
+  const mobileAuthLink = isAdmin ? (
+    <Link
+      href="/admin"
+      className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      onClick={() => setIsMobileMenuOpen(false)}
+    >
+      Admin
+    </Link>
+  ) : user ? (
+    <Link
+      href="/profile"
+      className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      onClick={() => setIsMobileMenuOpen(false)}
+    >
+      Profile
+    </Link>
+  ) : (
+    <Link
+      href="/auth"
+      className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      onClick={() => setIsMobileMenuOpen(false)}
+    >
+      Login
+    </Link>
+  );
 
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 w-full transition-all duration-200",
-        isScrolled
-          ? "bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm"
-          : "bg-background",
+        "sticky top-0 z-50 border-b border-white/8 bg-black/45 backdrop-blur-xl transition-all duration-200",
         className
       )}
     >
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link
-          href="/"
-          className="flex items-center gap-2 text-xl font-bold text-primary"
-        >
-          <span className="text-2xl">🌶️</span>
-          <span className="hidden sm:inline">Mad Krapow</span>
-          <span className="sm:hidden">MK</span>
-        </Link>
+      <div className="container mx-auto flex items-center justify-between gap-6 px-4 py-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line-strong)] bg-white/5 text-sm font-medium tracking-[0.35em] text-gold">
+            MK
+          </div>
+          <div>
+            <p className="font-display text-2xl leading-none text-white">Mad Krapow</p>
+            <p className="mt-1 text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
+              Bangkok supper club
+            </p>
+          </div>
+        </div>
 
-        <nav className="hidden md:flex items-center gap-6">
-          <Link href="/menu" className="text-sm font-medium hover:text-primary">
-            Menu
-          </Link>
-          <Link href="/about" className="text-sm font-medium hover:text-primary">
-            About
-          </Link>
-          <Link href="/contact" className="text-sm font-medium hover:text-primary">
-            Contact
-          </Link>
+        <nav className="hidden items-center gap-8 lg:flex">
+          {navLinks.map((link) => (
+            <Link
+              key={link}
+              href={link === "Menu" ? "/menu" : "#"}
+              className="text-sm uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
+            >
+              {link}
+            </Link>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/cart" className="relative">
-              <ShoppingCart className="h-5 w-5" />
-              {totalItems > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                  {totalItems > 99 ? "99+" : totalItems}
-                </span>
-              )}
-            </Link>
-          </Button>
-
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/profile" className="relative">
-              <User className="h-5 w-5" />
-            </Link>
-          </Button>
-
+        <div className="flex items-center gap-3">
+          {authLink}
+          <Link
+            href="/cart"
+            className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,rgba(210,176,123,0.24),rgba(210,176,123,0.08))] px-5 py-2.5 text-xs font-medium uppercase tracking-[0.32em] text-gold transition hover:brightness-110"
+          >
+            Cart · {totalItems.toString().padStart(2, "0")}
+          </Link>
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="lg:hidden"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? (
@@ -176,29 +225,19 @@ export function Header({ className }: HeaderProps) {
       </div>
 
       {isMobileMenuOpen && (
-        <div className="border-t md:hidden bg-background">
+        <div className="border-t border-white/8 bg-black/60 lg:hidden">
           <nav className="container mx-auto flex flex-col gap-4 px-4 py-4">
-            <Link
-              href="/menu"
-              className="text-sm font-medium hover:text-primary"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Menu
-            </Link>
-            <Link
-              href="/about"
-              className="text-sm font-medium hover:text-primary"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              About
-            </Link>
-            <Link
-              href="/contact"
-              className="text-sm font-medium hover:text-primary"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Contact
-            </Link>
+            {navLinks.map((link) => (
+              <Link
+                key={link}
+                href={link === "Menu" ? "/menu" : "#"}
+                className="text-sm font-medium uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                {link}
+              </Link>
+            ))}
+            {mobileAuthLink}
           </nav>
         </div>
       )}

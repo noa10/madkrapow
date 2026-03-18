@@ -383,53 +383,53 @@ export default function SalesReportsPage() {
       ) : stats && (
         <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">RM {convertCentsToRM(stats.totalRevenue)}</div>
+                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalRevenue)}</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats.totalOrders}</div>
+                <div className="text-2xl font-bold text-foreground">{stats.totalOrders}</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Avg Order Value</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Avg Order Value</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">RM {convertCentsToRM(stats.avgOrderValue)}</div>
+                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.avgOrderValue)}</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Delivery Fees</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Delivery Fees</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">RM {convertCentsToRM(stats.totalDeliveryFees)}</div>
+                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalDeliveryFees)}</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Discounts</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Discounts</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">RM {convertCentsToRM(stats.totalDiscounts)}</div>
+                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalDiscounts)}</div>
               </CardContent>
             </Card>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-5 w-5" />
+                  <FileSpreadsheet className="h-5 w-5 text-primary" />
                   Revenue by Category
                 </CardTitle>
               </CardHeader>
@@ -437,48 +437,48 @@ export default function SalesReportsPage() {
                 {stats.categoryBreakdown.length > 0 ? (
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Revenue</TableHead>
-                        <TableHead className="text-right">%</TableHead>
+                      <TableRow className="border-border hover:bg-transparent">
+                        <TableHead className="text-muted-foreground">Category</TableHead>
+                        <TableHead className="text-right text-muted-foreground">Revenue</TableHead>
+                        <TableHead className="text-right text-muted-foreground">%</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {stats.categoryBreakdown.map((cat) => (
-                        <TableRow key={cat.name}>
-                          <TableCell>{cat.name}</TableCell>
+                        <TableRow key={cat.name} className="border-border hover:bg-secondary/50">
+                          <TableCell className="font-medium">{cat.name}</TableCell>
                           <TableCell className="text-right">RM {convertCentsToRM(cat.revenue)}</TableCell>
-                          <TableCell className="text-right">{cat.percentage.toFixed(1)}%</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{cat.percentage.toFixed(1)}%</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 ) : (
-                  <p className="text-gray-500 text-sm">No data available</p>
+                  <p className="text-muted-foreground text-sm italic">No data available</p>
                 )}
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-5 w-5" />
+                  <FileSpreadsheet className="h-5 w-5 text-primary" />
                   Payment Method Breakdown
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Method</TableHead>
-                      <TableHead className="text-right">Orders</TableHead>
-                      <TableHead className="text-right">Revenue</TableHead>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="text-muted-foreground">Method</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Orders</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Revenue</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {stats.paymentMethodBreakdown.map((pm) => (
-                      <TableRow key={pm.method}>
-                        <TableCell>{pm.method}</TableCell>
+                      <TableRow key={pm.method} className="border-border hover:bg-secondary/50">
+                        <TableCell className="font-medium">{pm.method}</TableCell>
                         <TableCell className="text-right">{pm.count}</TableCell>
                         <TableCell className="text-right">RM {convertCentsToRM(pm.revenue)}</TableCell>
                       </TableRow>
@@ -489,53 +489,53 @@ export default function SalesReportsPage() {
             </Card>
           </div>
 
-          <Card>
+          <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle>Order Details</CardTitle>
+              <CardTitle className="font-heading">Order Details</CardTitle>
             </CardHeader>
             <CardContent>
               {filteredData?.orders.length && filteredData.orders.length > 0 ? (
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Order #</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Subtotal</TableHead>
-                      <TableHead className="text-right">Delivery</TableHead>
-                      <TableHead className="text-right">Discount</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Payment</TableHead>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="text-muted-foreground">Order #</TableHead>
+                      <TableHead className="text-muted-foreground">Date</TableHead>
+                      <TableHead className="text-muted-foreground">Status</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Subtotal</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Delivery</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Discount</TableHead>
+                      <TableHead className="text-right text-muted-foreground">Total</TableHead>
+                      <TableHead className="text-muted-foreground">Payment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredData.orders.slice(0, 100).map((order) => (
-                      <TableRow key={order.id}>
+                      <TableRow key={order.id} className="border-border hover:bg-secondary/50">
                         <TableCell className="font-medium">{order.order_number}</TableCell>
-                        <TableCell>{format(new Date(order.created_at), "MMM dd, HH:mm")}</TableCell>
+                        <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(order.created_at), "MMM dd, HH:mm")}</TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            order.status === "completed" ? "bg-green-100 text-green-800" :
-                            order.status === "paid" ? "bg-blue-100 text-blue-800" :
-                            "bg-yellow-100 text-yellow-800"
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                            order.status === "completed" || order.status === "delivered" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                            order.status === "paid" ? "bg-sky-500/10 text-sky-500 border-sky-500/20" :
+                            "bg-amber-500/10 text-amber-500 border-amber-500/20"
                           }`}>
                             {order.status}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">RM {convertCentsToRM(order.subtotal_cents)}</TableCell>
-                        <TableCell className="text-right">RM {convertCentsToRM(order.delivery_fee_cents)}</TableCell>
-                        <TableCell className="text-right">-RM {convertCentsToRM(order.discount_cents)}</TableCell>
-                        <TableCell className="text-right font-medium">RM {convertCentsToRM(order.total_cents)}</TableCell>
-                        <TableCell>{order.stripe_payment_intent_id ? "Card" : "Cash"}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">RM {convertCentsToRM(order.delivery_fee_cents)}</TableCell>
+                        <TableCell className="text-right text-destructive">-RM {convertCentsToRM(order.discount_cents)}</TableCell>
+                        <TableCell className="text-right font-bold text-foreground">RM {convertCentsToRM(order.total_cents)}</TableCell>
+                        <TableCell className="text-muted-foreground">{order.stripe_payment_intent_id ? "Card" : "Cash"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-gray-500 text-sm">No orders found for the selected filters</p>
+                <p className="text-muted-foreground text-sm italic">No orders found for the selected filters</p>
               )}
               {filteredData && filteredData.orders.length > 100 && (
-                <p className="text-sm text-gray-500 mt-4">
+                <p className="text-sm text-muted-foreground mt-4 italic">
                   Showing first 100 of {filteredData.orders.length} orders. Export to CSV for complete data.
                 </p>
               )}

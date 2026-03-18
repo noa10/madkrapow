@@ -20,6 +20,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
+    "@radix-ui/react-slot": "^1.2.4",
     "@sentry/nextjs": "^10.43.0",
     "@supabase/ssr": "^0.5.2",
     "@types/node": "^25.5.0",

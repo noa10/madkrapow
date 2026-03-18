@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { isAdminUser } from "@/lib/auth/roles";
 import { getBrowserClient } from "@/lib/supabase/client";
 
 export function useAdminGuard() {
@@ -22,11 +23,7 @@ export function useAdminGuard() {
           return;
         }
 
-        // Check if user has admin role in metadata
-        const userRole = user.user_metadata?.role;
-        const isAdminUser = userRole === "admin";
-
-        setIsAdmin(isAdminUser);
+        setIsAdmin(isAdminUser(user));
       } catch (error) {
         console.error("Admin check failed:", error);
         setIsAdmin(false);
@@ -41,10 +38,7 @@ export function useAdminGuard() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = session?.user;
-      const userRole = user?.user_metadata?.role;
-      const isAdminUser = userRole === "admin";
-      setIsAdmin(isAdminUser);
+      setIsAdmin(isAdminUser(session?.user));
     });
 
     return () => {
@@ -60,4 +54,3 @@ export function useAdminGuard() {
 
   return { isAdmin, isLoading };
 }
-

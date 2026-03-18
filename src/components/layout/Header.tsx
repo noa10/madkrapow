@@ -2,8 +2,9 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
 
@@ -92,10 +93,21 @@ interface HeaderProps {
 export function Header({ className }: HeaderProps) {
   const { totalItems } = useCart();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState<{ email?: string; user_metadata?: { role?: string } } | null>(null);
+  const [user, setUser] = useState<RoleAwareUser | null>(null);
   const supabase = getBrowserClient();
 
-  const isAdmin = user?.user_metadata?.role === "admin";
+  const isAdmin = isAdminUser(user);
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Sign out failed:", error.message);
+      return;
+    }
+    setUser(null);
+    setIsMobileMenuOpen(false);
+    window.location.href = "/";
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -128,12 +140,24 @@ export function Header({ className }: HeaderProps) {
       Admin
     </Link>
   ) : user ? (
-    <Link
-      href="/profile"
-      className="hidden rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold sm:block"
-    >
-      Profile
-    </Link>
+    <div className="hidden items-center gap-2 sm:flex">
+      <Link
+        href="/profile"
+        className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      >
+        Profile
+      </Link>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={handleSignOut}
+        className="rounded-full border border-white/10 px-3 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      >
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        Sign out
+      </Button>
+    </div>
   ) : (
     <Link
       href="/auth"
@@ -152,13 +176,25 @@ export function Header({ className }: HeaderProps) {
       Admin
     </Link>
   ) : user ? (
-    <Link
-      href="/profile"
-      className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
-      onClick={() => setIsMobileMenuOpen(false)}
-    >
-      Profile
-    </Link>
+    <div className="flex flex-col gap-2">
+      <Link
+        href="/profile"
+        className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        Profile
+      </Link>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={handleSignOut}
+        className="justify-start rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+      >
+        <LogOut className="mr-2 h-3.5 w-3.5" />
+        Sign out
+      </Button>
+    </div>
   ) : (
     <Link
       href="/auth"
@@ -193,7 +229,7 @@ export function Header({ className }: HeaderProps) {
           {navLinks.map((link) => (
             <Link
               key={link}
-              href={link === "Menu" ? "/menu" : "#"}
+              href={link === "Menu" ? "/" : "#"}
               className="text-sm uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
             >
               {link}
@@ -230,7 +266,7 @@ export function Header({ className }: HeaderProps) {
             {navLinks.map((link) => (
               <Link
                 key={link}
-                href={link === "Menu" ? "/menu" : "#"}
+                href={link === "Menu" ? "/" : "#"}
                 className="text-sm font-medium uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
                 onClick={() => setIsMobileMenuOpen(false)}
               >

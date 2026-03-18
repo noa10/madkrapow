@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAdminUser } from '@/lib/auth/roles'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -57,8 +58,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isAdminRoute && user) {
-    const userRole = user.user_metadata?.role
-    if (userRole !== 'admin') {
+    if (!isAdminUser(user)) {
       const url = request.nextUrl.clone()
       url.pathname = '/'
       return NextResponse.redirect(url)

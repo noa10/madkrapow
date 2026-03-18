@@ -2,6 +2,7 @@
 
 import { memo } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import type { MenuItem } from '@/lib/queries/menu'
@@ -23,14 +24,27 @@ function PlaceholderImage({ alt: _alt }: { alt: string }) {
 }
 
 export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardProps) {
+  const router = useRouter()
   const descriptionSnippet = item.description 
     ? item.description.length > 80 
       ? item.description.slice(0, 80) + '...'
       : item.description
     : null
 
+  const handleAddClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    router.push(`/item/${item.id}`)
+  }
+
+  const handleCardClick = () => {
+    router.push(`/item/${item.id}`)
+  }
+
   return (
-    <Card className="overflow-hidden flex flex-col h-full group cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-transparent hover:border-primary/30">
+    <Card 
+      className="overflow-hidden flex flex-col h-full group cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-transparent hover:border-primary/30"
+      onClick={handleCardClick}
+    >
       <div className="relative w-full aspect-square overflow-hidden">
         {item.image_url ? (
           <Image
@@ -58,7 +72,11 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
       </CardContent>
       
       <CardFooter className="p-4 pt-0">
-        <Button className="w-full group-hover:bg-primary/90 transition-colors" size="sm">
+        <Button 
+          className="w-full group-hover:bg-primary/90 transition-colors" 
+          size="sm"
+          onClick={handleAddClick}
+        >
           Add
         </Button>
       </CardFooter>

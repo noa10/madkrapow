@@ -1,17 +1,60 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { getBrowserClient } from "@/lib/supabase/client";
+import { isAdminUser } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+
+/**
+ * Maps Supabase auth error codes to user-friendly messages
+ */
+function getAuthErrorMessage(error: { code?: string; message?: string }): string {
+  const errorMessages: Record<string, string> = {
+    invalid_credentials: "Invalid email or password",
+    email_not_confirmed: "Please verify your email first",
+    too_many_requests: "Too many attempts. Try again later",
+    session_expired: "Your session has expired. Please sign in again",
+    user_not_found: "Invalid email or password",
+    invalid_grant: "Invalid email or password",
+    invalid_request: "Invalid request. Please try again",
+    invalid_token: "Your session has expired. Please sign in again",
+    refresh_token_not_found: "Your session has expired. Please sign in again",
+    bad_code_verifier: "Authentication failed. Please try again",
+    conflict: "An account with this email already exists",
+    email_exists: "An account with this email already exists",
+    phone_exists: "An account with this phone number already exists",
+    signup_disabled: "Sign up is currently disabled",
+    weak_password: "Password is too weak. Please choose a stronger password",
+    provider_disabled: "This sign-in method is currently disabled",
+    unexpected_failure: "An unexpected error occurred. Please try again",
+    // Default fallback
+  };
+
+  // Check for network errors
+  if (error.message?.toLowerCase().includes("network") ||
+      error.message?.toLowerCase().includes("fetch") ||
+      error.message?.toLowerCase().includes("connection")) {
+    return "Unable to connect. Please check your connection";
+  }
+
+  // Return mapped message or fall back to the original message or a generic one
+  return errorMessages[error.code || ""] || error.message || "An unexpected error occurred";
+}
 
 export function AuthForm() {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const supabase = getBrowserClient();
+  const router = useRouter();
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -26,60 +69,39 @@ export function AuthForm() {
       });
 
       if (error) {
-        setError(error.message);
+        setError(getAuthErrorMessage(error));
       }
     } catch {
-      setError("An unexpected error occurred");
+      setError("Unable to connect. Please check your connection");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleMagicLinkSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        password,
       });
 
       if (error) {
-        setError(error.message);
-      } else {
-        setMagicLinkSent(true);
+        setError(getAuthErrorMessage(error));
+        return;
       }
+
+      router.replace(isAdminUser(data.user ?? data.session?.user) ? "/admin" : "/");
+      router.refresh();
     } catch {
-      setError("An unexpected error occurred");
+      setError("Unable to connect. Please check your connection");
     } finally {
       setIsLoading(false);
     }
   };
-
-  if (magicLinkSent) {
-    return (
-      <div className="space-y-4 text-center">
-        <div className="text-lg font-medium">Check your email</div>
-        <p className="text-muted-foreground">
-          We sent a magic link to <strong>{email}</strong>
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Click the link in the email to sign in.
-        </p>
-        <Button
-          variant="outline"
-          onClick={() => setMagicLinkSent(false)}
-          className="mt-4"
-        >
-          Use a different email
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -87,7 +109,7 @@ export function AuthForm() {
         variant="outline"
         onClick={handleGoogleSignIn}
         disabled={isLoading}
-        className="w-full"
+        className="w-full border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
       >
         <svg
           className="mr-2 h-4 w-4"
@@ -120,15 +142,15 @@ export function AuthForm() {
           <span className="w-full border-t" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">
+          <span className="rounded-full bg-black/55 px-3 py-1 tracking-[0.28em] text-[#d8d1c6]">
             Or continue with email
           </span>
         </div>
       </div>
 
-      <form onSubmit={handleMagicLinkSubmit} className="space-y-4">
+      <form onSubmit={handlePasswordSubmit} className="space-y-4">
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium">
+          <label htmlFor="email" className="text-sm font-medium text-foreground">
             Email address
           </label>
           <Input
@@ -140,23 +162,85 @@ export function AuthForm() {
             required
             disabled={isLoading}
             autoComplete="email"
+            className="h-11 rounded-xl border-white/10 bg-black/30 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
           />
         </div>
 
+        <div className="space-y-2">
+          <label htmlFor="password" className="text-sm font-medium text-foreground">
+            Password
+          </label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isLoading}
+              autoComplete="current-password"
+              className="h-11 rounded-xl border-white/10 bg-black/30 pr-10 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute right-0 top-0 h-full px-3 py-2 text-white/60 hover:bg-transparent hover:text-white"
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+          <div className="flex justify-end">
+            <a
+              href="/auth/reset-password"
+              className="text-sm text-primary hover:text-primary/80 hover:underline"
+            >
+              Forgot your password?
+            </a>
+          </div>
+        </div>
+
+        <Checkbox
+          id="remember-me"
+          checked={rememberMe}
+          onChange={(e) => setRememberMe(e.target.checked)}
+          label="Remember me"
+        />
+
         {error && (
-          <p className="text-sm text-destructive" role="alert">
+          <p
+            className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+            role="alert"
+          >
             {error}
           </p>
         )}
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? "Sending..." : "Send Magic Link"}
+        <Button
+          type="submit"
+          className="h-11 w-full rounded-xl border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] font-semibold uppercase tracking-[0.2em] text-black hover:brightness-105"
+          disabled={isLoading}
+        >
+          {isLoading ? "Signing in..." : "Sign In"}
         </Button>
-      </form>
 
-      <p className="text-center text-xs text-muted-foreground">
-        By continuing, you agree to receive authentication emails.
-      </p>
+        <p className="text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{' '}
+          <a
+            href="/auth/signup"
+            className="text-primary hover:text-primary/80 hover:underline font-medium"
+          >
+            Sign up
+          </a>
+        </p>
+      </form>
     </div>
   );
 }

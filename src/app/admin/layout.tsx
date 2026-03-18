@@ -3,44 +3,46 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminGuard } from "@/lib/admin/auth-guard";
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Utensils,
-  BarChart3,
-  Settings,
-  LogOut,
-  FileText,
-} from "lucide-react";
+  import {
+    LayoutDashboard,
+    ShoppingCart,
+    Utensils,
+    BarChart3,
+    Settings,
+    LogOut,
+    FileText,
+    ChefHat,
+  } from "lucide-react";
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { isAdmin, isLoading } = useAdminGuard();
-  const pathname = usePathname();
+  export default function AdminLayout({
+    children,
+  }: {
+    children: React.ReactNode;
+  }) {
+    const { isAdmin, isLoading } = useAdminGuard();
+    const pathname = usePathname();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      );
+    }
 
-  if (!isAdmin) {
-    return null; // Will be redirected by useAdminGuard
-  }
+    if (!isAdmin) {
+      return null; // Will be redirected by useAdminGuard
+    }
 
-  const navItems = [
-    { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
-    { href: "/admin/menu", label: "Menu", icon: Utensils },
-    { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-    { href: "/admin/analytics/reports", label: "Reports", icon: FileText },
-    { href: "/admin/settings", label: "Settings", icon: Settings },
-  ];
+    const navItems = [
+      { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
+      { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat },
+      { href: "/admin/menu", label: "Menu", icon: Utensils },
+      { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+      { href: "/admin/analytics/reports", label: "Reports", icon: FileText },
+      { href: "/admin/settings", label: "Settings", icon: Settings },
+    ];
 
   return (
     <div className="flex min-h-screen bg-gray-50">

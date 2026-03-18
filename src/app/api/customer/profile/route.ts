@@ -51,19 +51,44 @@ export async function GET(): Promise<NextResponse<ProfileResult>> {
       .from('customers')
       .select('*')
       .eq('auth_user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (customerError || !customer) {
+    if (customerError) {
+      console.error('[API] Failed to fetch customer:', customerError)
       return NextResponse.json(
-        { success: false, error: 'Customer not found' },
-        { status: 404 }
+        { success: false, error: 'Failed to load customer profile' },
+        { status: 500 }
       )
+    }
+
+    let resolvedCustomer = customer
+
+    if (!resolvedCustomer) {
+      const { data: createdCustomer, error: createCustomerError } = await supabase
+        .from('customers')
+        .insert({
+          auth_user_id: user.id,
+          name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
+          phone: user.phone ?? null,
+        })
+        .select('*')
+        .single()
+
+      if (createCustomerError || !createdCustomer) {
+        console.error('[API] Failed to create customer:', createCustomerError)
+        return NextResponse.json(
+          { success: false, error: 'Failed to initialize customer profile' },
+          { status: 500 }
+        )
+      }
+
+      resolvedCustomer = createdCustomer
     }
 
     const { data: addresses, error: addressesError } = await supabase
       .from('customer_addresses')
       .select('*')
-      .eq('customer_id', customer.id)
+      .eq('customer_id', resolvedCustomer.id)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -75,9 +100,9 @@ export async function GET(): Promise<NextResponse<ProfileResult>> {
       {
         success: true,
         customer: {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone,
+          id: resolvedCustomer.id,
+          name: resolvedCustomer.name,
+          phone: resolvedCustomer.phone,
           email: user.email || null,
           addresses: addresses || [],
         },

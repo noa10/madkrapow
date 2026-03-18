@@ -22,14 +22,14 @@ interface Order {
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
-  paid: { color: "bg-blue-100 text-blue-800", label: "Paid" },
-  accepted: { color: "bg-purple-100 text-purple-800", label: "Accepted" },
-  preparing: { color: "bg-orange-100 text-orange-800", label: "Preparing" },
-  ready: { color: "bg-green-100 text-green-800", label: "Ready" },
-  picked_up: { color: "bg-indigo-100 text-indigo-800", label: "Picked Up" },
-  delivered: { color: "bg-teal-100 text-teal-800", label: "Delivered" },
-  cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
+  pending: { color: "bg-amber-500/20 text-amber-500 border-amber-500/50", label: "Pending" },
+  paid: { color: "bg-sky-500/20 text-sky-500 border-sky-500/50", label: "Paid" },
+  accepted: { color: "bg-violet-500/20 text-violet-500 border-violet-500/50", label: "Accepted" },
+  preparing: { color: "bg-orange-500/20 text-orange-500 border-orange-500/50", label: "Preparing" },
+  ready: { color: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50", label: "Ready" },
+  picked_up: { color: "bg-indigo-500/20 text-indigo-500 border-indigo-500/50", label: "Picked Up" },
+  delivered: { color: "bg-teal-500/20 text-teal-500 border-teal-500/50", label: "Delivered" },
+  cancelled: { color: "bg-destructive/20 text-destructive border-destructive/50", label: "Cancelled" },
 };
 
 export default function AdminOrdersPage() {

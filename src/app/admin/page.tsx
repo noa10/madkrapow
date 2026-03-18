@@ -35,37 +35,37 @@ export default async function AdminDashboard() {
       title: "Today's Revenue",
       value: todayRevenue,
       icon: DollarSign,
-      color: "text-green-600",
+      color: "text-emerald-500",
     },
     {
       title: "Today's Orders",
       value: todayCount,
       icon: Package,
-      color: "text-blue-600",
+      color: "text-sky-500",
     },
     {
       title: "Pending Orders",
       value: pendingOrders || 0,
       icon: Clock,
-      color: "text-yellow-600",
+      color: "text-amber-500",
     },
     {
       title: "Avg Order Value",
       value: avgOrderValue,
       icon: TrendingUp,
-      color: "text-purple-600",
+      color: "text-violet-500",
     },
   ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
-      
+      <h1 className="text-2xl font-bold font-heading">Dashboard</h1>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title}>
+          <Card key={stat.title} className="bg-card border-border">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 {stat.title}
               </CardTitle>
               <stat.icon className={`h-4 w-4 ${stat.color}`} />
@@ -82,36 +82,36 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle>Recent Orders</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-500">
-              <Link href="/admin/orders" className="text-primary hover:underline">
+            <p className="text-sm text-muted-foreground">
+              <Link href="/admin/orders" className="text-primary hover:text-primary/80 hover:underline">
                 View all orders →
               </Link>
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <a
+            <Link
               href="/admin/menu"
-              className="block text-sm text-primary hover:underline"
+              className="block text-sm text-primary hover:text-primary/80 hover:underline"
             >
               Manage Menu →
-            </a>
-            <a
+            </Link>
+            <Link
               href="/admin/settings"
-              className="block text-sm text-primary hover:underline"
+              className="block text-sm text-primary hover:text-primary/80 hover:underline"
             >
               Store Settings →
-            </a>
+            </Link>
           </CardContent>
         </Card>
       </div>

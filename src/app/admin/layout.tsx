@@ -45,11 +45,11 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
     ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-primary">Admin Panel</h1>
+      <aside className="w-64 bg-card border-r border-border flex-shrink-0 relative">
+        <div className="p-4 border-b border-border">
+          <h1 className="text-xl font-bold text-primary font-heading">Admin Panel</h1>
         </div>
         <nav className="p-4 space-y-2">
           {navItems.map((item) => {
@@ -61,8 +61,8 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                   isActive
-                    ? "bg-primary text-white"
-                    : "text-gray-600 hover:bg-gray-100"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}
               >
                 <Icon className="h-5 w-5" />
@@ -71,10 +71,10 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
             );
           })}
         </nav>
-        <div className="absolute bottom-0 p-4 border-t border-gray-200 w-64">
+        <div className="absolute bottom-0 p-4 border-t border-border w-64">
           <Link
             href="/"
-            className="flex items-center gap-3 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+            className="flex items-center gap-3 px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground rounded-lg"
           >
             <LogOut className="h-5 w-5" />
             <span>Back to Store</span>
@@ -83,7 +83,7 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-6 overflow-auto">{children}</main>
+      <main className="flex-1 p-6 overflow-auto text-foreground">{children}</main>
     </div>
   );
 }

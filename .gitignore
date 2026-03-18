@@ -46,6 +46,7 @@ next-env.d.ts
 # GitNexus
 .gitnexus/
 .claude/
+.intent/
 
 # ECC Memory (exclude heartbeat state, keep other files)
 memory/heartbeat-state.json

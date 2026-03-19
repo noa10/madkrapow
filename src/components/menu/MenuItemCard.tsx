@@ -1,14 +1,15 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
-import type { MenuItem } from '@/lib/queries/menu'
+import { useCartStore } from '@/stores/cart'
+import type { MenuItemWithModifiers } from '@/lib/queries/menu'
 
 interface MenuItemCardProps {
-  item: MenuItem
+  item: MenuItemWithModifiers
 }
 
 function formatPrice(priceCents: number): string {
@@ -25,15 +26,33 @@ function PlaceholderImage({ alt: _alt }: { alt: string }) {
 
 export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardProps) {
   const router = useRouter()
-  const descriptionSnippet = item.description 
-    ? item.description.length > 80 
+  const addItem = useCartStore((state) => state.addItem)
+  const [addedFeedback, setAddedFeedback] = useState(false)
+
+  const descriptionSnippet = item.description
+    ? item.description.length > 80
       ? item.description.slice(0, 80) + '...'
       : item.description
     : null
 
+  const showFeedback = useCallback(() => {
+    setAddedFeedback(true)
+    setTimeout(() => setAddedFeedback(false), 1000)
+  }, [])
+
   const handleAddClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    router.push(`/item/${item.id}`)
+    if (item.has_modifiers) {
+      router.push(`/item/${item.id}`)
+    } else {
+      addItem({
+        menu_item_id: item.id,
+        selected_modifiers: [],
+        special_instructions: '',
+        unit_price: item.price_cents,
+      })
+      showFeedback()
+    }
   }
 
   const handleCardClick = () => {
@@ -41,7 +60,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
   }
 
   return (
-    <Card 
+    <Card
       className="overflow-hidden flex flex-col h-full group cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-transparent hover:border-primary/30"
       onClick={handleCardClick}
     >
@@ -58,7 +77,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
           <PlaceholderImage alt={item.name} />
         )}
       </div>
-      
+
       <CardContent className="flex-1 p-4">
         <h3 className="font-heading font-semibold text-lg line-clamp-1 group-hover:text-primary transition-colors">
           {item.name}
@@ -70,14 +89,14 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
         )}
         <p className="font-medium mt-2 text-primary">{formatPrice(item.price_cents)}</p>
       </CardContent>
-      
+
       <CardFooter className="p-4 pt-0">
-        <Button 
-          className="w-full group-hover:bg-primary/90 transition-colors" 
+        <Button
+          className="w-full group-hover:bg-primary/90 transition-colors"
           size="sm"
           onClick={handleAddClick}
         >
-          Add
+          {addedFeedback ? 'Added!' : item.has_modifiers ? 'Customize' : 'Add'}
         </Button>
       </CardFooter>
     </Card>

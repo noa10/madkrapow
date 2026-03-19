@@ -68,8 +68,12 @@ export type MenuItemModifierGroup = {
   created_at: string
 }
 
+export type MenuItemWithModifiers = MenuItem & {
+  has_modifiers: boolean
+}
+
 export type CategoryWithMenuItems = Category & {
-  menu_items: MenuItem[]
+  menu_items: MenuItemWithModifiers[]
 }
 
 export type MenuItemWithModifierGroups = MenuItem & {
@@ -104,11 +108,19 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
 
   if (menuItemsError) throw menuItemsError
 
+  const { data: menuItemModifierGroups, error: migError } = await supabase
+    .from('menu_item_modifier_groups')
+    .select('menu_item_id')
+
+  if (migError) throw migError
+
+  const itemsWithModifiers = new Set(menuItemModifierGroups.map((m) => m.menu_item_id))
+
   const menuItemsByCategory = menuItems.reduce((acc, item) => {
     if (!acc[item.category_id]) acc[item.category_id] = []
-    acc[item.category_id].push(item)
+    acc[item.category_id].push({ ...item, has_modifiers: itemsWithModifiers.has(item.id) })
     return acc
-  }, {} as Record<string, MenuItem[]>)
+  }, {} as Record<string, MenuItemWithModifiers[]>)
 
   return categories.map((category) => ({
     ...category,

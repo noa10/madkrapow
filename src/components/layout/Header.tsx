@@ -1,97 +1,21 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
-
-interface CartItem {
-  id: string;
-  quantity: number;
-}
-
-interface CartContextType {
-  items: CartItem[];
-  totalItems: number;
-  addItem: (item: CartItem) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
-}
-
-const CartContext = createContext<CartContextType | undefined>(undefined);
-
-export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    const stored = localStorage.getItem("cart");
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem("cart", JSON.stringify(items));
-  }, [items]);
-
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-
-  const addItem = (item: CartItem) => {
-    setItems((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
-      if (existing) {
-        return prev.map((i) =>
-          i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i
-        );
-      }
-      return [...prev, item];
-    });
-  };
-
-  const removeItem = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id));
-  };
-
-  const updateQuantity = (id: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeItem(id);
-      return;
-    }
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, quantity } : i))
-    );
-  };
-
-  return (
-    <CartContext.Provider
-      value={{ items, totalItems, addItem, removeItem, updateQuantity }}
-    >
-      {children}
-    </CartContext.Provider>
-  );
-}
-
-export function useCart() {
-  const context = useContext(CartContext);
-  if (!context) {
-    throw new Error("useCart must be used within a CartProvider");
-  }
-  return context;
-}
+import { useCartStore } from "@/stores/cart";
 
 interface HeaderProps {
   className?: string;
 }
 
 export function Header({ className }: HeaderProps) {
-  const { totalItems } = useCart();
+  const items = useCartStore((state) => state.items);
+  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<RoleAwareUser | null>(null);
   const supabase = getBrowserClient();
@@ -213,17 +137,9 @@ export function Header({ className }: HeaderProps) {
       )}
     >
       <div className="container mx-auto flex items-center justify-between gap-6 px-4 py-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line-strong)] bg-white/5 text-sm font-medium tracking-[0.35em] text-gold">
-            MK
-          </div>
-          <div>
-            <p className="font-display text-2xl leading-none text-white">Mad Krapow</p>
-            <p className="mt-1 text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
-              Bangkok supper club
-            </p>
-          </div>
-        </div>
+        <Link href="/" className="flex-shrink-0">
+          <img src="/madkrapow-logo.png" alt="Mad Krapow" className="h-14 w-auto" />
+        </Link>
 
         <nav className="hidden items-center gap-8 lg:flex">
           {navLinks.map((link) => (

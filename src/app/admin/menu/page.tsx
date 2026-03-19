@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { getBrowserClient } from "@/lib/supabase/client";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +17,7 @@ import {
   Tag,
   Pencil,
   Trash2,
+  GripVertical,
   ArrowUp,
   ArrowDown,
   X,
@@ -69,20 +73,182 @@ interface Modifier {
   updated_at: string;
 }
 
-type SortField = "name" | "price_cents" | "is_available";
-type SortDirection = "asc" | "desc";
-
-function SortIcon({
-  field,
-  sortField,
-  sortDirection,
+function SortableMenuItemRow({
+  item,
+  categoryName,
+  isDeleting,
+  isSaving,
+  onDeleteStart,
+  onDelete,
+  onDeleteCancel,
 }: {
-  field: SortField;
-  sortField: SortField;
-  sortDirection: SortDirection;
+  item: MenuItem;
+  categoryName: string;
+  isDeleting: boolean;
+  isSaving: boolean;
+  onDeleteStart: () => void;
+  onDelete: () => void;
+  onDeleteCancel: () => void;
 }) {
-  if (sortField !== field) return null;
-  return <span className="ml-1">{sortDirection === "asc" ? "↑" : "↓"}</span>;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className="border-b last:border-0 hover:bg-muted/50"
+    >
+      <td className="py-3 w-8">
+        <button
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </td>
+      <td className="py-3">
+        <div className="font-medium">{item.name}</div>
+        {item.description && (
+          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
+            {item.description}
+          </div>
+        )}
+      </td>
+      <td className="py-3">
+        <Badge variant="outline">
+          <Tag className="h-3 w-3 mr-1" />
+          {categoryName}
+        </Badge>
+      </td>
+      <td className="py-3">RM {(item.price_cents / 100).toFixed(2)}</td>
+      <td className="py-3">
+        <Badge variant={item.is_available ? "default" : "secondary"}>
+          {item.is_available ? "Available" : "Unavailable"}
+        </Badge>
+      </td>
+      <td className="py-3 text-right">
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`/admin/menu/items/${item.id}`}>
+              <Edit className="h-4 w-4" />
+            </Link>
+          </Button>
+          {isDeleting ? (
+            <div className="flex items-center gap-1">
+              <Button variant="destructive" size="sm" onClick={onDelete} disabled={isSaving}>
+                Confirm
+              </Button>
+              <Button variant="outline" size="sm" onClick={onDeleteCancel} disabled={isSaving}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={onDeleteStart}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function SortableModifierRow({
+  modifier,
+  isActive,
+  isEditing,
+  isDeleting,
+  isSaving,
+  onEdit,
+  onDelete,
+  onDeleteStart,
+  onDeleteCancel,
+  formatPrice,
+}: {
+  modifier: Modifier;
+  isActive: boolean;
+  isEditing: boolean;
+  isDeleting: boolean;
+  isSaving: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDeleteStart: () => void;
+  onDeleteCancel: () => void;
+  formatPrice: (cents: number) => string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: modifier.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center justify-between p-2 rounded border",
+        !modifier.is_available && "bg-muted/50 opacity-60",
+        isActive && "ring-2 ring-primary"
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        <span className="font-medium">{modifier.name}</span>
+        {modifier.is_default && (
+          <Badge variant="secondary" className="text-xs">
+            Default
+          </Badge>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">
+          {formatPrice(modifier.price_delta_cents)}
+        </span>
+        {!modifier.is_available && (
+          <Badge variant="outline" className="text-xs">
+            Unavailable
+          </Badge>
+        )}
+        <Button variant="ghost" size="icon" onClick={onEdit}>
+          <Pencil className="h-4 w-4" />
+        </Button>
+        {isDeleting ? (
+          <div className="flex items-center gap-1">
+            <Button variant="destructive" size="sm" onClick={onDelete} disabled={isSaving}>
+              Confirm
+            </Button>
+            <Button variant="outline" size="sm" onClick={onDeleteCancel} disabled={isSaving}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button variant="ghost" size="icon" onClick={onDeleteStart}>
+            <Trash2 className="h-4 w-4 text-red-500" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminMenuPage() {
@@ -92,15 +258,15 @@ export default function AdminMenuPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  
   // Category management state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
+
+  // Menu item management state
+  const [deletingMenuItem, setDeletingMenuItem] = useState<{ id: string; name: string } | null>(null);
 
   // Modifier groups state
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
@@ -124,6 +290,16 @@ export default function AdminMenuPage() {
   } | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null);
   const [deletingModifier, setDeletingModifier] = useState<string | null>(null);
+
+  // Item-modifier group bindings state
+  const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
+  const [selectedBindings, setSelectedBindings] = useState<Record<string, { bound: boolean; required: boolean }>>({});
+  const [bindingsLoading, setBindingsLoading] = useState(false);
+  const [bindingsSaving, setBindingsSaving] = useState(false);
+  const [bindingsSaved, setBindingsSaved] = useState(false);
+
+  // Drag state
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = getBrowserClient();
@@ -179,40 +355,15 @@ export default function AdminMenuPage() {
     return category?.name || "Uncategorized";
   };
 
-  const filteredAndSortedItems = menuItems
-    .filter((item) => {
-      const matchesSearch =
-        searchQuery === "" ||
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
-      const matchesCategory =
-        categoryFilter === "all" || item.category_id === categoryFilter;
-      return matchesSearch && matchesCategory;
-    })
-    .sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case "name":
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case "price_cents":
-          comparison = a.price_cents - b.price_cents;
-          break;
-        case "is_available":
-          comparison = (a.is_available ? 1 : 0) - (b.is_available ? 1 : 0);
-          break;
-      }
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+  const filteredAndSortedItems = menuItems.filter((item) => {
+    const matchesSearch =
+      searchQuery === "" ||
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    const matchesCategory =
+      categoryFilter === "all" || item.category_id === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
 
   // Category management functions
   const openCreateForm = () => {
@@ -308,6 +459,76 @@ export default function AdminMenuPage() {
       setError(errorMessage);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteMenuItem = async () => {
+    if (!deletingMenuItem) return;
+
+    setSaving(true);
+    const supabase = getBrowserClient();
+
+    try {
+      const { error } = await supabase
+        .from("menu_items")
+        .delete()
+        .eq("id", deletingMenuItem.id);
+
+      if (error) throw error;
+
+      const menuItemsRes = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+
+      setMenuItems(menuItemsRes.data || []);
+      setDeletingMenuItem(null);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMenuItemDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeItem = menuItems.find((item) => item.id === active.id);
+    if (!activeItem) return;
+
+    const categoryId = activeItem.category_id;
+
+    // Get all items in this category, sorted by sort_order
+    const categoryItems = menuItems
+      .filter((item) => item.category_id === categoryId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    const oldIndex = categoryItems.findIndex((item) => item.id === active.id);
+    const newIndex = categoryItems.findIndex((item) => item.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(categoryItems, oldIndex, newIndex);
+
+    const supabase = getBrowserClient();
+
+    try {
+      for (let i = 0; i < reordered.length; i++) {
+        await supabase
+          .from("menu_items")
+          .update({ sort_order: i + 1 })
+          .eq("id", reordered[i].id);
+      }
+
+      const res = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      setMenuItems(res.data || []);
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -573,6 +794,161 @@ export default function AdminMenuPage() {
     }
   };
 
+  // Item-modifier group binding functions
+  const handleMenuItemSelect = async (menuItemId: string) => {
+    setSelectedMenuItemId(menuItemId);
+    setBindingsSaved(false);
+
+    if (!menuItemId) {
+      setSelectedBindings({});
+      return;
+    }
+
+    setBindingsLoading(true);
+    const supabase = getBrowserClient();
+
+    try {
+      const { data: bindings } = await supabase
+        .from("menu_item_modifier_groups")
+        .select("modifier_group_id, is_required")
+        .eq("menu_item_id", menuItemId);
+
+      const bindingsMap: Record<string, { bound: boolean; required: boolean }> = {};
+      for (const group of modifierGroups) {
+        const binding = bindings?.find((b) => b.modifier_group_id === group.id);
+        bindingsMap[group.id] = {
+          bound: !!binding,
+          required: binding?.is_required ?? false,
+        };
+      }
+      setSelectedBindings(bindingsMap);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBindingsLoading(false);
+    }
+  };
+
+  const handleBindingToggle = (groupId: string) => {
+    setSelectedBindings((prev) => {
+      const current = prev[groupId] ?? { bound: false, required: false };
+      return {
+        ...prev,
+        [groupId]: {
+          bound: !current.bound,
+          required: current.bound ? false : current.required,
+        },
+      };
+    });
+  };
+
+  const handleRequiredToggle = (groupId: string) => {
+    setSelectedBindings((prev) => {
+      const current = prev[groupId];
+      if (!current?.bound) return prev;
+      return {
+        ...prev,
+        [groupId]: { ...current, required: !current.required },
+      };
+    });
+  };
+
+  const handleSaveBindings = async () => {
+    if (!selectedMenuItemId) return;
+
+    setBindingsSaving(true);
+    const supabase = getBrowserClient();
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("menu_item_modifier_groups")
+        .delete()
+        .eq("menu_item_id", selectedMenuItemId);
+
+      if (deleteError) throw deleteError;
+
+      const rowsToInsert = Object.entries(selectedBindings)
+        .filter(([, val]) => val.bound)
+        .map(([groupId, val]) => ({
+          menu_item_id: selectedMenuItemId,
+          modifier_group_id: groupId,
+          is_required: val.required,
+        }));
+
+      if (rowsToInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from("menu_item_modifier_groups")
+          .insert(rowsToInsert);
+
+        if (insertError) throw insertError;
+      }
+
+      setBindingsSaved(true);
+      setTimeout(() => setBindingsSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBindingsSaving(false);
+    }
+  };
+
+  // Drag-and-drop reorder functions
+  const handleModifierDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const supabase = getBrowserClient();
+
+    // Find which group this modifier belongs to
+    let targetGroup: ModifierGroup | undefined;
+    for (const g of modifierGroups) {
+      if (g.modifiers?.find((m) => m.id === active.id)) {
+        targetGroup = g;
+        break;
+      }
+    }
+    if (!targetGroup?.modifiers) return;
+
+    const oldIndex = targetGroup.modifiers.findIndex((m) => m.id === active.id);
+    const newIndex = targetGroup.modifiers.findIndex((m) => m.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(targetGroup.modifiers, oldIndex, newIndex);
+
+    try {
+      for (let i = 0; i < reordered.length; i++) {
+        await supabase
+          .from("modifiers")
+          .update({ sort_order: i + 1 })
+          .eq("id", reordered[i].id);
+      }
+      await fetchModifierGroups();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleGroupReorder = async (group: ModifierGroup, direction: "up" | "down") => {
+    const currentIndex = modifierGroups.findIndex((g) => g.id === group.id);
+    if (direction === "up" && currentIndex === 0) return;
+    if (direction === "down" && currentIndex === modifierGroups.length - 1) return;
+
+    const otherGroup = direction === "up"
+      ? modifierGroups[currentIndex - 1]
+      : modifierGroups[currentIndex + 1];
+
+    const supabase = getBrowserClient();
+
+    try {
+      await supabase.from("modifier_groups").update({ sort_order: otherGroup.sort_order }).eq("id", group.id);
+      await supabase.from("modifier_groups").update({ sort_order: group.sort_order }).eq("id", otherGroup.id);
+      await fetchModifierGroups();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   const formatPrice = (cents: number) => {
     if (cents === 0) return "Free";
     return `+RM ${(cents / 100).toFixed(2)}`;
@@ -601,7 +977,7 @@ export default function AdminMenuPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold">Menu Management</h1>
         <Button asChild>
-          <Link href="/admin/menu/new">
+          <Link href="/admin/menu/items/new">
             <Plus className="h-4 w-4 mr-2" />
             Add New Item
           </Link>
@@ -649,93 +1025,73 @@ export default function AdminMenuPage() {
               </p>
               {menuItems.length === 0 && (
                 <Button asChild className="mt-4">
-                  <Link href="/admin/menu/new">Add Your First Item</Link>
+                  <Link href="/admin/menu/items/new">Add Your First Item</Link>
                 </Button>
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th
-                      className="pb-3 font-medium cursor-pointer hover:text-foreground"
-                      onClick={() => handleSort("name")}
-                    >
-                      Name{" "}
-                      <SortIcon
-                        field="name"
-                        sortField={sortField}
-                        sortDirection={sortDirection}
-                      />
-                    </th>
-                    <th className="pb-3 font-medium">Category</th>
-                    <th
-                      className="pb-3 font-medium cursor-pointer hover:text-foreground"
-                      onClick={() => handleSort("price_cents")}
-                    >
-                      Price{" "}
-                      <SortIcon
-                        field="price_cents"
-                        sortField={sortField}
-                        sortDirection={sortDirection}
-                      />
-                    </th>
-                    <th
-                      className="pb-3 font-medium cursor-pointer hover:text-foreground"
-                      onClick={() => handleSort("is_available")}
-                    >
-                      Status{" "}
-                      <SortIcon
-                        field="is_available"
-                        sortField={sortField}
-                        sortDirection={sortDirection}
-                      />
-                    </th>
-                    <th className="pb-3 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAndSortedItems.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b last:border-0 hover:bg-muted/50"
-                    >
-                      <td className="py-3">
-                        <div className="font-medium">{item.name}</div>
-                        {item.description && (
-                          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
-                            {item.description}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3">
-                        <Badge variant="outline">
-                          <Tag className="h-3 w-3 mr-1" />
-                          {getCategoryName(item.category_id)}
-                        </Badge>
-                      </td>
-                      <td className="py-3">
-                        RM {(item.price_cents / 100).toFixed(2)}
-                      </td>
-                      <td className="py-3">
-                        <Badge
-                          variant={item.is_available ? "default" : "secondary"}
+            <div className="space-y-6">
+              {categories
+                .filter((cat) =>
+                  filteredAndSortedItems.some((item) => item.category_id === cat.id)
+                )
+                .map((cat) => {
+                  const catItems = filteredAndSortedItems
+                    .filter((item) => item.category_id === cat.id)
+                    .sort((a, b) => a.sort_order - b.sort_order);
+
+                  if (catItems.length === 0) return null;
+
+                  return (
+                    <div key={cat.id}>
+                      <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+                        <Tag className="h-3 w-3" />
+                        {cat.name}
+                      </h3>
+                      <DndContext
+                        collisionDetection={closestCenter}
+                        onDragStart={(e) => setActiveDragId(e.active.id as string)}
+                        onDragEnd={handleMenuItemDragEnd}
+                      >
+                        <SortableContext
+                          items={catItems.map((i) => i.id)}
+                          strategy={verticalListSortingStrategy}
                         >
-                          {item.is_available ? "Available" : "Unavailable"}
-                        </Badge>
-                      </td>
-                      <td className="py-3 text-right">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/admin/menu/${item.id}`}>
-                            <Edit className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <div className="overflow-x-auto">
+                            <table className="w-full">
+                              <thead>
+                                <tr className="border-b text-left text-xs text-muted-foreground">
+                                  <th className="pb-2 w-8"></th>
+                                  <th className="pb-2 font-medium">Name</th>
+                                  <th className="pb-2 font-medium">Category</th>
+                                  <th className="pb-2 font-medium">Price</th>
+                                  <th className="pb-2 font-medium">Status</th>
+                                  <th className="pb-2 font-medium text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {catItems.map((item) => (
+                                  <SortableMenuItemRow
+                                    key={item.id}
+                                    item={item}
+                                    categoryName={getCategoryName(item.category_id)}
+                                    isDeleting={deletingMenuItem?.id === item.id}
+                                    isSaving={saving}
+                                    onDeleteStart={() =>
+                                      setDeletingMenuItem({ id: item.id, name: item.name })
+                                    }
+                                    onDelete={handleDeleteMenuItem}
+                                    onDeleteCancel={() => setDeletingMenuItem(null)}
+                                  />
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </SortableContext>
+                      </DndContext>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </CardContent>
@@ -1179,71 +1535,37 @@ export default function AdminMenuPage() {
                       )}
 
                       {group.modifiers && group.modifiers.length > 0 ? (
-                        <div className="space-y-2">
-                          {group.modifiers.map((modifier) => (
-                            <div
-                              key={modifier.id}
-                              className={cn(
-                                "flex items-center justify-between p-2 rounded border",
-                                !modifier.is_available && "bg-muted/50 opacity-60"
-                              )}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{modifier.name}</span>
-                                {modifier.is_default && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Default
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">
-                                  {formatPrice(modifier.price_delta_cents)}
-                                </span>
-                                {!modifier.is_available && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Unavailable
-                                  </Badge>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleEditModifier(modifier)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                {deletingModifier === modifier.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <Button
-                                      variant="destructive"
-                                      size="sm"
-                                      onClick={() => handleDeleteModifier(modifier.id)}
-                                      disabled={saving}
-                                    >
-                                      Confirm
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => setDeletingModifier(null)}
-                                      disabled={saving}
-                                    >
-                                      Cancel
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setDeletingModifier(modifier.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                )}
-                              </div>
+                        <DndContext
+                          collisionDetection={closestCenter}
+                          onDragStart={(e) => setActiveDragId(e.active.id as string)}
+                          onDragEnd={handleModifierDragEnd}
+                        >
+                          <SortableContext
+                            items={group.modifiers.map((m) => m.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-2">
+                              {group.modifiers.map((modifier) => {
+                                const isActive = activeDragId === modifier.id;
+                                return (
+                                  <SortableModifierRow
+                                    key={modifier.id}
+                                    modifier={modifier}
+                                    isActive={isActive}
+                                    isEditing={false}
+                                    isDeleting={deletingModifier === modifier.id}
+                                    isSaving={saving}
+                                    onEdit={() => handleEditModifier(modifier)}
+                                    onDelete={() => handleDeleteModifier(modifier.id)}
+                                    onDeleteStart={() => setDeletingModifier(modifier.id)}
+                                    onDeleteCancel={() => setDeletingModifier(null)}
+                                    formatPrice={formatPrice}
+                                  />
+                                );
+                              })}
                             </div>
-                          ))}
-                        </div>
+                          </SortableContext>
+                        </DndContext>
                       ) : (
                         <p className="text-sm text-muted-foreground text-center py-4">
                           No modifiers. Add options like Small, Medium, Large.
@@ -1254,6 +1576,112 @@ export default function AdminMenuPage() {
                 </div>
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Item-Modifier Bindings Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Item-Modifier Bindings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs font-medium mb-1 block">Select Menu Item</label>
+            <select
+              value={selectedMenuItemId}
+              onChange={(e) => handleMenuItemSelect(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+            >
+              <option value="">Choose a menu item...</option>
+              {menuItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} — {getCategoryName(item.category_id)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedMenuItemId && (
+            <>
+              {bindingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : modifierGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No modifier groups available. Create one first.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {modifierGroups.map((group) => {
+                    const binding = selectedBindings[group.id] ?? { bound: false, required: false };
+                    return (
+                      <div
+                        key={group.id}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                          binding.bound ? "bg-muted/50" : "bg-card"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={binding.bound}
+                            onChange={() => handleBindingToggle(group.id)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                          <div>
+                            <span className="font-medium text-sm">{group.name}</span>
+                            {group.description && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                ({group.description})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {group.max_selections === 1 ? "Radio" : "Checkbox"}
+                          </Badge>
+                          {binding.bound && (
+                            <Button
+                              variant={binding.required ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handleRequiredToggle(group.id)}
+                            >
+                              {binding.required ? "Required" : "Optional"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  onClick={handleSaveBindings}
+                  disabled={bindingsSaving || modifierGroups.length === 0}
+                  size="sm"
+                >
+                  {bindingsSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Bindings"
+                  )}
+                </Button>
+                {bindingsSaved && (
+                  <span className="text-sm text-green-600 font-medium">
+                    Bindings saved!
+                  </span>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -1,20 +1,32 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { X, ShoppingCart } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { CartItem } from './CartItem'
 import { CartSummary } from './CartSummary'
 import { Button } from '@/components/ui/button'
+import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
 
-interface CartDrawerProps {
-  isOpen: boolean
-  onClose: () => void
-}
-
-export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
+export function CartDrawer() {
+  const isHydrated = useCartStore((state) => state.isHydrated)
+  const isOpen = useCartStore((state) => state.isDrawerOpen)
+  const onClose = useCartStore((state) => state.closeDrawer)
   const items = useCartStore((state) => state.items)
   const getSubtotal = useCartStore((state) => state.getSubtotal)
+
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+
+  useEffect(() => {
+    getMenuItems()
+      .then(setMenuItems)
+      .catch((err) => console.error('Failed to fetch menu items:', err))
+  }, [])
+
+  const menuItemMap = useMemo(
+    () => Object.fromEntries(menuItems.map((item) => [item.id, item])),
+    [menuItems]
+  )
 
   useEffect(() => {
     if (isOpen) {
@@ -27,12 +39,13 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     }
   }, [isOpen])
 
-  const subtotal = getSubtotal()
+  const subtotal = isHydrated ? getSubtotal() : 0
+  const displayItems = isHydrated ? items : []
 
   return (
     <>
       <div
-        className={`fixed inset-0 z-50 bg-black/50 transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -56,7 +69,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4">
-            {items.length === 0 ? (
+            {displayItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full py-12">
                 <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground text-center">Your cart is empty</p>
@@ -66,11 +79,12 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               </div>
             ) : (
               <div className="divide-y">
-                {items.map((item, index) => (
+                {displayItems.map((item, index) => (
                   <CartItem
                     key={`${item.menu_item_id}-${index}`}
                     item={item}
-                    itemName={item.menu_item_id}
+                    itemName={menuItemMap[item.menu_item_id]?.name ?? `Item ${item.menu_item_id.slice(0, 8)}`}
+                    imageUrl={menuItemMap[item.menu_item_id]?.image_url}
                   />
                 ))}
               </div>

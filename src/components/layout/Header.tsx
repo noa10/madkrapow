@@ -20,6 +20,13 @@ export function Header({ className }: HeaderProps) {
   const [user, setUser] = useState<RoleAwareUser | null>(null);
   const supabase = getBrowserClient();
 
+  const openDrawer = useCartStore((state) => state.openDrawer);
+
+  const getNavHref = (link: string) => {
+    if (link === "Menu") return "/";
+    return `#${link.toLowerCase()}`;
+  };
+
   const isAdmin = isAdminUser(user);
 
   const handleSignOut = async () => {
@@ -54,7 +61,7 @@ export function Header({ className }: HeaderProps) {
     };
   }, [supabase]);
 
-  const navLinks = ["Menu", "Signature", "Experience", "Reserve"];
+  const navLinks = ["Menu", "About", "Booking"];
 
   const authLink = isAdmin ? (
     <Link
@@ -145,7 +152,7 @@ export function Header({ className }: HeaderProps) {
           {navLinks.map((link) => (
             <Link
               key={link}
-              href={link === "Menu" ? "/" : "#"}
+              href={getNavHref(link)}
               className="text-sm uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
             >
               {link}
@@ -155,12 +162,12 @@ export function Header({ className }: HeaderProps) {
 
         <div className="flex items-center gap-3">
           {authLink}
-          <Link
-            href="/cart"
+          <button
+            onClick={openDrawer}
             className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,rgba(210,176,123,0.24),rgba(210,176,123,0.08))] px-5 py-2.5 text-xs font-medium uppercase tracking-[0.32em] text-gold transition hover:brightness-110"
           >
             Cart · {totalItems.toString().padStart(2, "0")}
-          </Link>
+          </button>
           <Button
             variant="ghost"
             size="icon"
@@ -182,7 +189,7 @@ export function Header({ className }: HeaderProps) {
             {navLinks.map((link) => (
               <Link
                 key={link}
-                href={link === "Menu" ? "/" : "#"}
+                href={getNavHref(link)}
                 className="text-sm font-medium uppercase tracking-[0.28em] text-muted-foreground transition hover:text-gold"
                 onClick={() => setIsMobileMenuOpen(false)}
               >

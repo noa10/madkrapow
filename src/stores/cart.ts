@@ -17,6 +17,11 @@ export type CartItem = {
 
 type CartState = {
   items: CartItem[]
+  isDrawerOpen: boolean
+  isHydrated: boolean
+  toggleDrawer: () => void
+  openDrawer: () => void
+  closeDrawer: () => void
   addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void
   removeItem: (menuItemId: string, modifierIds: string[]) => void
   updateQuantity: (menuItemId: string, modifierIds: string[], quantity: number) => void
@@ -43,6 +48,11 @@ export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      isDrawerOpen: false,
+      isHydrated: false,
+      toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
+      openDrawer: () => set({ isDrawerOpen: true }),
+      closeDrawer: () => set({ isDrawerOpen: false }),
 
       addItem: (item) => {
         const { menu_item_id, selected_modifiers, quantity = 1 } = item
@@ -108,6 +118,12 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'cart-storage',
+      partialize: (state) => ({ items: state.items }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.isHydrated = true
+        }
+      },
     }
   )
 )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import { Trash2, GripVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuantitySelector } from '@/components/menu/QuantitySelector'
@@ -9,11 +10,12 @@ import { useCartStore, type CartItem, type SelectedModifier } from '@/stores/car
 interface CartItemProps {
   item: CartItem
   itemName: string
+  imageUrl?: string | null
 }
 
 const SWIPE_THRESHOLD = 100
 
-export function CartItem({ item, itemName }: CartItemProps) {
+export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
   const { updateQuantity, removeItem } = useCartStore()
   const [isDeleting, setIsDeleting] = useState(false)
   const [touchStart, setTouchStart] = useState<number | null>(null)
@@ -23,6 +25,10 @@ export function CartItem({ item, itemName }: CartItemProps) {
   const modifierIds = item.selected_modifiers.map((m) => m.id)
 
   const handleQuantityChange = (newQuantity: number) => {
+    if (newQuantity <= 0) {
+      handleRemove()
+      return
+    }
     updateQuantity(item.menu_item_id, modifierIds, newQuantity)
   }
 
@@ -87,7 +93,7 @@ export function CartItem({ item, itemName }: CartItemProps) {
   return (
     <div className="relative overflow-hidden">
       <div
-        className="absolute inset-y-0 right-0 flex items-center justify-center bg-destructive px-4 transition-opacity"
+        className={`absolute inset-y-0 right-0 flex items-center justify-center bg-destructive px-4 transition-opacity ${swipeProgress === 0 ? 'pointer-events-none' : ''}`}
         style={{ opacity: swipeProgress }}
       >
         <Trash2 className="h-5 w-5 text-destructive-foreground" />
@@ -100,6 +106,17 @@ export function CartItem({ item, itemName }: CartItemProps) {
         onTouchEnd={handleTouchEnd}
       >
         <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        {imageUrl ? (
+          <Image
+            src={imageUrl}
+            alt={itemName}
+            width={48}
+            height={48}
+            className="h-12 w-12 rounded-md object-cover flex-shrink-0"
+          />
+        ) : (
+          <div className="h-12 w-12 rounded-md bg-muted flex-shrink-0" />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -123,14 +140,15 @@ export function CartItem({ item, itemName }: CartItemProps) {
             <QuantitySelector
               quantity={item.quantity}
               onChange={handleQuantityChange}
-              min={1}
+              min={0}
               max={10}
             />
             <Button
-              variant="ghost"
+              type="button"
+              variant="outline"
               size="icon"
               onClick={handleRemove}
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:border-destructive"
               aria-label="Remove item"
             >
               <Trash2 className="h-4 w-4" />

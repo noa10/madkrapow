@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
+import { CartDrawer } from "@/components/cart/CartDrawer";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -32,6 +33,7 @@ export default function RootLayout({
       >
         <Header />
         {children}
+        <CartDrawer />
       </body>
     </html>
   );

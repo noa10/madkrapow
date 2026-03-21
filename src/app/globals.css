@@ -43,6 +43,13 @@
   }
 }
 
+@media (hover: none) {
+  button:not(:disabled) {
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  }
+}
+
 @layer utility {
   @keyframes accordion-down {
     from {

@@ -48,12 +48,6 @@ export function Hero() {
                 >
                   Explore Menu
                 </Link>
-                <Link
-                  href="#detail"
-                  className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm font-medium uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)]"
-                >
-                  Chef&apos;s Special
-                </Link>
               </div>
             </div>
 

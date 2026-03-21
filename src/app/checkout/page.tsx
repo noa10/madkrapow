@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowLeft, MapPin, Loader2 } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
@@ -196,7 +197,18 @@ export default function CheckoutPage() {
             <h2 className="text-lg font-semibold mb-3">Order Summary</h2>
             <div className="space-y-3">
               {checkoutItems.map((item, index) => (
-                <div key={`${item.id}-${index}`} className="flex justify-between text-sm">
+                <div key={`${item.id}-${index}`} className="flex gap-3 text-sm">
+                  {item.image ? (
+                    <Image
+                      src={item.image}
+                      alt={item.name}
+                      width={40}
+                      height={40}
+                      className="h-10 w-10 rounded-md object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 rounded-md bg-muted flex-shrink-0" />
+                  )}
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{item.quantity}x</span>

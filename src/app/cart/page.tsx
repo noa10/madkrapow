@@ -82,6 +82,7 @@ export default function CartPage() {
                   key={`${item.menu_item_id}-${index}`}
                   item={item}
                   itemName={menuItemMap[item.menu_item_id]?.name || `Item ${item.menu_item_id.slice(0, 8)}`}
+                  imageUrl={menuItemMap[item.menu_item_id]?.image_url}
                 />
               ))}
             </div>

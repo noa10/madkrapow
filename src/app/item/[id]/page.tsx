@@ -1,7 +1,8 @@
-import Image from 'next/image'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { getItemById, type FullMenuItem } from '@/lib/queries/menu'
 import { MenuItemDetail } from '@/components/menu/MenuItemDetail'
+import { ItemImagePreview } from '@/components/menu/ItemImagePreview'
+import { buildItemHref, parseItemRouteParam } from '@/lib/item-url'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -20,41 +21,34 @@ async function getItem(id: string): Promise<FullMenuItem | null> {
   }
 }
 
-function PlaceholderImage({ alt: _alt }: { alt: string }) {
-  return (
-    <div className="relative w-full aspect-square bg-muted flex items-center justify-center">
-      <span className="text-muted-foreground">No image</span>
-    </div>
-  )
-}
-
 export default async function ItemDetailPage({ params }: PageProps) {
-  const { id } = await params
-  const item = await getItem(id)
+  const { id: slugAndId } = await params
+  const parsed = parseItemRouteParam(slugAndId)
+
+  if (!parsed.itemId) {
+    notFound()
+  }
+
+  const item = await getItem(parsed.itemId)
 
   if (!item) {
     notFound()
   }
 
+  const canonicalHref = buildItemHref(item.name, item.id)
+  if (parsed.isLegacyUuidRoute || slugAndId !== canonicalHref.replace('/item/', '')) {
+    permanentRedirect(canonicalHref)
+  }
+
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto">
-        <div className="relative w-full aspect-square">
-          {item.image_url ? (
-            <Image
-              src={item.image_url}
-              alt={item.name}
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 800px"
-              priority
-            />
-          ) : (
-            <PlaceholderImage alt={item.name} />
-          )}
-        </div>
+      <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+        <div className="grid gap-6 lg:grid-cols-[minmax(260px,360px)_1fr] lg:items-start">
+          <aside className="lg:sticky lg:top-6">
+            <ItemImagePreview imageUrl={item.image_url} itemName={item.name} />
+          </aside>
 
-        <div className="p-6">
+          <section className="rounded-2xl border bg-card p-5 sm:p-6" data-testid="item-detail-content-panel">
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">{item.category.name}</p>
@@ -70,6 +64,7 @@ export default async function ItemDetailPage({ params }: PageProps) {
           )}
 
           <MenuItemDetail item={item} />
+          </section>
         </div>
       </div>
     </main>

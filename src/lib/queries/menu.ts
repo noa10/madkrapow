@@ -68,6 +68,8 @@ export type MenuItemModifierGroup = {
   created_at: string
 }
 
+type MenuItemModifierGroupRef = Pick<MenuItemModifierGroup, 'menu_item_id'>
+
 export type MenuItemWithModifiers = MenuItem & {
   has_modifiers: boolean
 }
@@ -114,15 +116,19 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
 
   if (migError) throw migError
 
-  const itemsWithModifiers = new Set(menuItemModifierGroups.map((m) => m.menu_item_id))
+  const menuItemModifierGroupRefs: MenuItemModifierGroupRef[] = menuItemModifierGroups ?? []
+  const availableMenuItems: MenuItem[] = menuItems ?? []
+  const activeCategories: Category[] = categories ?? []
 
-  const menuItemsByCategory = menuItems.reduce((acc, item) => {
+  const itemsWithModifiers = new Set(menuItemModifierGroupRefs.map((modifierGroup) => modifierGroup.menu_item_id))
+
+  const menuItemsByCategory = availableMenuItems.reduce((acc, item) => {
     if (!acc[item.category_id]) acc[item.category_id] = []
     acc[item.category_id].push({ ...item, has_modifiers: itemsWithModifiers.has(item.id) })
     return acc
   }, {} as Record<string, MenuItemWithModifiers[]>)
 
-  return categories.map((category) => ({
+  return activeCategories.map((category) => ({
     ...category,
     menu_items: menuItemsByCategory[category.id] || [],
   }))

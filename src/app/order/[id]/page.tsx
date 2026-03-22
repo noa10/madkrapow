@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { 
@@ -141,7 +142,7 @@ export default function OrderTrackingPage() {
           table: 'orders',
           filter: `id=eq.${orderId}`
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Order>) => {
           console.log('Order updated:', payload)
           setRefreshing(true)
           fetchOrder()

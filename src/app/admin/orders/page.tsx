@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ export default function AdminOrdersPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "orders" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Order>) => {
           setOrders((prev) => [payload.new as Order, ...prev]);
           triggerNewOrderAlert();
         }
@@ -72,10 +73,11 @@ export default function AdminOrdersPage() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Order>) => {
+          const nextOrder = payload.new as Order;
           setOrders((prev) =>
             prev.map((order) =>
-              order.id === payload.new.id ? (payload.new as Order) : order
+              order.id === nextOrder.id ? nextOrder : order
             )
           );
         }

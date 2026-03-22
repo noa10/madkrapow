@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { isAdminUser } from "@/lib/auth/roles";
 import { getBrowserClient } from "@/lib/supabase/client";
@@ -37,7 +38,7 @@ export function useAdminGuard() {
     // Subscribe to auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setIsAdmin(isAdminUser(session?.user));
     });
 

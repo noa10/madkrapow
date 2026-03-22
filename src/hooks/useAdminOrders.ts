@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 
 export interface AdminOrder {
@@ -45,7 +46,7 @@ export function useAdminOrders() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "orders" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
           setOrders((prev) => [payload.new as AdminOrder, ...prev]);
           window.dispatchEvent(new Event("new-order-alert"));
         }
@@ -53,10 +54,11 @@ export function useAdminOrders() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
+          const nextOrder = payload.new as AdminOrder;
           setOrders((prev) =>
             prev.map((order) =>
-              order.id === payload.new.id ? (payload.new as AdminOrder) : order
+              order.id === nextOrder.id ? nextOrder : order
             )
           );
         }

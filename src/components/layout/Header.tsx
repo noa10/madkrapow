@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
@@ -52,7 +54,7 @@ export function Header({ className }: HeaderProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user ?? null);
     });
 
@@ -145,7 +147,14 @@ export function Header({ className }: HeaderProps) {
     >
       <div className="container mx-auto flex items-center justify-between gap-6 px-4 py-4">
         <Link href="/" className="flex-shrink-0">
-          <img src="/madkrapow-logo.png" alt="Mad Krapow" className="h-14 w-auto" />
+          <Image
+            src="/madkrapow-logo.png"
+            alt="Mad Krapow"
+            width={224}
+            height={56}
+            className="h-14 w-auto"
+            priority
+          />
         </Link>
 
         <nav className="hidden items-center gap-8 lg:flex">

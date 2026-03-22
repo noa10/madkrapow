@@ -165,7 +165,6 @@ function SortableMenuItemRow({
 function SortableModifierRow({
   modifier,
   isActive,
-  isEditing,
   isDeleting,
   isSaving,
   onEdit,
@@ -176,7 +175,6 @@ function SortableModifierRow({
 }: {
   modifier: Modifier;
   isActive: boolean;
-  isEditing: boolean;
   isDeleting: boolean;
   isSaving: boolean;
   onEdit: () => void;
@@ -329,17 +327,20 @@ export default function AdminMenuPage() {
       setMenuItems(menuItemsRes.data || []);
       setCategories(categoriesRes.data || []);
 
-      if (groupsRes.data && groupsRes.data.length > 0) {
-        const groupIds = groupsRes.data.map((g) => g.id);
+      const groupsData: ModifierGroup[] = groupsRes.data ?? [];
+
+      if (groupsData.length > 0) {
+        const groupIds = groupsData.map((group) => group.id);
         const { data: modifiers } = await supabase
           .from("modifiers")
           .select("*")
           .in("modifier_group_id", groupIds)
           .order("sort_order", { ascending: true });
 
-        const groupsWithModifiers = groupsRes.data.map((group) => ({
+        const modifiersData: Modifier[] = modifiers ?? [];
+        const groupsWithModifiers = groupsData.map((group) => ({
           ...group,
-          modifiers: modifiers?.filter((m) => m.modifier_group_id === group.id) || [],
+          modifiers: modifiersData.filter((modifier) => modifier.modifier_group_id === group.id),
         }));
         setModifierGroups(groupsWithModifiers);
       }
@@ -578,17 +579,20 @@ export default function AdminMenuPage() {
       .select("*")
       .order("sort_order", { ascending: true });
 
-    if (groups && groups.length > 0) {
-      const groupIds = groups.map((g) => g.id);
+    const groupsData: ModifierGroup[] = groups ?? [];
+
+    if (groupsData.length > 0) {
+      const groupIds = groupsData.map((group) => group.id);
       const { data: modifiers } = await supabase
         .from("modifiers")
         .select("*")
         .in("modifier_group_id", groupIds)
         .order("sort_order", { ascending: true });
 
-      const groupsWithModifiers = groups.map((group) => ({
+      const modifiersData: Modifier[] = modifiers ?? [];
+      const groupsWithModifiers = groupsData.map((group) => ({
         ...group,
-        modifiers: modifiers?.filter((m) => m.modifier_group_id === group.id) || [],
+        modifiers: modifiersData.filter((modifier) => modifier.modifier_group_id === group.id),
       }));
       setModifierGroups(groupsWithModifiers);
     } else {
@@ -815,7 +819,10 @@ export default function AdminMenuPage() {
 
       const bindingsMap: Record<string, { bound: boolean; required: boolean }> = {};
       for (const group of modifierGroups) {
-        const binding = bindings?.find((b) => b.modifier_group_id === group.id);
+        const binding = bindings?.find(
+          (binding: { modifier_group_id: string; is_required: boolean }) =>
+            binding.modifier_group_id === group.id
+        );
         bindingsMap[group.id] = {
           bound: !!binding,
           required: binding?.is_required ?? false,
@@ -923,26 +930,6 @@ export default function AdminMenuPage() {
           .update({ sort_order: i + 1 })
           .eq("id", reordered[i].id);
       }
-      await fetchModifierGroups();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleGroupReorder = async (group: ModifierGroup, direction: "up" | "down") => {
-    const currentIndex = modifierGroups.findIndex((g) => g.id === group.id);
-    if (direction === "up" && currentIndex === 0) return;
-    if (direction === "down" && currentIndex === modifierGroups.length - 1) return;
-
-    const otherGroup = direction === "up"
-      ? modifierGroups[currentIndex - 1]
-      : modifierGroups[currentIndex + 1];
-
-    const supabase = getBrowserClient();
-
-    try {
-      await supabase.from("modifier_groups").update({ sort_order: otherGroup.sort_order }).eq("id", group.id);
-      await supabase.from("modifier_groups").update({ sort_order: group.sort_order }).eq("id", otherGroup.id);
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);
@@ -1552,7 +1539,6 @@ export default function AdminMenuPage() {
                                     key={modifier.id}
                                     modifier={modifier}
                                     isActive={isActive}
-                                    isEditing={false}
                                     isDeleting={deletingModifier === modifier.id}
                                     isSaving={saving}
                                     onEdit={() => handleEditModifier(modifier)}

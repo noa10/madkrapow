@@ -1,7 +1,14 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { toNextCompatibleCookieOptions } from './cookie-options'
 
 export async function refreshSession(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -10,19 +17,18 @@ export async function refreshSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: { domain?: string; path?: string; httpOnly?: boolean; secure?: boolean; sameSite?: 'lax' | 'strict' | 'none' } }>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value)
           })
-          const response = NextResponse.next({
+          response = NextResponse.next({
             request: {
               headers: request.headers,
             },
           })
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, toNextCompatibleCookieOptions(options))
           })
-          return response
         },
       },
     }
@@ -30,5 +36,5 @@ export async function refreshSession(request: NextRequest) {
 
   await supabase.auth.getSession()
 
-  return supabase
+  return { supabase, response }
 }

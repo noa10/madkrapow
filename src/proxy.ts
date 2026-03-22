@@ -1,6 +1,7 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { isAdminUser } from '@/lib/auth/roles'
+import { toNextCompatibleCookieOptions } from '@/lib/supabase/cookie-options'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -17,7 +18,7 @@ export async function proxy(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: { domain?: string; path?: string; httpOnly?: boolean; secure?: boolean; sameSite?: 'lax' | 'strict' | 'none' } }>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value)
           })
@@ -27,7 +28,7 @@ export async function proxy(request: NextRequest) {
             },
           })
           cookiesToSet.forEach(({ name, value, options }) => {
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, toNextCompatibleCookieOptions(options))
           })
         },
       },

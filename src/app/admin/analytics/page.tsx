@@ -27,6 +27,18 @@ interface TopSellingItem {
   revenue: number;
 }
 
+interface AnalyticsOrder {
+  created_at: string;
+  customer_id: string | null;
+  total_cents: number | null;
+}
+
+interface AnalyticsOrderItem {
+  menu_item_name: string;
+  quantity: number | null;
+  line_total_cents: number | null;
+}
+
 type DateRange = "7d" | "30d" | "90d" | "custom";
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
@@ -89,8 +101,8 @@ export default function AnalyticsPage() {
         .limit(1000),
     ]);
 
-    const ordersData = ordersRes.data || [];
-    const itemsData = itemsRes.data || [];
+    const ordersData: AnalyticsOrder[] = ordersRes.data ?? [];
+    const itemsData: AnalyticsOrderItem[] = itemsRes.data ?? [];
 
     const totalRevenue = ordersData.reduce((sum, o) => sum + (o.total_cents || 0), 0);
     const totalOrders = ordersData.length;

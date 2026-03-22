@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { AuthForm } from "./AuthForm";
 
@@ -38,7 +39,7 @@ export function AuthGuard({ children, fallback }: AuthGuardProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setIsAuthenticated(!!session);
     });
 

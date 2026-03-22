@@ -1,5 +1,6 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { toNextCompatibleCookieOptions } from './cookie-options'
 
 export async function getServerClient() {
   const cookieStore = await cookies()
@@ -12,10 +13,10 @@ export async function getServerClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: { domain?: string; path?: string; httpOnly?: boolean; secure?: boolean; sameSite?: 'lax' | 'strict' | 'none' } }>) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, toNextCompatibleCookieOptions(options))
             )
           } catch {
             // The `setAll` method was called from a Server Component.

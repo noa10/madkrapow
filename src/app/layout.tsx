@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   title: "Mad Krapow - Thai Street Food",
   description:
     "Order your favorite Thai street food directly from Mad Krapow",
+  icons: {
+    icon: "/madkrapow-logo.png",
+    apple: "/madkrapow-logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -16,6 +16,7 @@ const envSchema = z.object({
   STORE_LATITUDE: z.string().transform(Number),
   STORE_LONGITUDE: z.string().transform(Number),
   STORE_ADDRESS: z.string().min(1),
+  STORE_CITY: z.string().min(1),
   STORE_PHONE: z.string().regex(/^\+60/),
   SENTRY_DSN: z.string().url().optional(),
 })
@@ -41,6 +42,7 @@ if (process.env.SKIP_ENV_VALIDATION === 'true') {
     STORE_LATITUDE: '3.1390' as unknown as number,
     STORE_LONGITUDE: '101.6869' as unknown as number,
     STORE_ADDRESS: 'Mock Store Address',
+    STORE_CITY: 'Shah Alam',
     STORE_PHONE: '+60123456789',
     SENTRY_DSN: undefined,
   }

@@ -97,7 +97,7 @@ async function updateOrderStatus(
 export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult>> {
   try {
     const body = await req.text()
-    console.log('[Lalamove Webhook] Received webhook:', body)
+    console.log('[Lalamove Webhook] Received webhook:', JSON.stringify(body))
 
     let payload: LalamoveWebhookPayload
     try {
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
       )
     }
 
-    console.log('[Lalamove Webhook] Order ID:', orderId, 'Status:', lalamoveStatus)
+    console.log('[Lalamove Webhook] Order ID:', JSON.stringify(orderId), 'Status:', JSON.stringify(lalamoveStatus))
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
       .single()
 
     if (fetchError || !existingOrder) {
-      console.error('[Lalamove Webhook] Order not found for Lalamove order:', orderId)
+      console.error('[Lalamove Webhook] Order not found for Lalamove order:', JSON.stringify(orderId))
       return NextResponse.json(
         { success: false, error: 'Order not found' },
         { status: 404 }
@@ -152,13 +152,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     const mappedStatus = mapLalamoveStatus(lalamoveStatus)
 
     if (existingOrder.lalamove_status === lalamoveStatus) {
-      console.log('[Lalamove Webhook] Status unchanged, skipping update:', lalamoveStatus)
+      console.log('[Lalamove Webhook] Status unchanged, skipping update:', JSON.stringify(lalamoveStatus))
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
     await updateOrderStatus(supabase, orderId, mappedStatus, lalamoveStatus, payload.driver)
 
-    console.log('[Lalamove Webhook] Order status updated:', orderId, '->', mappedStatus)
+    console.log('[Lalamove Webhook] Order status updated:', JSON.stringify(orderId), '->', JSON.stringify(mappedStatus))
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {

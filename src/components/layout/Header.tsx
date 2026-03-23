@@ -26,7 +26,9 @@ export function Header({ className }: HeaderProps) {
 
   const getNavHref = (link: string) => {
     if (link === "Menu") return "/";
-    return `#${link.toLowerCase()}`;
+    if (link === "About") return "/about";
+    if (link === "Order") return "/order";
+    return `/${link.toLowerCase()}`;
   };
 
   const isAdmin = isAdminUser(user);
@@ -63,7 +65,7 @@ export function Header({ className }: HeaderProps) {
     };
   }, [supabase]);
 
-  const navLinks = ["Menu", "About", "Booking"];
+  const navLinks = ["Menu", "About", "Order"];
 
   const authLink = isAdmin ? (
     <Link

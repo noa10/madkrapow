@@ -28,38 +28,37 @@ interface OrderItem {
   line_total_cents: number
 }
 
-interface DeliveryAddress {
-  fullName: string
-  phone: string
-  address: string
-  postalCode: string
-  city: string
-  state: string
-}
-
 interface Order {
   id: string
   status: string
-  total_amount: number
-  delivery_fee: number
-  delivery_address: DeliveryAddress | null
+  total_cents: number
+  delivery_fee_cents: number
+  delivery_address_json: Record<string, unknown> | null
   lalamove_order_id: string | null
   lalamove_status: string | null
   driver_name: string | null
   driver_phone: string | null
   driver_plate_number: string | null
   created_at: string
+  delivery_type: string
+  fulfillment_type: string
+  scheduled_for: string | null
+  order_kind: string
+  approval_status: string
+  bulk_company_name: string | null
+  review_notes: string | null
   order_items?: OrderItem[]
 }
 
-type OrderStatus = 'pending' | 'paid' | 'confirmed' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled'
+type OrderStatus = 'pending' | 'paid' | 'accepted' | 'preparing' | 'ready' | 'picked_up' | 'delivered' | 'cancelled'
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: 'Pending Payment',
   paid: 'Paid',
-  confirmed: 'Confirmed',
+  accepted: 'Accepted',
   preparing: 'Preparing',
-  out_for_delivery: 'Out for Delivery',
+  ready: 'Ready',
+  picked_up: 'Out for Delivery',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
 }
@@ -259,9 +258,9 @@ export default function OrderTrackingPage() {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Confirmed</span>
+                  <span className="text-muted-foreground">Paid</span>
                   <CheckCircle className={`h-4 w-4 ${
-                    ['confirmed', 'preparing', 'out_for_delivery', 'delivered'].includes(order.status)
+                    ['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered'].includes(order.status)
                       ? 'text-green-600' : 'text-muted'
                   }`} />
                 </div>
@@ -270,14 +269,14 @@ export default function OrderTrackingPage() {
                     className="h-full bg-orange-600 transition-all duration-500"
                     style={{
                       width: order.status === 'delivered' ? '100%' :
-                             order.status === 'out_for_delivery' ? '75%' :
-                             order.status === 'preparing' ? '50%' :
-                             order.status === 'confirmed' ? '25%' : '0%'
+                             order.status === 'picked_up' ? '75%' :
+                             order.status === 'preparing' || order.status === 'ready' ? '50%' :
+                             ['paid', 'accepted'].includes(order.status) ? '25%' : '0%'
                     }}
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Confirmed</span>
+                  <span>Paid</span>
                   <span>Preparing</span>
                   <span>On the way</span>
                   <span>Delivered</span>
@@ -304,6 +303,44 @@ export default function OrderTrackingPage() {
             </CardContent>
           </Card>
 
+          {/* Bulk Order Status */}
+          {order.order_kind === 'bulk' && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Bulk Order Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {order.approval_status === 'pending_review' && (
+                  <div className="p-4 bg-amber-50 rounded-lg">
+                    <p className="font-medium text-amber-800">Your order is being reviewed</p>
+                    <p className="text-sm text-amber-700 mt-1">
+                      We&apos;ll update you within 24 hours. {order.bulk_company_name && `Order for: ${order.bulk_company_name}`}
+                    </p>
+                  </div>
+                )}
+                {order.approval_status === 'approved' && (
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <p className="font-medium text-green-800">Your order has been approved!</p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Please complete payment to confirm your order.
+                    </p>
+                    <Link href={`/checkout/success?order_id=${order.id}`} className="inline-block mt-3">
+                      <Button size="sm">Pay Now</Button>
+                    </Link>
+                  </div>
+                )}
+                {order.approval_status === 'rejected' && (
+                  <div className="p-4 bg-red-50 rounded-lg">
+                    <p className="font-medium text-red-800">Order was not approved</p>
+                    {order.review_notes && (
+                      <p className="text-sm text-red-700 mt-1">{order.review_notes}</p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Order Details</CardTitle>
@@ -326,21 +363,21 @@ export default function OrderTrackingPage() {
               <div className="border-t pt-3 space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span>{formatPrice(order.total_amount - order.delivery_fee)}</span>
+                  <span>{formatPrice(order.total_cents)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Delivery Fee</span>
-                  <span>{formatPrice(order.delivery_fee)}</span>
+                  <span>{formatPrice(order.delivery_fee_cents)}</span>
                 </div>
                 <div className="flex items-center justify-between font-medium">
                   <span>Total</span>
-                  <span>{formatPrice(order.total_amount)}</span>
+                  <span>{formatPrice(order.total_cents + order.delivery_fee_cents)}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {order.delivery_address && (
+          {order.delivery_address_json && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -349,14 +386,30 @@ export default function OrderTrackingPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="font-medium">{order.delivery_address.fullName}</p>
-                <p className="text-muted-foreground">{order.delivery_address.phone}</p>
+                <p className="font-medium">{(order.delivery_address_json as Record<string, string>).fullName}</p>
+                <p className="text-muted-foreground">{(order.delivery_address_json as Record<string, string>).phone}</p>
                 <p className="text-muted-foreground mt-2">
-                  {order.delivery_address.address}
+                  {(order.delivery_address_json as Record<string, string>).address}
                 </p>
                 <p className="text-muted-foreground">
-                  {order.delivery_address.postalCode}, {order.delivery_address.city}, {order.delivery_address.state}
+                  {(order.delivery_address_json as Record<string, string>).postalCode}, {(order.delivery_address_json as Record<string, string>).city}, {(order.delivery_address_json as Record<string, string>).state}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {order.delivery_type === 'self_pickup' && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Pickup</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Please pick up your order from our store.</p>
+                {order.scheduled_for && (
+                  <p className="font-medium mt-2">
+                    Pickup at: {formatDate(order.scheduled_for)}
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}

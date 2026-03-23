@@ -18,24 +18,9 @@ type WebhookResult = StripeWebhookResponse | StripeWebhookError
 function getStoreLocation() {
   return {
     address: env.STORE_ADDRESS,
+    city: env.STORE_CITY,
     phone: env.STORE_PHONE,
   }
-}
-
-async function updateOrderStatus(supabase: ReturnType<typeof createServerClient>, orderId: string, status: string) {
-  const { data, error } = await supabase
-    .from('orders')
-    .update({ status })
-    .eq('id', orderId)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('[Webhook] Failed to update order status:', error)
-    throw new Error(`Failed to update order status: ${error.message}`)
-  }
-
-  return data
 }
 
 async function triggerLalamoveDelivery(orderId: string, deliveryAddress: Record<string, unknown>) {
@@ -56,7 +41,7 @@ async function triggerLalamoveDelivery(orderId: string, deliveryAddress: Record<
       sender: {
         location: {
           street: store.address,
-          city: 'Kuala Lumpur',
+          city: store.city,
           country: 'MY' as const,
         },
         contact: {
@@ -98,10 +83,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
 
     if (!signature) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing stripe-signature header',
-        },
+        { success: false, error: 'Missing stripe-signature header' },
         { status: 400 }
       )
     }
@@ -114,10 +96,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     } catch (sigError) {
       console.error('[Webhook] Invalid signature:', sigError)
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid signature',
-        },
+        { success: false, error: 'Invalid signature' },
         { status: 400 }
       )
     }
@@ -127,23 +106,21 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    const session = event.data.object as { metadata?: Record<string, string> }
+    const session = event.data.object as { id: string; metadata?: Record<string, string> }
     const orderId = session.metadata?.order_id
 
     if (!orderId) {
       console.error('[Webhook] No order_id in session metadata')
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing order_id in metadata',
-        },
+        { success: false, error: 'Missing order_id in metadata' },
         { status: 400 }
       )
     }
 
+    // Use service_role key for webhook operations (bypasses RLS)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
         cookies: {
           getAll() {
@@ -163,37 +140,83 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     if (orderError || !order) {
       console.error('[Webhook] Order not found:', orderId)
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Order not found',
-        },
+        { success: false, error: 'Order not found' },
         { status: 404 }
       )
     }
 
-    if (order.status === 'paid' || order.status === 'confirmed') {
+    // Idempotency: skip if already paid
+    if (order.status === 'paid' || order.status === 'accepted' || order.status === 'preparing') {
       console.log('[Webhook] Order already processed:', orderId)
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    await updateOrderStatus(supabase, orderId, 'paid')
+    // Mark order as paid
+    await supabase
+      .from('orders')
+      .update({ status: 'paid', stripe_payment_intent_id: session.id })
+      .eq('id', orderId)
 
-    if (order.delivery_address) {
-      try {
-        const lalamoveOrder = await triggerLalamoveDelivery(orderId, order.delivery_address as Record<string, unknown>)
-        if (lalamoveOrder?.orderId) {
+    // Branch: delivery type and fulfillment type
+    const deliveryType = order.delivery_type || 'delivery'
+    const fulfillmentType = order.fulfillment_type || 'asap'
+
+    if (deliveryType === 'self_pickup') {
+      // Self-pickup: no delivery booking, move straight to accepted
+      await supabase
+        .from('orders')
+        .update({
+          status: 'accepted',
+          dispatch_status: 'not_ready',
+        })
+        .eq('id', orderId)
+
+      console.log('[Webhook] Self-pickup order accepted:', orderId)
+
+    } else if (fulfillmentType === 'scheduled') {
+      // Scheduled delivery: queue for later dispatch by cron
+      await supabase
+        .from('orders')
+        .update({
+          dispatch_status: 'queued',
+        })
+        .eq('id', orderId)
+
+      console.log('[Webhook] Scheduled delivery queued:', orderId)
+
+    } else {
+      // ASAP delivery: dispatch immediately
+      if (order.delivery_address_json) {
+        try {
+          const lalamoveOrder = await triggerLalamoveDelivery(
+            orderId,
+            order.delivery_address_json as Record<string, unknown>
+          )
+          if (lalamoveOrder?.orderId) {
+            await supabase
+              .from('orders')
+              .update({
+                lalamove_order_id: lalamoveOrder.orderId,
+                lalamove_status: lalamoveOrder.status,
+                dispatch_status: 'submitted',
+              })
+              .eq('id', orderId)
+            console.log('[Webhook] Lalamove order placed:', lalamoveOrder.orderId)
+          }
+        } catch (lalamoveError) {
+          console.error('[Webhook] Lalamove delivery failed:', lalamoveError)
           await supabase
             .from('orders')
-            .update({ 
-              lalamove_order_id: lalamoveOrder.orderId,
-              lalamove_status: lalamoveOrder.status 
-            })
+            .update({ dispatch_status: 'failed' })
             .eq('id', orderId)
-          console.log('[Webhook] Order updated with Lalamove order ID:', lalamoveOrder.orderId)
+          console.log('[Webhook] Order marked as paid but delivery booking failed')
         }
-      } catch (lalamoveError) {
-        console.error('[Webhook] Lalamove delivery failed:', lalamoveError)
-        console.log('[Webhook] Order marked as paid but delivery booking failed')
+      } else {
+        console.warn('[Webhook] No delivery address on order:', orderId)
+        await supabase
+          .from('orders')
+          .update({ dispatch_status: 'failed' })
+          .eq('id', orderId)
       }
     }
 
@@ -205,10 +228,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
     return NextResponse.json(
-      {
-        success: false,
-        error: errorMessage,
-      },
+      { success: false, error: errorMessage },
       { status: 500 }
     )
   }

@@ -86,7 +86,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
         {
           location: {
             street: store.address,
-            city: 'Kuala Lumpur',
+            city: env.STORE_CITY,
             country: 'MY',
           },
           contact: {
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
         {
           location: {
             street: dropoff.address,
-            city: 'Kuala Lumpur',
+            city: env.STORE_CITY,
             country: 'MY',
             zipcode: '',
           },

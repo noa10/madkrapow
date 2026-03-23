@@ -4,10 +4,12 @@ import { getServerClient } from '@/lib/supabase/server'
 interface Order {
   id: string
   status: string
-  total_amount: number
-  delivery_fee: number
+  total_cents: number
+  delivery_fee_cents: number
   created_at: string
-  delivery_address: Record<string, unknown>
+  delivery_address_json: Record<string, unknown> | null
+  delivery_type: string
+  fulfillment_type: string
 }
 
 interface OrdersResponse {
@@ -38,10 +40,24 @@ export async function GET(req: NextRequest): Promise<NextResponse<OrdersResult>>
     const { searchParams } = new URL(req.url)
     const status = searchParams.get('status')
 
+    // Resolve customer_id from auth user
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (!customer) {
+      return NextResponse.json(
+        { success: true, orders: [] },
+        { status: 200 }
+      )
+    }
+
     let query = supabase
       .from('orders')
-      .select('id, status, total_amount, delivery_fee, created_at, delivery_address')
-      .eq('customer_id', user.id)
+      .select('id, status, total_cents, delivery_fee_cents, created_at, delivery_address_json, delivery_type, fulfillment_type')
+      .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
 
     if (status && status !== 'all') {

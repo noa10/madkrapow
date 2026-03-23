@@ -27,8 +27,8 @@ type WebhookResult = LalamoveWebhookResponse | LalamoveWebhookError
 const LALAMOVE_STATUS_MAP: Record<string, string> = {
   PENDING: 'preparing',
   ASSIGNED: 'preparing',
-  PICKED_UP: 'delivering',
-  DELIVERED: 'completed',
+  PICKED_UP: 'picked_up',
+  DELIVERED: 'delivered',
   CANCELLED: 'cancelled',
   CANCELLED_BY_DRIVER: 'cancelled',
   CANCELLED_BY_USER: 'cancelled',

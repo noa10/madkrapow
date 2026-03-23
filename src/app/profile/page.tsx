@@ -43,10 +43,11 @@ interface Customer {
 interface Order {
   id: string
   status: string
-  total_amount: number
-  delivery_fee: number
+  total_cents: number
+  delivery_fee_cents: number
   created_at: string
-  delivery_address: Record<string, unknown>
+  delivery_address_json: Record<string, unknown> | null
+  delivery_type: string
 }
 
 interface OrderItemModifier {
@@ -57,9 +58,12 @@ interface OrderItemModifier {
 
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   pending: { color: 'text-yellow-500', label: 'Pending' },
+  paid: { color: 'text-blue-500', label: 'Paid' },
+  accepted: { color: 'text-purple-500', label: 'Accepted' },
   preparing: { color: 'text-blue-500', label: 'Preparing' },
-  delivering: { color: 'text-orange-500', label: 'On the Way' },
-  completed: { color: 'text-green-500', label: 'Delivered' },
+  ready: { color: 'text-green-500', label: 'Ready' },
+  picked_up: { color: 'text-orange-500', label: 'On the Way' },
+  delivered: { color: 'text-green-500', label: 'Delivered' },
   cancelled: { color: 'text-red-500', label: 'Cancelled' },
 }
 
@@ -333,7 +337,7 @@ export default function ProfilePage() {
 
                       <div className="flex items-center justify-between">
                         <span className="font-medium">
-                          {formatPrice(order.total_amount)}
+                          {formatPrice(order.total_cents)}
                         </span>
                         <div className="flex gap-2">
                           <Button

@@ -7,12 +7,15 @@ import { getBrowserClient } from "@/lib/supabase/client";
 export interface AdminOrder {
   id: string;
   status: string;
-  total_amount: number;
-  delivery_fee: number;
+  total_cents: number;
+  delivery_fee_cents: number;
   created_at: string;
-  delivery_address: string;
+  delivery_address_json: string | Record<string, unknown> | null;
   customer_phone: string | null;
   customer_name: string | null;
+  delivery_type: string;
+  fulfillment_type: string;
+  scheduled_for: string | null;
 }
 
 export function useAdminOrders() {

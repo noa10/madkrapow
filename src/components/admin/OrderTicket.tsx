@@ -22,6 +22,18 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
 };
 
+function getAddressString(address: string | Record<string, unknown> | null): string {
+  if (!address) return 'No address'
+  if (typeof address === 'string') return address
+  const parts = [
+    address.address_line1 as string,
+    address.address_line2 as string,
+    address.city as string,
+    address.state as string,
+  ].filter(Boolean)
+  return parts.join(', ') || 'No address'
+}
+
 export function OrderTicket({ order }: OrderTicketProps) {
   const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
 
@@ -50,10 +62,10 @@ export function OrderTicket({ order }: OrderTicketProps) {
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="truncate">{order.delivery_address}</span>
+              <span className="truncate">{getAddressString(order.delivery_address_json)}</span>
             </div>
             <div className="pt-2 font-semibold">
-              RM {(order.total_amount + order.delivery_fee).toFixed(2)}
+              RM {((order.total_cents + order.delivery_fee_cents) / 100).toFixed(2)}
             </div>
           </div>
         </CardContent>

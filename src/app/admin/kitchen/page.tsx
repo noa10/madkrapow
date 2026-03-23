@@ -11,6 +11,16 @@ import { getBrowserClient } from '@/lib/supabase/client';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
+function getAddressString(address: Record<string, unknown>): string {
+  const parts = [
+    address.address_line1 as string,
+    address.address_line2 as string,
+    address.city as string,
+    address.state as string,
+  ].filter(Boolean)
+  return parts.join(', ') || 'No address'
+}
+
 export default function KitchenDisplayPage() {
   const { orders, loading, error } = useAdminOrders();
   // Filter orders to show only active ones for the kitchen
@@ -118,13 +128,13 @@ function OrderCard({ order }: OrderCardProps) {
             <MapPin className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
             <div className="text-base md:text-lg">
               <div className="font-semibold text-foreground">Delivery Address</div>
-              <div className="text-muted-foreground break-words">{order.delivery_address}</div>
+              <div className="text-muted-foreground break-words">{order.delivery_address_json ? getAddressString(order.delivery_address_json as Record<string, unknown>) : 'No address'}</div>
             </div>
           </div>
 
           <div className="pt-3">
             <div className="text-2xl md:text-3xl font-bold text-center py-3 bg-secondary rounded-lg text-foreground border border-border">
-              RM {(order.total_amount + order.delivery_fee) / 100}
+              RM {((order.total_cents + order.delivery_fee_cents) / 100).toFixed(0)}
             </div>
           </div>
 

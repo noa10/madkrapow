@@ -14,28 +14,28 @@ export default function LoginPage() {
           <div className="max-w-2xl space-y-6">
             <div className="inline-flex items-center gap-3 rounded-full border border-[var(--line-strong)] bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-[var(--gold-strong)]">
               <span className="h-2 w-2 rounded-full bg-[var(--gold-strong)]" />
-              House account access
+              Mad Krapow account
             </div>
 
             <div className="space-y-4">
               <h1 className="font-display text-5xl leading-[0.94] text-white sm:text-6xl">
-                Return to the
-                <span className="bg-[var(--text-gradient-gold)] bg-clip-text text-transparent"> Mad Krapow room.</span>
+                Sign in to
+                <span className="bg-[var(--text-gradient-gold)] bg-clip-text text-transparent"> continue</span>
               </h1>
               <p className="max-w-xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
-                Sign in with your account to manage orders, review your profile, and move between the guest and admin experience without losing the cinematic feel of the homepage.
+                Log in to place orders faster, save your delivery details, and keep track of your latest Mad Krapow orders.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-[0.28em] text-muted-foreground">
               <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
-                Warm gold accents
+                Track your orders
               </span>
               <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
-                High-contrast controls
+                Reorder favourites
               </span>
               <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
-                Admin-ready sign in
+                Manage your profile
               </span>
             </div>
 
@@ -54,7 +54,7 @@ export default function LoginPage() {
               </p>
               <h2 className="mt-3 text-3xl font-semibold text-white">Sign in to continue</h2>
               <p className="mt-2 text-sm text-[#d8d1c6]">
-                Use your email or Google account to enter the Mad Krapow dashboard.
+                Use your account for quicker checkout and order updates.
               </p>
             </div>
 

@@ -10,26 +10,31 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 interface Order {
   id: string
   status: string
-  total_amount: number
-  delivery_fee: number
+  total_cents: number
+  delivery_fee_cents: number
   created_at: string
-  delivery_address: Record<string, unknown>
+  delivery_address_json: Record<string, unknown> | null
+  delivery_type: string
+  fulfillment_type: string
 }
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All Orders' },
   { value: 'pending', label: 'Pending' },
   { value: 'preparing', label: 'Preparing' },
-  { value: 'delivering', label: 'On the Way' },
-  { value: 'completed', label: 'Delivered' },
+  { value: 'picked_up', label: 'On the Way' },
+  { value: 'delivered', label: 'Delivered' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
 const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
   pending: { icon: Clock, color: 'text-yellow-500', label: 'Pending' },
+  paid: { icon: Clock, color: 'text-blue-500', label: 'Paid' },
+  accepted: { icon: Package, color: 'text-purple-500', label: 'Accepted' },
   preparing: { icon: Package, color: 'text-blue-500', label: 'Preparing' },
-  delivering: { icon: MapPin, color: 'text-orange-500', label: 'On the Way' },
-  completed: { icon: CheckCircle, color: 'text-green-500', label: 'Delivered' },
+  ready: { icon: CheckCircle, color: 'text-green-500', label: 'Ready' },
+  picked_up: { icon: MapPin, color: 'text-orange-500', label: 'On the Way' },
+  delivered: { icon: CheckCircle, color: 'text-green-500', label: 'Delivered' },
   cancelled: { icon: XCircle, color: 'text-red-500', label: 'Cancelled' },
 }
 
@@ -165,8 +170,14 @@ function OrdersContent() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total</span>
-                        <span className="font-medium">{formatPrice(order.total_amount)}</span>
+                        <span className="font-medium">{formatPrice(order.total_cents)}</span>
                       </div>
+                      {order.delivery_type === 'self_pickup' && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Type</span>
+                          <span>Pickup</span>
+                        </div>
+                      )}
                     </div>
                     <Button asChild className="w-full mt-4" variant="outline">
                       <Link href={`/order/${order.id}`}>

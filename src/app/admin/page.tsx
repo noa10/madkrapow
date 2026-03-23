@@ -24,7 +24,7 @@ export default async function AdminDashboard() {
 
   // Calculate stats
   const todayRevenue = todayOrders?.reduce((sum, order) => {
-    return sum + (order.total_amount || 0);
+    return sum + (order.total_cents || 0);
   }, 0) || 0;
 
   const todayCount = todayOrders?.length || 0;
@@ -73,7 +73,7 @@ export default async function AdminDashboard() {
             <CardContent>
               <div className="text-2xl font-bold">
                 {stat.title.includes("Revenue") || stat.title.includes("Value")
-                  ? `RM ${Number(stat.value).toFixed(2)}`
+                  ? `RM ${(Number(stat.value) / 100).toFixed(2)}`
                   : stat.value}
               </div>
             </CardContent>

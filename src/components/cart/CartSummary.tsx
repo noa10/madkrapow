@@ -18,6 +18,7 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
   const router = useRouter()
   const items = useCartStore((state) => state.items)
   const getSubtotal = useCartStore((state) => state.getSubtotal)
+  const closeDrawer = useCartStore((state) => state.closeDrawer)
 
   const minOrderAmount = minOrderAmountProp ?? 2000
   const subtotal = propSubtotal ?? getSubtotal()
@@ -27,6 +28,7 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
   const remainingForMinimum = minOrderAmount - subtotal
 
   const handleCheckout = () => {
+    closeDrawer()
     router.push('/checkout')
   }
 

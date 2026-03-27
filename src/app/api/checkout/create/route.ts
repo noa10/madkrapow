@@ -193,7 +193,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     const menuItemIds = items.map(i => i.id)
     const { data: dbItems, error: dbError } = await supabase
       .from('menu_items')
-      .select('id, name, price_cents')
+      .select('id, name, price_cents, image_url')
       .in('id', menuItemIds)
 
     if (dbError || !dbItems) {
@@ -213,7 +213,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       }
       const lineTotal = dbItem.price_cents * item.quantity
       subtotalCents += lineTotal
-      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name }
+      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
     })
 
     const totalCents = subtotalCents + effectiveDeliveryFee
@@ -261,6 +261,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       quantity: item.quantity,
       line_total_cents: item.lineTotalCents,
       notes: item.modifiers.length > 0 ? item.modifiers.map(m => m.name).join(', ') : null,
+      image_url: item.dbImageUrl || null,
     }))
 
     const { data: insertedItems, error: itemsError } = await supabase

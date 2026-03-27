@@ -143,7 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
     const menuItemIds = items.map(i => i.id)
     const { data: dbItems } = await supabase
       .from('menu_items')
-      .select('id, name, price_cents')
+      .select('id, name, price_cents, image_url')
       .in('id', menuItemIds)
 
     if (!dbItems) {
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       if (!dbItem) throw new Error(`Menu item not found: ${item.id}`)
       const lineTotal = dbItem.price_cents * item.quantity
       subtotalCents += lineTotal
-      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name }
+      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
     })
 
     // Create bulk order (no payment yet)
@@ -217,6 +217,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       quantity: item.quantity,
       line_total_cents: item.lineTotalCents,
       notes: item.modifiers.length > 0 ? item.modifiers.map(m => m.name).join(', ') : null,
+      image_url: item.dbImageUrl || null,
     }))
 
     const { data: insertedItems, error: itemsError } = await supabase

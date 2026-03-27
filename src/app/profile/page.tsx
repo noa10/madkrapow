@@ -3,21 +3,24 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import {
   User,
   MapPin,
   ShoppingBag,
   LogOut,
   Package,
-  MapPin as MapPinIcon,
   ArrowRight,
   Loader2,
   Plus,
+  Clock,
+  Truck,
+  CheckCircle,
 } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCartStore, type SelectedModifier } from '@/stores/cart'
+import { PageContainer } from '@/components/layout/PageContainer'
 
 interface CustomerAddress {
   id: string
@@ -56,15 +59,17 @@ interface OrderItemModifier {
   modifier_price_delta_cents: number
 }
 
-const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  pending: { color: 'text-yellow-500', label: 'Pending' },
-  paid: { color: 'text-blue-500', label: 'Paid' },
-  accepted: { color: 'text-purple-500', label: 'Accepted' },
-  preparing: { color: 'text-blue-500', label: 'Preparing' },
-  ready: { color: 'text-green-500', label: 'Ready' },
-  picked_up: { color: 'text-orange-500', label: 'On the Way' },
-  delivered: { color: 'text-green-500', label: 'Delivered' },
-  cancelled: { color: 'text-red-500', label: 'Cancelled' },
+const ACTIVE_STATUSES = ['pending', 'paid', 'accepted', 'preparing', 'ready', 'picked_up']
+
+const STATUS_CONFIG: Record<string, { color: string; bgColor: string; label: string; icon: typeof Clock }> = {
+  pending: { color: 'text-yellow-400', bgColor: 'bg-yellow-500/10', label: 'Pending', icon: Clock },
+  paid: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', label: 'Paid', icon: CheckCircle },
+  accepted: { color: 'text-purple-400', bgColor: 'bg-purple-500/10', label: 'Accepted', icon: Package },
+  preparing: { color: 'text-blue-400', bgColor: 'bg-blue-500/10', label: 'Preparing', icon: Clock },
+  ready: { color: 'text-green-400', bgColor: 'bg-green-500/10', label: 'Ready', icon: CheckCircle },
+  picked_up: { color: 'text-orange-400', bgColor: 'bg-orange-500/10', label: 'On the Way', icon: Truck },
+  delivered: { color: 'text-green-400', bgColor: 'bg-green-500/10', label: 'Delivered', icon: CheckCircle },
+  cancelled: { color: 'text-red-400', bgColor: 'bg-red-500/10', label: 'Cancelled', icon: Clock },
 }
 
 function formatPrice(amount: number): string {
@@ -91,6 +96,9 @@ export default function ProfilePage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [error, setError] = useState<string | null>(null)
   const [reorderingId, setReorderingId] = useState<string | null>(null)
+
+  const activeOrders = orders.filter((o) => ACTIVE_STATUSES.includes(o.status))
+  const pastOrders = orders.filter((o) => !ACTIVE_STATUSES.includes(o.status))
 
   const fetchData = useCallback(async () => {
     try {
@@ -133,6 +141,46 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Realtime subscription for order status changes
+  useEffect(() => {
+    if (!customer?.id) return
+
+    const channel = supabase
+      .channel(`customer-orders:${customer.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `customer_id=eq.${customer.id}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Order>) => {
+          const updatedOrder = payload.new as Order
+          setOrders((prev) =>
+            prev.map((o) => (o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o))
+          )
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'orders',
+          filter: `customer_id=eq.${customer.id}`,
+        },
+        () => {
+          fetchData()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [customer?.id, supabase, fetchData])
 
   const handleReorder = async (orderId: string) => {
     setReorderingId(orderId)
@@ -187,195 +235,220 @@ export default function ProfilePage() {
   if (error && !customer) {
     return (
       <main className="min-h-screen bg-background">
-        <div className="max-w-2xl mx-auto p-4 md:p-6">
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="pt-6 text-center">
-              <p className="text-red-600 mb-4">{error}</p>
+        <PageContainer size="narrow">
+          <div className="py-12">
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+              <p className="text-red-400 mb-4">{error}</p>
               <Button onClick={fetchData}>Try Again</Button>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
+        </PageContainer>
       </main>
     )
   }
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">My Profile</h1>
-            {customer?.email && (
-              <p className="text-muted-foreground">{customer.email}</p>
-            )}
+      <PageContainer>
+        <div className="py-8 md:py-12 space-y-8">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold font-display">Dashboard</h1>
+              {customer?.email && (
+                <p className="text-muted-foreground text-sm">{customer.email}</p>
+              )}
+            </div>
+            <Button variant="outline" size="sm" onClick={handleSignOut}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={handleSignOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign Out
-          </Button>
-        </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Account Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2 text-sm">
-              {customer?.name && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Name</span>
-                  <span>{customer.name}</span>
-                </div>
-              )}
-              {customer?.phone && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Phone</span>
-                  <span>{customer.phone}</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+          {/* Active Orders Section */}
+          {activeOrders.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold font-display mb-4 flex items-center gap-2">
+                <Truck className="h-5 w-5 text-primary" />
+                Active Orders
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  {activeOrders.length}
+                </span>
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {activeOrders.map((order) => {
+                  const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending
+                  const StatusIcon = statusConfig.icon
 
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                Saved Addresses
-              </CardTitle>
-              <Button variant="ghost" size="sm">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {!customer?.addresses || customer.addresses.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No saved addresses
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {customer.addresses.map((address) => (
-                  <div
-                    key={address.id}
-                    className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{address.label}</span>
-                          {address.is_default && (
-                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                              Default
-                            </span>
-                          )}
+                  return (
+                    <div
+                      key={order.id}
+                      className="rounded-lg border bg-card p-4 hover:border-primary/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-medium text-sm">
+                          Order #{order.id.slice(0, 8).toUpperCase()}
+                        </span>
+                        <div className={`flex items-center gap-1.5 ${statusConfig.color}`}>
+                          <StatusIcon className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium">{statusConfig.label}</span>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {address.address_line1}
-                          {address.address_line2 && `, ${address.address_line2}`}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {address.postal_code}, {address.city}, {address.state}
-                        </p>
-                        {address.instructions && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Note: {address.instructions}
-                          </p>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{formatDate(order.created_at)}</span>
+                        <span className="font-medium">{formatPrice(order.total_cents)}</span>
+                      </div>
+                      <Button asChild className="w-full mt-3" size="sm">
+                        <Link href={`/order/${order.id}`}>
+                          Track Order
+                          <ArrowRight className="h-4 w-4 ml-1" />
+                        </Link>
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Account Details */}
+            <div className="rounded-lg border bg-card p-5">
+              <h2 className="text-base font-semibold font-display mb-4 flex items-center gap-2">
+                <User className="h-4 w-4 text-primary" />
+                Account Details
+              </h2>
+              <div className="space-y-2 text-sm">
+                {customer?.name && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Name</span>
+                    <span>{customer.name}</span>
+                  </div>
+                )}
+                {customer?.phone && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Phone</span>
+                    <span>{customer.phone}</span>
+                  </div>
+                )}
+                {!customer?.name && !customer?.phone && (
+                  <p className="text-muted-foreground text-center py-4">No account details yet</p>
+                )}
+              </div>
+            </div>
+
+            {/* Saved Addresses */}
+            <div className="rounded-lg border bg-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold font-display flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  Saved Addresses
+                </h2>
+                <Button variant="ghost" size="sm">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {!customer?.addresses || customer.addresses.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No saved addresses
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {customer.addresses.map((address) => (
+                    <div key={address.id} className="p-3 rounded-lg border bg-muted/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-sm">{address.label}</span>
+                        {address.is_default && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                            Default
+                          </span>
                         )}
                       </div>
+                      <p className="text-sm text-muted-foreground">
+                        {address.address_line1}
+                        {address.address_line2 && `, ${address.address_line2}`}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {address.postal_code}, {address.city}, {address.state}
+                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShoppingBag className="h-4 w-4" />
-              Order History
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {!orders || orders.length === 0 ? (
-              <div className="text-center py-6">
+          {/* Order History */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold font-display flex items-center gap-2">
+                <ShoppingBag className="h-5 w-5 text-primary" />
+                Order History
+              </h2>
+              {pastOrders.length > 0 && (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/orders">View All</Link>
+                </Button>
+              )}
+            </div>
+
+            {pastOrders.length === 0 ? (
+              <div className="rounded-lg border bg-card p-8 text-center">
                 <Package className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground mb-4">No orders yet</p>
+                <p className="text-sm text-muted-foreground mb-4">No past orders yet</p>
                 <Button asChild>
                   <Link href="/menu">Browse Menu</Link>
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {orders.slice(0, 5).map((order) => {
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {pastOrders.slice(0, 6).map((order) => {
                   const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending
+                  const StatusIcon = statusConfig.icon
 
                   return (
-                    <div
-                      key={order.id}
-                      className="p-4 rounded-lg border bg-card"
-                    >
+                    <div key={order.id} className="rounded-lg border bg-card p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">
-                            Order #{order.id.slice(0, 8).toUpperCase()}
-                          </span>
-                          <span className={`text-xs ${statusConfig.color}`}>
-                            {statusConfig.label}
-                          </span>
-                        </div>
-                        <span className="text-sm text-muted-foreground">
-                          {formatDate(order.created_at)}
+                        <span className="font-medium text-sm">
+                          Order #{order.id.slice(0, 8).toUpperCase()}
                         </span>
+                        <div className={`flex items-center gap-1.5 ${statusConfig.color}`}>
+                          <StatusIcon className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium">{statusConfig.label}</span>
+                        </div>
                       </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">
-                          {formatPrice(order.total_cents)}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleReorder(order.id)}
-                            disabled={reorderingId === order.id}
-                          >
-                            {reorderingId === order.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <>
-                                Reorder
-                                <ArrowRight className="h-4 w-4 ml-1" />
-                              </>
-                            )}
-                          </Button>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/order/${order.id}`}>
-                              <MapPinIcon className="h-4 w-4" />
-                            </Link>
-                          </Button>
-                        </div>
+                      <div className="flex items-center justify-between text-sm mb-3">
+                        <span className="text-muted-foreground">{formatDate(order.created_at)}</span>
+                        <span className="font-medium">{formatPrice(order.total_cents)}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => handleReorder(order.id)}
+                          disabled={reorderingId === order.id}
+                        >
+                          {reorderingId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>Reorder</>
+                          )}
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/order/${order.id}`}>
+                            <ArrowRight className="h-4 w-4" />
+                          </Link>
+                        </Button>
                       </div>
                     </div>
                   )
                 })}
-
-                {orders.length > 5 && (
-                  <Button variant="outline" className="w-full" asChild>
-                    <Link href="/orders">View All Orders</Link>
-                  </Button>
-                )}
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </section>
+        </div>
+      </PageContainer>
     </main>
   )
 }

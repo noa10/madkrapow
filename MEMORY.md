@@ -35,6 +35,11 @@ This file contains curated memories, decisions, and learnings that persist acros
 - **RLS everywhere**: Every Supabase table has Row-Level Security policies
 - **Service role for webhooks only**: Admin operations use service_role key that bypasses RLS
 
+### 2026-03-27: Checkout Workflow Fixes
+- **Address Selection**: Fixed redirect to home page by implementing an inline address input toggle.
+- **Bulk Ordering**: Relaxed Zod validation for delivery address in bulk orders to allow optional fields for initial review.
+- **API Reliability**: Added defensive JSON parsing and detailed validation error reporting to the checkout creation endpoint.
+
 ---
 
 ## Critical Patterns

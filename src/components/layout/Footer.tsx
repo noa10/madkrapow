@@ -21,6 +21,7 @@ export function Footer() {
                 width={160}
                 height={40}
                 className="h-10 w-auto"
+                sizes="160px"
               />
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-6 text-[#d8d1c6]">

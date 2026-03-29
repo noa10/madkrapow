@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getServerClient } from '@/lib/supabase/server'
+import { getServerClient, getServiceClient } from '@/lib/supabase/server'
 
 const BulkCheckoutItemSchema = z.object({
   id: z.string().min(1),
@@ -18,7 +18,6 @@ const BulkCheckoutRequestSchema = z.object({
   items: z.array(BulkCheckoutItemSchema).min(1),
   bulkFields: z.object({
     company_name: z.string().min(1),
-    headcount: z.number().int().positive(),
     requested_date: z.string().min(1),
     requested_time: z.string().min(1),
     budget: z.number().int().min(0).optional(),
@@ -30,10 +29,10 @@ const BulkCheckoutRequestSchema = z.object({
   deliveryAddress: z.object({
     fullName: z.string().min(1),
     phone: z.string().min(1),
-    address: z.string().min(1),
-    postalCode: z.string().min(1),
-    city: z.string().min(1),
-    state: z.string().min(1),
+    address: z.string().optional(),
+    postalCode: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
   }),
   deliveryType: z.enum(['delivery', 'self_pickup']).default('delivery'),
 })
@@ -60,9 +59,9 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutResult>> {
   try {
-    const supabase = await getServerClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
+    // Use anon client only for auth verification
+    const authClient = await getServerClient()
+    const { data: { user } } = await authClient.auth.getUser()
 
     if (!user) {
       return NextResponse.json(
@@ -70,6 +69,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
         { status: 401 }
       )
     }
+
+    // Use service client for all DB operations (bypasses RLS for trusted server-side work)
+    const supabase = getServiceClient()
 
     const body = await req.json()
     const parsed = BulkCheckoutRequestSchema.safeParse(body)
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
     const menuItemIds = items.map(i => i.id)
     const { data: dbItems } = await supabase
       .from('menu_items')
-      .select('id, name, price_cents')
+      .select('id, name, price_cents, image_url')
       .in('id', menuItemIds)
 
     if (!dbItems) {
@@ -160,7 +162,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       if (!dbItem) throw new Error(`Menu item not found: ${item.id}`)
       const lineTotal = dbItem.price_cents * item.quantity
       subtotalCents += lineTotal
-      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name }
+      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
     })
 
     // Create bulk order (no payment yet)
@@ -187,7 +189,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
         requires_manual_review: true,
         approval_status: 'pending_review',
         bulk_company_name: bulkFields.company_name,
-        bulk_headcount: bulkFields.headcount,
         bulk_requested_date: requestedDateTime.toISOString(),
         bulk_budget_cents: bulkFields.budget ? bulkFields.budget * 100 : null,
         bulk_invoice_name: bulkFields.invoice_name || null,
@@ -217,6 +218,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       quantity: item.quantity,
       line_total_cents: item.lineTotalCents,
       notes: item.modifiers.length > 0 ? item.modifiers.map(m => m.name).join(', ') : null,
+      image_url: item.dbImageUrl || null,
     }))
 
     const { data: insertedItems, error: itemsError } = await supabase
@@ -261,7 +263,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       event_type: 'bulk_submitted',
       new_value: {
         company_name: bulkFields.company_name,
-        headcount: bulkFields.headcount,
         requested_date: bulkFields.requested_date,
         total_cents: totalCents,
       },

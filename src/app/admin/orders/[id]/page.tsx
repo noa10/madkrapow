@@ -270,7 +270,6 @@ export default function AdminOrderDetailPage({
           approvalStatus={order.approval_status}
           subtotalCents={order.total_cents}
           bulkCompanyName={order.bulk_company_name}
-          bulkHeadcount={order.bulk_headcount}
           bulkRequestedDate={order.bulk_requested_date}
           bulkBudgetCents={order.bulk_budget_cents}
           bulkInvoiceName={order.bulk_invoice_name}

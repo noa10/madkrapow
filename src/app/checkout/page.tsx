@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowLeft, MapPin, Loader2, Users } from 'lucide-react'
+import { MapPin, Loader2, Users } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
@@ -12,6 +12,9 @@ import { DeliveryTypeSelector } from '@/components/checkout/DeliveryTypeSelector
 import { FulfillmentSelector } from '@/components/checkout/FulfillmentSelector'
 import { TimeSlotPicker } from '@/components/checkout/TimeSlotPicker'
 import { BulkOrderForm } from '@/components/checkout/BulkOrderForm'
+import { PageContainer } from '@/components/layout/PageContainer'
+
+import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
@@ -34,7 +37,7 @@ interface CheckoutItem {
   price: number
   quantity: number
   image?: string
-  modifiers?: Array<{ name: string; price_delta_cents: number }>
+  modifiers?: Array<{ id: string; name: string; price_delta_cents: number }>
 }
 
 interface StoreSettings {
@@ -59,6 +62,7 @@ export default function CheckoutPage() {
   const [isLoadingMenu, setIsLoadingMenu] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBulkMode, setIsBulkMode] = useState(false)
+  const [showAddressInput, setShowAddressInput] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -83,6 +87,7 @@ export default function CheckoutPage() {
         quantity: item.quantity,
         image: menuItem?.image_url || undefined,
         modifiers: item.selected_modifiers.map((mod) => ({
+          id: mod.id,
           name: mod.name,
           price_delta_cents: mod.price_delta_cents,
         })),
@@ -132,7 +137,6 @@ export default function CheckoutPage() {
   const isCartEmpty = items.length === 0
   const hasDeliveryAddress = !!deliveryAddress
 
-  // Validation logic
   const needsDeliveryAddress = deliveryType === 'delivery'
   const needsScheduledTime = fulfillmentType === 'scheduled'
   const hasScheduledTime = !!scheduledWindow
@@ -158,7 +162,7 @@ export default function CheckoutPage() {
           quantity: item.quantity,
           image: item.image,
           modifiers: item.modifiers?.map(mod => ({
-            id: '',
+            id: mod.id,
             name: mod.name,
             price_delta_cents: mod.price_delta_cents,
           })) ?? [],
@@ -209,7 +213,6 @@ export default function CheckoutPage() {
 
   const handleBulkSubmit = async (bulkData: {
     company_name: string
-    headcount: string
     requested_date: string
     requested_time: string
     budget: string
@@ -229,14 +232,13 @@ export default function CheckoutPage() {
           price: item.price,
           quantity: item.quantity,
           modifiers: item.modifiers?.map(mod => ({
-            id: '',
+            id: mod.id,
             name: mod.name,
             price_delta_cents: mod.price_delta_cents,
           })) ?? [],
         })),
         bulkFields: {
           company_name: bulkData.company_name,
-          headcount: parseInt(bulkData.headcount),
           requested_date: bulkData.requested_date,
           requested_time: bulkData.requested_time,
           budget: bulkData.budget ? parseInt(bulkData.budget) : undefined,
@@ -288,9 +290,11 @@ export default function CheckoutPage() {
   if (isLoadingMenu) {
     return (
       <main className="min-h-screen bg-background">
-        <div className="max-w-md mx-auto p-4 flex items-center justify-center">
-          <div className="text-muted-foreground">Loading...</div>
-        </div>
+        <PageContainer size="narrow">
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </PageContainer>
       </main>
     )
   }
@@ -298,28 +302,21 @@ export default function CheckoutPage() {
   if (successMessage) {
     return (
       <main className="min-h-screen bg-background">
-        <div className="max-w-md mx-auto">
-          <header className="sticky top-0 z-10 bg-background border-b px-4 py-4">
-            <div className="flex items-center gap-3">
-              <Link href="/">
-                <Button variant="ghost" size="icon" className="h-9 w-9">
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
+        <PageContainer size="narrow">
+          <div className="py-8">
+            <h1 className="text-xl font-semibold font-display mb-8">Order Submitted</h1>
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
+                <span className="text-2xl text-green-500">&#10003;</span>
+              </div>
+              <h2 className="text-xl font-semibold mb-2 text-center">Bulk Order Submitted!</h2>
+              <p className="text-muted-foreground text-center mb-6">{successMessage}</p>
+              <Link href="/orders">
+                <Button>View My Orders</Button>
               </Link>
-              <h1 className="text-xl font-semibold">Order Submitted</h1>
             </div>
-          </header>
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-              <span className="text-2xl">&#10003;</span>
-            </div>
-            <h2 className="text-xl font-semibold mb-2 text-center">Bulk Order Submitted!</h2>
-            <p className="text-muted-foreground text-center mb-6">{successMessage}</p>
-            <Link href="/orders">
-              <Button>View My Orders</Button>
-            </Link>
           </div>
-        </div>
+        </PageContainer>
       </main>
     )
   }
@@ -327,193 +324,221 @@ export default function CheckoutPage() {
   if (isCartEmpty) {
     return (
       <main className="min-h-screen bg-background">
-        <div className="max-w-md mx-auto">
-          <header className="sticky top-0 z-10 bg-background border-b px-4 py-4">
-            <div className="flex items-center gap-3">
+        <PageContainer size="narrow">
+          <div className="py-8">
+            <h1 className="text-xl font-semibold font-display mb-8">Checkout</h1>
+            <div className="flex flex-col items-center justify-center py-12">
+              <p className="text-muted-foreground text-center mb-6">
+                Your cart is empty. Add some items first.
+              </p>
               <Link href="/">
-                <Button variant="ghost" size="icon" className="h-9 w-9">
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
+                <Button>Browse Menu</Button>
               </Link>
-              <h1 className="text-xl font-semibold">Checkout</h1>
             </div>
-          </header>
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <p className="text-muted-foreground text-center mb-6">
-              Your cart is empty. Add some items first.
-            </p>
-            <Link href="/">
-              <Button>Browse Menu</Button>
-            </Link>
           </div>
-        </div>
+        </PageContainer>
       </main>
     )
   }
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-md mx-auto">
-        <header className="sticky top-0 z-10 bg-background border-b px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Link href="/cart">
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-semibold">Checkout</h1>
-          </div>
-        </header>
+      <PageContainer>
+        <div className="py-6 md:py-10">
+          <h1 className="text-2xl font-semibold font-display mb-8">Checkout</h1>
 
-        <div className="p-4 space-y-6">
-          {/* Order Summary */}
-          <section>
-            <h2 className="text-lg font-semibold mb-3">Order Summary</h2>
-            <div className="space-y-3">
-              {checkoutItems.map((item, index) => (
-                <div key={`${item.id}-${index}`} className="flex gap-3 text-sm">
-                  {item.image ? (
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      width={40}
-                      height={40}
-                      className="h-10 w-10 rounded-md object-cover flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="h-10 w-10 rounded-md bg-muted flex-shrink-0" />
-                  )}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.quantity}x</span>
-                      <span>{item.name}</span>
-                    </div>
-                    {item.modifiers && item.modifiers.length > 0 && (
-                      <div className="text-muted-foreground text-xs ml-6">
-                        {item.modifiers.map((mod) => mod.name).join(', ')}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            {/* Left Column: Order Details */}
+            <div className="lg:col-span-3 space-y-6">
+              {/* Order Summary */}
+              <section className="rounded-lg border bg-card p-5">
+                <h2 className="text-lg font-semibold mb-4 font-display">Order Summary</h2>
+                <div className="space-y-4">
+                  {checkoutItems.map((item, index) => (
+                    <div key={`${item.id}-${index}`} className="flex gap-4 text-sm">
+                      {item.image ? (
+                        <Image
+                          src={item.image}
+                          alt={item.name}
+                          width={56}
+                          height={56}
+                          className="h-14 w-14 rounded-lg object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-14 w-14 rounded-lg bg-muted flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{item.quantity}x</span>
+                          <span className="truncate">{item.name}</span>
+                        </div>
+                        {item.modifiers && item.modifiers.length > 0 && (
+                          <div className="text-muted-foreground text-xs mt-0.5">
+                            {item.modifiers.map((mod) => mod.name).join(', ')}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <span>{formatPrice(item.price * item.quantity)}</span>
+                      <span className="flex-shrink-0">{formatPrice(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
+              </section>
 
-          {/* Bulk Order Toggle */}
-          <div>
-            <Button
-              variant={isBulkMode ? 'default' : 'outline'}
-              className="w-full gap-2"
-              onClick={() => setIsBulkMode(!isBulkMode)}
-            >
-              <Users className="h-4 w-4" />
-              {isBulkMode ? 'Switch to Regular Order' : 'Bulk / Event Order'}
-            </Button>
-          </div>
+              {/* Bulk Order Toggle */}
+              <Button
+                variant={isBulkMode ? 'default' : 'outline'}
+                className="w-full gap-2"
+                onClick={() => {
+                  if (!isBulkMode) {
+                    if (deliveryType === 'delivery' && !hasDeliveryAddress) {
+                      setError('Please enter a delivery address first')
+                      setShowAddressInput(true)
+                      return
+                    }
+                  }
+                  setIsBulkMode(!isBulkMode)
+                }}
+              >
+                <Users className="h-4 w-4" />
+                {isBulkMode ? 'Switch to Regular Order' : 'Bulk / Event Order'}
+              </Button>
 
-          {isBulkMode ? (
-            <BulkOrderForm onSubmit={handleBulkSubmit} isSubmitting={isProcessing} />
-          ) : (
-            <>
-          {/* Delivery Address (only for delivery) */}
-          {deliveryType === 'delivery' && (
-            <section>
-              <h2 className="text-lg font-semibold mb-3">Delivery Address</h2>
-              {hasDeliveryAddress ? (
-                <div className="flex items-start gap-3 p-3 bg-muted rounded-lg">
-                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium">{deliveryAddress.full_name}</p>
-                    <p className="text-sm text-muted-foreground">{deliveryAddress.phone}</p>
-                    <p className="text-sm text-muted-foreground">{formatAddress(deliveryAddress)}</p>
-                  </div>
-                </div>
+              {isBulkMode ? (
+                <BulkOrderForm onSubmit={handleBulkSubmit} isSubmitting={isProcessing} />
               ) : (
-                <div className="text-center p-4 border border-dashed rounded-lg">
-                  <p className="text-muted-foreground mb-3">No delivery address set</p>
-                  <Link href="/">
-                    <Button variant="outline" size="sm">
-                      Add Delivery Address
-                    </Button>
-                  </Link>
-                </div>
+                <>
+                  {/* Delivery Address */}
+                  {deliveryType === 'delivery' && (
+                    <section className="rounded-lg border bg-card p-5">
+                      <h2 className="text-lg font-semibold mb-4 font-display">Delivery Address</h2>
+                      {showAddressInput ? (
+                        <div className="space-y-4">
+                          <DeliveryAddressInput
+                            onAddressSelect={() => setShowAddressInput(false)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setShowAddressInput(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : hasDeliveryAddress ? (
+                        <div className="flex items-start gap-3 p-3 bg-muted rounded-lg">
+                          <MapPin className="h-5 w-5 text-primary mt-0.5" />
+                          <div className="flex-1">
+                            <p className="font-medium">{deliveryAddress.full_name}</p>
+                            <p className="text-sm text-muted-foreground">{deliveryAddress.phone}</p>
+                            <p className="text-sm text-muted-foreground">{formatAddress(deliveryAddress)}</p>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="h-auto p-0 mt-2 text-primary"
+                              onClick={() => setShowAddressInput(true)}
+                            >
+                              Change Address
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center p-4 border border-dashed rounded-lg">
+                          <p className="text-muted-foreground mb-3">No delivery address set</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowAddressInput(true)}
+                          >
+                            Add Delivery Address
+                          </Button>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Delivery Type Selector */}
+                  <section className="rounded-lg border bg-card p-5">
+                    <DeliveryTypeSelector pickupEnabled={storeSettings?.pickup_enabled ?? true} />
+                  </section>
+
+                  {/* Fulfillment Selector */}
+                  <section className="rounded-lg border bg-card p-5">
+                    <FulfillmentSelector />
+                  </section>
+
+                  {/* Time Slot Picker */}
+                  {fulfillmentType === 'scheduled' && (
+                    <section className="rounded-lg border bg-card p-5">
+                      <h2 className="text-lg font-semibold mb-4 font-display">Pick a Time Slot</h2>
+                      <TimeSlotPicker
+                        operatingHours={storeSettings?.operating_hours ?? null}
+                        deliveryType={deliveryType}
+                        kitchenLeadMinutes={storeSettings?.kitchen_lead_minutes ?? 20}
+                      />
+                    </section>
+                  )}
+                </>
               )}
-            </section>
-          )}
+            </div>
 
-          {/* Delivery Type Selector */}
-          <DeliveryTypeSelector pickupEnabled={storeSettings?.pickup_enabled ?? true} />
+            {/* Right Column: Payment Summary (sticky) */}
+            <div className="lg:col-span-2">
+              <div className="lg:sticky lg:top-24 space-y-4">
+                <section className="rounded-lg border bg-card p-5">
+                  <h2 className="text-lg font-semibold mb-4 font-display">Payment Details</h2>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span>{formatPrice(subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        {deliveryType === 'self_pickup' ? 'Pickup' : 'Delivery Fee'}
+                      </span>
+                      <span>
+                        {deliveryType === 'self_pickup'
+                          ? 'Free'
+                          : deliveryFee > 0
+                            ? formatPrice(deliveryFee)
+                            : 'Calculated at checkout'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-lg font-semibold border-t border-border pt-3">
+                      <span>Total</span>
+                      <span className="text-primary">{formatPrice(total)}</span>
+                    </div>
+                  </div>
+                </section>
 
-          {/* Fulfillment Selector (ASAP / Schedule) */}
-          <FulfillmentSelector />
+                {error && (
+                  <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-lg">
+                    {error}
+                  </div>
+                )}
 
-          {/* Time Slot Picker (only when scheduled) */}
-          {fulfillmentType === 'scheduled' && (
-            <section>
-              <h2 className="text-lg font-semibold mb-3">Pick a Time Slot</h2>
-              <TimeSlotPicker
-                operatingHours={storeSettings?.operating_hours ?? null}
-                deliveryType={deliveryType}
-                kitchenLeadMinutes={storeSettings?.kitchen_lead_minutes ?? 20}
-              />
-            </section>
-          )}
-
-          {/* Payment Details */}
-          <section>
-            <h2 className="text-lg font-semibold mb-3">Payment Details</h2>
-            <div className="space-y-2 border-t pt-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span>{formatPrice(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {deliveryType === 'self_pickup' ? 'Pickup' : 'Delivery Fee'}
-                </span>
-                <span>
-                  {deliveryType === 'self_pickup'
-                    ? 'Free'
-                    : deliveryFee > 0
-                      ? formatPrice(deliveryFee)
-                      : 'Calculated at checkout'}
-                </span>
-              </div>
-              <div className="flex justify-between text-lg font-semibold border-t pt-2">
-                <span>Total</span>
-                <span>{formatPrice(total)}</span>
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={handlePayNow}
+                  disabled={!canCheckout || isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : needsScheduleSelection ? (
+                    'Select a time slot'
+                  ) : (
+                    `Pay ${formatPrice(total)}`
+                  )}
+                </Button>
               </div>
             </div>
-          </section>
-
-          {error && (
-            <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-lg">
-              {error}
-            </div>
-          )}
-
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handlePayNow}
-            disabled={!canCheckout || isProcessing}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
-              </>
-            ) : needsScheduleSelection ? (
-              'Select a time slot'
-            ) : (
-              `Pay ${formatPrice(total)}`
-            )}
-          </Button>
-          </>
-          )}
+          </div>
         </div>
-      </div>
+      </PageContainer>
     </main>
   )
 }

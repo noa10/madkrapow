@@ -152,10 +152,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     }
 
     // Mark order as paid
-    await supabase
+    const { error: paidError } = await supabase
       .from('orders')
       .update({ status: 'paid', stripe_payment_intent_id: session.id })
       .eq('id', orderId)
+
+    if (paidError) {
+      console.error('[Webhook] Failed to mark order as paid:', orderId, paidError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to update order status' },
+        { status: 500 }
+      )
+    }
 
     // Branch: delivery type and fulfillment type
     const deliveryType = order.delivery_type || 'delivery'
@@ -163,7 +171,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
 
     if (deliveryType === 'self_pickup') {
       // Self-pickup: no delivery booking, move straight to accepted
-      await supabase
+      const { error: acceptedError } = await supabase
         .from('orders')
         .update({
           status: 'accepted',
@@ -171,16 +179,32 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
         })
         .eq('id', orderId)
 
+      if (acceptedError) {
+        console.error('[Webhook] Failed to accept self-pickup order:', orderId, acceptedError)
+        return NextResponse.json(
+          { success: false, error: 'Failed to update self-pickup order' },
+          { status: 500 }
+        )
+      }
+
       console.log('[Webhook] Self-pickup order accepted:', orderId)
 
     } else if (fulfillmentType === 'scheduled') {
       // Scheduled delivery: queue for later dispatch by cron
-      await supabase
+      const { error: queueError } = await supabase
         .from('orders')
         .update({
           dispatch_status: 'queued',
         })
         .eq('id', orderId)
+
+      if (queueError) {
+        console.error('[Webhook] Failed to queue scheduled order:', orderId, queueError)
+        return NextResponse.json(
+          { success: false, error: 'Failed to queue scheduled order' },
+          { status: 500 }
+        )
+      }
 
       console.log('[Webhook] Scheduled delivery queued:', orderId)
 

@@ -183,6 +183,19 @@ export default function OrderTrackingPage() {
     }
   }, [orderId, fetchOrder])
 
+  // Polling fallback: refresh every 5s while order is still pending
+  // Catches cases where Realtime subscription fails or is not enabled
+  useEffect(() => {
+    const status = order?.status
+    if (status !== 'pending') return
+
+    const interval = setInterval(() => {
+      fetchOrder()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [order?.status, fetchOrder])
+
   if (loading) {
     return (
       <main className="min-h-screen bg-background">

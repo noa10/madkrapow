@@ -78,8 +78,8 @@ export class LalamoveClient {
   private readonly market: string
 
   constructor() {
-    this.apiKey = env.LALAMOVE_API_KEY
-    this.apiSecret = env.LALAMOVE_API_SECRET
+    this.apiKey = env.LALAMOVE_API_KEY!
+    this.apiSecret = env.LALAMOVE_API_SECRET!
     this.env = env.LALAMOVE_ENV
     this.baseUrl = LALAMOVE_ENDPOINTS[this.env]
     this.market = LALAMOVE_COUNTRY

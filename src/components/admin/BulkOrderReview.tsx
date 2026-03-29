@@ -13,7 +13,6 @@ interface BulkOrderReviewProps {
   approvalStatus: string
   subtotalCents: number
   bulkCompanyName: string | null
-  bulkHeadcount: number | null
   bulkRequestedDate: string | null
   bulkBudgetCents: number | null
   bulkInvoiceName: string | null
@@ -30,7 +29,6 @@ export function BulkOrderReview({
   approvalStatus,
   subtotalCents,
   bulkCompanyName,
-  bulkHeadcount,
   bulkRequestedDate,
   bulkBudgetCents,
   bulkInvoiceName,
@@ -125,12 +123,6 @@ export function BulkOrderReview({
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">{bulkCompanyName}</span>
-            </div>
-          )}
-          {bulkHeadcount && (
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span>{bulkHeadcount} pax</span>
             </div>
           )}
           {bulkRequestedDate && (

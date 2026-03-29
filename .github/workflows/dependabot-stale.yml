@@ -1,0 +1,76 @@
+name: Dependabot Stale PR Cleanup
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Clean Up Stale Dependabot PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close stale conflicted Dependabot PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+            const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
+            const now = new Date();
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 100,
+            });
+
+            const dependabotPRs = prs.filter(
+              (pr) => pr.user.login === 'dependabot[bot]'
+            );
+
+            for (const pr of dependabotPRs) {
+              const createdAt = new Date(pr.created_at);
+
+              if (pr.mergeable === 'CONFLICTING') {
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  per_page: 100,
+                });
+
+                const rebaseComment = comments.find((c) =>
+                  c.body.includes('Merge conflict detected')
+                );
+
+                if (!rebaseComment) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    body: '🔄 **Merge conflict detected.** This PR has merge conflicts that need to be resolved.\n\nPlease rebase this PR, or it will be automatically closed in 14 days.',
+                  });
+                  console.log(`Commented on PR #${pr.number}: merge conflict`);
+                } else {
+                  const commentAge = now - new Date(rebaseComment.created_at);
+                  if (commentAge > FOURTEEN_DAYS) {
+                    await github.rest.pulls.update({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: pr.number,
+                      state: 'closed',
+                    });
+                    console.log(`Closed PR #${pr.number}: stale with conflicts >14 days`);
+                  } else if (commentAge > SEVEN_DAYS) {
+                    console.log(`PR #${pr.number}: conflict comment is ${Math.floor(commentAge / (24 * 60 * 60 * 1000))} days old, waiting for rebase`);
+                  }
+                }
+              }
+            }

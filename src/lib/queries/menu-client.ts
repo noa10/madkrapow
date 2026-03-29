@@ -72,10 +72,10 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
 
   if (migError) throw migError
 
-  const modifierGroupIds = [...new Set(menuItemModifierGroups.map((m) => m.modifier_group_id))]
+  const modifierGroupIds = [...new Set(menuItemModifierGroups.map((m: { modifier_group_id: string }) => m.modifier_group_id))]
 
   if (modifierGroupIds.length === 0) {
-    return menuItems.map((item) => ({ ...item, modifier_groups: [] }))
+    return menuItems.map((item: MenuItem) => ({ ...item, modifier_groups: [] }))
   }
 
   const { data: modifierGroups, error: mgError } = await supabase
@@ -86,7 +86,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
 
   if (mgError) throw mgError
 
-  const modifierGroupIdList = modifierGroups.map((g) => g.id)
+  const modifierGroupIdList = modifierGroups.map((g: ModifierGroup) => g.id)
 
   const { data: modifiers, error: modError } = await supabase
     .from('modifiers')
@@ -97,15 +97,15 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
 
   if (modError) throw modError
 
-  const modifiersByGroup = modifiers.reduce((acc, mod) => {
+  const modifiersByGroup = modifiers.reduce((acc: Record<string, Modifier[]>, mod: Modifier) => {
     if (!acc[mod.modifier_group_id]) acc[mod.modifier_group_id] = []
     acc[mod.modifier_group_id].push(mod)
     return acc
   }, {} as Record<string, Modifier[]>)
 
-  const modifierGroupsByMenuItem = menuItemModifierGroups.reduce((acc, mig) => {
+  const modifierGroupsByMenuItem = menuItemModifierGroups.reduce((acc: Record<string, (ModifierGroup & { is_required: boolean; modifiers: Modifier[] })[]>, mig: { menu_item_id: string; modifier_group_id: string; is_required: boolean }) => {
     if (!acc[mig.menu_item_id]) acc[mig.menu_item_id] = []
-    const group = modifierGroups.find((g) => g.id === mig.modifier_group_id)
+    const group = modifierGroups.find((g: ModifierGroup) => g.id === mig.modifier_group_id)
     if (group) {
       acc[mig.menu_item_id].push({
         ...group,
@@ -116,7 +116,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
     return acc
   }, {} as Record<string, (ModifierGroup & { is_required: boolean; modifiers: Modifier[] })[]>)
 
-  return menuItems.map((item) => ({
+  return menuItems.map((item: MenuItem) => ({
     ...item,
     modifier_groups: modifierGroupsByMenuItem[item.id] || [],
   }))

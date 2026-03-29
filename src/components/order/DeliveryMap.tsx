@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer } from '@react-google-maps/api'
+import { GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api'
 import { MapPin, Navigation, Loader2 } from 'lucide-react'
+import { useGoogleMaps } from '@/hooks/useGoogleMaps'
+import { env } from '@/lib/validators/env'
 
 interface DeliveryMapProps {
   driverLatitude: number | null
@@ -31,9 +33,7 @@ export function DeliveryMap({
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
 
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '',
-  })
+  const { isLoaded, loadError } = useGoogleMaps()
 
   const onMapLoad = useCallback(() => {
     setMapLoaded(true)
@@ -81,7 +81,7 @@ export function DeliveryMap({
   }
 
   // Google Maps API key not configured
-  if (loadError || !process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY) {
+  if (loadError || !env.NEXT_PUBLIC_GOOGLE_MAPS_KEY) {
     return (
       <section className="rounded-lg border bg-card p-5">
         <h2 className="text-lg font-semibold mb-4 font-display flex items-center gap-2">

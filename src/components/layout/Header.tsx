@@ -148,6 +148,7 @@ export function Header({ className }: HeaderProps) {
             width={224}
             height={56}
             className="h-14 w-auto"
+            sizes="224px"
             priority
           />
         </Link>

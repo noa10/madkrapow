@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
-import { getServerClient } from '@/lib/supabase/server'
+import { getServerClient, getServiceClient } from '@/lib/supabase/server'
 
 const CheckoutItemSchema = z.object({
   id: z.string().min(1),
@@ -20,17 +20,33 @@ const CheckoutItemSchema = z.object({
 const CheckoutRequestSchema = z.object({
   items: z.array(CheckoutItemSchema).min(1),
   deliveryAddress: z.object({
-    fullName: z.string().min(1),
-    phone: z.string().min(1),
-    address: z.string().min(1),
-    postalCode: z.string().min(1),
-    city: z.string().min(1),
-    state: z.string().min(1),
+    fullName: z.string().min(1, 'Name is required'),
+    phone: z.string().min(1, 'Phone is required'),
+    address: z.string().optional(),
+    postalCode: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
   }),
   deliveryFee: z.number().int().min(0), // cents
   deliveryType: z.enum(['delivery', 'self_pickup']).default('delivery'),
   fulfillmentType: z.enum(['asap', 'scheduled']).default('asap'),
   scheduledFor: z.string().datetime().optional(),
+}).superRefine((data, ctx) => {
+  if (data.deliveryType === 'delivery') {
+    const addr = data.deliveryAddress;
+    if (!addr.address?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'address'], message: 'Address is required for delivery' });
+    }
+    if (!addr.postalCode?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'postalCode'], message: 'Postal code is required for delivery' });
+    }
+    if (!addr.city?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'city'], message: 'City is required for delivery' });
+    }
+    if (!addr.state?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'state'], message: 'State is required for delivery' });
+    }
+  }
 })
 
 interface CheckoutSessionResponse {
@@ -47,7 +63,7 @@ interface CheckoutError {
 
 type CheckoutResult = CheckoutSessionResponse | CheckoutError
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-02-25.clover' as const,
 })
 
@@ -59,23 +75,42 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResult>> {
   try {
-    const supabase = await getServerClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
+    // Use anon client only for auth verification
+    const authClient = await getServerClient()
+    const { data: { user } } = await authClient.auth.getUser()
 
     if (!user) {
+      console.warn('[API] Checkout unauthorized: No user found')
       return NextResponse.json(
         { success: false, error: 'Please sign in to checkout', code: 'UNAUTHORIZED' },
         { status: 401 }
       )
     }
 
-    const body = await req.json()
+    // Use service client for all DB operations (bypasses RLS for trusted server-side work)
+    const supabase = getServiceClient()
+
+    let body
+    try {
+      body = await req.json()
+    } catch (e) {
+      console.error('[API] Failed to parse request JSON:', e)
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON request', code: 'INVALID_JSON' },
+        { status: 400 }
+      )
+    }
+
     const parsed = CheckoutRequestSchema.safeParse(body)
 
     if (!parsed.success) {
+      console.error('[API] Validation failed:', parsed.error.format())
       return NextResponse.json(
-        { success: false, error: 'Invalid request', code: 'INVALID_REQUEST' },
+        { 
+          success: false, 
+          error: 'Invalid request: ' + parsed.error.issues.map(i => i.path.join('.') + ' ' + i.message).join(', '), 
+          code: 'INVALID_REQUEST' 
+        },
         { status: 400 }
       )
     }
@@ -342,8 +377,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
-      success_url: `${env.NEXT_PUBLIC_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&order_id=${order.id}`,
-      cancel_url: `${env.NEXT_PUBLIC_URL}/checkout/cancel`,
+      success_url: `${env.NEXT_PUBLIC_URL}/order/success?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${env.NEXT_PUBLIC_URL}/checkout`,
       metadata: {
         order_id: order.id,
         customer_id: customerId,

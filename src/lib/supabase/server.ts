@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { toNextCompatibleCookieOptions } from './cookie-options'
 
@@ -23,6 +24,24 @@ export async function getServerClient() {
             // This can be ignored if you have middleware refreshing user sessions.
           }
         },
+      },
+    }
+  )
+}
+
+/**
+ * Service-role client for trusted server-side operations (API routes).
+ * Bypasses RLS — only use in server-side API routes where the caller has
+ * already been authenticated via getServerClient().auth.getUser().
+ */
+export function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
     }
   )

@@ -10,6 +10,7 @@ import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/stores/cart";
+import { ProfileDropdown } from "@/components/layout/ProfileDropdown";
 
 interface HeaderProps {
   className?: string;
@@ -75,24 +76,9 @@ export function Header({ className }: HeaderProps) {
       Admin
     </Link>
   ) : user ? (
-    <div className="hidden items-center gap-2 sm:flex">
-      <Link
-        href="/profile"
-        className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
-      >
-        Profile
-      </Link>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={handleSignOut}
-        className="rounded-full border border-white/10 px-3 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
-      >
-        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-        Sign out
-      </Button>
-    </div>
+    <ProfileDropdown
+      userEmail={user.email}
+    />
   ) : (
     <Link
       href="/auth"
@@ -117,7 +103,14 @@ export function Header({ className }: HeaderProps) {
         className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        Profile
+        Dashboard
+      </Link>
+      <Link
+        href="/orders"
+        className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+        onClick={() => setIsMobileMenuOpen(false)}
+      >
+        Order History
       </Link>
       <Button
         type="button"
@@ -155,6 +148,7 @@ export function Header({ className }: HeaderProps) {
             width={224}
             height={56}
             className="h-14 w-auto"
+            sizes="224px"
             priority
           />
         </Link>

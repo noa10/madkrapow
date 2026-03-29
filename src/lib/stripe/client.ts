@@ -6,10 +6,10 @@ export class StripeClient {
   private readonly webhookSecret: string
 
   constructor() {
-    this.stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      apiVersion: '2026-02-25.clover' as const,
+    this.stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-03-25.dahlia' as const,
     })
-    this.webhookSecret = env.STRIPE_WEBHOOK_SECRET
+    this.webhookSecret = env.STRIPE_WEBHOOK_SECRET!
   }
 
   get instance(): Stripe {

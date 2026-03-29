@@ -64,7 +64,7 @@ interface CheckoutError {
 type CheckoutResult = CheckoutSessionResponse | CheckoutError
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-02-25.clover' as const,
+  apiVersion: '2026-03-25.dahlia' as const,
 })
 
 function generateOrderNumber(): string {

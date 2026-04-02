@@ -23,18 +23,36 @@ const CheckoutRequestSchema = z.object({
     fullName: z.string().min(1, 'Name is required'),
     phone: z.string().min(1, 'Phone is required'),
     address: z.string().optional(),
+    address_line1: z.string().optional(),
+    address_line2: z.string().optional(),
     postalCode: z.string().optional(),
     city: z.string().optional(),
     state: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
   }),
   deliveryFee: z.number().int().min(0), // cents
   deliveryType: z.enum(['delivery', 'self_pickup']).default('delivery'),
   fulfillmentType: z.enum(['asap', 'scheduled']).default('asap'),
   scheduledFor: z.string().datetime().optional(),
+  // v3 shipping fields (optional for backward compatibility)
+  quotationId: z.string().optional(),
+  serviceType: z.string().optional(),
+  stopIds: z.object({
+    pickup: z.string(),
+    dropoff: z.string(),
+  }).optional(),
+  priceBreakdown: z.object({
+    base: z.string(),
+    total: z.string(),
+    currency: z.string(),
+    extraMileage: z.string().optional(),
+    surcharge: z.string().optional(),
+  }).optional(),
 }).superRefine((data, ctx) => {
   if (data.deliveryType === 'delivery') {
     const addr = data.deliveryAddress;
-    if (!addr.address?.trim()) {
+    if (!addr.address?.trim() && !addr.address_line1?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'address'], message: 'Address is required for delivery' });
     }
     if (!addr.postalCode?.trim()) {
@@ -115,7 +133,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
-    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor } = parsed.data
+    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown } = parsed.data
 
     // Self-pickup cannot have delivery fee
     const effectiveDeliveryFee = deliveryType === 'self_pickup' ? 0 : deliveryFee
@@ -267,7 +285,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         subtotal_cents: subtotalCents,
         delivery_fee_cents: effectiveDeliveryFee,
         total_cents: totalCents,
-        delivery_address_json: deliveryType === 'delivery' ? deliveryAddress : null,
+        delivery_address_json: deliveryType === 'delivery' ? {
+          ...deliveryAddress,
+          // Ensure lat/lng is preserved for v3 API
+          latitude: deliveryAddress.latitude,
+          longitude: deliveryAddress.longitude,
+        } : null,
         delivery_type: deliveryType,
         fulfillment_type: fulfillmentType,
         scheduled_for: scheduledFor || null,
@@ -285,6 +308,44 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         { success: false, error: 'Unable to create order. Please try again.', code: 'ORDER_FAILED' },
         { status: 500 }
       )
+    }
+
+    // Create shipment draft if quotation data is provided (delivery orders only)
+    if (deliveryType === 'delivery' && quotationId && stopIds && priceBreakdown) {
+      const fullAddress = deliveryAddress.address || [
+        deliveryAddress.address_line1,
+        deliveryAddress.address_line2,
+        deliveryAddress.city,
+        deliveryAddress.state,
+        deliveryAddress.postalCode,
+      ].filter(Boolean).join(', ')
+
+      await supabase.from('lalamove_shipments').insert({
+        order_id: order.id,
+        quotation_id: quotationId,
+        service_type: serviceType || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE',
+        dispatch_status: 'quoted',
+        quoted_fee_cents: effectiveDeliveryFee,
+        currency: priceBreakdown.currency || 'MYR',
+        sender_json: {
+          name: 'Mad Krapow Store',
+          phone: env.STORE_PHONE,
+          address: env.STORE_ADDRESS,
+          latitude: env.STORE_LATITUDE,
+          longitude: env.STORE_LONGITUDE,
+        },
+        recipient_json: {
+          name: deliveryAddress.fullName,
+          phone: deliveryAddress.phone,
+          address: fullAddress,
+          latitude: deliveryAddress.latitude || 0,
+          longitude: deliveryAddress.longitude || 0,
+          postal_code: deliveryAddress.postalCode || '',
+        },
+        stop_ids: stopIds,
+        quote_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 min validity
+        schedule_at: scheduledFor || null,
+      })
     }
 
     // Insert order items

@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectItem,
-  SelectTrigger,
 } from '@/components/ui/select'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { env } from '@/lib/validators/env'
@@ -15,6 +14,13 @@ import { useGoogleMaps } from '@/hooks/useGoogleMaps'
 
 interface DeliveryAddressInputProps {
   onAddressSelect?: (address: DeliveryAddress) => void
+  onQuoteFetched?: (quote: {
+    quotation_id: string
+    service_type: string
+    fee_cents: number
+    expires_at: string
+  }) => void
+  onQuoteError?: (error: string) => void
   deliveryRadiusKm?: number
 }
 
@@ -56,11 +62,13 @@ function calculateDistance(
 
 export function DeliveryAddressInput({
   onAddressSelect,
+  onQuoteFetched,
+  onQuoteError,
   deliveryRadiusKm = 10
 }: DeliveryAddressInputProps) {
-  const { delivery_address, setDeliveryAddress } = useCheckoutStore()
+  const { delivery_address, setDeliveryAddress, setShippingQuote } = useCheckoutStore()
   
-  const { isLoaded } = useGoogleMaps()
+  const { isLoaded, loadError } = useGoogleMaps()
 
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompleteSuggestion[]>([])
@@ -212,11 +220,170 @@ export function DeliveryAddressInput({
     return Object.keys(errors).length === 0
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return
-    
+
     setIsLoading(true)
     setDeliveryAddress(formData)
+
+    console.log('[DeliveryAddressInput] handleSave:', {
+      hasLat: !!formData.latitude,
+      hasLng: !!formData.longitude,
+      lat: formData.latitude,
+      lng: formData.longitude,
+    })
+
+    // Fetch delivery quote if we have coordinates
+    if (formData.latitude && formData.longitude) {
+      try {
+        console.log('[DeliveryAddressInput] Fetching quote...')
+        const res = await fetch('/api/shipping/lalamove/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            order_id: crypto.randomUUID(), // temporary ID for quote
+            pickup: {
+              latitude: env.STORE_LATITUDE,
+              longitude: env.STORE_LONGITUDE,
+              address: env.STORE_ADDRESS,
+            },
+            dropoff: {
+              latitude: formData.latitude,
+              longitude: formData.longitude,
+              address: [
+                formData.address_line1,
+                formData.address_line2,
+                formData.city,
+                formData.state,
+                formData.postal_code,
+              ].filter(Boolean).join(', '),
+            },
+          }),
+        })
+
+        const data = await res.json()
+        console.log('[DeliveryAddressInput] Quote response:', data)
+
+        if (data.success) {
+          setError(null)
+          setShippingQuote({
+            quotation_id: data.quotationId,
+            service_type: data.serviceType,
+            stop_ids: data.stopIds,
+            quote_expires_at: data.expiresAt,
+            price_breakdown: data.priceBreakdown,
+            fee_cents: data.feeCents,
+          })
+
+          onQuoteFetched?.({
+            quotation_id: data.quotationId,
+            service_type: data.serviceType,
+            fee_cents: data.feeCents,
+            expires_at: data.expiresAt,
+          })
+        } else {
+          const errorMsg = data.error || 'Could not calculate delivery fee. You can still proceed with your order.'
+          setError(errorMsg)
+          onQuoteError?.(errorMsg)
+        }
+      } catch (err) {
+        console.error('Quote fetch error:', err)
+        const errorMsg = 'Could not calculate delivery fee. You can still proceed with your order.'
+        setError(errorMsg)
+        onQuoteError?.(errorMsg)
+      }
+    } else {
+      // Fallback: geocode the address using Nominatim (OpenStreetMap)
+      // This handles cases where Google Maps autocomplete was blocked by ad blockers
+      console.log('[DeliveryAddressInput] No coordinates, attempting geocoding fallback...')
+      try {
+        const addressString = [
+          formData.address_line1,
+          formData.address_line2,
+          formData.city,
+          formData.state,
+          formData.postal_code,
+          'Malaysia',
+        ].filter(Boolean).join(', ')
+
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?` +
+          new URLSearchParams({ format: 'json', q: addressString, limit: '1', countrycodes: 'my' }),
+          { headers: { 'User-Agent': 'MadKrapow/1.0' } }
+        )
+        const geoData = await geoRes.json()
+
+        if (geoData.length > 0) {
+          const lat = parseFloat(geoData[0].lat)
+          const lng = parseFloat(geoData[0].lon)
+          console.log('[DeliveryAddressInput] Geocoded to:', lat, lng)
+
+          // Update form data with coordinates
+          const updatedFormData = { ...formData, latitude: lat, longitude: lng }
+          setDeliveryAddress(updatedFormData)
+
+          // Check delivery radius
+          const distance = calculateDistance(env.STORE_LATITUDE, env.STORE_LONGITUDE, lat, lng)
+          if (distance > deliveryRadiusKm) {
+            setError(`Delivery is not available to this location. We only deliver within ${deliveryRadiusKm}km from our store.`)
+            onQuoteError?.('Out of delivery range')
+            onAddressSelect?.(updatedFormData)
+            setIsLoading(false)
+            return
+          }
+
+          // Fetch delivery quote with geocoded coordinates
+          const res = await fetch('/api/shipping/lalamove/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              order_id: crypto.randomUUID(),
+              pickup: {
+                latitude: env.STORE_LATITUDE,
+                longitude: env.STORE_LONGITUDE,
+                address: env.STORE_ADDRESS,
+              },
+              dropoff: {
+                latitude: lat,
+                longitude: lng,
+                address: addressString,
+              },
+            }),
+          })
+
+          const data = await res.json()
+          console.log('[DeliveryAddressInput] Quote after geocoding:', data)
+
+          if (data.success) {
+            setError(null)
+            setShippingQuote({
+              quotation_id: data.quotationId,
+              service_type: data.serviceType,
+              stop_ids: data.stopIds,
+              quote_expires_at: data.expiresAt,
+              price_breakdown: data.priceBreakdown,
+              fee_cents: data.feeCents,
+            })
+          } else {
+            setError(data.error || 'Could not calculate delivery fee.')
+            onQuoteError?.(data.error)
+          }
+
+          onAddressSelect?.(updatedFormData)
+          setIsLoading(false)
+          return
+        } else {
+          console.warn('[DeliveryAddressInput] Geocoding returned no results')
+          setError('Could not locate this address. Please try selecting from the search results.')
+          onQuoteError?.('Address not found')
+        }
+      } catch (geoErr) {
+        console.error('[DeliveryAddressInput] Geocoding failed:', geoErr)
+        setError('Could not calculate delivery fee. You can still proceed with your order.')
+        onQuoteError?.('Geocoding failed')
+      }
+    }
+
     onAddressSelect?.(formData)
     setIsLoading(false)
   }
@@ -261,10 +428,11 @@ export function DeliveryAddressInput({
         <label className="text-sm font-medium">Search Address</label>
         <div className="relative">
           <Input
-            placeholder="Search for your building or street"
+            placeholder={loadError ? "Search unavailable — fill fields below instead" : "Search for your building or street"}
             value={query}
             onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9"
+            disabled={!!loadError}
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           {isSearching && (
@@ -288,6 +456,11 @@ export function DeliveryAddressInput({
           </ul>
         )}
         {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+        {loadError && (
+          <p className="text-xs text-amber-600 mt-1">
+            Address search unavailable — fill in the fields below and we&apos;ll locate your address automatically.
+          </p>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -339,11 +512,9 @@ export function DeliveryAddressInput({
           <Select 
             value={formData.state} 
             onValueChange={(value) => updateField('state', value)}
+            className={formErrors.state ? 'border-destructive' : ''}
           >
-            <SelectTrigger 
-              placeholder="Select state"
-              className={formErrors.state ? 'border-destructive' : ''}
-            />
+            <option value="" disabled>Select state</option>
             {MALAYSIAN_STATES.map((state) => (
               <SelectItem key={state} value={state}>
                 {state}

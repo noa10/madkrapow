@@ -1,60 +1,28 @@
 'use client'
 
-import { MapPin, Truck, Clock, Bike } from 'lucide-react'
+import { Clock, Bike, RefreshCw } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { useCheckoutStore, type DeliveryQuote } from '@/stores/checkout'
+import { useCheckoutStore } from '@/stores/checkout'
 
 interface DeliveryFeeDisplayProps {
   isCalculating?: boolean
-  quote?: DeliveryQuote | null
-  distance?: string
-  serviceType?: string
-  eta?: string
+  onRefreshQuote?: () => void
 }
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
 }
 
-function formatEta(eta: string): string {
-  const minutes = parseInt(eta, 10)
-  if (isNaN(minutes)) return eta
-  if (minutes < 60) return `${minutes} min`
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}min` : `${hours}h`
-}
-
-function formatDistance(distance: string): string {
-  const km = parseFloat(distance)
-  if (isNaN(km)) return distance
-  return `${km.toFixed(1)} km`
-}
-
-function getServiceTypeIcon(serviceType?: string) {
-  const type = serviceType?.toUpperCase() || 'MOTORCYCLE'
-  return type === 'VAN' ? <Truck className="h-4 w-4" /> : <Bike className="h-4 w-4" />
-}
-
-function getServiceTypeLabel(serviceType?: string): string {
-  const type = serviceType?.toUpperCase() || 'MOTORCYCLE'
-  return type === 'VAN' ? 'Van' : 'Motorcycle'
-}
-
 export function DeliveryFeeDisplay({
   isCalculating = false,
-  quote,
-  distance,
-  serviceType,
-  eta,
+  onRefreshQuote,
 }: DeliveryFeeDisplayProps) {
-  const deliveryQuote = useCheckoutStore((state) => state.delivery_quote)
-  const activeQuote = quote || deliveryQuote
+  const delivery_quote = useCheckoutStore((state) => state.delivery_quote)
+  const price_breakdown = useCheckoutStore((state) => state.price_breakdown)
+  const service_type = useCheckoutStore((state) => state.service_type)
+  const isQuoteExpired = useCheckoutStore((state) => state.isQuoteExpired)
 
-  const baseFee = activeQuote?.fees?.find((f) => f.fee_type === 'base')?.amount_cents ?? 0
-  const distanceFee = activeQuote?.fees?.find((f) => f.fee_type === 'distance')?.amount_cents ?? 0
-  const platformFee = activeQuote?.fees?.find((f) => f.fee_type === 'peak')?.amount_cents ?? 0
-  const totalFee = activeQuote?.fee_cents ?? 0
+  const expired = isQuoteExpired()
 
   if (isCalculating) {
     return (
@@ -69,55 +37,64 @@ export function DeliveryFeeDisplay({
     )
   }
 
-  if (!activeQuote) {
+  if (!price_breakdown && !delivery_quote) {
     return null
   }
+
+  const totalFeeCents = delivery_quote?.fee_cents ?? Math.round(parseFloat(price_breakdown?.total || '0') * 100)
+  const currency = price_breakdown?.currency || 'MYR'
 
   return (
     <Card>
       <CardContent className="py-4 space-y-3">
-        <div className="space-y-2">
-          {distance && (
-            <div className="flex items-center text-sm">
-              <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-muted-foreground">Distance:</span>
-              <span className="ml-auto font-medium">{formatDistance(distance)}</span>
-            </div>
-          )}
+        {/* Service type */}
+        {service_type && (
+          <div className="flex items-center text-sm">
+            <Bike className="h-4 w-4 mr-2 text-muted-foreground" />
+            <span className="text-muted-foreground">Service:</span>
+            <span className="ml-auto font-medium">
+              {service_type === 'CAR' ? 'Car' : 'Motorcycle'}
+            </span>
+          </div>
+        )}
 
-          {serviceType && (
-            <div className="flex items-center text-sm">
-              {getServiceTypeIcon(serviceType)}
-              <span className="ml-2 text-muted-foreground">Service:</span>
-              <span className="ml-auto font-medium">{getServiceTypeLabel(serviceType)}</span>
-            </div>
-          )}
+        {/* Quote expiry warning */}
+        {expired && onRefreshQuote && (
+          <div className="flex items-center justify-between p-2 bg-amber-500/10 rounded-lg text-sm">
+            <span className="text-amber-600">Quote expired</span>
+            <button
+              onClick={onRefreshQuote}
+              className="flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Refresh
+            </button>
+          </div>
+        )}
 
-          {eta && (
-            <div className="flex items-center text-sm">
-              <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-muted-foreground">Est. delivery:</span>
-              <span className="ml-auto font-medium">{formatEta(eta)}</span>
-            </div>
-          )}
-        </div>
-
+        {/* Price breakdown */}
         <div className="border-t pt-3 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Base fee</span>
-            <span>{formatPrice(baseFee)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Distance fee</span>
-            <span>{formatPrice(distanceFee)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Platform fee</span>
-            <span>{formatPrice(platformFee)}</span>
-          </div>
+          {price_breakdown?.base && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Base fee</span>
+              <span>{formatPrice(Math.round(parseFloat(price_breakdown.base) * 100))}</span>
+            </div>
+          )}
+          {price_breakdown?.extraMileage && parseFloat(price_breakdown.extraMileage) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Distance fee</span>
+              <span>{formatPrice(Math.round(parseFloat(price_breakdown.extraMileage) * 100))}</span>
+            </div>
+          )}
+          {price_breakdown?.surcharge && parseFloat(price_breakdown.surcharge) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Surcharge</span>
+              <span>{formatPrice(Math.round(parseFloat(price_breakdown.surcharge) * 100))}</span>
+            </div>
+          )}
           <div className="flex justify-between font-semibold border-t pt-2">
-            <span>Total</span>
-            <span>{formatPrice(totalFee)}</span>
+            <span>Delivery ({currency})</span>
+            <span>{formatPrice(totalFeeCents)}</span>
           </div>
         </div>
       </CardContent>

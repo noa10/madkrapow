@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { MapPin, Loader2, Users } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
+import { env } from '@/lib/validators/env'
 import { Button } from '@/components/ui/button'
 import { DeliveryTypeSelector } from '@/components/checkout/DeliveryTypeSelector'
 import { FulfillmentSelector } from '@/components/checkout/FulfillmentSelector'
@@ -56,6 +57,13 @@ export default function CheckoutPage() {
   const deliveryType = useCheckoutStore((state) => state.delivery_type)
   const fulfillmentType = useCheckoutStore((state) => state.fulfillment_type)
   const scheduledWindow = useCheckoutStore((state) => state.scheduled_window)
+  const quotationId = useCheckoutStore((state) => state.quotation_id)
+  const serviceType = useCheckoutStore((state) => state.service_type)
+  const stopIds = useCheckoutStore((state) => state.stop_ids)
+  const quoteExpiresAt = useCheckoutStore((state) => state.quote_expires_at)
+  const priceBreakdown = useCheckoutStore((state) => state.price_breakdown)
+  const isQuoteExpired = useCheckoutStore((state) => state.isQuoteExpired)
+  const clearShippingQuote = useCheckoutStore((state) => state.clearShippingQuote)
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null)
@@ -67,8 +75,13 @@ export default function CheckoutPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const subtotal = useMemo(() => getSubtotal(), [getSubtotal])
-  const deliveryFee = deliveryType === 'self_pickup' ? 0 : (deliveryQuote?.fee_cents ?? 0)
+  const deliveryFee = deliveryType === 'self_pickup'
+    ? 0
+    : (deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100))
   const total = subtotal + deliveryFee
+
+  // Quote expiry check
+  const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
 
   const menuItemMap = useMemo(() => {
     return menuItems.reduce((acc, item) => {
@@ -134,6 +147,82 @@ export default function CheckoutPage() {
     fetchSettings()
   }, [])
 
+  // Refresh delivery quote
+  const handleRefreshQuote = useCallback(async () => {
+    console.log('[Checkout] handleRefreshQuote called', {
+      lat: deliveryAddress?.latitude,
+      lng: deliveryAddress?.longitude,
+    })
+    if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) {
+      console.log('[Checkout] No coords, skipping refresh')
+      return
+    }
+
+    clearShippingQuote()
+
+    try {
+      console.log('[Checkout] Fetching quote...')
+      const res = await fetch('/api/shipping/lalamove/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: crypto.randomUUID(),
+          pickup: {
+            latitude: env.STORE_LATITUDE,
+            longitude: env.STORE_LONGITUDE,
+            address: env.STORE_ADDRESS,
+          },
+          dropoff: {
+            latitude: deliveryAddress.latitude,
+            longitude: deliveryAddress.longitude,
+            address: formatAddress(deliveryAddress),
+          },
+        }),
+      })
+
+      const data = await res.json()
+      console.log('[Checkout] Quote response:', data)
+
+      if (data.success) {
+        useCheckoutStore.getState().setShippingQuote({
+          quotation_id: data.quotationId,
+          service_type: data.serviceType,
+          stop_ids: data.stopIds,
+          quote_expires_at: data.expiresAt,
+          price_breakdown: data.priceBreakdown,
+          fee_cents: data.feeCents,
+        })
+        console.log('[Checkout] Quote stored, fee:', data.feeCents)
+      } else {
+        console.error('[Checkout] Quote failed:', data.error)
+      }
+    } catch (err) {
+      console.error('[Checkout] Quote fetch error:', err)
+    }
+  }, [deliveryAddress, clearShippingQuote])
+
+  // Auto-refresh delivery quote when store is hydrated and address exists
+  const hasAttemptedQuoteRefresh = useRef(false)
+
+  useEffect(() => {
+    // Wait for store hydration — deliveryAddress will be null until hydrated
+    if (hasAttemptedQuoteRefresh.current) return
+    if (deliveryType !== 'delivery') return
+    if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) return
+
+    hasAttemptedQuoteRefresh.current = true
+
+    console.log('[Checkout] Auto-refresh triggered after hydration')
+
+    // Only refresh if quote is expired or never fetched
+    if (!isQuoteExpired() && deliveryQuote) {
+      console.log('[Checkout] Quote is fresh, skipping refresh')
+      return
+    }
+
+    handleRefreshQuote()
+  }, [deliveryAddress?.latitude, deliveryAddress?.longitude, deliveryType, deliveryQuote, handleRefreshQuote, isQuoteExpired])
+
   const isCartEmpty = items.length === 0
   const hasDeliveryAddress = !!deliveryAddress
 
@@ -145,10 +234,17 @@ export default function CheckoutPage() {
   const canCheckout =
     !isCartEmpty &&
     (!needsDeliveryAddress || hasDeliveryAddress) &&
-    !needsScheduleSelection
+    !needsScheduleSelection &&
+    !quoteExpired
 
   const handlePayNow = async () => {
     if (!canCheckout || isProcessing) return
+
+    // Block checkout if quote expired for delivery orders
+    if (quoteExpired) {
+      setError('Your delivery quote has expired. Please refresh the quote.')
+      return
+    }
 
     setIsProcessing(true)
     setError(null)
@@ -171,9 +267,13 @@ export default function CheckoutPage() {
           fullName: deliveryAddress?.full_name || '',
           phone: deliveryAddress?.phone || '',
           address: deliveryAddress ? formatAddress(deliveryAddress) : '',
+          address_line1: deliveryAddress?.address_line1 || '',
+          address_line2: deliveryAddress?.address_line2 || '',
           postalCode: deliveryAddress?.postal_code || '',
           city: deliveryAddress?.city || '',
           state: deliveryAddress?.state || '',
+          latitude: deliveryAddress?.latitude,
+          longitude: deliveryAddress?.longitude,
         } : {
           fullName: '',
           phone: '',
@@ -186,6 +286,13 @@ export default function CheckoutPage() {
         deliveryType,
         fulfillmentType,
         scheduledFor: scheduledWindow?.window_start,
+        // v3 shipping fields
+        ...(quotationId && stopIds && priceBreakdown && {
+          quotationId,
+          serviceType,
+          stopIds,
+          priceBreakdown,
+        }),
       }
 
       const response = await fetch('/api/checkout/create', {
@@ -504,6 +611,25 @@ export default function CheckoutPage() {
                             : 'Calculated at checkout'}
                       </span>
                     </div>
+                    {/* Service type and quote info */}
+                    {deliveryType === 'delivery' && serviceType && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Service</span>
+                        <span>{serviceType === 'CAR' ? 'Car' : 'Motorcycle'}</span>
+                      </div>
+                    )}
+                    {/* Quote expiry warning */}
+                    {quoteExpired && (
+                      <div className="p-2 bg-amber-500/10 rounded-lg text-sm flex items-center justify-between">
+                        <span className="text-amber-600">Quote expired</span>
+                        <button
+                          onClick={handleRefreshQuote}
+                          className="text-amber-600 hover:text-amber-700 font-medium underline"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                    )}
                     <div className="flex justify-between text-lg font-semibold border-t border-border pt-3">
                       <span>Total</span>
                       <span className="text-primary">{formatPrice(total)}</span>

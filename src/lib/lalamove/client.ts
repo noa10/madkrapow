@@ -1,177 +1,151 @@
-import crypto from 'crypto'
 import { env } from '@/lib/validators/env'
+import { LalamoveTransport, resolveBaseUrl } from './transport'
+import type {
+  LalamoveQuotationRequest,
+  LalamoveQuotationResponse,
+  LalamovePlaceOrderRequest,
+  LalamoveOrderResponse,
+  LalamoveDriverDetails,
+  LalamoveCityInfo,
+  LalamoveApiResponse,
+} from './types'
 
-const LALAMOVE_ENDPOINTS = {
-  sandbox: 'https://sandbox-restapi.lalamove.com',
-  production: 'https://restapi.lalamove.com',
-} as const
-
-const LALAMOVE_COUNTRY = 'MY' as const
-
-type LalamoveEnv = 'sandbox' | 'production'
-
-interface LalamoveAddress {
-  street: string
-  city: string
-  country: LalamoveCountry
-  zipcode?: string
-}
-
-type LalamoveCountry = 'MY'
-
-interface LalamoveStop {
-  location: LalamoveAddress
-  contact: {
-    name: string
-    phone: string
-  }
-}
-
-interface QuotationRequest {
-  scheduleAt?: string
-  stops: LalamoveStop[]
-  isRouteInfoEnabled?: boolean
-}
-
-interface QuotationResponse {
-  totalFee: string
-  currency: string
-  distance: string
-  duration: string
-  feeDetails?: {
-    deliveryFee: string
-    tax: string
-    insurance: string
-    total: string
-  }
-}
-
-interface PlaceOrderRequest {
-  sender: LalamoveStop
-  recipient: LalamoveStop
-  scheduleAt?: string
-  requestTemplate?: {
-    serviceType: string
-    specialInstructions?: string
-  }
-}
-
-interface PlaceOrderResponse {
-  orderId: string
-  status: string
-  fee: string
-  currency: string
-  eta: string
-  driver?: {
-    name: string
-    phone: string
-    vehicleType: string
-    licensePlate: string
-  }
-}
-
+/**
+ * High-level Lalamove v3 API client.
+ *
+ * Composes transport, auth, and type-safe methods for:
+ * - Quotation (POST /v3/quotations)
+ * - Place Order (POST /v3/orders)
+ * - Order Details (GET /v3/orders/{id})
+ * - Driver Details (GET /v3/orders/{orderId}/drivers/{driverId})
+ * - Cancel Order (DELETE /v3/orders/{id})
+ * - City Info (GET /v3/cities)
+ */
 export class LalamoveClient {
-  private readonly apiKey: string
-  private readonly apiSecret: string
-  private readonly env: LalamoveEnv
-  private readonly baseUrl: string
-  private readonly market: string
+  private readonly transport: LalamoveTransport
+  private readonly envMode: 'sandbox' | 'production'
 
   constructor() {
-    this.apiKey = env.LALAMOVE_API_KEY!
-    this.apiSecret = env.LALAMOVE_API_SECRET!
-    this.env = env.LALAMOVE_ENV
-    this.baseUrl = LALAMOVE_ENDPOINTS[this.env]
-    this.market = LALAMOVE_COUNTRY
-  }
+    this.envMode = env.LALAMOVE_ENV
 
-  private generateSignature(
-    method: string,
-    path: string,
-    timestamp: string,
-    body: string
-  ): string {
-    const rawSignature = `${method}${path}${body}${timestamp}`
-    const signature = crypto
-      .createHmac('sha256', this.apiSecret)
-      .update(rawSignature)
-      .digest('hex')
-    return signature
-  }
+    const baseUrl = resolveBaseUrl(
+      this.envMode,
+      env.LALAMOVE_BASE_URL || undefined
+    )
 
-  private async request<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-    path: string,
-    body?: Record<string, unknown>
-  ): Promise<T> {
-    const timestamp = Date.now().toString()
-    const bodyString = body ? JSON.stringify(body) : ''
-    const signature = this.generateSignature(method, path, timestamp, bodyString)
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Authorization': `hmac ${this.apiKey}:${timestamp}:${signature}`,
-      'Market': this.market,
-    }
-
-    const url = `${this.baseUrl}${path}`
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: bodyString || undefined,
+    this.transport = new LalamoveTransport({
+      apiKey: env.LALAMOVE_API_KEY!,
+      apiSecret: env.LALAMOVE_API_SECRET!,
+      market: env.LALAMOVE_MARKET || 'MY',
+      baseUrl,
     })
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { message?: string; error?: string }
-      throw new Error(error.message || error.error || `Lalamove API error: ${response.status}`)
-    }
-
-    return response.json()
   }
 
-  async getQuotation(request: QuotationRequest): Promise<QuotationResponse> {
-    const path = '/v2/quotations'
-
-    const quotationRequest = {
-      scheduleAt: request.scheduleAt,
-      stops: request.stops,
-      isRouteInfoEnabled: request.isRouteInfoEnabled ?? true,
-    }
-
-    return this.request<QuotationResponse>('POST', path, quotationRequest)
-  }
-
-  async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResponse> {
-    const path = '/v2/orders'
-
-    const orderRequest = {
-      sender: request.sender,
-      recipient: request.recipient,
-      scheduleAt: request.scheduleAt,
-      requestTemplate: {
-        serviceType: request.requestTemplate?.serviceType ?? 'MOTORCYCLE',
-        specialInstructions: request.requestTemplate?.specialInstructions ?? '',
+  /**
+   * Create a quotation.
+   *
+   * POST /v3/quotations
+   * Returns quotation ID, stop IDs, price breakdown, and expiry time.
+   */
+  async getQuotation(request: LalamoveQuotationRequest): Promise<LalamoveQuotationResponse> {
+    return this.transport.post<LalamoveQuotationResponse>('/v3/quotations', {
+      data: {
+        serviceType: request.serviceType,
+        language: request.language,
+        stops: request.stops,
+        scheduleAt: request.scheduleAt,
+        specialRequests: request.specialRequests,
+        item: request.item,
+        isRouteOptimized: request.isRouteOptimized,
       },
-    }
-
-    return this.request<PlaceOrderResponse>('POST', path, orderRequest)
+    })
   }
 
-  async getOrderStatus(orderId: string): Promise<PlaceOrderResponse> {
-    const path = `/v2/orders/${orderId}`
-    return this.request<PlaceOrderResponse>('GET', path)
+  /**
+   * Place an order from a quotation.
+   *
+   * POST /v3/orders
+   * Requires quotationId and stopIds from a valid (non-expired) quotation.
+   */
+  async placeOrder(request: LalamovePlaceOrderRequest): Promise<LalamoveOrderResponse> {
+    return this.transport.post<LalamoveOrderResponse>('/v3/orders', {
+      data: {
+        quotationId: request.quotationId,
+        sender: request.sender,
+        recipients: request.recipients,
+        isPODEnabled: request.isPODEnabled ?? true,
+        metadata: request.metadata,
+      },
+    })
   }
 
-  getEnvironment(): LalamoveEnv {
-    return this.env
+  /**
+   * Get order details.
+   *
+   * GET /v3/orders/{orderId}
+   */
+  async getOrderDetails(orderId: string): Promise<LalamoveOrderResponse> {
+    return this.transport.get<LalamoveOrderResponse>(`/v3/orders/${orderId}`)
   }
 
+  /**
+   * Get driver details.
+   *
+   * GET /v3/orders/{orderId}/drivers/{driverId}
+   *
+   * Returns 403 if called outside the driver details window
+   * (before driver is assigned or after order is completed).
+   */
+  async getDriverDetails(
+    orderId: string,
+    driverId: string
+  ): Promise<LalamoveDriverDetails> {
+    return this.transport.get<LalamoveDriverDetails>(
+      `/v3/orders/${orderId}/drivers/${driverId}`
+    )
+  }
+
+  /**
+   * Cancel an order.
+   *
+   * DELETE /v3/orders/{orderId}
+   * Only allowed when status is ASSIGNING_DRIVER or ON_GOING < 5 min.
+   */
+  async cancelOrder(orderId: string): Promise<void> {
+    await this.transport.del(`/v3/orders/${orderId}`)
+  }
+
+  /**
+   * Get city info for Malaysia.
+   *
+   * GET /v3/cities?countryIso2=MY
+   * Returns available cities, service types, and special requests.
+   */
+  async getCityInfo(): Promise<LalamoveCityInfo[]> {
+    const result = await this.transport.get<LalamoveApiResponse<LalamoveCityInfo[]>>(
+      '/v3/cities?countryIso2=MY'
+    )
+    return result.data
+  }
+
+  /**
+   * Get the current environment mode.
+   */
+  getEnvironment(): 'sandbox' | 'production' {
+    return this.envMode
+  }
+
+  /**
+   * Check if running in sandbox mode.
+   */
   isSandbox(): boolean {
-    return this.env === 'sandbox'
+    return this.envMode === 'sandbox'
   }
 }
 
+/**
+ * Factory function to create a LalamoveClient instance.
+ */
 export function createLalamoveClient(): LalamoveClient {
   return new LalamoveClient()
 }

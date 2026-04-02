@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,18 +122,33 @@ function ReleaseNowButton({ orderId, onSuccess }: { orderId: string; onSuccess: 
   )
 }
 
-export default function AdminOrderDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function AdminOrderDetailPage() {
+  const params = useParams();
+  const orderId = params.id as string;
+  
   const [order, setOrder] = useState<Order | null>(null);
+  const [shipment, setShipment] = useState<{
+    id: string
+    lalamove_order_id: string | null
+    dispatch_status: string
+    share_link: string | null
+    service_type: string
+    driver_name: string | null
+    driver_phone: string | null
+    driver_plate: string | null
+    driver_photo_url: string | null
+    quoted_fee_cents: number | null
+    actual_fee_cents: number | null
+    created_at: string
+    completed_at: string | null
+    cancelled_at: string | null
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = getBrowserClient();
-    
+
     const fetchOrder = async () => {
       const { data, error } = await supabase
         .from("orders")
@@ -143,7 +159,7 @@ export default function AdminOrderDetailPage({
             order_item_modifiers (*)
           )
         `)
-        .eq("id", params.id)
+        .eq("id", orderId)
         .single();
 
       if (error) {
@@ -152,18 +168,47 @@ export default function AdminOrderDetailPage({
       }
 
       setOrder(data as unknown as Order);
+
+      // Fetch shipment data
+      const { data: shipmentData } = await supabase
+        .from('lalamove_shipments')
+        .select('*')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (shipmentData) {
+        setShipment(shipmentData);
+      }
+
       setLoading(false);
     };
 
     fetchOrder();
 
     const channel = supabase
-      .channel(`admin-order-${params.id}`)
+      .channel(`admin-order-${orderId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${params.id}` },
+        { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` },
         (payload: RealtimePostgresChangesPayload<Order>) => {
           setOrder((prev) => prev ? { ...prev, ...payload.new } : null);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lalamove_shipments", filter: `order_id=eq.${orderId}` },
+        () => {
+          // Refetch shipment on any change
+          supabase
+            .from('lalamove_shipments')
+            .select('*')
+            .eq('order_id', orderId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then(({ data }: { data: typeof shipment }) => { if (data) setShipment(data) })
         }
       )
       .subscribe();
@@ -171,7 +216,7 @@ export default function AdminOrderDetailPage({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [params.id]);
+  }, [orderId]);
 
   if (loading) {
     return (
@@ -260,7 +305,7 @@ export default function AdminOrderDetailPage({
       <StatusTransitionButtons
         orderId={order.id}
         currentStatus={order.status}
-        onStatusUpdate={(newStatus) => setOrder({ ...order, status: newStatus })}
+        onStatusUpdate={(newStatus) => setOrder(prev => prev ? { ...prev, status: newStatus } : null)}
       />
 
       {/* Bulk Order Review */}
@@ -380,26 +425,67 @@ export default function AdminOrderDetailPage({
             </CardContent>
           </Card>
 
-          {order.driver_name && (
+          {/* Shipment Details */}
+          {shipment && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Shipment Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div><strong>Status:</strong> <Badge variant={
+                  shipment.dispatch_status === 'delivered' ? 'default' :
+                  shipment.dispatch_status === 'failed' || shipment.dispatch_status === 'cancelled' ? 'destructive' : 'secondary'
+                }>{shipment.dispatch_status}</Badge></div>
+                <p><strong>Service:</strong> {shipment.service_type}</p>
+                {shipment.lalamove_order_id && (
+                  <p><strong>Lalamove ID:</strong> {shipment.lalamove_order_id}</p>
+                )}
+                {shipment.quoted_fee_cents != null && (
+                  <p><strong>Quoted Fee:</strong> {formatPrice(shipment.quoted_fee_cents)}</p>
+                )}
+                {shipment.actual_fee_cents != null && shipment.actual_fee_cents !== shipment.quoted_fee_cents && (
+                  <p><strong>Actual Fee:</strong> {formatPrice(shipment.actual_fee_cents)}</p>
+                )}
+                {shipment.share_link && (
+                  <p>
+                    <a href={shipment.share_link} target="_blank" rel="noopener noreferrer" className="text-primary text-sm">
+                      Track Delivery →
+                    </a>
+                  </p>
+                )}
+                {shipment.driver_name && (
+                  <p><strong>Driver:</strong> {shipment.driver_name} {shipment.driver_plate ? `(${shipment.driver_plate})` : ''}</p>
+                )}
+                {shipment.driver_phone && (
+                  <p>
+                    <strong>Phone:</strong>{' '}
+                    <a href={`tel:${shipment.driver_phone}`} className="text-primary">{shipment.driver_phone}</a>
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(shipment?.driver_name || order.driver_name) && (
             <Card>
               <CardHeader>
                 <CardTitle>Driver Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <p>
-                  <strong>Name:</strong> {order.driver_name}
+                  <strong>Name:</strong> {shipment?.driver_name || order.driver_name}
                 </p>
-                {order.driver_phone && (
+                {(shipment?.driver_phone || order.driver_phone) && (
                   <p>
                     <strong>Phone:</strong>{" "}
-                    <a href={`tel:${order.driver_phone}`} className="text-primary">
-                      {order.driver_phone}
+                    <a href={`tel:${shipment?.driver_phone || order.driver_phone}`} className="text-primary">
+                      {shipment?.driver_phone || order.driver_phone}
                     </a>
                   </p>
                 )}
-                {order.driver_plate_number && (
+                {(shipment?.driver_plate || order.driver_plate_number) && (
                   <p>
-                    <strong>Plate:</strong> {order.driver_plate_number}
+                    <strong>Plate:</strong> {shipment?.driver_plate || order.driver_plate_number}
                   </p>
                 )}
               </CardContent>

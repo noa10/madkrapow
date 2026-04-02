@@ -145,8 +145,8 @@ export function Header({ className }: HeaderProps) {
           <Image
             src="/madkrapow-logo.png"
             alt="Mad Krapow"
-            width={224}
-            height={56}
+            width={0}
+            height={0}
             className="h-14 w-auto"
             sizes="224px"
             priority

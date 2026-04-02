@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Clock, User, MapPin, Loader2, ChefHat, Package, Truck, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
-import { getBrowserClient } from '@/lib/supabase/client';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
@@ -184,7 +183,6 @@ function KitchenStatusTransitionButtons({
   onStatusUpdate,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
-  const supabase = getBrowserClient();
 
   const currentStep = KITCHEN_STATUS_FLOW.find((s) => s.status === currentStatus);
   const canTransition =
@@ -195,13 +193,15 @@ function KitchenStatusTransitionButtons({
 
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: currentStep.next })
-        .eq("id", orderId);
+      const response = await fetch(`/api/admin/orders/${orderId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: currentStep.next }),
+      });
 
-      if (error) {
-        console.error("Failed to update status:", error);
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to update status:', error);
         return;
       }
 

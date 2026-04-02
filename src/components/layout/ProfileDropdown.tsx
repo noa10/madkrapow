@@ -9,9 +9,10 @@ import { getBrowserClient } from '@/lib/supabase/client'
 interface ProfileDropdownProps {
   userName?: string | null
   userEmail?: string | null
+  isAdmin?: boolean
 }
 
-export function ProfileDropdown({ userName, userEmail }: ProfileDropdownProps) {
+export function ProfileDropdown({ userName, userEmail, isAdmin }: ProfileDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -48,7 +49,7 @@ export function ProfileDropdown({ userName, userEmail }: ProfileDropdownProps) {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover shadow-lg overflow-hidden z-50">
+        <div className="absolute right-0 bottom-full mb-2 w-56 rounded-lg border border-border bg-popover shadow-lg overflow-hidden z-50">
           {userName && (
             <div className="px-4 py-3 border-b border-border">
               <p className="text-sm font-medium truncate">{userName}</p>
@@ -74,6 +75,16 @@ export function ProfileDropdown({ userName, userEmail }: ProfileDropdownProps) {
               <ShoppingBag className="h-4 w-4 text-muted-foreground" />
               Order History
             </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm text-popover-foreground hover:bg-accent transition-colors"
+              >
+                <User className="h-4 w-4 text-muted-foreground" />
+                Admin Panel
+              </Link>
+            )}
           </div>
           <div className="border-t border-border py-1">
             <button

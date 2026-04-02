@@ -18,8 +18,8 @@ export function Footer() {
               <Image
                 src="/madkrapow-logo.png"
                 alt="Mad Krapow"
-                width={160}
-                height={40}
+                width={0}
+                height={0}
                 className="h-10 w-auto"
                 sizes="160px"
               />

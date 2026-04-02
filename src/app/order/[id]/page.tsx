@@ -13,13 +13,33 @@ import {
   ExternalLink,
   CheckCircle,
   Circle,
-  Loader2
+  Loader2,
 } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { DriverInfo } from '@/components/order/DriverInfo'
 import { DeliveryMap } from '@/components/order/DeliveryMap'
 import { PageContainer } from '@/components/layout/PageContainer'
+
+interface ShipmentData {
+  id: string
+  lalamove_order_id: string | null
+  dispatch_status: string
+  share_link: string | null
+  service_type: string
+  driver_name: string | null
+  driver_phone: string | null
+  driver_plate: string | null
+  driver_photo_url: string | null
+  driver_latitude: number | null
+  driver_longitude: number | null
+  driver_location_updated_at: string | null
+  quoted_fee_cents: number | null
+  actual_fee_cents: number | null
+  created_at: string
+  completed_at: string | null
+  cancelled_at: string | null
+}
 
 interface OrderItem {
   id: string
@@ -76,6 +96,8 @@ const ORDER_STEPS: { key: string; label: string }[] = [
   { key: 'delivered', label: 'Delivered' },
 ]
 
+const TERMINAL_STATUSES = ['delivered', 'cancelled']
+
 function getStepIndex(status: string): number {
   return ORDER_STEPS.findIndex((s) => s.key === status)
 }
@@ -101,9 +123,12 @@ export default function OrderTrackingPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
+  const [shipment, setShipment] = useState<ShipmentData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authChecking, setAuthChecking] = useState(true)
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -116,7 +141,11 @@ export default function OrderTrackingPage() {
         .single()
 
       if (orderError || !orderData) {
-        setError('Order not found')
+        if (orderError?.code === 'PGRST301' || orderError?.message?.includes('row-level security')) {
+          setError('Sign in to view this order')
+        } else {
+          setError('Order not found')
+        }
         return
       }
 
@@ -130,6 +159,19 @@ export default function OrderTrackingPage() {
       if (!itemsError && itemsData) {
         setOrderItems(itemsData)
       }
+
+      // Fetch shipment data
+      const { data: shipmentData } = await supabase
+        .from('lalamove_shipments')
+        .select('*')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (shipmentData) {
+        setShipment(shipmentData)
+      }
     } catch (err) {
       console.error('Failed to fetch order:', err)
       setError('Failed to load order')
@@ -139,12 +181,30 @@ export default function OrderTrackingPage() {
     }
   }, [orderId])
 
+  // Check authentication state on mount
   useEffect(() => {
-    fetchOrder()
-  }, [fetchOrder])
+    async function checkAuth() {
+      const supabase = getBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      setIsAuthenticated(!!session)
+      setAuthChecking(false)
+    }
+    checkAuth()
+  }, [])
 
+  // Fetch order only after auth is confirmed
   useEffect(() => {
-    if (!orderId) return
+    if (authChecking) return
+    if (!isAuthenticated) {
+      setLoading(false)
+      return
+    }
+    fetchOrder()
+  }, [fetchOrder, isAuthenticated, authChecking])
+
+  // Realtime subscription: only after auth confirmed
+  useEffect(() => {
+    if (!orderId || !isAuthenticated || authChecking) return
 
     const supabase = getBrowserClient()
 
@@ -176,34 +236,73 @@ export default function OrderTrackingPage() {
           fetchOrder()
         }
       )
-      .subscribe()
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'lalamove_shipments',
+          filter: `order_id=eq.${orderId}`
+        },
+        () => {
+          console.log('Shipment updated')
+          fetchOrder()
+        }
+      )
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime subscribed for order:', orderId)
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Realtime subscription issue:', status)
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [orderId, fetchOrder])
+  }, [orderId, fetchOrder, isAuthenticated, authChecking])
 
-  // Polling fallback: refresh every 5s while order is still pending
-  // Catches cases where Realtime subscription fails or is not enabled
+  // Polling fallback: refresh every 5s while order has not reached a terminal status.
+  // This runs alongside Realtime as a safety net — if Realtime fails or is delayed,
+  // polling ensures the customer still sees status updates.
   useEffect(() => {
-    const status = order?.status
-    if (status !== 'pending') return
+    if (!isAuthenticated || authChecking) return
+    if (order?.status && TERMINAL_STATUSES.includes(order.status)) return
 
     const interval = setInterval(() => {
       fetchOrder()
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [order?.status, fetchOrder])
+  }, [order?.status, fetchOrder, isAuthenticated, authChecking])
 
-  if (loading) {
+  if (authChecking || loading) {
     return (
       <main className="min-h-screen bg-background">
         <PageContainer size="narrow">
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-              <p className="text-muted-foreground">Loading order...</p>
+              <p className="text-muted-foreground">{authChecking ? 'Checking session...' : 'Loading order...'}</p>
+            </div>
+          </div>
+        </PageContainer>
+      </main>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-background">
+        <PageContainer size="narrow">
+          <div className="py-8">
+            <div className="flex flex-col items-center justify-center py-12">
+              <Package className="h-16 w-16 text-muted-foreground mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Sign in required</h2>
+              <p className="text-muted-foreground mb-6 text-center">Please sign in to track your order.</p>
+              <Button asChild>
+                <Link href="/auth?redirect=/order/{orderId}">Sign In</Link>
+              </Button>
             </div>
           </div>
         </PageContainer>
@@ -230,9 +329,16 @@ export default function OrderTrackingPage() {
     )
   }
 
-  const lalamoveTrackingUrl = order.lalamove_order_id
-    ? `https://www.lalamove.com/en-my/track/MY/${order.lalamove_order_id}`
-    : null
+  // Use shipment share_link for tracking, fallback to old lalamove URL
+  const lalamoveTrackingUrl = shipment?.share_link
+    || (order.lalamove_order_id
+      ? `https://www.lalamove.com/en-my/track/MY/${order.lalamove_order_id}`
+      : null)
+
+  // Use shipment driver info if available, fallback to order
+  const driverName = shipment?.driver_name || order.driver_name
+  const driverPhone = shipment?.driver_phone || order.driver_phone
+  const driverPlate = shipment?.driver_plate || order.driver_plate_number
 
   const isCancelled = order.status === 'cancelled'
   const isDelivered = order.status === 'delivered'
@@ -389,15 +495,15 @@ export default function OrderTrackingPage() {
 
               {/* Driver Info */}
               <DriverInfo
-                driver_name={order.driver_name}
-                driver_phone={order.driver_phone}
-                driver_plate_number={order.driver_plate_number}
+                driver_name={driverName}
+                driver_phone={driverPhone}
+                driver_plate_number={driverPlate}
               />
 
               {/* Live Driver Tracking Map */}
               <DeliveryMap
-                driverLatitude={order.driver_latitude ?? null}
-                driverLongitude={order.driver_longitude ?? null}
+                driverLatitude={shipment?.driver_latitude ?? order.driver_latitude ?? null}
+                driverLongitude={shipment?.driver_longitude ?? order.driver_longitude ?? null}
                 deliveryLatitude={
                   order.delivery_address_json
                     ? (order.delivery_address_json as Record<string, number>).latitude ?? null
@@ -408,7 +514,7 @@ export default function OrderTrackingPage() {
                     ? (order.delivery_address_json as Record<string, number>).longitude ?? null
                     : null
                 }
-                driverName={order.driver_name}
+                driverName={driverName}
                 orderStatus={order.status}
                 deliveryType={order.delivery_type}
               />

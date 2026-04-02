@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { createLalamoveClient } from '@/lib/lalamove/client'
-import { env } from '@/lib/validators/env'
+import { fulfillScheduledOrder } from '@/lib/services/order-fulfillment'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,14 +21,7 @@ export async function POST(req: NextRequest) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return []
-          },
-          setAll() {},
-        },
-      }
+      { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
     const now = new Date().toISOString()
@@ -61,77 +53,18 @@ export async function POST(req: NextRequest) {
 
     for (const order of orders) {
       try {
-        const address = order.delivery_address_json as Record<string, string> | null
+        const result = await fulfillScheduledOrder(supabase, order.id)
 
-        if (!address) {
-          throw new Error('No delivery address on order')
+        if (result.success) {
+          console.log(`[Cron] Dispatched order ${order.id} -> Lalamove ${result.lalamoveOrderId}`)
+          results.push({ orderId: order.id, status: 'dispatched' })
+        } else {
+          console.error(`[Cron] Failed to dispatch order ${order.id}:`, result.error)
+          results.push({ orderId: order.id, status: 'failed', error: result.error })
         }
-
-        const lalamove = createLalamoveClient()
-
-        const lalamoveOrder = await lalamove.placeOrder({
-          sender: {
-            location: {
-              street: env.STORE_ADDRESS,
-              city: env.STORE_CITY,
-              country: 'MY',
-            },
-            contact: {
-              name: 'Mad Krapow Store',
-              phone: env.STORE_PHONE,
-            },
-          },
-          recipient: {
-            location: {
-              street: address.address,
-              city: address.city,
-              country: 'MY',
-              zipcode: address.postalCode,
-            },
-            contact: {
-              name: address.fullName,
-              phone: address.phone,
-            },
-          },
-          scheduleAt: order.scheduled_for,
-          requestTemplate: {
-            serviceType: 'MOTORCYCLE',
-            specialInstructions: `Order ID: ${order.id}`,
-          },
-        })
-
-        await supabase
-          .from('orders')
-          .update({
-            lalamove_order_id: lalamoveOrder.orderId,
-            lalamove_status: lalamoveOrder.status,
-            dispatch_status: 'submitted',
-          })
-          .eq('id', order.id)
-
-        await supabase.from('order_events').insert({
-          order_id: order.id,
-          event_type: 'dispatch_submitted',
-          new_value: { lalamove_order_id: lalamoveOrder.orderId },
-        })
-
-        console.log(`[Cron] Dispatched order ${order.id} -> Lalamove ${lalamoveOrder.orderId}`)
-        results.push({ orderId: order.id, status: 'dispatched' })
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        console.error(`[Cron] Failed to dispatch order ${order.id}:`, errorMessage)
-
-        await supabase
-          .from('orders')
-          .update({ dispatch_status: 'failed' })
-          .eq('id', order.id)
-
-        await supabase.from('order_events').insert({
-          order_id: order.id,
-          event_type: 'dispatch_failed',
-          new_value: { error: errorMessage },
-        })
-
+        console.error(`[Cron] Error dispatching order ${order.id}:`, errorMessage)
         results.push({ orderId: order.id, status: 'failed', error: errorMessage })
       }
     }
@@ -139,12 +72,7 @@ export async function POST(req: NextRequest) {
     const dispatched = results.filter((r) => r.status === 'dispatched').length
     const failed = results.filter((r) => r.status === 'failed').length
 
-    return NextResponse.json({
-      dispatched,
-      failed,
-      total: results.length,
-      results,
-    })
+    return NextResponse.json({ dispatched, failed, total: results.length, results })
   } catch (error) {
     console.error('[Cron] Error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { LalamoveClient } from '@/lib/lalamove/client'
+import { createLalamoveClient } from '@/lib/lalamove/client'
 import { env } from '@/lib/validators/env'
 
 const DeliveryQuoteRequestSchema = z.object({
@@ -9,6 +9,7 @@ const DeliveryQuoteRequestSchema = z.object({
     longitude: z.number(),
     address: z.string().min(1),
   }),
+  service_type: z.string().optional(),
 })
 
 interface FeeBreakdown {
@@ -20,12 +21,12 @@ interface FeeBreakdown {
 
 interface DeliveryQuoteResponse {
   success: true
+  quotationId: string
+  stopIds: { pickup: string; dropoff: string }
   fee: FeeBreakdown
   currency: string
-  distance: string
-  duration: string
+  distance: { value: string; unit: string }
   serviceType: string
-  eta: string
   expiresAt: string
 }
 
@@ -37,29 +38,6 @@ interface DeliveryQuoteError {
 
 type DeliveryQuoteResult = DeliveryQuoteResponse | DeliveryQuoteError
 
-function getStoreLocation() {
-  return {
-    latitude: Number(env.STORE_LATITUDE),
-    longitude: Number(env.STORE_LONGITUDE),
-    address: env.STORE_ADDRESS,
-    phone: env.STORE_PHONE,
-  }
-}
-
-function calculateFeeBreakdown(totalFee: number, distance: string): FeeBreakdown {
-  const distanceKm = parseFloat(distance) || 0
-  const baseFee = 500
-  const perKmFee = Math.min(distanceKm * 100, 500)
-  const platformFee = Math.round(totalFee * 0.05)
-
-  return {
-    base: baseFee,
-    distance: perKmFee,
-    platformFee,
-    total: totalFee + platformFee,
-  }
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuoteResult>> {
   try {
     const body = await req.json()
@@ -67,64 +45,64 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
 
     if (!parsed.success) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request',
-          code: 'INVALID_REQUEST',
-        },
+        { success: false, error: 'Invalid request', code: 'INVALID_REQUEST' },
         { status: 400 }
       )
     }
 
-    const { dropoff } = parsed.data
-    const store = getStoreLocation()
+    const { dropoff, service_type } = parsed.data
+    const lalamove = createLalamoveClient()
 
-    const lalamove = new LalamoveClient()
+    const serviceType = service_type || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE'
 
     const quotation = await lalamove.getQuotation({
+      serviceType,
+      language: 'en_MY',
       stops: [
         {
-          location: {
-            street: store.address,
-            city: env.STORE_CITY,
-            country: 'MY',
+          coordinates: {
+            lat: String(env.STORE_LATITUDE),
+            lng: String(env.STORE_LONGITUDE),
           },
-          contact: {
-            name: 'Store',
-            phone: store.phone,
-          },
+          address: env.STORE_ADDRESS,
         },
         {
-          location: {
-            street: dropoff.address,
-            city: env.STORE_CITY,
-            country: 'MY',
-            zipcode: '',
+          coordinates: {
+            lat: String(dropoff.latitude),
+            lng: String(dropoff.longitude),
           },
-          contact: {
-            name: 'Customer',
-            phone: '+60000000000',
-          },
+          address: dropoff.address,
         },
       ],
-      isRouteInfoEnabled: true,
     })
 
-    const totalFeeCents = Math.round(parseFloat(quotation.totalFee) * 100)
-    const feeBreakdown = calculateFeeBreakdown(totalFeeCents, quotation.distance)
+    // Convert MYR price to cents (MY uses 1 decimal: "50.5" → 505 cents)
+    const totalFeeCents = Math.round(parseFloat(quotation.priceBreakdown.total) * 100)
+    const distanceKm = parseFloat(quotation.distance.value) / 1000
+    const baseFee = 500
+    const perKmFee = Math.min(Math.round(distanceKm * 100), 500)
+    const platformFee = Math.round(totalFeeCents * 0.05)
 
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    const feeBreakdown: FeeBreakdown = {
+      base: baseFee,
+      distance: perKmFee,
+      platformFee,
+      total: totalFeeCents + platformFee,
+    }
 
     return NextResponse.json(
       {
         success: true,
+        quotationId: quotation.quotationId,
+        stopIds: {
+          pickup: quotation.stops[0].stopId,
+          dropoff: quotation.stops[1].stopId,
+        },
         fee: feeBreakdown,
-        currency: quotation.currency,
+        currency: quotation.priceBreakdown.currency,
         distance: quotation.distance,
-        duration: quotation.duration,
-        serviceType: 'MOTORCYCLE',
-        eta: quotation.duration,
-        expiresAt,
+        serviceType: quotation.serviceType,
+        expiresAt: quotation.expiresAt,
       },
       { status: 200 }
     )
@@ -132,9 +110,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
     console.error('[API] /api/delivery/quote:', error)
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    const isOutOfZone = errorMessage.toLowerCase().includes('zone') ||
-                        errorMessage.toLowerCase().includes('service area') ||
-                        errorMessage.toLowerCase().includes('coverage')
+    const isOutOfZone =
+      errorMessage.toLowerCase().includes('zone') ||
+      errorMessage.toLowerCase().includes('service area') ||
+      errorMessage.toLowerCase().includes('coverage') ||
+      errorMessage.includes('ERR_OUT_OF_SERVICE_AREA')
 
     return NextResponse.json(
       {

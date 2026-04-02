@@ -1,108 +1,98 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/validators/env'
 import { createStripeClient } from '@/lib/stripe/client'
-import { createLalamoveClient } from '@/lib/lalamove/client'
+import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 import { createServerClient } from '@supabase/ssr'
+import { env } from '@/lib/validators/env'
 
-interface StripeWebhookResponse {
-  success: true
-}
-
-interface StripeWebhookError {
-  success: false
-  error: string
-}
-
-type WebhookResult = StripeWebhookResponse | StripeWebhookError
-
-function getStoreLocation() {
-  return {
-    address: env.STORE_ADDRESS,
-    city: env.STORE_CITY,
-    phone: env.STORE_PHONE,
-  }
-}
-
-async function triggerLalamoveDelivery(orderId: string, deliveryAddress: Record<string, unknown>) {
-  const lalamove = createLalamoveClient()
-  const store = getStoreLocation()
-
-  const recipient = deliveryAddress as {
-    fullName: string
-    phone: string
-    address: string
-    postalCode: string
-    city: string
-    state: string
-  }
+async function attemptHubboPosPush(supabase: ReturnType<typeof createServerClient>, orderId: string): Promise<void> {
+  if (!env.HUBBOPOS_ENABLED) return;
 
   try {
-    const order = await lalamove.placeOrder({
-      sender: {
-        location: {
-          street: store.address,
-          city: store.city,
-          country: 'MY' as const,
-        },
-        contact: {
-          name: 'Mad Krapow Store',
-          phone: store.phone,
-        },
-      },
-      recipient: {
-        location: {
-          street: recipient.address,
-          city: recipient.city,
-          country: 'MY' as const,
-          zipcode: recipient.postalCode,
-        },
-        contact: {
-          name: recipient.fullName,
-          phone: recipient.phone,
-        },
-      },
-      scheduleAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      requestTemplate: {
-        serviceType: 'MOTORCYCLE',
-        specialInstructions: `Order ID: ${orderId}`,
-      },
-    })
+    const { createHubboPosClient } = await import('@/lib/hubbopos/client');
+    const { buildOrderPayload } = await import('@/lib/hubbopos/orders');
 
-    console.log('[Webhook] Lalamove order placed:', order.orderId)
-    return order
+    const payload = await buildOrderPayload(orderId);
+    if (!payload) return;
+
+    const client = createHubboPosClient();
+    const response = await client.createOrder(payload);
+
+    await supabase
+      .from('orders')
+      .update({
+        hubbo_pos_trans_id: payload.trans_id,
+        hubbo_pos_invoice_no: payload.invoice_no,
+        hubbo_pos_order_id: response.hubbo_order_id || null,
+        hubbo_pos_sync_status: 'synced',
+        hubbo_pos_last_synced_at: new Date().toISOString(),
+        hubbo_pos_last_error: null,
+      })
+      .eq('id', orderId);
+
+    console.log(`[Webhook] HubboPOS order pushed: ${orderId} -> ${response.hubbo_order_id}`);
   } catch (error) {
-    console.error('[Webhook] Failed to place Lalamove order:', error)
-    throw error
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isRetryable = !(error instanceof Error && (error.name === 'HubboPosValidationError' || error.name === 'HubboPosAuthError'));
+
+    await supabase
+      .from('orders')
+      .update({
+        hubbo_pos_sync_status: isRetryable ? 'pending' : 'failed',
+        hubbo_pos_last_error: errorMessage,
+      })
+      .eq('id', orderId);
+
+    if (isRetryable) {
+      const { data: order } = await supabase.from('orders').select('order_number').eq('id', orderId).single();
+      await supabase.from('hubbopos_sync_queue').insert({
+        order_id: orderId,
+        action: 'create_order',
+        payload: {
+          trans_id: `mk-${orderId}`,
+          invoice_no: order?.order_number ? `MK-${order.order_number}` : `MK-${orderId.slice(0, 8)}`,
+        },
+        status: 'pending',
+        next_attempt_at: new Date().toISOString(),
+      });
+    }
+
+    console.error(`[Webhook] HubboPOS push failed for ${orderId}:`, errorMessage);
   }
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult>> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.text()
     const signature = req.headers.get('stripe-signature')
 
     if (!signature) {
-      return NextResponse.json(
-        { success: false, error: 'Missing stripe-signature header' },
-        { status: 400 }
-      )
+      console.error('[Webhook] Missing stripe-signature header')
+      return NextResponse.json({ success: false, error: 'Missing stripe-signature header' }, { status: 400 })
+    }
+
+    // Validate required env vars before attempting verification
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.error('[Webhook] STRIPE_WEBHOOK_SECRET is not set')
+      return NextResponse.json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error('[Webhook] Supabase env vars not configured')
+      return NextResponse.json({ success: false, error: 'Database not configured' }, { status: 500 })
     }
 
     let event
-
     try {
       const stripeClient = createStripeClient()
       event = stripeClient.verifyWebhookSignature(body, signature)
+      console.log(`[Webhook] Received event: ${event.type} (${event.id})`)
     } catch (sigError) {
       console.error('[Webhook] Invalid signature:', sigError)
-      return NextResponse.json(
-        { success: false, error: 'Invalid signature' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 400 })
     }
 
     if (event.type !== 'checkout.session.completed') {
-      console.log('[Webhook] Ignoring event type:', event.type)
+      console.log(`[Webhook] Ignoring event type: ${event.type}`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
@@ -110,27 +100,20 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
     const orderId = session.metadata?.order_id
 
     if (!orderId) {
-      console.error('[Webhook] No order_id in session metadata')
-      return NextResponse.json(
-        { success: false, error: 'Missing order_id in metadata' },
-        { status: 400 }
-      )
+      console.error('[Webhook] No order_id in session metadata. Session:', session.id)
+      return NextResponse.json({ success: false, error: 'Missing order_id' }, { status: 400 })
     }
+
+    console.log(`[Webhook] Processing checkout.session.completed for order: ${orderId}`)
 
     // Use service_role key for webhook operations (bypasses RLS)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return []
-          },
-          setAll() {},
-        },
-      }
+      { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
+    // Fetch order
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('*')
@@ -138,122 +121,64 @@ export async function POST(req: NextRequest): Promise<NextResponse<WebhookResult
       .single()
 
     if (orderError || !order) {
-      console.error('[Webhook] Order not found:', orderId)
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      )
+      console.error('[Webhook] Order not found:', orderId, orderError)
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
     // Idempotency: skip if already paid
-    if (order.status === 'paid' || order.status === 'accepted' || order.status === 'preparing') {
-      console.log('[Webhook] Order already processed:', orderId)
+    if (['paid', 'accepted', 'preparing', 'ready'].includes(order.status)) {
+      console.log(`[Webhook] Order ${orderId} already in status '${order.status}', skipping`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
     // Mark order as paid
-    const { error: paidError } = await supabase
+    const { error: updateError } = await supabase
       .from('orders')
       .update({ status: 'paid', stripe_payment_intent_id: session.id })
       .eq('id', orderId)
 
-    if (paidError) {
-      console.error('[Webhook] Failed to mark order as paid:', orderId, paidError)
-      return NextResponse.json(
-        { success: false, error: 'Failed to update order status' },
-        { status: 500 }
-      )
+    if (updateError) {
+      console.error('[Webhook] Failed to mark order as paid:', orderId, updateError)
+      return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 })
     }
 
-    // Branch: delivery type and fulfillment type
+    console.log(`[Webhook] Order ${orderId} marked as paid`)
+
+    // Push to HubboPOS if enabled (best-effort, non-blocking)
+    await attemptHubboPosPush(supabase, orderId);
+
+    // Branch by delivery type and fulfillment type
     const deliveryType = order.delivery_type || 'delivery'
     const fulfillmentType = order.fulfillment_type || 'asap'
 
     if (deliveryType === 'self_pickup') {
       // Self-pickup: no delivery booking, move straight to accepted
-      const { error: acceptedError } = await supabase
+      await supabase
         .from('orders')
-        .update({
-          status: 'accepted',
-          dispatch_status: 'not_ready',
-        })
+        .update({ status: 'accepted', dispatch_status: 'not_ready' })
         .eq('id', orderId)
-
-      if (acceptedError) {
-        console.error('[Webhook] Failed to accept self-pickup order:', orderId, acceptedError)
-        return NextResponse.json(
-          { success: false, error: 'Failed to update self-pickup order' },
-          { status: 500 }
-        )
-      }
 
       console.log('[Webhook] Self-pickup order accepted:', orderId)
 
     } else if (fulfillmentType === 'scheduled') {
       // Scheduled delivery: queue for later dispatch by cron
-      const { error: queueError } = await supabase
+      await supabase
         .from('orders')
-        .update({
-          dispatch_status: 'queued',
-        })
+        .update({ dispatch_status: 'queued' })
         .eq('id', orderId)
-
-      if (queueError) {
-        console.error('[Webhook] Failed to queue scheduled order:', orderId, queueError)
-        return NextResponse.json(
-          { success: false, error: 'Failed to queue scheduled order' },
-          { status: 500 }
-        )
-      }
 
       console.log('[Webhook] Scheduled delivery queued:', orderId)
 
     } else {
-      // ASAP delivery: dispatch immediately
-      if (order.delivery_address_json) {
-        try {
-          const lalamoveOrder = await triggerLalamoveDelivery(
-            orderId,
-            order.delivery_address_json as Record<string, unknown>
-          )
-          if (lalamoveOrder?.orderId) {
-            await supabase
-              .from('orders')
-              .update({
-                lalamove_order_id: lalamoveOrder.orderId,
-                lalamove_status: lalamoveOrder.status,
-                dispatch_status: 'submitted',
-              })
-              .eq('id', orderId)
-            console.log('[Webhook] Lalamove order placed:', lalamoveOrder.orderId)
-          }
-        } catch (lalamoveError) {
-          console.error('[Webhook] Lalamove delivery failed:', lalamoveError)
-          await supabase
-            .from('orders')
-            .update({ dispatch_status: 'failed' })
-            .eq('id', orderId)
-          console.log('[Webhook] Order marked as paid but delivery booking failed')
-        }
-      } else {
-        console.warn('[Webhook] No delivery address on order:', orderId)
-        await supabase
-          .from('orders')
-          .update({ dispatch_status: 'failed' })
-          .eq('id', orderId)
-      }
+      // ASAP delivery: dispatch immediately using fulfillment service
+      const result = await fulfillDeliveryOrder(supabase, orderId)
+      console.log(`[Webhook] ASAP delivery ${result.success ? 'dispatched' : 'failed'}:`, orderId)
     }
 
-    console.log('[Webhook] Order processed successfully:', orderId)
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
     console.error('[Webhook] Error processing webhook:', error)
-
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 })
   }
 }

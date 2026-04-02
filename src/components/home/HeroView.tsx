@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 
 const proofChips = [
@@ -9,10 +8,14 @@ const proofChips = [
   "Bold Thai street-food flavor",
 ];
 
-export function Hero() {
+interface HeroViewProps {
+  onNavigateToMenu: () => void;
+}
+
+export function HeroView({ onNavigateToMenu }: HeroViewProps) {
   return (
-    <section className="relative overflow-hidden px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pb-20 lg:pt-8">
-      <div className="container-shell">
+    <section className="relative min-h-screen overflow-hidden px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pb-20 lg:pt-8">
+      <div className="container mx-auto">
         <div className="relative overflow-hidden rounded-[2rem] border border-white/8 bg-black/30 shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
           <div className="absolute inset-0">
             <Image
@@ -42,18 +45,18 @@ export function Hero() {
               </p>
 
               <div className="mt-10 flex flex-wrap items-center gap-4">
-                <Link
-                  href="#menu"
-                  className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-sm font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.01]"
+                <button
+                  onClick={onNavigateToMenu}
+                  className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-sm font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.01] cursor-pointer"
                 >
                   Order Now
-                </Link>
-                <Link
-                  href="#menu"
-                  className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)]"
+                </button>
+                <button
+                  onClick={onNavigateToMenu}
+                  className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)] cursor-pointer"
                 >
                   Explore Menu
-                </Link>
+                </button>
               </div>
             </div>
 

@@ -78,9 +78,11 @@ if (!fs.existsSync(nftFile)) {
   }
 
   // Create NFT JSON with the actual edge chunk files
+  // Manifest paths are "server/edge/chunks/..." relative to .next/
+  // NFT paths are relative to .next/server/, so strip "server/" prefix
   const nftContent = JSON.stringify({
     version: 1,
-    files: edgeFiles.length > 0 ? edgeFiles : []
+    files: edgeFiles.map(f => f.replace(/^server\//, ''))
   }, null, 2);
 
   fs.writeFileSync(nftFile, nftContent);

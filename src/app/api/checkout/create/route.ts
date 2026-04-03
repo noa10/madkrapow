@@ -406,7 +406,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }
 
     // Create Stripe Checkout Session
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = validatedItems.map((item) => ({
+    const lineItems: NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>['line_items'] = validatedItems.map((item) => ({
       price_data: {
         currency: 'myr',
         product_data: {

@@ -33,7 +33,7 @@ export class StripeClient {
       metadata = {},
     } = params
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+    const sessionParams: Parameters<typeof this.stripe.checkout.sessions.create>[0] = {
       payment_method_types: ['fpx', 'grabpay', 'card'],
       line_items: [
         {

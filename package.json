@@ -33,7 +33,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.27",
-    "chrome-devtools-mcp": "^0.20.3",
+    "chrome-devtools-mcp": "^0.21.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.0",
     "next": "16.1.1",

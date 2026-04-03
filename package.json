@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/validate-env.js && next build && node scripts/fix-middleware-nft.js",
+    "build": "node scripts/validate-env.js && next build --webpack",
     "start": "next start",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
@@ -58,7 +58,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.2",
+    "eslint-config-next": "16.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "lucide-react": "^1.7.0",

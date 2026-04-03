@@ -33,7 +33,6 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', '@supabase/ssr'],
   },
-  turbopack: {},
 };
 
 export default nextConfig;

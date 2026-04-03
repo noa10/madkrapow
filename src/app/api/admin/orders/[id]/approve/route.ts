@@ -131,7 +131,7 @@ export async function POST(
 
     // Create a single line item for the approved total
     // (since admin may have adjusted pricing)
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+    const lineItems: NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>['line_items'] = [
       {
         price_data: {
           currency: 'myr',

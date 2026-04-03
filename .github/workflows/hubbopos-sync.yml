@@ -5,8 +5,8 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# DISABLED: Server access issues - re-enable when resolved
-# https://github.com/noa10/madkrapow/issues/XXX
+permissions:
+  contents: read
 
 jobs:
   sync:

@@ -5,11 +5,13 @@ import { createLalamoveClient } from '@/lib/lalamove/client'
 import { mapV3StatusToDispatch, mapDispatchToOrderStatus, isValidStatusTransition } from '@/lib/lalamove/status-mapper'
 import type { ShipmentDispatchStatus } from '@/lib/lalamove/types'
 
+function sanitizeForLog(value: string): string {
+  return value.replace(/\n|\r/g, '');
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.text()
-
-    // Return 200 immediately (process async)
     const response = NextResponse.json({ success: true }, { status: 200 })
 
     // Verify webhook signature
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .maybeSingle()
 
     if (!shipment) {
-      console.warn('[Lalamove Webhook] No shipment found for order:', lalamoveOrderId)
+      console.warn('[Lalamove Webhook] No shipment found for order:', sanitizeForLog(lalamoveOrderId))
       // Still mark event as processed
       await supabase
         .from('lalamove_webhook_events')
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           break
 
         default:
-          console.log('[Lalamove Webhook] Unknown event type:', eventType)
+          console.log('[Lalamove Webhook] Unknown event type:', sanitizeForLog(eventType))
       }
 
       // Mark event as processed

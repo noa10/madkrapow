@@ -5,8 +5,12 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+# DISABLED: Server access issues - re-enable when resolved
+# https://github.com/noa10/madkrapow/issues/XXX
+
 jobs:
   sync:
+    if: false  # Temporarily disabled
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

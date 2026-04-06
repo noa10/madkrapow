@@ -3,74 +3,134 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+/* ---------- Context ---------- */
+
+interface SelectContextValue {
   value?: string;
-  onValueChange?: (value: string) => void;
+  onValueChange?: (v: string) => void;
+  name?: string;
+  disabled?: boolean;
+  required?: boolean;
 }
 
-const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, children, value, onValueChange, ...props }, ref) => {
-    return (
-      <select
-        ref={ref}
-        value={value}
-        onChange={(e) => onValueChange?.(e.target.value)}
-        className={cn(
-          "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-          className
-        )}
-        {...props}
-      >
-        {children}
-      </select>
-    );
-  }
-);
-Select.displayName = "Select";
+const SelectContext = React.createContext<SelectContextValue>({});
 
-interface SelectTriggerProps extends Omit<React.ComponentPropsWithoutRef<typeof Select>, "onChange"> {
+const useSelectContext = () => React.useContext(SelectContext);
+
+/* ---------- Select (Context Provider) ---------- */
+
+interface SelectProps {
+  children?: React.ReactNode;
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  name?: string;
+  disabled?: boolean;
+  required?: boolean;
+}
+
+const Select: React.FC<SelectProps> = ({
+  children,
+  value,
+  defaultValue,
+  onValueChange,
+  name,
+  disabled,
+  required,
+}) => {
+  const [internalValue, setInternalValue] = React.useState(defaultValue ?? "");
+
+  const controlled = value !== undefined;
+  const currentValue = controlled ? value : internalValue;
+
+  const handleValueChange = React.useCallback(
+    (v: string) => {
+      if (!controlled) setInternalValue(v);
+      onValueChange?.(v);
+    },
+    [controlled, onValueChange]
+  );
+
+  return (
+    <SelectContext.Provider
+      value={{
+        value: currentValue,
+        onValueChange: handleValueChange,
+        name,
+        disabled,
+        required,
+      }}
+    >
+      {children}
+    </SelectContext.Provider>
+  );
+};
+
+/* ---------- SelectTrigger (renders the actual <select>) ---------- */
+
+interface SelectTriggerProps {
+  children?: React.ReactNode;
   placeholder?: string;
+  className?: string;
 }
 
 const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
-  ({ className, children, placeholder, value, onValueChange, ...props }, ref) => {
+  ({ className, children, placeholder }, ref) => {
+    const { value, onValueChange, name, disabled, required } = useSelectContext();
+
     return (
       <div className="relative">
-        <Select ref={ref} value={value} onValueChange={onValueChange} className={className} {...props}>
-          {placeholder && <option value="" disabled>{placeholder}</option>}
+        <select
+          ref={ref}
+          name={name}
+          disabled={disabled}
+          required={required}
+          value={value}
+          onChange={(e) => onValueChange?.(e.target.value)}
+          className={cn(
+            "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 pr-8 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none",
+            className
+          )}
+        >
+          {placeholder && (
+            <option value="" disabled>
+              {placeholder}
+            </option>
+          )}
           {children}
-        </Select>
+        </select>
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </span>
       </div>
     );
   }
 );
 SelectTrigger.displayName = "SelectTrigger";
 
-const SelectValue = ({ children }: { children?: React.ReactNode }) => {
-  return <>{children}</>;
+/* ---------- SelectValue ---------- */
+
+const SelectValue = ({ children, placeholder }: { children?: React.ReactNode; placeholder?: string }) => {
+  return <>{placeholder ?? children}</>;
 };
 
-interface SelectContentProps extends React.HTMLAttributes<HTMLDivElement> {
-  children?: React.ReactNode;
-}
+/* ---------- SelectContent ---------- */
 
-const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
-  ({ className, children, ...props }, ref) => {
-    return (
-      <div
-        ref={ref}
-        className={cn(
-          "relative z-50",
-          className
-        )}
-        {...props}
-      >
-        {children}
-      </div>
-    );
-  }
-);
-SelectContent.displayName = "SelectContent";
+const SelectContent = ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+  return <div className={className}>{children}</div>;
+};
+
+/* ---------- SelectItem ---------- */
 
 interface SelectItemProps extends React.OptionHTMLAttributes<HTMLOptionElement> {
   children?: React.ReactNode;
@@ -79,13 +139,7 @@ interface SelectItemProps extends React.OptionHTMLAttributes<HTMLOptionElement> 
 const SelectItem = React.forwardRef<HTMLOptionElement, SelectItemProps>(
   ({ className, children, ...props }, ref) => {
     return (
-      <option
-        ref={ref}
-        className={cn(
-          className
-        )}
-        {...props}
-      >
+      <option ref={ref} className={cn(className)} {...props}>
         {children}
       </option>
     );
@@ -93,10 +147,4 @@ const SelectItem = React.forwardRef<HTMLOptionElement, SelectItemProps>(
 );
 SelectItem.displayName = "SelectItem";
 
-export {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-};
+export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem };

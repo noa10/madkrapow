@@ -4,10 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, Loader2, Check } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectItem,
-} from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { env } from '@/lib/validators/env'
 import { useGoogleMaps } from '@/hooks/useGoogleMaps'
@@ -509,18 +506,21 @@ export function DeliveryAddressInput({
 
         <div className="space-y-2">
           <label className="text-sm font-medium">State *</label>
-          <Select 
-            value={formData.state} 
-            onValueChange={(value) => updateField('state', value)}
-            className={formErrors.state ? 'border-destructive' : ''}
+          <select
+            value={formData.state}
+            onChange={(e) => updateField('state', e.target.value)}
+            className={cn(
+              "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 pr-8 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none",
+              formErrors.state ? 'border-destructive' : ''
+            )}
           >
             <option value="" disabled>Select state</option>
             {MALAYSIAN_STATES.map((state) => (
-              <SelectItem key={state} value={state}>
+              <option key={state} value={state}>
                 {state}
-              </SelectItem>
+              </option>
             ))}
-          </Select>
+          </select>
           {formErrors.state && <p className="text-xs text-destructive">{formErrors.state}</p>}
         </div>
       </div>

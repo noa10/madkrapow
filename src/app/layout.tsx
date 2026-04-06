@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Inter, Cormorant_Garamond } from "next/font/google";
+import { DM_Sans, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 
-const inter = Inter({
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-dm_sans",
 });
 
 const cormorantGaramond = Cormorant_Garamond({
@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${cormorantGaramond.variable} font-body antialiased`}
+        className={`${dmSans.variable} ${cormorantGaramond.variable} font-body antialiased`}
       >
         {children}
         <CartDrawer />

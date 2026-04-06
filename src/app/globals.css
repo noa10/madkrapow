@@ -20,15 +20,19 @@
   --color-popover-foreground: hsl(0 0% 95%);
   --color-card: hsl(0 0% 12%);
   --color-card-foreground: hsl(0 0% 95%);
+  --color-surface: hsl(0 0% 10%);
+  --color-surface-elevated: hsl(0 0% 14%);
   --color-gold: hsl(38 60% 55%);
   --color-gold-muted: hsl(38 45% 40%);
+  --color-gold-glow: rgba(210, 176, 123, 0.15);
+  --color-gold-subtle: rgba(210, 176, 123, 0.08);
   --radius-lg: 0.5rem;
   --radius-md: calc(0.5rem - 2px);
   --radius-sm: calc(0.5rem - 4px);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
   --font-heading: var(--font-cormorant);
-  --font-body: var(--font-inter);
+  --font-body: var(--font-dm_sans);
   --line-strong: rgba(210, 176, 123, 0.5);
   --gold-strong: #d4b896;
   --text-gradient-gold: linear-gradient(135deg, #f1d7aa 0%, #c59661 100%);
@@ -79,5 +83,44 @@
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-fade-in-up {
+    animation: fade-in-up 0.5s ease-out both;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.3s ease-out both;
+  }
+
+  .card-stagger-1 { animation-delay: 0ms; }
+  .card-stagger-2 { animation-delay: 60ms; }
+  .card-stagger-3 { animation-delay: 120ms; }
+  .card-stagger-4 { animation-delay: 180ms; }
+  .card-stagger-5 { animation-delay: 240ms; }
+  .card-stagger-6 { animation-delay: 300ms; }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }

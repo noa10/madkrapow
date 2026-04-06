@@ -40,7 +40,7 @@ export function BulkOrderReview({
   onStatusUpdate,
 }: BulkOrderReviewProps) {
   const [adjustedTotal, setAdjustedTotal] = useState(
-    (approvedTotalCents ?? subtotalCents).toString()
+    ((approvedTotalCents ?? subtotalCents) ?? 0).toString()
   )
   const [notes, setNotes] = useState(reviewNotes ?? '')
   const [isApproving, setIsApproving] = useState(false)
@@ -49,25 +49,41 @@ export function BulkOrderReview({
   const handleApprove = async () => {
     setIsApproving(true)
     try {
+      const floatValue = parseFloat(adjustedTotal)
+      if (isNaN(floatValue) || floatValue <= 0) {
+        console.error('Invalid adjusted total:', adjustedTotal)
+        return
+      }
+
+      const cents = Math.round(floatValue * 100)
+
+      const body = JSON.stringify({
+        action: 'approve',
+        approved_total_cents: cents,
+        review_notes: notes || null,
+      })
+
+      console.log('Sending approval:', { action: 'approve', approved_total_cents: cents, review_notes: notes })
+      console.log('Request body:', body)
+
       const response = await fetch(`/api/admin/orders/${orderId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve',
-          approved_total_cents: parseInt(adjustedTotal),
-          review_notes: notes || null,
-        }),
+        body,
       })
 
       const data = await response.json()
 
+      console.log('API response status:', response.status, data)
+
       if (!data.success) {
-        throw new Error(data.error || 'Failed to approve')
+        console.error('Approval failed:', data.error)
+        return
       }
 
       // If approval returns a checkout URL, redirect customer
       if (data.checkoutUrl) {
-        onStatusUpdate('approved', parseInt(adjustedTotal), notes)
+        onStatusUpdate('approved', cents, notes)
       }
     } catch (err) {
       console.error('Failed to approve bulk order:', err)
@@ -91,7 +107,8 @@ export function BulkOrderReview({
       const data = await response.json()
 
       if (!data.success) {
-        throw new Error(data.error || 'Failed to reject')
+        console.error('Rejection failed:', data.error)
+        return
       }
 
       onStatusUpdate('rejected', undefined, notes)
@@ -109,7 +126,7 @@ export function BulkOrderReview({
     : { color: 'bg-red-500/20 text-red-500', label: 'Rejected' }
 
   return (
-    <Card className="border-amber-200 bg-amber-50/50">
+    <Card className="rounded-xl border border-white/8 bg-card/60 backdrop-blur-sm transition-all duration-300 hover:border-amber-500/20">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Bulk Order Review</CardTitle>

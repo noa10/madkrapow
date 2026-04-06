@@ -8,11 +8,17 @@ const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-03-25.dahlia' as const,
 })
 
-const ApproveRequestSchema = z.object({
-  action: z.enum(['approve', 'reject']),
-  approved_total_cents: z.number().int().min(0).optional(),
-  review_notes: z.string().optional(),
-})
+const ApproveRequestSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('approve'),
+    approved_total_cents: z.number().int().min(0),
+    review_notes: z.string().nullable().optional(),
+  }),
+  z.object({
+    action: z.literal('reject'),
+    review_notes: z.string().nullable().optional(),
+  }),
+])
 
 interface ApproveResponse {
   success: true
@@ -47,17 +53,36 @@ export async function POST(
     // In production, check user role or admin table
 
     const { id: orderId } = await params
-    const body = await req.json()
+    const rawBody = await req.text()
+    
+    console.log('[APPROVE] Raw body:', rawBody)
+    console.log('[APPROVE] Content-Type:', req.headers.get('content-type'))
+    console.log('[APPROVE] Order ID:', orderId)
+    
+    let body: unknown
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      console.error('[APPROVE] Failed to parse JSON body')
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON body' },
+        { status: 400 }
+      )
+    }
+    
+    console.log('[APPROVE] Parsed body:', JSON.stringify(body, null, 2))
+    
     const parsed = ApproveRequestSchema.safeParse(body)
 
     if (!parsed.success) {
+      console.log('[APPROVE] Zod parse error:', JSON.stringify(parsed.error.format(), null, 2))
       return NextResponse.json(
         { success: false, error: 'Invalid request' },
         { status: 400 }
       )
     }
 
-    const { action, approved_total_cents, review_notes } = parsed.data
+    const { action, review_notes } = parsed.data
 
     // Fetch the order
     const { data: order, error: fetchError } = await supabase
@@ -88,7 +113,6 @@ export async function POST(
     }
 
     if (action === 'reject') {
-      // Reject: cancel the order
       await supabase
         .from('orders')
         .update({
@@ -111,6 +135,15 @@ export async function POST(
     }
 
     // Approve: create Stripe checkout session
+    if (parsed.data.action !== 'approve') {
+      return NextResponse.json(
+        { success: false, error: 'Invalid action' },
+        { status: 400 }
+      )
+    }
+
+    const { approved_total_cents } = parsed.data
+
     if (!approved_total_cents) {
       return NextResponse.json(
         { success: false, error: 'Approved total is required' },

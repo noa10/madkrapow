@@ -50,3 +50,9 @@ next-env.d.ts
 
 # ECC Memory (exclude heartbeat state, keep other files)
 memory/heartbeat-state.json
+
+# kilo
+.kilo/
+
+# claw-code
+.claw/

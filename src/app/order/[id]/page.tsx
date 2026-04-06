@@ -14,12 +14,14 @@ import {
   CheckCircle,
   Circle,
   Loader2,
+  Menu,
 } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { DriverInfo } from '@/components/order/DriverInfo'
 import { DeliveryMap } from '@/components/order/DeliveryMap'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 
 interface ShipmentData {
   id: string
@@ -129,6 +131,7 @@ export default function OrderTrackingPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authChecking, setAuthChecking] = useState(true)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -278,54 +281,61 @@ export default function OrderTrackingPage() {
 
   if (authChecking || loading) {
     return (
-      <main className="min-h-screen bg-background">
-        <PageContainer size="narrow">
-          <div className="flex items-center justify-center py-20">
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
+        <main className="flex-1 flex items-center justify-center lg:ml-[260px] min-h-screen bg-background">
+          <PageContainer size="narrow">
             <div className="text-center">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
               <p className="text-muted-foreground">{authChecking ? 'Checking session...' : 'Loading order...'}</p>
             </div>
-          </div>
-        </PageContainer>
-      </main>
+          </PageContainer>
+        </main>
+      </div>
     )
   }
 
   if (!isAuthenticated) {
     return (
-      <main className="min-h-screen bg-background">
-        <PageContainer size="narrow">
-          <div className="py-8">
-            <div className="flex flex-col items-center justify-center py-12">
-              <Package className="h-16 w-16 text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Sign in required</h2>
-              <p className="text-muted-foreground mb-6 text-center">Please sign in to track your order.</p>
-              <Button asChild>
-                <Link href="/auth?redirect=/order/{orderId}">Sign In</Link>
-              </Button>
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
+        <main className="min-h-screen bg-background lg:ml-[260px]">
+          <PageContainer size="narrow">
+            <div className="py-8">
+              <div className="flex flex-col items-center justify-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Sign in required</h2>
+                <p className="text-muted-foreground mb-6 text-center">Please sign in to track your order.</p>
+                <Button asChild>
+                  <Link href="/auth?redirect=/order/{orderId}">Sign In</Link>
+                </Button>
+              </div>
             </div>
-          </div>
-        </PageContainer>
-      </main>
+          </PageContainer>
+        </main>
+      </div>
     )
   }
 
   if (error || !order) {
     return (
-      <main className="min-h-screen bg-background">
-        <PageContainer size="narrow">
-          <div className="py-8">
-            <div className="flex flex-col items-center justify-center py-12">
-              <Package className="h-16 w-16 text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">{error || 'Order not found'}</h2>
-              <p className="text-muted-foreground mb-6">We could not find this order.</p>
-              <Button asChild>
-                <Link href="/">Go to Home</Link>
-              </Button>
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
+        <main className="min-h-screen bg-background lg:ml-[260px]">
+          <PageContainer size="narrow">
+            <div className="py-8">
+              <div className="flex flex-col items-center justify-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mb-4" />
+                <h2 className="text-xl font-semibold mb-2">{error || 'Order not found'}</h2>
+                <p className="text-muted-foreground mb-6">We could not find this order.</p>
+                <Button asChild>
+                  <Link href="/">Go to Home</Link>
+                </Button>
+              </div>
             </div>
-          </div>
-        </PageContainer>
-      </main>
+          </PageContainer>
+        </main>
+      </div>
     )
   }
 
@@ -345,25 +355,35 @@ export default function OrderTrackingPage() {
   const currentStepIndex = getStepIndex(order.status)
 
   return (
-    <main className="min-h-screen bg-background">
-      <PageContainer>
-        <div className="py-6 md:py-10">
-          {/* Page Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-2xl font-semibold font-display">Order Tracking</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Order #{order.id.slice(0, 8).toUpperCase()}
-              </p>
+    <div className="flex min-h-screen bg-background">
+      <DashboardSidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+      <main className="flex-1 lg:ml-[260px]">
+        <PageContainer>
+          <div className="py-6 md:py-10">
+            {/* Page Header */}
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="lg:hidden rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <div>
+                  <h1 className="text-2xl font-semibold font-display">Order Tracking</h1>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Order #{order.id.slice(0, 8).toUpperCase()}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setRefreshing(true); fetchOrder() }}
+                className="p-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                disabled={refreshing}
+              >
+                <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-            <button
-              onClick={() => { setRefreshing(true); fetchOrder() }}
-              className="p-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
-              disabled={refreshing}
-            >
-              <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             {/* Left Column: Status & Map */}
@@ -604,6 +624,7 @@ export default function OrderTrackingPage() {
           </div>
         </div>
       </PageContainer>
-    </main>
+      </main>
+    </div>
   )
 }

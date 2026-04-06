@@ -46,12 +46,12 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex-shrink-0 relative">
+      {/* Sticky Sidebar */}
+      <aside className="w-64 bg-card border-r border-border flex-shrink-0 sticky top-0 h-screen flex flex-col">
         <div className="p-4 border-b border-border">
           <h1 className="text-xl font-bold text-primary font-heading">Admin Panel</h1>
         </div>
-        <nav className="p-4 space-y-2">
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -71,7 +71,7 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
             );
           })}
         </nav>
-        <div className="absolute bottom-0 p-4 border-t border-border w-64">
+        <div className="p-4 border-t border-border">
           <Link
             href="/"
             className="flex items-center gap-3 px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground rounded-lg"
@@ -82,8 +82,8 @@ import { useAdminGuard } from "@/lib/admin/auth-guard";
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 p-6 overflow-auto text-foreground">{children}</main>
+      {/* Scrollable Main Content */}
+      <main className="flex-1 p-6 overflow-y-auto max-h-screen text-foreground">{children}</main>
     </div>
   );
 }

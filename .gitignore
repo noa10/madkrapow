@@ -56,3 +56,12 @@ memory/heartbeat-state.json
 
 # claw-code
 .claw/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.lock
+!package-lock.json
+build/
+.fvm/

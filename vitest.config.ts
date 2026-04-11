@@ -4,16 +4,16 @@ import path from 'path'
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, './apps/web/src'),
     },
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['apps/web/src/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/lib/**/*.ts'],
-      exclude: ['src/lib/**/*.test.ts', 'src/lib/**/*.d.ts'],
+      include: ['apps/web/src/lib/**/*.ts'],
+      exclude: ['apps/web/src/lib/**/*.test.ts', 'apps/web/src/lib/**/*.d.ts'],
       reporter: ['text', 'lcov'],
     },
     setupFiles: [],

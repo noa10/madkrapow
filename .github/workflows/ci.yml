@@ -3,8 +3,30 @@ name: CI
 on:
   push:
     branches: [main, master]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'eslint.config.mjs'
+      - 'playwright.config.ts'
+      - 'vitest.config.ts'
   pull_request:
     branches: [main, master]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'eslint.config.mjs'
+      - 'playwright.config.ts'
+      - 'vitest.config.ts'
 
 permissions:
   contents: read

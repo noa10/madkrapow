@@ -54,28 +54,20 @@ export async function POST(
 
     const { id: orderId } = await params
     const rawBody = await req.text()
-    
-    console.log('[APPROVE] Raw body:', rawBody)
-    console.log('[APPROVE] Content-Type:', req.headers.get('content-type'))
-    console.log('[APPROVE] Order ID:', orderId)
-    
+
     let body: unknown
     try {
       body = JSON.parse(rawBody)
     } catch {
-      console.error('[APPROVE] Failed to parse JSON body')
       return NextResponse.json(
         { success: false, error: 'Invalid JSON body' },
         { status: 400 }
       )
     }
-    
-    console.log('[APPROVE] Parsed body:', JSON.stringify(body, null, 2))
-    
+
     const parsed = ApproveRequestSchema.safeParse(body)
 
     if (!parsed.success) {
-      console.log('[APPROVE] Zod parse error:', JSON.stringify(parsed.error.format(), null, 2))
       return NextResponse.json(
         { success: false, error: 'Invalid request' },
         { status: 400 }

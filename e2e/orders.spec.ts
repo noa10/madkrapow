@@ -4,7 +4,7 @@ test.describe('Order Tracking', () => {
   test('should display orders page', async ({ page }) => {
     await page.goto('/orders');
     
-    await expect(page.locator('h1')).toContainText(/order/i, { timeout: 10000 });
+    await expect(page.locator('h1').first()).toContainText(/order/i, { timeout: 10000 });
   });
 
   test('should display order not found for invalid order id', async ({ page }) => {

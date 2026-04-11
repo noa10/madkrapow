@@ -3,7 +3,8 @@ import { test, expect } from '@playwright/test';
 test.describe('Shopping Cart', () => {
   test('should add item to cart from menu', async ({ page }) => {
     await page.goto('/');
-    
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+
     await page.waitForSelector('a[href^="/item/"]', { timeout: 10000 });
     const firstItem = page.locator('a[href^="/item/"]').first();
     await firstItem.click();

@@ -52,7 +52,7 @@ next-env.d.ts
 memory/heartbeat-state.json
 
 # kilo
-.kilo/
+.kilo/*
 
 # claw-code
 .claw/

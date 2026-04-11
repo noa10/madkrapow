@@ -24,14 +24,9 @@ else
   exit 1
 fi
 
-echo "Generating Dart types..."
-DART_TMP=$(mktemp)
-if npx supabase gen types dart --local > "$DART_TMP"; then
-  mv "$DART_TMP" packages/shared-types/dart/lib/db.dart
-else
-  rm -f "$DART_TMP"
-  echo "ERROR: Dart type generation failed. Is supabase start running?"
-  exit 1
-fi
+# Note: Supabase CLI no longer supports Dart type generation.
+# Flutter apps use the TypeScript types via code generation tools
+# (e.g., supabase_codegen package) or reference the schema directly
+# through supabase_flutter's Map-based API.
 
 echo "Types generated successfully!"

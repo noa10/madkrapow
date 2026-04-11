@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.4"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -18,6 +38,9 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          hubbo_pos_external_id: string | null
+          hubbo_pos_last_synced_at: string | null
+          hubbo_pos_source: string | null
           id: string
           is_active: boolean
           name: string
@@ -27,6 +50,9 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -36,6 +62,9 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -130,6 +159,152 @@ export type Database = {
           name?: string | null
           phone?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      hubbopos_api_logs: {
+        Row: {
+          created_at: string | null
+          direction: string
+          duration_ms: number | null
+          endpoint: string
+          error_message: string | null
+          id: string
+          method: string
+          request_body: Json | null
+          request_headers: Json | null
+          response_body: Json | null
+          response_status: number | null
+          success: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          direction: string
+          duration_ms?: number | null
+          endpoint: string
+          error_message?: string | null
+          id?: string
+          method: string
+          request_body?: Json | null
+          request_headers?: Json | null
+          response_body?: Json | null
+          response_status?: number | null
+          success?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          direction?: string
+          duration_ms?: number | null
+          endpoint?: string
+          error_message?: string | null
+          id?: string
+          method?: string
+          request_body?: Json | null
+          request_headers?: Json | null
+          response_body?: Json | null
+          response_status?: number | null
+          success?: boolean | null
+        }
+        Relationships: []
+      }
+      hubbopos_sync_queue: {
+        Row: {
+          action: string
+          created_at: string | null
+          id: string
+          last_attempt_at: string | null
+          last_error: string | null
+          max_retries: number | null
+          next_attempt_at: string | null
+          order_id: string | null
+          payload: Json
+          retry_count: number | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          last_error?: string | null
+          max_retries?: number | null
+          next_attempt_at?: string | null
+          order_id?: string | null
+          payload: Json
+          retry_count?: number | null
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          last_error?: string | null
+          max_retries?: number | null
+          next_attempt_at?: string | null
+          order_id?: string | null
+          payload?: Json
+          retry_count?: number | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hubbopos_sync_queue_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hubbopos_sync_runs: {
+        Row: {
+          catalog_synced: boolean | null
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          orders_pulled: number | null
+          orders_pushed: number | null
+          queue_failed: number | null
+          queue_flushed: number | null
+          reconciliation_snapshot: Json | null
+          run_type: string
+          started_at: string | null
+          status: string
+          triggered_by: string | null
+        }
+        Insert: {
+          catalog_synced?: boolean | null
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          orders_pulled?: number | null
+          orders_pushed?: number | null
+          queue_failed?: number | null
+          queue_flushed?: number | null
+          reconciliation_snapshot?: Json | null
+          run_type: string
+          started_at?: string | null
+          status?: string
+          triggered_by?: string | null
+        }
+        Update: {
+          catalog_synced?: boolean | null
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          orders_pulled?: number | null
+          orders_pushed?: number | null
+          queue_failed?: number | null
+          queue_flushed?: number | null
+          reconciliation_snapshot?: Json | null
+          run_type?: string
+          started_at?: string | null
+          status?: string
+          triggered_by?: string | null
         }
         Relationships: []
       }
@@ -320,6 +495,10 @@ export type Database = {
           category_id: string
           created_at: string
           description: string | null
+          hubbo_pos_external_id: string | null
+          hubbo_pos_last_synced_at: string | null
+          hubbo_pos_sku: string | null
+          hubbo_pos_source: string | null
           id: string
           image_url: string | null
           is_available: boolean
@@ -332,6 +511,10 @@ export type Database = {
           category_id: string
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_sku?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           image_url?: string | null
           is_available?: boolean
@@ -344,6 +527,10 @@ export type Database = {
           category_id?: string
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_sku?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           image_url?: string | null
           is_available?: boolean
@@ -366,6 +553,9 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          hubbo_pos_external_id: string | null
+          hubbo_pos_last_synced_at: string | null
+          hubbo_pos_source: string | null
           id: string
           max_selections: number
           min_selections: number
@@ -376,6 +566,9 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           max_selections?: number
           min_selections?: number
@@ -386,6 +579,9 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           max_selections?: number
           min_selections?: number
@@ -398,6 +594,9 @@ export type Database = {
       modifiers: {
         Row: {
           created_at: string
+          hubbo_pos_external_id: string | null
+          hubbo_pos_last_synced_at: string | null
+          hubbo_pos_source: string | null
           id: string
           is_available: boolean
           is_default: boolean
@@ -409,6 +608,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           is_available?: boolean
           is_default?: boolean
@@ -420,6 +622,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          hubbo_pos_external_id?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_source?: string | null
           id?: string
           is_available?: boolean
           is_default?: boolean
@@ -441,7 +646,8 @@ export type Database = {
       }
       order_events: {
         Row: {
-          created_at: string | null
+          actor_id: string | null
+          created_at: string
           event_type: string
           id: string
           new_value: Json | null
@@ -449,7 +655,8 @@ export type Database = {
           order_id: string
         }
         Insert: {
-          created_at?: string | null
+          actor_id?: string | null
+          created_at?: string
           event_type: string
           id?: string
           new_value?: Json | null
@@ -457,7 +664,8 @@ export type Database = {
           order_id: string
         }
         Update: {
-          created_at?: string | null
+          actor_id?: string | null
+          created_at?: string
           event_type?: string
           id?: string
           new_value?: Json | null
@@ -593,10 +801,20 @@ export type Database = {
           discount_cents: number
           dispatch_after: string | null
           dispatch_status: string | null
+          driver_latitude: number | null
+          driver_location_updated_at: string | null
+          driver_longitude: number | null
           driver_name: string | null
           driver_phone: string | null
           driver_plate_number: string | null
           fulfillment_type: string
+          hubbo_pos_invoice_no: string | null
+          hubbo_pos_last_error: string | null
+          hubbo_pos_last_synced_at: string | null
+          hubbo_pos_order_id: string | null
+          hubbo_pos_payment_status: string | null
+          hubbo_pos_sync_status: string | null
+          hubbo_pos_trans_id: string | null
           id: string
           kitchen_lead_minutes: number | null
           lalamove_order_id: string | null
@@ -641,10 +859,20 @@ export type Database = {
           discount_cents?: number
           dispatch_after?: string | null
           dispatch_status?: string | null
+          driver_latitude?: number | null
+          driver_location_updated_at?: string | null
+          driver_longitude?: number | null
           driver_name?: string | null
           driver_phone?: string | null
           driver_plate_number?: string | null
           fulfillment_type?: string
+          hubbo_pos_invoice_no?: string | null
+          hubbo_pos_last_error?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_order_id?: string | null
+          hubbo_pos_payment_status?: string | null
+          hubbo_pos_sync_status?: string | null
+          hubbo_pos_trans_id?: string | null
           id?: string
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null
@@ -689,10 +917,20 @@ export type Database = {
           discount_cents?: number
           dispatch_after?: string | null
           dispatch_status?: string | null
+          driver_latitude?: number | null
+          driver_location_updated_at?: string | null
+          driver_longitude?: number | null
           driver_name?: string | null
           driver_phone?: string | null
           driver_plate_number?: string | null
           fulfillment_type?: string
+          hubbo_pos_invoice_no?: string | null
+          hubbo_pos_last_error?: string | null
+          hubbo_pos_last_synced_at?: string | null
+          hubbo_pos_order_id?: string | null
+          hubbo_pos_payment_status?: string | null
+          hubbo_pos_sync_status?: string | null
+          hubbo_pos_trans_id?: string | null
           id?: string
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null
@@ -799,6 +1037,18 @@ export type Database = {
           bulk_threshold_cents: number | null
           created_at: string
           delivery_fee: number | null
+          hubbo_pos_circuit_state: string | null
+          hubbo_pos_enabled: boolean | null
+          hubbo_pos_health_status: string | null
+          hubbo_pos_last_catalog_sync_at: string | null
+          hubbo_pos_last_error: string | null
+          hubbo_pos_last_error_at: string | null
+          hubbo_pos_last_order_sync_at: string | null
+          hubbo_pos_last_sync_at: string | null
+          hubbo_pos_location_id: string | null
+          hubbo_pos_merchant_id: string | null
+          hubbo_pos_read_only_mode: boolean | null
+          hubbo_pos_sync_interval_minutes: number | null
           id: string
           kitchen_lead_minutes: number | null
           lalamove_market: string | null
@@ -820,6 +1070,18 @@ export type Database = {
           bulk_threshold_cents?: number | null
           created_at?: string
           delivery_fee?: number | null
+          hubbo_pos_circuit_state?: string | null
+          hubbo_pos_enabled?: boolean | null
+          hubbo_pos_health_status?: string | null
+          hubbo_pos_last_catalog_sync_at?: string | null
+          hubbo_pos_last_error?: string | null
+          hubbo_pos_last_error_at?: string | null
+          hubbo_pos_last_order_sync_at?: string | null
+          hubbo_pos_last_sync_at?: string | null
+          hubbo_pos_location_id?: string | null
+          hubbo_pos_merchant_id?: string | null
+          hubbo_pos_read_only_mode?: boolean | null
+          hubbo_pos_sync_interval_minutes?: number | null
           id?: string
           kitchen_lead_minutes?: number | null
           lalamove_market?: string | null
@@ -841,6 +1103,18 @@ export type Database = {
           bulk_threshold_cents?: number | null
           created_at?: string
           delivery_fee?: number | null
+          hubbo_pos_circuit_state?: string | null
+          hubbo_pos_enabled?: boolean | null
+          hubbo_pos_health_status?: string | null
+          hubbo_pos_last_catalog_sync_at?: string | null
+          hubbo_pos_last_error?: string | null
+          hubbo_pos_last_error_at?: string | null
+          hubbo_pos_last_order_sync_at?: string | null
+          hubbo_pos_last_sync_at?: string | null
+          hubbo_pos_location_id?: string | null
+          hubbo_pos_merchant_id?: string | null
+          hubbo_pos_read_only_mode?: boolean | null
+          hubbo_pos_sync_interval_minutes?: number | null
           id?: string
           kitchen_lead_minutes?: number | null
           lalamove_market?: string | null
@@ -987,7 +1261,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+

@@ -3,8 +3,26 @@ name: E2E Tests
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - 'scripts/**'
+      - 'e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.ts'
   pull_request:
     branches: [main, develop]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - 'scripts/**'
+      - 'e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.ts'
 
 permissions:
   contents: read
@@ -32,15 +50,15 @@ jobs:
       
       - name: Create test environment file
         run: |
-          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" > .env.local
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> .env.local
-          echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env.local
-          echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}" >> .env.local
-          echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" >> .env.local
-          echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}" >> .env.local
-          echo "LALAMOVE_API_KEY=${{ secrets.LALAMOVE_API_KEY }}" >> .env.local
-          echo "LALAMOVE_SECRET_KEY=${{ secrets.LALAMOVE_SECRET_KEY }}" >> .env.local
-          echo "NEXT_PUBLIC_SITE_URL=http://localhost:3000" >> .env.local
+          echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" > apps/web/.env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" >> apps/web/.env.local
+          echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> apps/web/.env.local
+          echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}" >> apps/web/.env.local
+          echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" >> apps/web/.env.local
+          echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}" >> apps/web/.env.local
+          echo "LALAMOVE_API_KEY=${{ secrets.LALAMOVE_API_KEY }}" >> apps/web/.env.local
+          echo "LALAMOVE_API_SECRET=${{ secrets.LALAMOVE_API_SECRET }}" >> apps/web/.env.local
+          echo "NEXT_PUBLIC_URL=http://localhost:3000" >> apps/web/.env.local
       
       - name: Run Playwright tests
         run: npm run test:e2e

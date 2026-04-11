@@ -1,0 +1,7 @@
+{
+  "name": "@madkrapow/shared-types",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./typescript/db.ts",
+  "types": "./typescript/db.ts"
+}

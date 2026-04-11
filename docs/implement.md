@@ -9,6 +9,8 @@ You are Codex acting as a senior staff engineer implementing the Mad Krapow D2C 
 3. Read `docs/architecture.md` for system architecture, codemap, design decisions, and invariants.
 4. Check `docs/documentation.md` for current milestone status and any prior decisions.
 
+The repository is organized as a workspace. The Next.js app now lives in `apps/web`, so any legacy `src/...` references in the plan should be read as `apps/web/src/...`. Continue to run the documented verification commands from the repository root.
+
 ## Execution Rules
 
 ### Per-Milestone Workflow
@@ -47,13 +49,13 @@ For each milestone in plans.md, execute this loop:
 
 | Type | Convention | Example |
 |---|---|---|
-| Pages | `page.tsx` (Next.js convention) | `src/app/cart/page.tsx` |
-| Components | PascalCase | `src/components/menu/MenuItemCard.tsx` |
-| Hooks | camelCase with `use` prefix | `src/hooks/useOrderTracking.ts` |
-| Utilities | kebab-case | `src/lib/utils/format-price.ts` |
-| API Routes | `route.ts` (Next.js convention) | `src/app/api/checkout/route.ts` |
-| Types | PascalCase, `.ts` extension | `src/types/order.ts` |
-| Tests | `*.test.ts` or `*.spec.ts` | `src/lib/utils/format-price.test.ts` |
+| Pages | `page.tsx` (Next.js convention) | `apps/web/src/app/cart/page.tsx` |
+| Components | PascalCase | `apps/web/src/components/menu/MenuItemCard.tsx` |
+| Hooks | camelCase with `use` prefix | `apps/web/src/hooks/useOrderTracking.ts` |
+| Utilities | kebab-case | `apps/web/src/lib/utils/format-price.ts` |
+| API Routes | `route.ts` (Next.js convention) | `apps/web/src/app/api/checkout/route.ts` |
+| Types | PascalCase, `.ts` extension | `apps/web/src/types/order.ts` |
+| Tests | `*.test.ts` or `*.spec.ts` | `apps/web/src/lib/utils/format-price.test.ts` |
 | E2E Tests | `*.spec.ts` in `e2e/` | `e2e/ordering-flow.spec.ts` |
 
 ### API Route Pattern
@@ -61,7 +63,7 @@ For each milestone in plans.md, execute this loop:
 Every API route should follow this pattern:
 
 ```typescript
-// src/app/api/example/route.ts
+// apps/web/src/app/api/example/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerClient } from '@/lib/supabase/server';
@@ -105,7 +107,7 @@ export async function POST(req: NextRequest) {
 ### Webhook Route Pattern
 
 ```typescript
-// src/app/api/webhooks/stripe/route.ts
+// apps/web/src/app/api/webhooks/stripe/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
@@ -170,7 +172,7 @@ const supabase = createClientComponentClient();
 ### Component Pattern
 
 ```typescript
-// src/components/menu/MenuItemCard.tsx
+// apps/web/src/components/menu/MenuItemCard.tsx
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils/format-price';
 import { Badge } from '@/components/ui/badge';
@@ -216,11 +218,11 @@ Note: M9 and M10 can be parallelized if working with multiple agents/developers.
 
 ## Environment Variables
 
-All required environment variables are documented in `.env.local.example`.
+All required environment variables are documented in `apps/web/.env.local.example`.
 Validate them at build time using Zod:
 
 ```typescript
-// src/lib/validators/env.ts
+// apps/web/src/lib/validators/env.ts
 import { z } from 'zod';
 
 const envSchema = z.object({

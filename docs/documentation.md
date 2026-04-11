@@ -31,7 +31,7 @@ cd mad-krapow-app
 npm install
 
 # 3. Set up environment variables
-cp .env.local.example .env.local
+cp apps/web/.env.local.example apps/web/.env.local
 # Fill in all values (see Environment Variables section below)
 
 # 4. Set up Supabase (local or cloud)
@@ -65,8 +65,7 @@ npm start                # Run production build locally
 
 # Database
 npx supabase db reset    # Reset DB + apply all migrations + seed
-npx supabase gen types typescript --local > src/types/database.ts
-                          # Regenerate TypeScript types from schema
+npm run generate-types   # Regenerate shared TypeScript types from schema
 
 # Stripe (local webhook testing)
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
@@ -114,6 +113,7 @@ Decisions made during implementation that deviate from or clarify the original p
 | — | Pre-impl | All prices in cents (integer) | Prevents floating-point rounding errors. JavaScript integer arithmetic is exact up to 2^53. |
 | — | Pre-impl | Denormalize item names/prices into order_items | If a menu item's name or price changes in the future, historical orders should still reflect what was actually ordered and paid for. |
 | — | Pre-impl | MOTORCYCLE as default Lalamove service type | 95%+ of food delivery in KL metro is motorcycle. Fastest, cheapest, most driver availability. |
+| 2026-04-11 | Infra | Move web app into `apps/web` and extract shared database types to `packages/shared-types` | Establishes a stable monorepo layout for future mobile work while preserving root-level developer commands. |
 
 *Add rows as decisions are made during implementation.*
 
@@ -129,17 +129,17 @@ mad-krapow/
 │   ├── architecture.md      # System architecture + codemap
 │   ├── implement.md         # Execution prompt for Codex/agent
 │   └── documentation.md     # THIS FILE — status + decisions
+├── apps/
+│   └── web/                 # Next.js application workspace
+│       ├── src/             # App source
+│       ├── public/          # Static assets (icons, manifest)
+│       ├── middleware.ts    # Next.js middleware entrypoint
+│       └── .env.local.example
+├── packages/
+│   └── shared-types/        # Generated Supabase types shared across workspaces
 ├── supabase/                # Database migrations and seed data
-├── src/                     # Next.js application source
-│   ├── app/                 # Pages and API routes (App Router)
-│   ├── components/          # React components (by domain)
-│   ├── hooks/               # Custom React hooks
-│   ├── lib/                 # Business logic, integrations, utilities
-│   ├── stores/              # Zustand stores
-│   └── types/               # TypeScript type definitions
 ├── e2e/                     # Playwright end-to-end tests
-├── public/                  # Static assets (icons, manifest)
-└── scripts/                  # Build and maintenance scripts
+└── scripts/                 # Build and maintenance scripts
 ```
 
 See `docs/architecture.md` for the complete, detailed codemap.
@@ -171,7 +171,7 @@ See `docs/architecture.md` for the complete, detailed codemap.
 **Security rules:**
 - Variables prefixed with `NEXT_PUBLIC_` are exposed to the browser. Only put safe, public values here.
 - `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `LALAMOVE_API_SECRET`, `STRIPE_WEBHOOK_SECRET` must NEVER be prefixed with `NEXT_PUBLIC_`.
-- All variables are validated at build time via Zod (see `src/lib/validators/env.ts`).
+- All variables are validated at build time via Zod (see `apps/web/src/lib/validators/env.ts`).
 
 ---
 
@@ -196,7 +196,7 @@ See `docs/architecture.md` for the complete, detailed codemap.
 
 To regenerate TypeScript types after schema changes:
 ```bash
-npx supabase gen types typescript --local > src/types/database.ts
+npm run generate-types
 ```
 
 ---
@@ -246,7 +246,7 @@ npx supabase start
 ```bash
 # Ensure Stripe CLI is forwarding:
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
-# Copy the webhook signing secret (whsec_...) to .env.local
+# Copy the webhook signing secret (whsec_...) to apps/web/.env.local
 ```
 
 ### Lalamove quotation returns 401

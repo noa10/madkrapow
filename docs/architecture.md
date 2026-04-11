@@ -104,6 +104,25 @@ mad-krapow/
 │   ├── implement.md           # Execution prompt referencing the plan
 │   └── documentation.md       # Milestone status + decisions + troubleshooting
 │
+├── apps/
+│   └── web/
+│       ├── src/                        # Next.js application source
+│       ├── public/                     # Static assets
+│       ├── middleware.ts               # Next.js middleware entrypoint
+│       ├── next.config.ts
+│       ├── tailwind.config.ts
+│       ├── postcss.config.mjs
+│       ├── tsconfig.json
+│       ├── next-env.d.ts
+│       ├── package.json
+│       └── .env.local.example
+│
+├── packages/
+│   └── shared-types/
+│       ├── package.json
+│       └── typescript/
+│           └── db.ts                   # Generated Supabase database types
+│
 ├── supabase/
 │   ├── migrations/
 │   │   ├── 001_initial_schema.sql
@@ -112,7 +131,25 @@ mad-krapow/
 │   ├── seed.sql
 │   └── config.toml
 │
-├── src/
+├── e2e/
+│   ├── ordering-flow.spec.ts
+│   ├── admin-orders.spec.ts
+│   └── fixtures/
+│       └── test-data.ts
+│
+├── scripts/
+│   └── seed.ts                       # Menu data seeding script
+│
+├── eslint.config.mjs                 # Repo-level lint config
+├── vitest.config.ts                  # Repo-level unit test config
+├── playwright.config.ts              # Repo-level E2E config
+└── package.json                      # Workspace orchestration package
+```
+
+Application paths below are shown relative to `apps/web/src/`.
+
+```
+apps/web/src/
 │   ├── app/                          # Next.js App Router pages
 │   │   ├── layout.tsx                # Root layout: fonts, metadata, providers
 │   │   ├── page.tsx                  # Menu page (hero + categories + items)
@@ -252,33 +289,11 @@ mad-krapow/
 │   │       └── constants.ts          # Order statuses, delivery statuses
 │   │
 │   └── types/
-│       ├── database.ts               # Generated Supabase types
+│       ├── database.types.ts         # Re-export shim for @madkrapow/shared-types
 │       ├── menu.ts                   # MenuItemWithModifiers, etc.
 │       ├── order.ts                  # OrderWithItems, etc.
 │       ├── cart.ts                   # CartItem, CartState
 │       └── lalamove.ts              # QuotationResponse, OrderResponse
-│
-├── e2e/
-│   ├── ordering-flow.spec.ts
-│   ├── admin-orders.spec.ts
-│   └── fixtures/
-│       └── test-data.ts
-│
-├── public/
-│   ├── manifest.json
-│   ├── icons/                        # PWA icons
-│   └── images/                       # Static brand assets
-│
-├── scripts/
-│   └── seed.ts                       # Menu data seeding script
-│
-├── .env.local.example
-├── next.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
-├── vitest.config.ts
-├── playwright.config.ts
-└── package.json
 ```
 
 ---

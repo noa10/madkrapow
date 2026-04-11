@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
-import { DM_Sans, Cormorant_Garamond } from "next/font/google";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/plus-jakarta-sans/500.css";
+import "@fontsource/plus-jakarta-sans/600.css";
+import "@fontsource/plus-jakarta-sans/700.css";
 import "./globals.css";
 import { CartDrawer } from "@/components/cart/CartDrawer";
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-dm_sans",
-});
-
-const cormorantGaramond = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-cormorant",
-});
 
 export const metadata: Metadata = {
   title: "Mad Krapow - Thai Street Food",
@@ -31,9 +25,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${dmSans.variable} ${cormorantGaramond.variable} font-body antialiased`}
-      >
+      <body className="font-body antialiased">
         {children}
         <CartDrawer />
       </body>

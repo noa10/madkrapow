@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../config/routes.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../generated/tables/modifiers.dart';
@@ -100,7 +102,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   behavior: SnackBarBehavior.floating,
                 ),
               );
-              Navigator.of(context).pop();
+              context.go(AppRoutes.home);
             },
           ),
           body: CustomScrollView(

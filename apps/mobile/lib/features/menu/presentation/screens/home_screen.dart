@@ -190,7 +190,7 @@ class _MenuItemTile extends StatelessWidget {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: () => context.go('/item/${item.id}'),
+      onTap: () => context.push('/item/${item.id}'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(

@@ -26,7 +26,7 @@
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@react-google-maps/api": "^2.20.8",
-    "@sentry/nextjs": "^10.47.0",
+    "@sentry/nextjs": "^10.48.0",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
     "@madkrapow/shared-types": "1.0.0",

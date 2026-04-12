@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Close stale conflicted Dependabot PRs
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;

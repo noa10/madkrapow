@@ -2,7 +2,21 @@
 
 enum DeliveryType { delivery, selfPickup }
 
+extension DeliveryTypeJson on DeliveryType {
+  String get jsonName => switch (this) {
+        DeliveryType.delivery => 'delivery',
+        DeliveryType.selfPickup => 'self_pickup',
+      };
+}
+
 enum FulfillmentType { asap, scheduled }
+
+extension FulfillmentTypeJson on FulfillmentType {
+  String get jsonName => switch (this) {
+        FulfillmentType.asap => 'asap',
+        FulfillmentType.scheduled => 'scheduled',
+      };
+}
 
 class DeliveryAddress {
   const DeliveryAddress({
@@ -117,8 +131,8 @@ class CheckoutRequest {
         'items': items.map((i) => i.toJson()).toList(),
         'deliveryAddress': deliveryAddress.toJson(),
         'deliveryFee': deliveryFee,
-        'deliveryType': deliveryType.name,
-        'fulfillmentType': fulfillmentType.name,
+        'deliveryType': deliveryType.jsonName,
+        'fulfillmentType': fulfillmentType.jsonName,
         if (scheduledFor != null) 'scheduledFor': scheduledFor,
         if (quotationId != null) 'quotationId': quotationId,
         if (serviceType != null) 'serviceType': serviceType,
@@ -221,9 +235,17 @@ class DeliveryQuoteResult {
   final int? feeCents;
 
   factory DeliveryQuoteResult.fromJson(Map<String, dynamic> json) {
+    // /api/delivery/quote returns { fee: { total }, ... } while
+    // /api/shipping/lalamove/quote returns { feeCents, priceBreakdown, ... }
+    // Normalize both into feeCents.
+    int? feeCents = json['feeCents'] as int?;
+    if (feeCents == null && json['fee'] != null) {
+      feeCents = (json['fee'] as Map<String, dynamic>)['total'] as int?;
+    }
+
     return DeliveryQuoteResult(
       quotationId: json['quotationId'] as String?,
-      feeCents: json['feeCents'] as int?,
+      feeCents: feeCents,
       stopIds: json['stopIds'] != null
           ? StopIds(
               pickup: json['stopIds']['pickup'] as String,

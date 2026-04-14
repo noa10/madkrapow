@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geocoding/geocoding.dart';
 
+import '../../../config/env.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../data/checkout_models.dart';
 import '../data/checkout_repository.dart';
@@ -106,6 +108,39 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
 
   void clearShippingQuote() {
     state = state.copyWith(clearShippingQuote: true);
+  }
+
+  /// Geocode the delivery address and fetch a Lalamove quote.
+  /// Returns the fee in cents, or throws on failure.
+  Future<int> fetchDeliveryQuote(DeliveryAddress address) async {
+    final repo = ref.read(checkoutRepositoryProvider);
+
+    // Geocode the dropoff address
+    final addressString = [
+      address.address ?? '',
+      address.city ?? '',
+      address.state ?? '',
+      address.postalCode ?? '',
+    ].where((s) => s.isNotEmpty).join(', ');
+
+    final locations = await locationFromAddress(addressString);
+    if (locations.isEmpty) {
+      throw Exception('Could not find coordinates for this address');
+    }
+    final dropoff = locations.first;
+
+    final request = DeliveryQuoteRequest(
+      pickupLat: double.parse(AppEnv.storeLatitude),
+      pickupLng: double.parse(AppEnv.storeLongitude),
+      pickupAddress: AppEnv.storeAddress,
+      dropoffLat: dropoff.latitude,
+      dropoffLng: dropoff.longitude,
+      dropoffAddress: addressString,
+    );
+
+    final result = await repo.getDeliveryQuote(request);
+    setShippingQuote(result);
+    return result.feeCents ?? 0;
   }
 }
 

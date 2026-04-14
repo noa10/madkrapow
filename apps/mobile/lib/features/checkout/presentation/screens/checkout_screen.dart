@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../config/routes.dart';
+import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../data/checkout_models.dart';
@@ -35,6 +37,50 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     super.dispose();
   }
 
+  Future<void> _fetchDeliveryQuote() async {
+    final checkout = ref.read(checkoutProvider);
+    if (checkout.deliveryType != DeliveryType.delivery) return;
+    if (_addressController.text.trim().isEmpty) return;
+
+    try {
+      await ref
+          .read(checkoutProvider.notifier)
+          .fetchDeliveryQuote(
+            DeliveryAddress(
+              fullName: _nameController.text.trim(),
+              phone: _phoneController.text.trim(),
+              address: _addressController.text.trim(),
+              postalCode: _postalCodeController.text.trim(),
+              city: _cityController.text.trim(),
+              state: _stateController.text.trim(),
+            ),
+          );
+    } on AuthRequiredException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        context.go(
+          '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not calculate delivery fee: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _handleCheckout() async {
     if (!_validateForm()) return;
 
@@ -49,20 +95,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final repo = ref.read(checkoutRepositoryProvider);
 
       // Build checkout items from cart
-      final checkoutItems = cart.map((item) => CheckoutItem(
-            id: item.menuItemId,
-            name: item.name,
-            price: item.unitPrice,
-            quantity: item.quantity,
-            image: item.imageUrl,
-            modifiers: item.selectedModifiers
-                .map((m) => CheckoutModifier(
-                      id: m.id,
-                      name: m.name,
-                      priceDeltaCents: m.priceDeltaCents,
-                    ))
-                .toList(),
-          ));
+      final checkoutItems = cart.map(
+        (item) => CheckoutItem(
+          id: item.menuItemId,
+          name: item.name,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          image: item.imageUrl,
+          modifiers: item.selectedModifiers
+              .map(
+                (m) => CheckoutModifier(
+                  id: m.id,
+                  name: m.name,
+                  priceDeltaCents: m.priceDeltaCents,
+                ),
+              )
+              .toList(),
+        ),
+      );
 
       final deliveryFee = checkout.deliveryQuote?.feeCents ?? 0;
 
@@ -71,10 +121,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         deliveryAddress: DeliveryAddress(
           fullName: _nameController.text.trim(),
           phone: _phoneController.text.trim(),
-          address: _addressController.text.trim(),
-          postalCode: _postalCodeController.text.trim(),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
+          address: checkout.deliveryType == DeliveryType.delivery
+              ? _addressController.text.trim()
+              : null,
+          postalCode: checkout.deliveryType == DeliveryType.delivery
+              ? _postalCodeController.text.trim()
+              : null,
+          city: checkout.deliveryType == DeliveryType.delivery
+              ? _cityController.text.trim()
+              : null,
+          state: checkout.deliveryType == DeliveryType.delivery
+              ? _stateController.text.trim()
+              : null,
         ),
         deliveryFee: deliveryFee,
         deliveryType: checkout.deliveryType,
@@ -87,14 +145,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final result = await repo.createCheckout(request);
 
-      // Open Stripe Checkout in external browser
-      final url = Uri.parse(result.checkoutUrl);
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          setState(() => _errorText = 'Could not open payment page.');
-        }
+      // Navigate to Stripe WebView
+      if (mounted) {
+        context.go(
+          '${AppRoutes.stripeCheckout}?checkout_url=${Uri.encodeComponent(result.checkoutUrl)}',
+        );
+      }
+    } on AuthRequiredException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        context.go(
+          '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -107,15 +174,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   bool _validateForm() {
     final checkout = ref.read(checkoutProvider);
+    if (_nameController.text.trim().isEmpty) {
+      setState(() => _errorText = 'Name is required');
+      return false;
+    }
+    if (_phoneController.text.trim().isEmpty) {
+      setState(() => _errorText = 'Phone number is required');
+      return false;
+    }
     if (checkout.deliveryType == DeliveryType.delivery) {
-      if (_nameController.text.trim().isEmpty) {
-        setState(() => _errorText = 'Name is required');
-        return false;
-      }
-      if (_phoneController.text.trim().isEmpty) {
-        setState(() => _errorText = 'Phone number is required');
-        return false;
-      }
       if (_addressController.text.trim().isEmpty) {
         setState(() => _errorText = 'Delivery address is required');
         return false;
@@ -144,8 +211,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             const SizedBox(height: 8),
             _DeliveryTypeSelector(
               selected: checkout.deliveryType,
-              onChanged: (type) =>
-                  ref.read(checkoutProvider.notifier).setDeliveryType(type),
+              onChanged: (type) {
+                ref.read(checkoutProvider.notifier).setDeliveryType(type);
+                if (type == DeliveryType.delivery) {
+                  _fetchDeliveryQuote();
+                }
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // Contact info (always shown)
+            _SectionTitle('Contact Info'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Full Name',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone Number',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
             ),
             const SizedBox(height: 24),
 
@@ -153,23 +245,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             if (checkout.deliveryType == DeliveryType.delivery) ...[
               _SectionTitle('Delivery Address'),
               const SizedBox(height: 8),
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  prefixIcon: Icon(Icons.phone_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
               TextField(
                 controller: _addressController,
                 maxLines: 2,
@@ -185,7 +260,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     child: TextField(
                       controller: _postalCodeController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Postal Code'),
+                      decoration: const InputDecoration(
+                        labelText: 'Postal Code',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -201,6 +278,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               TextField(
                 controller: _stateController,
                 decoration: const InputDecoration(labelText: 'State'),
+              ),
+              const SizedBox(height: 12),
+              // Get delivery quote button
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _fetchDeliveryQuote,
+                  icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                  label: const Text('Calculate Delivery Fee'),
+                ),
               ),
               const SizedBox(height: 24),
             ],
@@ -218,23 +305,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             // Order summary
             _SectionTitle('Order Summary'),
             const SizedBox(height: 8),
-            ...cart.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${item.quantity}x ${item.name}',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                      Text(
-                        formatPrice(item.lineTotalCents),
+            ...cart.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${item.quantity}x ${item.name}',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                    Text(
+                      formatPrice(item.lineTotalCents),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const Divider(height: 24),
             Row(
               children: [
@@ -247,9 +336,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               Row(
                 children: [
                   const Expanded(child: Text('Delivery Fee')),
-                  Text(deliveryFee > 0
-                      ? formatPrice(deliveryFee)
-                      : 'Calculating...'),
+                  Text(
+                    deliveryFee > 0
+                        ? formatPrice(deliveryFee)
+                        : 'Calculating...',
+                  ),
                 ],
               ),
             ],
@@ -260,16 +351,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   child: Text(
                     'Total',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 Text(
                   formatPrice(total),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ],
             ),
@@ -300,9 +391,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(
-                      'Pay ${formatPrice(total)}',
-                    ),
+                  : Text('Pay ${formatPrice(total)}'),
             ),
             const SizedBox(height: 32),
           ],
@@ -320,9 +409,9 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
     );
   }
 }
@@ -358,10 +447,7 @@ class _DeliveryTypeSelector extends StatelessWidget {
 }
 
 class _FulfillmentSelector extends StatelessWidget {
-  const _FulfillmentSelector({
-    required this.selected,
-    required this.onChanged,
-  });
+  const _FulfillmentSelector({required this.selected, required this.onChanged});
 
   final FulfillmentType selected;
   final ValueChanged<FulfillmentType> onChanged;

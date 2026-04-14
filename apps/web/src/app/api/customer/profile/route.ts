@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { getServerClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 interface CustomerAddress {
   id: string
@@ -34,13 +34,11 @@ interface ProfileError {
 
 type ProfileResult = ProfileResponse | ProfileError
 
-export async function GET(): Promise<NextResponse<ProfileResult>> {
+export async function GET(req: NextRequest): Promise<NextResponse<ProfileResult>> {
   try {
-    const supabase = await getServerClient()
+    const { user, supabase } = await getAuthenticatedUser(req)
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user || !user.email) {
+    if (!user || !user.email || !supabase) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }

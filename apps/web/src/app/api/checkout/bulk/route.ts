@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getServerClient, getServiceClient } from '@/lib/supabase/server'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const BulkCheckoutItemSchema = z.object({
   id: z.string().min(1),
@@ -59,19 +59,15 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutResult>> {
   try {
-    // Use anon client only for auth verification
-    const authClient = await getServerClient()
-    const { data: { user } } = await authClient.auth.getUser()
+    // Use dual auth (cookie for web, Bearer token for mobile)
+    const { user, supabase } = await getAuthenticatedUser(req)
 
-    if (!user) {
+    if (!user || !supabase) {
       return NextResponse.json(
         { success: false, error: 'Please sign in to place a bulk order', code: 'UNAUTHORIZED' },
         { status: 401 }
       )
     }
-
-    // Use service client for all DB operations (bypasses RLS for trusted server-side work)
-    const supabase = getServiceClient()
 
     const body = await req.json()
     const parsed = BulkCheckoutRequestSchema.safeParse(body)

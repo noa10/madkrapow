@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLalamoveClient } from '@/lib/lalamove/client'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 import { env } from '@/lib/validators/env'
 
 const DeliveryQuoteRequestSchema = z.object({
@@ -40,6 +41,15 @@ type DeliveryQuoteResult = DeliveryQuoteResponse | DeliveryQuoteError
 
 export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuoteResult>> {
   try {
+    const { user } = await getAuthenticatedUser(req)
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Please sign in to get a delivery quote', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      )
+    }
+
     const body = await req.json()
     const parsed = DeliveryQuoteRequestSchema.safeParse(body)
 

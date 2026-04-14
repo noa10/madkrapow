@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerClient } from '@/lib/supabase/server'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 interface Order {
   id: string
@@ -26,11 +26,9 @@ type OrdersResult = OrdersResponse | OrdersError
 
 export async function GET(req: NextRequest): Promise<NextResponse<OrdersResult>> {
   try {
-    const supabase = await getServerClient()
+    const { user, supabase } = await getAuthenticatedUser(req)
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    if (!user || !supabase) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }

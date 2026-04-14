@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
-import { getServerClient, getServiceClient } from '@/lib/supabase/server'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const CheckoutItemSchema = z.object({
   id: z.string().min(1),
@@ -93,20 +93,16 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResult>> {
   try {
-    // Use anon client only for auth verification
-    const authClient = await getServerClient()
-    const { data: { user } } = await authClient.auth.getUser()
+    // Use dual auth (cookie for web, Bearer token for mobile)
+    const { user, supabase } = await getAuthenticatedUser(req)
 
-    if (!user) {
+    if (!user || !supabase) {
       console.warn('[API] Checkout unauthorized: No user found')
       return NextResponse.json(
         { success: false, error: 'Please sign in to checkout', code: 'UNAUTHORIZED' },
         { status: 401 }
       )
     }
-
-    // Use service client for all DB operations (bypasses RLS for trusted server-side work)
-    const supabase = getServiceClient()
 
     let body
     try {
@@ -279,8 +275,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       .insert({
         order_number: orderNumber,
         customer_id: customerId,
-        customer_name: deliveryAddress.fullName,
-        customer_phone: deliveryAddress.phone,
+        customer_name: deliveryAddress.fullName || user.user_metadata?.full_name || '',
+        customer_phone: deliveryAddress.phone || '',
         status: 'pending',
         subtotal_cents: subtotalCents,
         delivery_fee_cents: effectiveDeliveryFee,

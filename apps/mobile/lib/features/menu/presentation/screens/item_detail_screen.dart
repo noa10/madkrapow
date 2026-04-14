@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../config/routes.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../generated/tables/modifiers.dart';
@@ -39,7 +38,10 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     return total * _quantity;
   }
 
-  void _toggleModifier(ModifierGroupWithModifiers group, ModifiersRow modifier) {
+  void _toggleModifier(
+    ModifierGroupWithModifiers group,
+    ModifiersRow modifier,
+  ) {
     setState(() {
       final selected = _selectedModifiers[group.group.id] ?? [];
       final maxSelections = group.group.maxSelections;
@@ -77,46 +79,56 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         }
 
         return Scaffold(
+          appBar: AppBar(),
           bottomNavigationBar: _BottomBar(
             totalCents: _totalCents,
             onAddToCart: () {
-              ref.read(cartProvider.notifier).addItem(CartItem(
-                menuItemId: item.item.id,
-                name: item.item.name,
-                unitPrice: item.item.priceCents,
-                quantity: _quantity,
-                selectedModifiers: _selectedModifiers.values
-                    .expand((mods) => mods)
-                    .map((m) => SelectedModifier(
-                          id: m.id,
-                          name: m.name,
-                          priceDeltaCents: m.priceDeltaCents,
-                        ))
-                    .toList(),
-                specialInstructions: _specialInstructions,
-                imageUrl: item.item.imageUrl,
-              ));
+              ref
+                  .read(cartProvider.notifier)
+                  .addItem(
+                    CartItem(
+                      menuItemId: item.item.id,
+                      name: item.item.name,
+                      unitPrice: item.item.priceCents,
+                      quantity: _quantity,
+                      selectedModifiers: _selectedModifiers.values
+                          .expand((mods) => mods)
+                          .map(
+                            (m) => SelectedModifier(
+                              id: m.id,
+                              name: m.name,
+                              priceDeltaCents: m.priceDeltaCents,
+                            ),
+                          )
+                          .toList(),
+                      specialInstructions: _specialInstructions,
+                      imageUrl: item.item.imageUrl,
+                    ),
+                  );
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('${_quantity}x ${item.item.name} added to cart'),
+                  content: Text(
+                    '${_quantity}x ${item.item.name} added to cart',
+                  ),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
-              context.go(AppRoutes.home);
+              context.pop();
             },
           ),
           body: CustomScrollView(
             slivers: [
               // Image
               SliverToBoxAdapter(
-                child: item.item.imageUrl != null &&
-                        item.item.imageUrl!.isNotEmpty
+                child:
+                    item.item.imageUrl != null && item.item.imageUrl!.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: item.item.imageUrl!,
                         height: 260,
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorWidget: (context, url, error) => _ImagePlaceholder(),
+                        errorWidget: (context, url, error) =>
+                            _ImagePlaceholder(),
                       )
                     : const _ImagePlaceholder(),
               ),
@@ -129,19 +141,17 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                     children: [
                       Text(
                         item.item.name,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         item.category.name,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.5),
-                            ),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
                       ),
                       if (item.item.description != null &&
                           item.item.description!.isNotEmpty) ...[
@@ -154,24 +164,25 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                       const SizedBox(height: 16),
                       Text(
                         formatPrice(item.item.priceCents),
-                        style:
-                            Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
               // Modifier groups
-              ...item.modifierGroups.map((group) => SliverToBoxAdapter(
-                    child: _ModifierGroupSection(
-                      group: group,
-                      selectedModifiers: _selectedModifiers[group.group.id] ?? [],
-                      onToggle: (modifier) => _toggleModifier(group, modifier),
-                    ),
-                  )),
+              ...item.modifierGroups.map(
+                (group) => SliverToBoxAdapter(
+                  child: _ModifierGroupSection(
+                    group: group,
+                    selectedModifiers: _selectedModifiers[group.group.id] ?? [],
+                    onToggle: (modifier) => _toggleModifier(group, modifier),
+                  ),
+                ),
+              ),
               // Quantity
               SliverToBoxAdapter(
                 child: _QuantitySelector(
@@ -186,7 +197,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   onChanged: (v) => _specialInstructions = v,
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              const SliverToBoxAdapter(child: SizedBox(height: 180)),
             ],
           ),
         );
@@ -258,8 +269,9 @@ class _ModifierGroupSection extends StatelessWidget {
             ),
           const SizedBox(height: 8),
           ...group.modifiers.map((modifier) {
-            final isSelected =
-                selectedModifiers.any((m) => m.id == modifier.id);
+            final isSelected = selectedModifiers.any(
+              (m) => m.id == modifier.id,
+            );
             return _ModifierTile(
               modifier: modifier,
               isSelected: isSelected,
@@ -301,10 +313,7 @@ class _ModifierTile extends StatelessWidget {
                 child: Radio<bool>(value: true),
               )
             else
-              Checkbox(
-                value: isSelected,
-                onChanged: (_) => onTap(),
-              ),
+              Checkbox(value: isSelected, onChanged: (_) => onTap()),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -318,8 +327,8 @@ class _ModifierTile extends StatelessWidget {
                     ? '+${formatPrice(modifier.priceDeltaCents)}'
                     : '-${formatPrice(modifier.priceDeltaCents.abs())}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
           ],
         ),
@@ -329,10 +338,7 @@ class _ModifierTile extends StatelessWidget {
 }
 
 class _QuantitySelector extends StatelessWidget {
-  const _QuantitySelector({
-    required this.quantity,
-    required this.onChanged,
-  });
+  const _QuantitySelector({required this.quantity, required this.onChanged});
 
   final int quantity;
   final ValueChanged<int> onChanged;
@@ -402,10 +408,7 @@ class _SpecialInstructionsField extends StatelessWidget {
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({
-    required this.totalCents,
-    required this.onAddToCart,
-  });
+  const _BottomBar({required this.totalCents, required this.onAddToCart});
 
   final int totalCents;
   final VoidCallback onAddToCart;

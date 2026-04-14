@@ -27,10 +27,9 @@ class OrderHistoryScreen extends ConsumerWidget {
                   Icon(
                     Icons.receipt_long_outlined,
                     size: 64,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.3),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.3),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -41,11 +40,10 @@ class OrderHistoryScreen extends ConsumerWidget {
                   Text(
                     'Place your first order to see it here',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                        ),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -73,7 +71,7 @@ class _OrderCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: () => context.go('/order/${order.id}'),
+        onTap: () => context.push('/orders/${order.id}'),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -158,24 +156,24 @@ class _StatusBadge extends StatelessWidget {
   }
 
   Color get _statusColor => switch (status) {
-        'paid' => Colors.blue,
-        'accepted' => Colors.indigo,
-        'preparing' => Colors.orange,
-        'ready' => Colors.teal,
-        'picked_up' => Colors.purple,
-        'delivered' => Colors.green,
-        'cancelled' => Colors.red,
-        _ => Colors.grey,
-      };
+    'paid' => Colors.blue,
+    'accepted' => Colors.indigo,
+    'preparing' => Colors.orange,
+    'ready' => Colors.teal,
+    'picked_up' => Colors.purple,
+    'delivered' => Colors.green,
+    'cancelled' => Colors.red,
+    _ => Colors.grey,
+  };
 
   String get _label => switch (status) {
-        'paid' => 'Paid',
-        'accepted' => 'Accepted',
-        'preparing' => 'Preparing',
-        'ready' => 'Ready',
-        'picked_up' => 'On the way',
-        'delivered' => 'Delivered',
-        'cancelled' => 'Cancelled',
-        _ => status,
-      };
+    'paid' => 'Paid',
+    'accepted' => 'Accepted',
+    'preparing' => 'Preparing',
+    'ready' => 'Ready',
+    'picked_up' => 'On the way',
+    'delivered' => 'Delivered',
+    'cancelled' => 'Cancelled',
+    _ => status,
+  };
 }

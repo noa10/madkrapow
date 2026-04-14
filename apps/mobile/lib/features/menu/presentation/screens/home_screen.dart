@@ -17,12 +17,11 @@ class HomeScreen extends ConsumerWidget {
     final storeOpen = ref.watch(storeOpenProvider);
 
     return Scaffold(
+      appBar: AppBar(),
       body: CustomScrollView(
         slivers: [
           // Hero banner
-          SliverToBoxAdapter(
-            child: _HeroBanner(isStoreOpen: storeOpen),
-          ),
+          SliverToBoxAdapter(child: _HeroBanner(isStoreOpen: storeOpen)),
           // Store closed banner
           if (storeOpen == false)
             const SliverToBoxAdapter(child: StoreClosedBanner()),
@@ -33,9 +32,7 @@ class HomeScreen extends ConsumerWidget {
               child: Center(child: CircularProgressIndicator()),
             ),
             error: (err, _) => SliverFillRemaining(
-              child: Center(
-                child: Text('Failed to load menu: $err'),
-              ),
+              child: Center(child: Text('Failed to load menu: $err')),
             ),
           ),
         ],
@@ -91,8 +88,9 @@ class _HeroBanner extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: (isStoreOpen! ? Colors.green : Colors.red)
-                    .withValues(alpha: 0.2),
+                color: (isStoreOpen! ? Colors.green : Colors.red).withValues(
+                  alpha: 0.2,
+                ),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
@@ -129,13 +127,10 @@ class _MenuContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final category = categories[index];
-          return _CategorySection(category: category);
-        },
-        childCount: categories.length,
-      ),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final category = categories[index];
+        return _CategorySection(category: category);
+      }, childCount: categories.length),
     );
   }
 }
@@ -171,9 +166,9 @@ class _CategorySection extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        ...category.menuItems.map((item) => _MenuItemTile(
-              itemWithModifiers: item,
-            )),
+        ...category.menuItems.map(
+          (item) => _MenuItemTile(itemWithModifiers: item),
+        ),
       ],
     );
   }
@@ -245,7 +240,9 @@ class _MenuItemTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 4),
@@ -263,7 +260,9 @@ class _MenuItemTile extends StatelessWidget {
                         Text(
                           'Customizable',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         ),
                       ],

@@ -32,7 +32,9 @@ class ProfileScreen extends ConsumerWidget {
                     children: [
                       CircleAvatar(
                         radius: 40,
-                        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                        backgroundColor: theme.colorScheme.primary.withValues(
+                          alpha: 0.1,
+                        ),
                         child: Icon(
                           Icons.person,
                           size: 40,
@@ -50,7 +52,9 @@ class ProfileScreen extends ConsumerWidget {
                       Text(
                         customer.phone ?? 'No phone set',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.6,
+                          ),
                         ),
                       ),
                     ],
@@ -68,7 +72,7 @@ class ProfileScreen extends ConsumerWidget {
                       leading: const Icon(Icons.location_on_outlined),
                       title: const Text('Saved Addresses'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => context.go(AppRoutes.addresses),
+                      onTap: () => context.push(AppRoutes.addresses),
                     ),
                   ],
                 ),

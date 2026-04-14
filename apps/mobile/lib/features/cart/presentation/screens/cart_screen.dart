@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../config/routes.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../data/cart_item.dart';
 import '../../providers/cart_provider.dart';
@@ -24,7 +26,9 @@ class CartScreen extends ConsumerWidget {
               Icon(
                 Icons.shopping_cart_outlined,
                 size: 64,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.3),
               ),
               const SizedBox(height: 16),
               Text(
@@ -35,8 +39,10 @@ class CartScreen extends ConsumerWidget {
               Text(
                 'Browse the menu to add items',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
               ),
             ],
           ),
@@ -114,7 +120,8 @@ class _CartItemTile extends StatelessWidget {
                   width: 56,
                   height: 56,
                   fit: BoxFit.cover,
-                  errorWidget: (context, url, error) => _imagePlaceholder(theme),
+                  errorWidget: (context, url, error) =>
+                      _imagePlaceholder(theme),
                 ),
               )
             else
@@ -135,7 +142,9 @@ class _CartItemTile extends StatelessWidget {
                     Text(
                       item.selectedModifiers.map((m) => m.name).join(', '),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -145,7 +154,9 @@ class _CartItemTile extends StatelessWidget {
                       '"${item.specialInstructions}"',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontStyle: FontStyle.italic,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -195,9 +206,7 @@ class _CartItemTile extends StatelessWidget {
   Widget _quantityControls() {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(
-          color: Colors.grey.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -257,7 +266,9 @@ class _CartSummary extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Subtotal ($totalItems item${totalItems != 1 ? 's' : ''})'),
+                Text(
+                  'Subtotal ($totalItems item${totalItems != 1 ? 's' : ''})',
+                ),
                 Text(
                   formatPrice(subtotalCents),
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -268,9 +279,7 @@ class _CartSummary extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             FilledButton(
-              onPressed: () {
-                // TODO: Phase 4 — navigate to checkout
-              },
+              onPressed: () => context.go(AppRoutes.checkout),
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),

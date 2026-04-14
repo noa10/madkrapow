@@ -36,7 +36,11 @@ class CartNotifier extends Notifier<List<CartItem>> {
 
   /// Update the quantity of an item. If quantity is 0, removes it.
   /// Mirrors web's updateQuantity from stores/cart.ts:86-102.
-  void updateQuantity(String menuItemId, List<String> modifierIds, int quantity) {
+  void updateQuantity(
+    String menuItemId,
+    List<String> modifierIds,
+    int quantity,
+  ) {
     final index = _findItemIndex(menuItemId, modifierIds);
     if (index < 0) return;
 
@@ -59,7 +63,8 @@ class CartNotifier extends Notifier<List<CartItem>> {
   int get totalItems => state.fold(0, (sum, item) => sum + item.quantity);
 
   /// Subtotal in cents (sum of all line totals).
-  int get subtotalCents => state.fold(0, (sum, item) => sum + item.lineTotalCents);
+  int get subtotalCents =>
+      state.fold(0, (sum, item) => sum + item.lineTotalCents);
 
   /// Find item index by menu item ID and modifier IDs.
   /// Mirrors web's findItemIndex from stores/cart.ts:37-45.
@@ -67,7 +72,8 @@ class CartNotifier extends Notifier<List<CartItem>> {
     final key = _getModifierKey(modifierIds);
     return state.indexWhere((item) {
       return item.menuItemId == menuItemId &&
-          _getModifierKey(item.selectedModifiers.map((m) => m.id).toList()) == key;
+          _getModifierKey(item.selectedModifiers.map((m) => m.id).toList()) ==
+              key;
     });
   }
 
@@ -85,4 +91,11 @@ class CartNotifier extends Notifier<List<CartItem>> {
 
 final cartProvider = NotifierProvider<CartNotifier, List<CartItem>>(() {
   return CartNotifier();
+});
+
+/// Derived provider: total item count (sum of quantities) for badges.
+final cartItemCountProvider = Provider<int>((ref) {
+  return ref
+      .watch(cartProvider)
+      .fold<int>(0, (sum, item) => sum + item.quantity);
 });

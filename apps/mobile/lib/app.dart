@@ -5,14 +5,18 @@ import 'package:go_router/go_router.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'core/providers/supabase_provider.dart';
+import 'core/widgets/app_shell.dart';
 import 'features/auth/presentation/screens/auth_callback_screen.dart';
+import 'features/auth/presentation/screens/auth_splash_screen.dart';
 import 'features/auth/presentation/screens/reset_password_screen.dart';
 import 'features/auth/presentation/screens/sign_in_screen.dart';
 import 'features/auth/presentation/screens/sign_up_screen.dart';
 import 'features/auth/presentation/screens/update_password_screen.dart';
+import 'features/auth/presentation/widgets/auth_listener.dart';
 import 'features/cart/presentation/screens/cart_screen.dart';
 import 'features/checkout/presentation/screens/checkout_screen.dart';
 import 'features/checkout/presentation/screens/order_success_screen.dart';
+import 'features/checkout/presentation/screens/stripe_checkout_screen.dart';
 import 'features/menu/presentation/screens/home_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'features/orders/presentation/screens/order_history_screen.dart';
@@ -23,6 +27,7 @@ import 'features/menu/presentation/screens/item_detail_screen.dart';
 /// Routes that require authentication.
 const _protectedRoutes = [
   AppRoutes.checkout,
+  AppRoutes.stripeCheckout,
   AppRoutes.orderSuccess,
   AppRoutes.orderDetail,
   AppRoutes.orders,
@@ -41,12 +46,27 @@ bool _isProtectedRoute(String location) {
   return false;
 }
 
+// Navigator keys for each branch of the shell
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final _homeNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'home');
+final _ordersNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'orders');
+final _cartNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'cart');
+final _profileNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
+
 GoRouter _createRouter(Ref ref) {
   return GoRouter(
-    initialLocation: AppRoutes.home,
+    navigatorKey: _rootNavigatorKey,
+    initialLocation: AppRoutes.splash,
+    refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
       final user = ref.read(currentUserProvider);
       final location = state.matchedLocation;
+
+      // Never redirect away from splash — it handles its own navigation
+      if (location == AppRoutes.splash) return null;
+
+      // Allow update-password even when authenticated (deep link from reset email)
+      if (location == AppRoutes.updatePassword) return null;
 
       // Redirect to sign-in if accessing a protected route without auth
       if (_isProtectedRoute(location) && user == null) {
@@ -64,54 +84,12 @@ GoRouter _createRouter(Ref ref) {
       return null;
     },
     routes: [
-      // Home (Phase 2)
+      // ── Routes OUTSIDE the shell (no bottom nav bar) ──
+
+      // Splash (auth state resolution)
       GoRoute(
-        path: AppRoutes.home,
-        builder: (context, state) => const HomeScreen(),
-      ),
-      // Item detail (Phase 2)
-      GoRoute(
-        path: AppRoutes.itemDetail,
-        builder: (context, state) => ItemDetailScreen(
-          itemId: state.pathParameters['id']!,
-        ),
-      ),
-      // Cart (Phase 3)
-      GoRoute(
-        path: AppRoutes.cart,
-        builder: (context, state) => const CartScreen(),
-      ),
-      // Checkout (Phase 4)
-      GoRoute(
-        path: AppRoutes.checkout,
-        builder: (context, state) => const CheckoutScreen(),
-      ),
-      // Order success (Phase 4)
-      GoRoute(
-        path: AppRoutes.orderSuccess,
-        builder: (context, state) => const OrderSuccessScreen(),
-      ),
-      // Order detail (Phase 5)
-      GoRoute(
-        path: AppRoutes.orderDetail,
-        builder: (context, state) => OrderDetailScreen(
-          orderId: state.pathParameters['id']!,
-        ),
-      ),
-      // Order history (Phase 5)
-      GoRoute(
-        path: AppRoutes.orders,
-        builder: (context, state) => const OrderHistoryScreen(),
-      ),
-      // Profile (Phase 6)
-      GoRoute(
-        path: AppRoutes.profile,
-        builder: (context, state) => const ProfileScreen(),
-      ),
-      // Addresses (Phase 6)
-      GoRoute(
-        path: AppRoutes.addresses,
-        builder: (context, state) => const AddressManagementScreen(),
+        path: AppRoutes.splash,
+        builder: (context, state) => const AuthSplashScreen(),
       ),
       // Auth screens
       GoRoute(
@@ -134,6 +112,97 @@ GoRouter _createRouter(Ref ref) {
         path: AppRoutes.authCallback,
         builder: (context, state) => const AuthCallbackScreen(),
       ),
+      // Checkout flow
+      GoRoute(
+        path: AppRoutes.checkout,
+        builder: (context, state) => const CheckoutScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.stripeCheckout,
+        builder: (context, state) => StripeCheckoutScreen(
+          checkoutUrl: state.uri.queryParameters['checkout_url'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.orderSuccess,
+        builder: (context, state) =>
+            OrderSuccessScreen(orderId: state.uri.queryParameters['orderId']),
+      ),
+      // Legacy redirect: /order/:id -> /orders/:id
+      GoRoute(
+        path: '/order/:id',
+        redirect: (context, state) => '/orders/${state.pathParameters['id']}',
+      ),
+
+      // ── Shell route WITH bottom nav bar ──
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return AppShell(navigationShell: navigationShell);
+        },
+        branches: [
+          // Branch 0: Home
+          StatefulShellBranch(
+            navigatorKey: _homeNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.home,
+                builder: (context, state) => const HomeScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'item/:id',
+                    builder: (context, state) =>
+                        ItemDetailScreen(itemId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 1: Orders
+          StatefulShellBranch(
+            navigatorKey: _ordersNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.orders,
+                builder: (context, state) => const OrderHistoryScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) =>
+                        OrderDetailScreen(orderId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 2: Cart
+          StatefulShellBranch(
+            navigatorKey: _cartNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.cart,
+                builder: (context, state) => const CartScreen(),
+              ),
+            ],
+          ),
+          // Branch 3: Profile
+          StatefulShellBranch(
+            navigatorKey: _profileNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.profile,
+                builder: (context, state) => const ProfileScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'addresses',
+                    builder: (context, state) =>
+                        const AddressManagementScreen(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
     ],
   );
 }
@@ -147,13 +216,15 @@ class MadKrapowApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
-    return MaterialApp.router(
-      title: 'Mad Krapow',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.dark,
-      routerConfig: router,
+    return AuthListener(
+      child: MaterialApp.router(
+        title: 'Mad Krapow',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.dark,
+        routerConfig: router,
+      ),
     );
   }
 }

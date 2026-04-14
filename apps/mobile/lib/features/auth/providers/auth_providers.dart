@@ -7,6 +7,10 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(supabaseProvider));
 });
 
+/// Stores the intended redirect path after OAuth completion.
+/// Set before initiating OAuth, read by AuthCallbackScreen.
+final oauthRedirectProvider = StateProvider<String?>((ref) => null);
+
 /// Maps Supabase auth error codes to user-friendly messages.
 String getAuthErrorMessage(String errorCode) {
   return switch (errorCode) {

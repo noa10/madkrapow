@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -20,4 +23,28 @@ final currentUserProvider = Provider<User?>((ref) {
 /// Whether the user is currently authenticated.
 final isAuthenticatedProvider = Provider<bool>((ref) {
   return ref.watch(currentUserProvider) != null;
+});
+
+/// A Listenable that notifies when auth state changes.
+/// Used by GoRouter.refreshListenable to re-evaluate redirects.
+class AuthStateListenable extends ChangeNotifier {
+  AuthStateListenable(Stream<AuthState> authStateStream) {
+    _subscription = authStateStream.listen((_) {
+      notifyListeners();
+    });
+  }
+
+  late final StreamSubscription<AuthState> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
+/// Provides the AuthStateListenable for GoRouter refreshListenable.
+final authStateListenableProvider = Provider<AuthStateListenable>((ref) {
+  final stream = Supabase.instance.client.auth.onAuthStateChange;
+  return AuthStateListenable(stream);
 });

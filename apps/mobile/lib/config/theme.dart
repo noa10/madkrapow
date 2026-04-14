@@ -11,6 +11,10 @@ class AppTheme {
   static const _goldStart = Color(0xFFF1D7AA);
   static const _goldEnd = Color(0xFFC59661);
 
+  // Navigation bar colors — matching web sidebar
+  static const _navActiveColor = Color(0xFFD4A843); // gold
+  static const _navInactiveColor = Color(0xFFA6A6A6); // muted gray
+
   static ThemeData get lightTheme => _buildTheme(Brightness.light);
   static ThemeData get darkTheme => _buildTheme(Brightness.dark);
 
@@ -40,9 +44,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: isDark ? _darkCard : null,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -52,10 +54,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -91,13 +90,37 @@ class AppTheme {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 64,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        indicatorColor: _navActiveColor.withValues(alpha: 0.15),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: _navActiveColor);
+          }
+          return IconThemeData(color: isDark ? _navInactiveColor : Colors.grey);
+        }),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _navActiveColor,
+            );
+          }
+          return TextStyle(
+            fontSize: 12,
+            color: isDark ? _navInactiveColor : Colors.grey,
+          );
+        }),
+      ),
     );
   }
 
   /// Gold gradient for premium elements (buttons, headers)
   static LinearGradient get goldGradient => const LinearGradient(
-        colors: [_goldStart, _goldEnd],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      );
+    colors: [_goldStart, _goldEnd],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }

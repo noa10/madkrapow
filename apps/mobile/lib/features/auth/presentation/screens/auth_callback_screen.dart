@@ -32,7 +32,10 @@ class _AuthCallbackScreenState extends ConsumerState<AuthCallbackScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (repo.currentUser != null) {
-        if (mounted) context.go(AppRoutes.home);
+        // Read the stored redirect target from OAuth flow (if any)
+        final redirectTo = ref.read(oauthRedirectProvider);
+        ref.read(oauthRedirectProvider.notifier).state = null; // Clear after use
+        if (mounted) context.go(redirectTo ?? AppRoutes.home);
       } else {
         if (mounted) context.go(AppRoutes.signIn);
       }

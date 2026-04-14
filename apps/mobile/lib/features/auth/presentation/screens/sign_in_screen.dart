@@ -53,10 +53,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
 
     try {
+      // Store the intended destination before leaving the app for OAuth
+      final from = GoRouterState.of(context).uri.queryParameters['from'];
+      if (from != null) {
+        ref.read(oauthRedirectProvider.notifier).state = from;
+      }
       await ref.read(authRepositoryProvider).signInWithGoogle();
       // The OAuth flow redirects away from the app, so we don't need to navigate here.
       // The auth_callback_screen handles the return.
     } catch (_) {
+      ref.read(oauthRedirectProvider.notifier).state = null;
       setState(() => _errorText = 'Google sign-in failed. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -138,6 +144,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 TextButton(
                   onPressed: () => context.go(AppRoutes.resetPassword),
                   child: const Text('Forgot password?'),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _isLoading ? null : () => context.go(AppRoutes.home),
+                  child: const Text('Continue as Guest'),
                 ),
               ],
             ),

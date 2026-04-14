@@ -1,10 +1,12 @@
 abstract class AppRoutes {
+  static const splash = '/splash';
   static const home = '/';
   static const itemDetail = '/item/:id';
   static const cart = '/cart';
   static const checkout = '/checkout';
+  static const stripeCheckout = '/checkout/stripe';
   static const orderSuccess = '/order/success';
-  static const orderDetail = '/order/:id';
+  static const orderDetail = '/orders/:id';
   static const orders = '/orders';
   static const profile = '/profile';
   static const addresses = '/profile/addresses';

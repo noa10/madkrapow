@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
-import { getServerClient } from '@/lib/supabase/server'
+import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-03-25.dahlia' as const,
@@ -38,19 +38,22 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApproveResult>> {
   try {
-    const supabase = await getServerClient()
-
-    // Verify auth
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    // Auth verification — supports both cookie (web) and Bearer token (mobile)
+    const { user, supabase: db } = await getAuthenticatedUser(req)
+    if (!user || !db) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    // TODO: Verify admin role (for now, any authenticated user can approve)
-    // In production, check user role or admin table
+    // Admin role check (replaces the previous TODO)
+    if ((user.app_metadata?.role as string) !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden — admin role required' },
+        { status: 403 }
+      )
+    }
 
     const { id: orderId } = await params
     const rawBody = await req.text()
@@ -77,7 +80,7 @@ export async function POST(
     const { action, review_notes } = parsed.data
 
     // Fetch the order
-    const { data: order, error: fetchError } = await supabase
+    const { data: order, error: fetchError } = await db
       .from('orders')
       .select('*')
       .eq('id', orderId)
@@ -105,7 +108,7 @@ export async function POST(
     }
 
     if (action === 'reject') {
-      await supabase
+      await db
         .from('orders')
         .update({
           approval_status: 'rejected',
@@ -114,7 +117,7 @@ export async function POST(
         })
         .eq('id', orderId)
 
-      await supabase.from('order_events').insert({
+      await db.from('order_events').insert({
         order_id: orderId,
         event_type: 'bulk_rejected',
         new_value: { reason: review_notes || 'Order rejected' },
@@ -144,7 +147,7 @@ export async function POST(
     }
 
     // Update order with approved status
-    await supabase
+    await db
       .from('orders')
       .update({
         approval_status: 'approved',
@@ -184,12 +187,12 @@ export async function POST(
     })
 
     // Store the session ID
-    await supabase
+    await db
       .from('orders')
       .update({ stripe_session_id: session.id })
       .eq('id', orderId)
 
-    await supabase.from('order_events').insert({
+    await db.from('order_events').insert({
       order_id: orderId,
       event_type: 'bulk_approved',
       new_value: {

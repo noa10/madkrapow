@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerClient, getServiceClient } from '@/lib/supabase/server';
+import { getAuthenticatedUser } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const VALID_TRANSITIONS: Record<string, string> = {
@@ -21,16 +21,16 @@ export async function POST(
   try {
     const { id } = await params;
 
-    // Auth verification via user's JWT
-    const supabase = await getServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Auth verification — supports both cookie (web) and Bearer token (mobile)
+    const { user, supabase: db } = await getAuthenticatedUser(req);
+    if (!user || !db) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Use service role for DB operations to bypass RLS
-    // (auth is already verified above)
-    const db = getServiceClient();
+    // Admin role check
+    if ((user.app_metadata?.role as string) !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden — admin role required' }, { status: 403 });
+    }
 
     let body: unknown;
     try {

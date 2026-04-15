@@ -53,16 +53,41 @@ next-env.d.ts
 memory/heartbeat-state.json
 
 # kilo
-.kilo/*
+.kilo/
 
 # claw-code
 .claw/
+
+# oh-my-claudecode
+.omc/
+
+# IDE
+.vscode/
+.idea/
+
+# editor swap files
+*.swp
+*.swo
+*~
 
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-*.lock
-!package-lock.json
+.packages
 build/
 .fvm/
+devtools_options.yaml
+pubspec.lock
+!apps/*/pubspec.lock
+
+# Flutter platform local config
+**/local.properties
+**/*.iml
+
+# Xcode user data
+**/xcuserdata/
+
+# Local config / generated
+entities.json
+mempalace.yaml

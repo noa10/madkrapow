@@ -1,0 +1,212 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../providers/admin_order_providers.dart';
+import '../../data/merchant_order_repository.dart';
+import '../widgets/admin_status_stepper.dart';
+import '../widgets/advance_status_button.dart';
+import '../widgets/order_event_timeline.dart';
+import '../../../../core/utils/price_formatter.dart';
+import '../../../../core/widgets/async_value_widget.dart';
+
+class AdminOrderDetailScreen extends ConsumerStatefulWidget {
+  const AdminOrderDetailScreen({super.key, required this.orderId});
+
+  final String orderId;
+
+  @override
+  ConsumerState<AdminOrderDetailScreen> createState() =>
+      _AdminOrderDetailScreenState();
+}
+
+class _AdminOrderDetailScreenState
+    extends ConsumerState<AdminOrderDetailScreen> {
+  RealtimeChannel? _channel;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeToOrder();
+  }
+
+  void _subscribeToOrder() {
+    final repo = ref.read(merchantOrderRepositoryProvider);
+    _channel = repo.subscribeToOrder(
+      widget.orderId,
+      onUpdate: () {
+        if (!mounted) return;
+        ref.invalidate(adminOrderDetailProvider(widget.orderId));
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    if (_channel != null) {
+      _channel!.unsubscribe();
+      _channel = null;
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final detailAsync = ref.watch(adminOrderDetailProvider(widget.orderId));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Order Detail'),
+      ),
+      body: AsyncValueWidget<OrderDetail>(
+        value: detailAsync,
+        data: (detail) => _OrderDetailContent(detail: detail),
+      ),
+    );
+  }
+}
+
+class _OrderDetailContent extends StatelessWidget {
+  const _OrderDetailContent({required this.detail});
+
+  final OrderDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final order = detail.order;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Order header
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '#${order.orderNumber}',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const Spacer(),
+                    if (order.orderKind == 'bulk')
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'BULK',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.purple,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('Customer: ${order.customerName ?? 'Unknown'}'),
+                if (order.customerPhone != null)
+                  Text('Phone: ${order.customerPhone}'),
+                Text(
+                  'Total: ${formatPrice(order.totalCents)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  'Type: ${order.deliveryType == 'pickup' ? 'Pickup' : 'Delivery'}',
+                ),
+                if (order.notes != null)
+                  Text('Notes: ${order.notes}'),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Status stepper
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Status',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                AdminStatusStepper(currentStatus: order.status),
+                const SizedBox(height: 12),
+                AdvanceStatusButton(
+                  orderId: order.id,
+                  currentStatus: order.status,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Order items
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Items (${detail.items.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                ...detail.items.map((item) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(item.menuItemName),
+                      subtitle: Text('Qty: ${item.quantity}'),
+                      trailing: Text(formatPrice(item.lineTotalCents)),
+                    )),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Events timeline
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Events',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                OrderEventTimeline(events: detail.events),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}

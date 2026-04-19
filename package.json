@@ -30,7 +30,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "playwright": "^1.58.2",
-    "supabase": "^2.89.1",
+    "supabase": "^2.92.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.4"
   },

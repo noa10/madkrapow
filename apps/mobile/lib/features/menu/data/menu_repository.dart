@@ -203,6 +203,38 @@ class MenuRepository {
 
     return StoreSettingsRow.fromJson(res);
   }
+
+  // -- Realtime --
+
+  RealtimeChannel subscribeToMenuChanges({
+    required void Function() onChange,
+  }) {
+    return _supabase
+        .channel('menu-changes')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'menu_items',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'categories',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'modifiers',
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+  }
+
+  void unsubscribeFromMenuChanges(RealtimeChannel channel) {
+    _supabase.removeChannel(channel);
+  }
 }
 
 // ── Providers ─────────────────────────────────────────────────────

@@ -4,17 +4,54 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/utils/price_formatter.dart';
-import '../../data/menu_repository.dart';
 import '../widgets/store_closed_banner.dart';
 import '../../providers/menu_providers.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Activate realtime watcher and periodic refresh
+    ref.watch(menuRealtimeWatcherProvider);
+    ref.watch(menuPeriodicRefreshProvider);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refetch menu data when the app returns to foreground
+      ref.invalidate(categoriesWithItemsProvider);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const _HomeScreenContent();
+  }
+}
+
+class _HomeScreenContent extends ConsumerWidget {
+  const _HomeScreenContent();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesWithItemsProvider);
     final storeOpen = ref.watch(storeOpenProvider);
+    final menuUpdated = ref.watch(menuUpdatedProvider);
 
     return Scaffold(
       appBar: AppBar(),
@@ -25,6 +62,33 @@ class HomeScreen extends ConsumerWidget {
           // Store closed banner
           if (storeOpen == false)
             const SliverToBoxAdapter(child: StoreClosedBanner()),
+          // Menu updated indicator
+          if (menuUpdated)
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.update, size: 16, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text(
+                      'Menu updated',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Menu content
           categoriesAsync.when(
             data: (categories) => _MenuContent(categories: categories),

@@ -1,0 +1,7 @@
+-- Analytics RLS — No new policies needed
+-- Admin SELECT on orders already exists (migration 018, "admin_select_orders")
+-- Admin SELECT on order_items already exists (migration 018, "admin_select_order_items")
+-- Views inherit RLS from underlying tables, so admin can query both
+-- daily_order_summary and top_selling_items views automatically.
+--
+-- This migration exists as a placeholder for documentation purposes.

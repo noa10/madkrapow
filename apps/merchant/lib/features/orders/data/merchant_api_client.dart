@@ -86,6 +86,24 @@ class MerchantApiClient {
     _handleResponse(response);
   }
 
+  /// Generic GET request to an admin API endpoint.
+  /// GET /api/admin/{path}
+  Future<Map<String, dynamic>> get(
+    String path, [
+    Map<String, String> queryParams = const {},
+  ]) async {
+    final uri = Uri.parse('$_baseUrl/api$path').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
+    final response = await http.get(
+      uri,
+      headers: _headers,
+    );
+
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
   /// Handle common response patterns (auth errors, error extraction).
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode == 401) {

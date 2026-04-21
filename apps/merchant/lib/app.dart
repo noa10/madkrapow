@@ -9,14 +9,29 @@ import 'core/providers/supabase_provider.dart';
 import 'core/widgets/admin_shell.dart';
 import 'features/auth/presentation/screens/admin_sign_in_screen.dart';
 import 'features/auth/providers/admin_auth_providers.dart';
+import 'features/analytics/presentation/screens/analytics_screen.dart';
+import 'features/menu/presentation/screens/category_form_screen.dart';
+import 'features/menu/presentation/screens/menu_item_form_screen.dart';
+import 'features/menu/presentation/screens/menu_management_screen.dart';
+import 'features/menu/presentation/screens/modifier_management_screen.dart';
+import 'features/menu/providers/menu_providers.dart';
 import 'features/notifications/providers/notification_providers.dart';
 import 'features/orders/presentation/screens/admin_orders_screen.dart';
 import 'features/orders/presentation/screens/admin_order_detail_screen.dart';
 import 'features/orders/providers/admin_order_providers.dart';
+import 'features/promos/presentation/screens/placeholder_more_screen.dart';
 import 'main.dart' show firebaseInitialized;
+
+// Navigator keys for each branch of the shell
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final _ordersNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'orders');
+final _menuNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'menu');
+final _analyticsNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'analytics');
+final _moreNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'more');
 
 GoRouter _createRouter(Ref ref) {
   return GoRouter(
+    navigatorKey: _rootNavigatorKey,
     initialLocation: AppRoutes.orders,
     refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
@@ -47,21 +62,86 @@ GoRouter _createRouter(Ref ref) {
         path: AppRoutes.signin,
         builder: (context, state) => const AdminSignInScreen(),
       ),
-      // Shell route for authenticated screens
-      ShellRoute(
-        builder: (context, state, child) => AdminShell(child: child),
-        routes: [
-          // Orders list
-          GoRoute(
-            path: AppRoutes.orders,
-            builder: (context, state) => const AdminOrdersScreen(),
+      // Shell route with bottom navigation (4 branches)
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return MerchantAppShell(navigationShell: navigationShell);
+        },
+        branches: [
+          // Branch 0: Orders
+          StatefulShellBranch(
+            navigatorKey: _ordersNavigatorKey,
             routes: [
-              // Order detail (nested)
               GoRoute(
-                path: ':id',
-                builder: (context, state) => AdminOrderDetailScreen(
-                  orderId: state.pathParameters['id']!,
-                ),
+                path: AppRoutes.orders,
+                builder: (context, state) => const AdminOrdersScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) => AdminOrderDetailScreen(
+                      orderId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 1: Menu
+          StatefulShellBranch(
+            navigatorKey: _menuNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.menu,
+                builder: (context, state) => const MenuManagementScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'items/new',
+                    builder: (context, state) => MenuItemFormScreen(
+                      initialCategoryId: state.uri.queryParameters['categoryId'],
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'items/:id',
+                    builder: (context, state) => _MenuItemEditLoader(
+                      itemId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'categories/new',
+                    builder: (context, state) => const CategoryFormScreen(),
+                  ),
+                  GoRoute(
+                    path: 'categories/:id',
+                    builder: (context, state) => _CategoryEditLoader(
+                      categoryId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'modifiers',
+                    builder: (context, state) =>
+                        const ModifierManagementScreen(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 2: Analytics
+          StatefulShellBranch(
+            navigatorKey: _analyticsNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.analytics,
+                builder: (context, state) => const AnalyticsScreen(),
+              ),
+            ],
+          ),
+          // Branch 3: More
+          StatefulShellBranch(
+            navigatorKey: _moreNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.more,
+                builder: (context, state) => const PlaceholderMoreScreen(),
               ),
             ],
           ),
@@ -158,6 +238,52 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
   @override
   Widget build(BuildContext context) {
     return widget.child;
+  }
+}
+
+/// Loads a menu item by ID and renders the edit form.
+class _MenuItemEditLoader extends ConsumerWidget {
+  const _MenuItemEditLoader({required this.itemId});
+
+  final String itemId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemAsync = ref.watch(menuItemDetailProvider(itemId));
+    return itemAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Loading...')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, _) => Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Failed to load item: $err')),
+      ),
+      data: (item) => MenuItemFormScreen(item: item),
+    );
+  }
+}
+
+/// Loads a category by ID and renders the edit form.
+class _CategoryEditLoader extends ConsumerWidget {
+  const _CategoryEditLoader({required this.categoryId});
+
+  final String categoryId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categoryAsync = ref.watch(categoryDetailProvider(categoryId));
+    return categoryAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Loading...')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, _) => Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Failed to load category: $err')),
+      ),
+      data: (category) => CategoryFormScreen(category: category),
+    );
   }
 }
 

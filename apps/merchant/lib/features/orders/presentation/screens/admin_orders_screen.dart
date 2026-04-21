@@ -44,55 +44,57 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen> {
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(adminOrdersProvider(_statusFilter));
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(adminOrdersProvider(_statusFilter));
-      },
-      child: Column(
-        children: [
-          // Status filter bar
-          StatusFilterBar(
-            selectedStatus: _statusFilter,
-            onStatusSelected: (status) {
-              setState(() => _statusFilter = status);
-            },
-          ),
-          const SizedBox(height: 8),
-
-          // Orders list
-          Expanded(
-            child: ordersAsync.when(
-              data: (orders) {
-                if (orders.isEmpty) {
-                  return const Center(
-                    child: Text('No orders found'),
-                  );
-                }
-                return ListView.builder(
-                  itemCount: orders.length,
-                  itemBuilder: (context, index) {
-                    return OrderListTile(order: orders[index]);
-                  },
-                );
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Orders'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(adminOrdersProvider(_statusFilter));
+        },
+        child: Column(
+          children: [
+            StatusFilterBar(
+              selectedStatus: _statusFilter,
+              onStatusSelected: (status) {
+                setState(() => _statusFilter = status);
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(err.toString()),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: () =>
-                          ref.invalidate(adminOrdersProvider(_statusFilter)),
-                      child: const Text('Retry'),
-                    ),
-                  ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ordersAsync.when(
+                data: (orders) {
+                  if (orders.isEmpty) {
+                    return const Center(
+                      child: Text('No orders found'),
+                    );
+                  }
+                  return ListView.builder(
+                    itemCount: orders.length,
+                    itemBuilder: (context, index) {
+                      return OrderListTile(order: orders[index]);
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (err, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(err.toString()),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () =>
+                            ref.invalidate(adminOrdersProvider(_statusFilter)),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

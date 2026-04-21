@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerClient } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/admin/require-admin';
 import { env } from '@/lib/validators/env';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const supabase = await getServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authResult = await requireAdmin(req);
+    if ('error' in authResult) return authResult.error;
+    const { user } = authResult;
 
     if (!env.HUBBOPOS_ENABLED) {
       return NextResponse.json({ error: 'HubboPOS integration is disabled' }, { status: 400 });

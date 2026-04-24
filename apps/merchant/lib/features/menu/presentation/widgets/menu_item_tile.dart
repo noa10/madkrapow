@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -11,16 +12,53 @@ class MenuItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: () => context.push('/menu/items/${item.id}'),
-      leading: CircleAvatar(
+    final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
+
+    Widget leadingWidget;
+    if (hasImage) {
+      leadingWidget = ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: item.imageUrl!,
+          width: 40,
+          height: 40,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => const SizedBox(
+            width: 40,
+            height: 40,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          errorWidget: (context, url, error) => CircleAvatar(
+            backgroundColor: item.isAvailable ? Colors.green : Colors.grey,
+            radius: 20,
+            child: Icon(
+              item.isAvailable ? Icons.restaurant : Icons.block,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
+      );
+    } else {
+      leadingWidget = CircleAvatar(
         backgroundColor: item.isAvailable ? Colors.green : Colors.grey,
         child: Icon(
           item.isAvailable ? Icons.restaurant : Icons.block,
           color: Colors.white,
           size: 20,
         ),
-      ),
+      );
+    }
+
+    if (!item.isAvailable) {
+      leadingWidget = Opacity(
+        opacity: 0.5,
+        child: leadingWidget,
+      );
+    }
+
+    return ListTile(
+      onTap: () => context.push('/menu/items/${item.id}'),
+      leading: leadingWidget,
       title: Text(
         item.name,
         style: TextStyle(

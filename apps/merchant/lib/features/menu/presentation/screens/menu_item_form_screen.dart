@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/services/image_upload_service.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/database.dart';
 import '../../providers/menu_providers.dart';
+import '../widgets/modifier_bindings_editor.dart';
 
 class MenuItemFormScreen extends ConsumerStatefulWidget {
   final MenuItemsRow? item;
@@ -21,11 +26,16 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   late TextEditingController _nameController;
   late TextEditingController _descriptionController;
   late TextEditingController _priceController;
-  late TextEditingController _imageUrlController;
   late bool _isAvailable;
   late String _selectedCategoryId;
   late int _sortOrder;
   bool _isSubmitting = false;
+
+  // Image state
+  String? _currentImageUrl;
+  XFile? _selectedImageFile;
+  bool _isUploadingImage = false;
+  final _imageUploadService = ImageUploadService();
 
   List<CategoriesRow> _categories = [];
   bool _isLoadingCategories = true;
@@ -43,8 +53,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           ? formatPriceNumber(widget.item!.priceCents)
           : '',
     );
-    _imageUrlController =
-        TextEditingController(text: widget.item?.imageUrl ?? '');
+    _currentImageUrl = widget.item?.imageUrl;
     _isAvailable = widget.item?.isAvailable ?? true;
     _selectedCategoryId = widget.item?.categoryId ?? widget.initialCategoryId ?? '';
     _sortOrder = widget.item?.sortOrder ?? 0;
@@ -55,7 +64,6 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _imageUrlController.dispose();
     super.dispose();
   }
 
@@ -105,6 +113,66 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     return (numeric * 100).round();
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? picked;
+      if (source == ImageSource.gallery) {
+        picked = await _imageUploadService.pickImageFromGallery();
+      } else {
+        picked = await _imageUploadService.pickImageFromCamera();
+      }
+
+      if (picked != null && mounted) {
+        setState(() {
+          _selectedImageFile = picked;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String?> _uploadImageIfNeeded() async {
+    if (_selectedImageFile == null) {
+      return _currentImageUrl;
+    }
+
+    setState(() => _isUploadingImage = true);
+
+    try {
+      final url = await _imageUploadService.uploadMenuItemImage(_selectedImageFile!);
+      return url;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+      }
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _selectedImageFile = null;
+      _currentImageUrl = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -152,6 +220,14 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     setState(() => _isSubmitting = true);
 
     try {
+      // Upload image if a new one was selected
+      final imageUrl = await _uploadImageIfNeeded();
+      if (_selectedImageFile != null && imageUrl == null) {
+        // Upload failed — stop here (error already shown)
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
       final repo = ref.read(menuRepositoryProvider);
 
       if (_isEditing) {
@@ -162,9 +238,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
               ? null
               : _descriptionController.text.trim(),
           priceCents: priceCents,
-          imageUrl: _imageUrlController.text.trim().isEmpty
-              ? null
-              : _imageUrlController.text.trim(),
+          imageUrl: imageUrl,
           isAvailable: _isAvailable,
           categoryId: _selectedCategoryId,
           sortOrder: _sortOrder,
@@ -177,9 +251,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           description: _descriptionController.text.trim().isEmpty
               ? null
               : _descriptionController.text.trim(),
-          imageUrl: _imageUrlController.text.trim().isEmpty
-              ? null
-              : _imageUrlController.text.trim(),
+          imageUrl: imageUrl,
           isAvailable: _isAvailable,
           sortOrder: _sortOrder,
         );
@@ -249,6 +321,182 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         }
       }
     }
+  }
+
+  Widget _buildImageSection() {
+    final hasImage = _selectedImageFile != null ||
+        (_currentImageUrl != null && _currentImageUrl!.isNotEmpty);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Image',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _buildImageContent(hasImage),
+          ),
+        ),
+        if (_isUploadingImage)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Uploading image...'),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildImageContent(bool hasImage) {
+    if (_selectedImageFile != null) {
+      // Show newly selected file preview
+      return _buildImagePreview(
+        imageProvider: FileImage(File(_selectedImageFile!.path)),
+        onRemove: _removeImage,
+      );
+    }
+
+    if (_currentImageUrl != null && _currentImageUrl!.isNotEmpty) {
+      // Show existing image from URL
+      return _buildImagePreview(
+        imageProvider: NetworkImage(_currentImageUrl!),
+        onRemove: _removeImage,
+      );
+    }
+
+    // Show placeholder with pick buttons
+    return _buildImagePlaceholder();
+  }
+
+  Widget _buildImagePreview({
+    required ImageProvider imageProvider,
+    required VoidCallback onRemove,
+  }) {
+    return Stack(
+      children: [
+        Image(
+          image: imageProvider,
+          width: double.infinity,
+          height: 200,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Container(
+            width: double.infinity,
+            height: 200,
+            color: Colors.grey.shade200,
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('Failed to load image'),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Row(
+            children: [
+              _ImageActionButton(
+                icon: Icons.edit,
+                onTap: () => _showImageSourceSheet(),
+              ),
+              const SizedBox(width: 8),
+              _ImageActionButton(
+                icon: Icons.delete,
+                onTap: onRemove,
+                backgroundColor: Colors.red,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return InkWell(
+      onTap: _showImageSourceSheet,
+      child: Container(
+        width: double.infinity,
+        height: 160,
+        color: Colors.grey.shade50,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_photo_alternate_outlined,
+              size: 48,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Tap to add an image',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Gallery or Camera',
+              style: TextStyle(
+                color: Colors.grey.shade400,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Pick from Gallery'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take a Photo'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _pickImage(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -336,16 +584,10 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _imageUrlController,
-                decoration: const InputDecoration(
-                  labelText: 'Image URL (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
+              _buildImageSection(),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                initialValue: _selectedCategoryId,
+                initialValue: _selectedCategoryId.isNotEmpty ? _selectedCategoryId : null,
                 decoration: const InputDecoration(
                   labelText: 'Category',
                   border: OutlineInputBorder(),
@@ -370,9 +612,45 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                 value: _isAvailable,
                 onChanged: (v) => setState(() => _isAvailable = v),
               ),
+              if (_isEditing) ...[
+                const SizedBox(height: 24),
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.extension,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Modifier Groups',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Assign modifier groups that customers can select when ordering this item.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ModifierBindingsEditor(
+                  menuItemId: widget.item!.id,
+                  onSaved: () {
+                    ref.invalidate(
+                      modifierBindingsForItemProvider(widget.item!.id),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: _isSubmitting ? null : _submit,
+                onPressed: (_isSubmitting || _isUploadingImage) ? null : _submit,
                 icon: _isSubmitting
                     ? const SizedBox(
                         width: 20,
@@ -384,6 +662,39 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small circular action button overlay for image preview.
+class _ImageActionButton extends StatelessWidget {
+  const _ImageActionButton({
+    required this.icon,
+    required this.onTap,
+    this.backgroundColor = Colors.black54,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     );

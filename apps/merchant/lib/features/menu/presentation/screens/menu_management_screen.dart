@@ -53,6 +53,11 @@ class _MenuManagementScreenState extends ConsumerState<MenuManagementScreen> {
         title: const Text('Menu Management'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Manage Modifiers',
+            onPressed: () => context.push(AppRoutes.modifiers),
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add Category',
             onPressed: () => context.push(AppRoutes.categoryNew),

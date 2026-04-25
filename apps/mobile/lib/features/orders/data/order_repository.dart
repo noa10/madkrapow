@@ -4,7 +4,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../generated/tables/lalamove_shipments.dart';
 import '../../../generated/tables/order_items.dart';
+import '../../../generated/tables/order_item_modifiers.dart';
 import '../../../generated/tables/orders.dart';
+
+/// An order item together with its selected modifiers/addons.
+class OrderItemWithModifiers {
+  final OrderItemsRow item;
+  final List<OrderItemModifiersRow> modifiers;
+
+  OrderItemWithModifiers({
+    required this.item,
+    required this.modifiers,
+  });
+}
 
 class OrderWithDetails {
   const OrderWithDetails({
@@ -14,7 +26,7 @@ class OrderWithDetails {
   });
 
   final OrdersRow order;
-  final List<OrderItemsRow> items;
+  final List<OrderItemWithModifiers> items;
   final LalamoveShipmentsRow? shipment;
 }
 
@@ -40,6 +52,34 @@ class OrderRepository {
 
     final items = itemsRes.map((json) => OrderItemsRow.fromJson(json)).toList();
 
+    // Fetch modifiers for all items in this order
+    final itemIds = items.map((i) => i.id).toList();
+    List<OrderItemModifiersRow> modifiers = [];
+    if (itemIds.isNotEmpty) {
+      final modifiersRes = await _supabase
+          .from('order_item_modifiers')
+          .select()
+          .inFilter('order_item_id', itemIds)
+          .order('created_at');
+
+      modifiers = modifiersRes
+          .map((json) => OrderItemModifiersRow.fromJson(json))
+          .toList();
+    }
+
+    // Group modifiers by order_item_id
+    final modifiersByItemId = <String, List<OrderItemModifiersRow>>{};
+    for (final m in modifiers) {
+      modifiersByItemId.putIfAbsent(m.orderItemId, () => []).add(m);
+    }
+
+    final itemsWithModifiers = items
+        .map((item) => OrderItemWithModifiers(
+              item: item,
+              modifiers: modifiersByItemId[item.id] ?? [],
+            ))
+        .toList();
+
     LalamoveShipmentsRow? shipment;
     final shipmentRes = await _supabase
         .from('lalamove_shipments')
@@ -51,7 +91,8 @@ class OrderRepository {
       shipment = LalamoveShipmentsRow.fromJson(shipmentRes.first);
     }
 
-    return OrderWithDetails(order: order, items: items, shipment: shipment);
+    return OrderWithDetails(
+        order: order, items: itemsWithModifiers, shipment: shipment);
   }
 
   /// Fetch order history for the current user.

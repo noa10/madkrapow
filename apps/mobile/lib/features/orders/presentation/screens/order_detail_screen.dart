@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../data/order_repository.dart';
+import '../widgets/order_item_card.dart';
 import '../widgets/status_stepper.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
@@ -183,20 +184,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               ),
                         ),
                         const SizedBox(height: 8),
-                        ...details.items.map((item) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${item.quantity}x ${item.menuItemName}',
-                                    ),
-                                  ),
-                                  Text(
-                                    formatPrice(item.lineTotalCents),
-                                  ),
-                                ],
-                              ),
+                        ...details.items.map((item) => OrderItemCard(
+                              itemWithModifiers: item,
                             )),
                         const Divider(height: 16),
                         Row(

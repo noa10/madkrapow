@@ -350,9 +350,17 @@ export default function AdminOrderDetailPage() {
                         {item.quantity}x {item.menu_item_name}
                       </p>
                       {item.order_item_modifiers?.length > 0 && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {item.order_item_modifiers.map((m) => m.modifier_name).join(", ")}
-                        </p>
+                        <div className="mt-1 space-y-0.5">
+                          {item.order_item_modifiers.map((m) => (
+                            <p key={m.id} className="text-sm text-muted-foreground flex items-center gap-1">
+                              <span className="text-xs">+</span>
+                              {m.modifier_name}
+                              {m.modifier_price_delta_cents > 0 && (
+                                <span className="text-xs ml-1">+ {formatPrice(m.modifier_price_delta_cents)}</span>
+                              )}
+                            </p>
+                          ))}
+                        </div>
                       )}
                     </div>
                     <p className="font-medium">

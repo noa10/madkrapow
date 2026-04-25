@@ -2,13 +2,27 @@
 
 import { useEffect, useState, useMemo } from "react"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  isWithinInterval,
+  parseISO,
+  format,
+} from "date-fns"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { Package, Loader2 } from "lucide-react"
 import { NewOrderAlert, triggerNewOrderAlert } from "@/components/admin/NewOrderAlert"
 import { AdminOrdersFilterBar } from "@/components/admin/orders/AdminOrdersFilterBar"
-import { AdminOrdersCardView } from "@/components/admin/orders/AdminOrdersCardView"
+import { AdminOrdersCardView, type OrdersByDateGroup } from "@/components/admin/orders/AdminOrdersCardView"
 import { AdminOrdersListView } from "@/components/admin/orders/AdminOrdersListView"
 import { AdminOrdersTableView } from "@/components/admin/orders/AdminOrdersTable"
+import { AdminOrdersDateFilterBar } from "@/components/admin/orders/AdminOrdersDateFilterBar"
+import { AdminOrdersSalesSummary } from "@/components/admin/orders/AdminOrdersSalesSummary"
+import type { DateFilterValue, CustomDateRange } from "@/components/admin/orders/AdminOrdersDateFilterBar"
 
 type ViewMode = "cards" | "list" | "table"
 
@@ -32,6 +46,51 @@ interface Order {
 
 type FilterValue = "all" | "asap" | "scheduled" | "pickup" | "bulk" | "dispatch_failed"
 
+function getDateRangeBounds(filter: DateFilterValue, customRange: CustomDateRange) {
+  const now = new Date()
+  switch (filter) {
+    case "today":
+      return { start: startOfDay(now), end: endOfDay(now) }
+    case "weekly":
+      return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) }
+    case "monthly":
+      return { start: startOfMonth(now), end: endOfMonth(now) }
+    case "custom":
+      if (customRange.start && customRange.end) {
+        return {
+          start: startOfDay(parseISO(customRange.start)),
+          end: endOfDay(parseISO(customRange.end)),
+        }
+      }
+      return null
+    default:
+      return null
+  }
+}
+
+function groupOrdersByDate(orders: Order[]): OrdersByDateGroup[] {
+  const map = new Map<string, Order[]>()
+  for (const order of orders) {
+    const key = format(parseISO(order.created_at), "yyyy-MM-dd")
+    const existing = map.get(key)
+    if (existing) {
+      existing.push(order)
+    } else {
+      map.set(key, [order])
+    }
+  }
+  const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
+  return sortedKeys.map((key) => ({
+    dateKey: key,
+    dateLabel: format(parseISO(key), "MMMM d, yyyy"),
+    orders: map.get(key) || [],
+  }))
+}
+
+function calculateTotalCents(orders: Order[]) {
+  return orders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0)
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,6 +98,8 @@ export default function AdminOrdersPage() {
   const [activeFilter, setActiveFilter] = useState<FilterValue>("all")
   const [viewMode, setViewMode] = useState<ViewMode>("cards")
   const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>("all")
+  const [customDateRange, setCustomDateRange] = useState<CustomDateRange>({ start: "", end: "" })
 
   useEffect(() => {
     const supabase = getBrowserClient()
@@ -97,14 +158,60 @@ export default function AdminOrdersPage() {
   }, [])
 
   const filteredOrders = useMemo(() => {
-    if (activeFilter === "all") return orders
-    if (activeFilter === "asap") return orders.filter(o => o.fulfillment_type === "asap")
-    if (activeFilter === "scheduled") return orders.filter(o => o.fulfillment_type === "scheduled")
-    if (activeFilter === "pickup") return orders.filter(o => o.delivery_type === "self_pickup")
-    if (activeFilter === "bulk") return orders.filter(o => o.order_kind === "bulk")
-    if (activeFilter === "dispatch_failed") return orders.filter(o => o.dispatch_status === "failed")
-    return orders
-  }, [orders, activeFilter])
+    let result = orders
+
+    // Type filter
+    if (activeFilter === "asap") result = result.filter((o) => o.fulfillment_type === "asap")
+    else if (activeFilter === "scheduled") result = result.filter((o) => o.fulfillment_type === "scheduled")
+    else if (activeFilter === "pickup") result = result.filter((o) => o.delivery_type === "self_pickup")
+    else if (activeFilter === "bulk") result = result.filter((o) => o.order_kind === "bulk")
+    else if (activeFilter === "dispatch_failed") result = result.filter((o) => o.dispatch_status === "failed")
+
+    // Date filter
+    const bounds = getDateRangeBounds(dateFilter, customDateRange)
+    if (bounds) {
+      result = result.filter((o) => {
+        const d = parseISO(o.created_at)
+        return isWithinInterval(d, { start: bounds.start, end: bounds.end })
+      })
+    }
+
+    return result
+  }, [orders, activeFilter, dateFilter, customDateRange])
+
+  const groupedOrders = useMemo(() => groupOrdersByDate(filteredOrders), [filteredOrders])
+
+  // Sales summary: default shows today only; filtered shows filtered period
+  const { summaryLabel, summaryTotalCents } = useMemo(() => {
+    if (dateFilter === "all") {
+      const todayBounds = getDateRangeBounds("today", customDateRange)
+      const todayOrders = todayBounds
+        ? orders.filter((o) => {
+            const d = parseISO(o.created_at)
+            return isWithinInterval(d, { start: todayBounds.start, end: todayBounds.end })
+          })
+        : []
+      return { summaryLabel: "Total Sales Today", summaryTotalCents: calculateTotalCents(todayOrders) }
+    }
+
+    if (dateFilter === "today") {
+      return { summaryLabel: "Total Sales Today", summaryTotalCents: calculateTotalCents(filteredOrders) }
+    }
+    if (dateFilter === "weekly") {
+      return { summaryLabel: "Total Sales This Week", summaryTotalCents: calculateTotalCents(filteredOrders) }
+    }
+    if (dateFilter === "monthly") {
+      return { summaryLabel: "Total Sales This Month", summaryTotalCents: calculateTotalCents(filteredOrders) }
+    }
+    if (dateFilter === "custom") {
+      return {
+        summaryLabel: `Total Sales (${customDateRange.start || "..."} to ${customDateRange.end || "..."})`,
+        summaryTotalCents: calculateTotalCents(filteredOrders),
+      }
+    }
+
+    return { summaryLabel: "Total Sales", summaryTotalCents: 0 }
+  }, [dateFilter, filteredOrders, orders, customDateRange])
 
   if (loading) {
     return (
@@ -132,7 +239,23 @@ export default function AdminOrdersPage() {
         {/* Header */}
         <h1 className="text-xl font-bold font-heading text-foreground">Orders</h1>
 
-        {/* Filter Bar */}
+        {/* Sales Summary */}
+        <AdminOrdersSalesSummary label={summaryLabel} totalCents={summaryTotalCents} />
+
+        {/* Date Filter Bar */}
+        <AdminOrdersDateFilterBar
+          activeFilter={dateFilter}
+          onFilterChange={setDateFilter}
+          customRange={customDateRange}
+          onCustomRangeChange={setCustomDateRange}
+          onApplyCustomRange={() => {
+            if (customDateRange.start && customDateRange.end) {
+              setDateFilter("custom")
+            }
+          }}
+        />
+
+        {/* Type Filter Bar */}
         <AdminOrdersFilterBar
           activeFilter={activeFilter}
           onFilterChange={(v) => setActiveFilter(v as FilterValue)}
@@ -150,9 +273,9 @@ export default function AdminOrdersPage() {
           </div>
         ) : (
           <>
-            {viewMode === "cards" && <AdminOrdersCardView orders={filteredOrders} />}
-            {viewMode === "list" && <AdminOrdersListView orders={filteredOrders} />}
-            {viewMode === "table" && <AdminOrdersTableView orders={filteredOrders} />}
+            {viewMode === "cards" && <AdminOrdersCardView groups={groupedOrders} />}
+            {viewMode === "list" && <AdminOrdersListView groups={groupedOrders} />}
+            {viewMode === "table" && <AdminOrdersTableView groups={groupedOrders} />}
           </>
         )}
       </div>

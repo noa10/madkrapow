@@ -21,6 +21,12 @@ interface Order {
   bulk_company_name: string | null
 }
 
+export interface OrdersByDateGroup {
+  dateLabel: string
+  dateKey: string
+  orders: Order[]
+}
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "text-amber-400",
   paid: "text-sky-400",
@@ -37,55 +43,73 @@ function formatPrice(cents: number) {
 }
 
 interface AdminOrdersListViewProps {
-  orders: Order[]
+  groups: OrdersByDateGroup[]
 }
 
-export function AdminOrdersListView({ orders }: AdminOrdersListViewProps) {
-  if (orders.length === 0) return null
+export function AdminOrdersListView({ groups }: AdminOrdersListViewProps) {
+  if (groups.length === 0) return null
 
   return (
-    <div className="divide-y divide-white/5 rounded-xl border border-white/8 overflow-hidden bg-card/60 backdrop-blur-sm">
-      {orders.map((order, i) => (
-        <div
-          key={order.id}
-          className={cn(
-            "flex items-center justify-between gap-4 p-3 sm:p-4 transition-colors hover:bg-white/[0.03]",
-            `card-stagger-${Math.min(i + 1, 6)}`,
-            "animate-fade-in-up"
-          )}
-        >
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <Link
-              href={`/admin/orders/${order.id}`}
-              className="text-sm font-medium text-gold hover:text-gold/80 tabular-nums shrink-0"
-            >
-              #{order.id.slice(0, 8).toUpperCase()}
-            </Link>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 min-w-0">
-              <User className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{order.customer_name || "Guest"}</span>
-            </div>
-            <span className={cn("text-xs font-medium shrink-0 hidden sm:inline", STATUS_COLORS[order.status] || STATUS_COLORS.pending)}>
-              {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <div key={group.dateKey}>
+          {/* Date header */}
+          <div className="sticky top-0 z-10 mb-2 flex items-center gap-3 py-2 bg-background/80 backdrop-blur-sm">
+            <h3 className="text-sm font-semibold text-foreground">
+              {group.dateLabel}
+            </h3>
+            <div className="flex-1 h-px bg-white/5" />
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {group.orders.length} {group.orders.length === 1 ? "order" : "orders"}
             </span>
-            <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-muted-foreground/60 shrink-0">
-              <Calendar className="h-3 w-3" />
-              <span className="tabular-nums">{format(new Date(order.created_at), "MMM d")}</span>
-            </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="hidden sm:flex items-center gap-1 text-sm tabular-nums">
-              <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="font-medium text-foreground">{formatPrice(order.total_cents + order.delivery_fee_cents)}</span>
-            </div>
-            <Link
-              href={`/admin/orders/${order.id}`}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-gold transition-colors"
-            >
-              <span className="hidden lg:inline">View</span>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
+          {/* List */}
+          <div className="divide-y divide-white/5 rounded-xl border border-white/8 overflow-hidden bg-card/60 backdrop-blur-sm">
+            {group.orders.map((order, i) => (
+              <div
+                key={order.id}
+                className={cn(
+                  "flex items-center justify-between gap-4 p-3 sm:p-4 transition-colors hover:bg-white/[0.03]",
+                  `card-stagger-${Math.min(i + 1, 6)}`,
+                  "animate-fade-in-up"
+                )}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="text-sm font-medium text-gold hover:text-gold/80 tabular-nums shrink-0"
+                  >
+                    #{order.id.slice(0, 8).toUpperCase()}
+                  </Link>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 min-w-0">
+                    <User className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{order.customer_name || "Guest"}</span>
+                  </div>
+                  <span className={cn("text-xs font-medium shrink-0 hidden sm:inline", STATUS_COLORS[order.status] || STATUS_COLORS.pending)}>
+                    {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                  </span>
+                  <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-muted-foreground/60 shrink-0">
+                    <Calendar className="h-3 w-3" />
+                    <span className="tabular-nums">{format(new Date(order.created_at), "MMM d")}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="hidden sm:flex items-center gap-1 text-sm tabular-nums">
+                    <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{formatPrice(order.total_cents + order.delivery_fee_cents)}</span>
+                  </div>
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-gold transition-colors"
+                  >
+                    <span className="hidden lg:inline">View</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       ))}

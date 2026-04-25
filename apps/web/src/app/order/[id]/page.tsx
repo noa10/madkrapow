@@ -43,13 +43,22 @@ interface ShipmentData {
   cancelled_at: string | null
 }
 
+interface OrderItemModifier {
+  id: string
+  order_item_id: string
+  modifier_name: string
+  modifier_price_delta_cents: number
+}
+
 interface OrderItem {
   id: string
   menu_item_name: string
   menu_item_price_cents: number
   quantity: number
   line_total_cents: number
+  notes: string | null
   image_url?: string | null
+  order_item_modifiers?: OrderItemModifier[]
 }
 
 interface Order {
@@ -160,7 +169,30 @@ export default function OrderTrackingPage() {
         .eq('order_id', orderId)
 
       if (!itemsError && itemsData) {
-        setOrderItems(itemsData)
+        const items = itemsData as OrderItem[]
+
+        // Fetch modifiers for all items
+        const itemIds = items.map((i) => i.id)
+        if (itemIds.length > 0) {
+          const { data: modifiersData } = await supabase
+            .from('order_item_modifiers')
+            .select('*')
+            .in('order_item_id', itemIds)
+
+          if (modifiersData) {
+            const modifiersByItemId = new Map<string, OrderItemModifier[]>()
+            for (const mod of modifiersData as OrderItemModifier[]) {
+              const list = modifiersByItemId.get(mod.order_item_id) ?? []
+              list.push(mod)
+              modifiersByItemId.set(mod.order_item_id, list)
+            }
+            for (const item of items) {
+              item.order_item_modifiers = modifiersByItemId.get(item.id) ?? []
+            }
+          }
+        }
+
+        setOrderItems(items)
       }
 
       // Fetch shipment data
@@ -577,29 +609,53 @@ export default function OrderTrackingPage() {
                   <h2 className="text-lg font-semibold mb-4 font-display">Order Details</h2>
                   <div className="space-y-3">
                     {orderItems.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {item.image_url ? (
-                            <Image
-                              src={item.image_url}
-                              alt={item.menu_item_name}
-                              width={40}
-                              height={40}
-                              className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0">
-                              {item.quantity}x
+                      <div key={item.id} className="text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {item.image_url ? (
+                              <Image
+                                src={item.image_url}
+                                alt={item.menu_item_name}
+                                width={40}
+                                height={40}
+                                className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0">
+                                {item.quantity}x
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <span className="truncate block font-medium">{item.menu_item_name}</span>
+                              <span className="text-xs text-muted-foreground">{formatPrice(item.menu_item_price_cents)} each</span>
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <span className="truncate block">{item.menu_item_name}</span>
-                            <span className="text-xs text-muted-foreground">Qty: {item.quantity}</span>
                           </div>
+                          <span className="font-medium flex-shrink-0 ml-2">
+                            {formatPrice(item.line_total_cents)}
+                          </span>
                         </div>
-                        <span className="text-muted-foreground flex-shrink-0 ml-2">
-                          {formatPrice(item.line_total_cents)}
-                        </span>
+                        {/* Modifiers */}
+                        {item.order_item_modifiers && item.order_item_modifiers.length > 0 && (
+                          <div className="ml-[52px] mt-1 space-y-0.5">
+                            {item.order_item_modifiers.map((mod) => (
+                              <div key={mod.id} className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <span>+</span>
+                                  {mod.modifier_name}
+                                </span>
+                                {mod.modifier_price_delta_cents > 0 && (
+                                  <span>+ {formatPrice(mod.modifier_price_delta_cents)}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Notes */}
+                        {item.notes && (
+                          <p className="ml-[52px] mt-1 text-xs text-muted-foreground italic">
+                            Note: {item.notes}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>

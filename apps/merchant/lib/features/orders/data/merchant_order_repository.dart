@@ -3,6 +3,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../generated/database.dart';
 import 'merchant_api_client.dart';
 
+/// An order item together with its selected modifiers/addons.
+class OrderItemWithModifiers {
+  final OrderItemsRow item;
+  final List<OrderItemModifiersRow> modifiers;
+
+  OrderItemWithModifiers({
+    required this.item,
+    required this.modifiers,
+  });
+}
+
 /// Hybrid order repository:
 /// - Reads: Supabase client directly (RLS-enforced, admin SELECT policies)
 /// - Writes: Via MerchantApiClient -> webapp API route (validation + audit trail)
@@ -12,17 +23,43 @@ class MerchantOrderRepository {
   final SupabaseClient _supabase;
   final MerchantApiClient _apiClient;
 
-  /// Fetch orders, optionally filtered by status.
-  Future<List<OrdersRow>> fetchOrders({String? statusFilter}) async {
+  /// Fetch orders, optionally filtered by statuses and date range.
+  Future<List<OrdersRow>> fetchOrders({
+    List<String>? statuses,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? orderKind,
+    String? fulfillmentType,
+  }) async {
     var query = _supabase.from('orders').select();
 
-    if (statusFilter != null) {
-      query = query.eq('status', statusFilter);
+    if (statuses != null && statuses.isNotEmpty) {
+      if (statuses.length == 1) {
+        query = query.eq('status', statuses.first);
+      } else {
+        query = query.inFilter('status', statuses);
+      }
+    }
+
+    if (startDate != null) {
+      query = query.gte('created_at', startDate.toIso8601String());
+    }
+
+    if (endDate != null) {
+      query = query.lte('created_at', endDate.toIso8601String());
+    }
+
+    if (orderKind != null) {
+      query = query.eq('order_kind', orderKind);
+    }
+
+    if (fulfillmentType != null) {
+      query = query.eq('fulfillment_type', fulfillmentType);
     }
 
     final response = await query
         .order('created_at', ascending: false)
-        .limit(100);
+        .limit(200);
     return response.map(OrdersRow.fromJson).toList();
   }
 
@@ -44,6 +81,34 @@ class MerchantOrderRepository {
 
     final items = itemsRes.map((json) => OrderItemsRow.fromJson(json)).toList();
 
+    // Fetch modifiers for all items in this order
+    final itemIds = items.map((i) => i.id).toList();
+    List<OrderItemModifiersRow> modifiers = [];
+    if (itemIds.isNotEmpty) {
+      final modifiersRes = await _supabase
+          .from('order_item_modifiers')
+          .select()
+          .inFilter('order_item_id', itemIds)
+          .order('created_at');
+
+      modifiers = modifiersRes
+          .map((json) => OrderItemModifiersRow.fromJson(json))
+          .toList();
+    }
+
+    // Group modifiers by order_item_id
+    final modifiersByItemId = <String, List<OrderItemModifiersRow>>{};
+    for (final m in modifiers) {
+      modifiersByItemId.putIfAbsent(m.orderItemId, () => []).add(m);
+    }
+
+    final itemsWithModifiers = items
+        .map((item) => OrderItemWithModifiers(
+              item: item,
+              modifiers: modifiersByItemId[item.id] ?? [],
+            ))
+        .toList();
+
     final eventsRes = await _supabase
         .from('order_events')
         .select()
@@ -53,7 +118,8 @@ class MerchantOrderRepository {
     final events =
         eventsRes.map((json) => OrderEventsRow.fromJson(json)).toList();
 
-    return OrderDetail(order: order, items: items, events: events);
+    return OrderDetail(
+        order: order, items: itemsWithModifiers, events: events);
   }
 
   /// Advance order status via the API route (server-side validation).
@@ -137,7 +203,7 @@ class MerchantOrderRepository {
 /// Aggregated order detail with items and events.
 class OrderDetail {
   final OrdersRow order;
-  final List<OrderItemsRow> items;
+  final List<OrderItemWithModifiers> items;
   final List<OrderEventsRow> events;
 
   OrderDetail({

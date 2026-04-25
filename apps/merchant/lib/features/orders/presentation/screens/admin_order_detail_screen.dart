@@ -7,6 +7,7 @@ import '../../data/merchant_order_repository.dart';
 import '../widgets/admin_status_stepper.dart';
 import '../widgets/advance_status_button.dart';
 import '../widgets/order_event_timeline.dart';
+import '../widgets/order_item_card.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 
@@ -167,18 +168,14 @@ class _OrderDetailContent extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Items (${detail.items.length})',
+                  'Items (${detail.items.fold<int>(0, (sum, i) => sum + i.item.quantity)})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                 ),
                 const SizedBox(height: 8),
-                ...detail.items.map((item) => ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(item.menuItemName),
-                      subtitle: Text('Qty: ${item.quantity}'),
-                      trailing: Text(formatPrice(item.lineTotalCents)),
+                ...detail.items.map((item) => OrderItemCard(
+                      itemWithModifiers: item,
                     )),
               ],
             ),

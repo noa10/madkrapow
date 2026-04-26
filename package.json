@@ -24,7 +24,7 @@
     "@eslint/eslintrc": "^3.3.5",
     "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.0",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.4",
     "husky": "^9.1.7",

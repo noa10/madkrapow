@@ -6,6 +6,7 @@
 
 export 'categories.dart';
 export 'customer_addresses.dart';
+export 'customer_contacts.dart';
 export 'customers.dart';
 export 'hubbopos_api_logs.dart';
 export 'hubbopos_sync_queue.dart';

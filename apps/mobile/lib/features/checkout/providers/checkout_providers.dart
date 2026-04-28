@@ -3,6 +3,8 @@ import 'package:geocoding/geocoding.dart';
 
 import '../../../config/env.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../generated/tables/customer_addresses.dart';
+import '../../../generated/tables/customer_contacts.dart';
 import '../data/checkout_models.dart';
 import '../data/checkout_repository.dart';
 
@@ -14,6 +16,7 @@ final checkoutRepositoryProvider = Provider<CheckoutRepository>((ref) {
 class CheckoutState {
   const CheckoutState({
     this.deliveryAddress,
+    this.contactInfo,
     this.deliveryQuote,
     this.deliveryType = DeliveryType.delivery,
     this.fulfillmentType = FulfillmentType.asap,
@@ -23,9 +26,14 @@ class CheckoutState {
     this.stopIds,
     this.priceBreakdown,
     this.quoteExpiresAt,
+    this.selectedContactId,
+    this.selectedAddressId,
+    this.useManualContact = false,
+    this.useManualAddress = false,
   });
 
   final DeliveryAddress? deliveryAddress;
+  final DeliveryAddress? contactInfo;
   final DeliveryQuoteResult? deliveryQuote;
   final DeliveryType deliveryType;
   final FulfillmentType fulfillmentType;
@@ -36,8 +44,14 @@ class CheckoutState {
   final PriceBreakdown? priceBreakdown;
   final DateTime? quoteExpiresAt;
 
+  final String? selectedContactId;
+  final String? selectedAddressId;
+  final bool useManualContact;
+  final bool useManualAddress;
+
   CheckoutState copyWith({
     DeliveryAddress? deliveryAddress,
+    DeliveryAddress? contactInfo,
     DeliveryQuoteResult? deliveryQuote,
     DeliveryType? deliveryType,
     FulfillmentType? fulfillmentType,
@@ -47,11 +61,16 @@ class CheckoutState {
     StopIds? stopIds,
     PriceBreakdown? priceBreakdown,
     DateTime? quoteExpiresAt,
+    String? selectedContactId,
+    String? selectedAddressId,
+    bool? useManualContact,
+    bool? useManualAddress,
     bool clearShippingQuote = false,
     bool clearScheduledFor = false,
   }) {
     return CheckoutState(
       deliveryAddress: deliveryAddress ?? this.deliveryAddress,
+      contactInfo: contactInfo ?? this.contactInfo,
       deliveryQuote: clearShippingQuote ? null : (deliveryQuote ?? this.deliveryQuote),
       deliveryType: deliveryType ?? this.deliveryType,
       fulfillmentType: fulfillmentType ?? this.fulfillmentType,
@@ -61,6 +80,10 @@ class CheckoutState {
       stopIds: clearShippingQuote ? null : (stopIds ?? this.stopIds),
       priceBreakdown: clearShippingQuote ? null : (priceBreakdown ?? this.priceBreakdown),
       quoteExpiresAt: clearShippingQuote ? null : (quoteExpiresAt ?? this.quoteExpiresAt),
+      selectedContactId: selectedContactId ?? this.selectedContactId,
+      selectedAddressId: selectedAddressId ?? this.selectedAddressId,
+      useManualContact: useManualContact ?? this.useManualContact,
+      useManualAddress: useManualAddress ?? this.useManualAddress,
     );
   }
 
@@ -77,6 +100,10 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
 
   void setDeliveryAddress(DeliveryAddress address) {
     state = state.copyWith(deliveryAddress: address);
+  }
+
+  void setContactInfo(DeliveryAddress contact) {
+    state = state.copyWith(contactInfo: contact);
   }
 
   void setDeliveryType(DeliveryType type) {
@@ -110,6 +137,66 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
     state = state.copyWith(clearShippingQuote: true);
   }
 
+  void selectContact(String? contactId) {
+    state = state.copyWith(
+      selectedContactId: contactId,
+      useManualContact: contactId == null,
+    );
+  }
+
+  void selectAddress(String? addressId, {CustomerAddressesRow? address}) {
+    if (address != null) {
+      state = state.copyWith(
+        selectedAddressId: addressId,
+        useManualAddress: false,
+        deliveryAddress: DeliveryAddress.fromCustomerAddress(address),
+      );
+    } else {
+      state = state.copyWith(
+        selectedAddressId: addressId,
+        useManualAddress: addressId == null,
+      );
+    }
+  }
+
+  void toggleManualContact(bool value) {
+    state = state.copyWith(
+      useManualContact: value,
+      selectedContactId: value ? null : state.selectedContactId,
+    );
+  }
+
+  void toggleManualAddress(bool value) {
+    state = state.copyWith(
+      useManualAddress: value,
+      selectedAddressId: value ? null : state.selectedAddressId,
+    );
+  }
+
+  /// Pre-fill contact from the customer profile.
+  void initializeContact(CustomerContactsRow? defaultContact, String? profileName, String? profilePhone) {
+    if (defaultContact != null) {
+      state = state.copyWith(
+        selectedContactId: defaultContact.id,
+        contactInfo: DeliveryAddress.fromCustomerContact(defaultContact),
+      );
+    } else if (profileName != null || profilePhone != null) {
+      state = state.copyWith(
+        contactInfo: DeliveryAddress(fullName: profileName, phone: profilePhone),
+      );
+    }
+  }
+
+  /// Pre-fill address from the customer's default address.
+  void initializeAddress(CustomerAddressesRow? defaultAddress) {
+    if (defaultAddress != null) {
+      state = state.copyWith(
+        selectedAddressId: defaultAddress.id,
+        deliveryAddress: DeliveryAddress.fromCustomerAddress(defaultAddress),
+      );
+    }
+  }
+
   /// Geocode the delivery address and fetch a Lalamove quote.
   /// Returns the fee in cents, or throws on failure.
   Future<int> fetchDeliveryQuote(DeliveryAddress address) async {
@@ -117,7 +204,7 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
 
     // Geocode the dropoff address
     final addressString = [
-      address.address ?? '',
+      address.address ?? address.addressLine1 ?? '',
       address.city ?? '',
       address.state ?? '',
       address.postalCode ?? '',

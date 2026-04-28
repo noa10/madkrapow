@@ -32,6 +32,30 @@ class DeliveryAddress {
     this.longitude,
   });
 
+  factory DeliveryAddress.fromCustomerAddress(dynamic address) {
+    return DeliveryAddress(
+      fullName: null,
+      phone: null,
+      address: address.addressLine1 != null && address.addressLine2 != null
+          ? '${address.addressLine1}, ${address.addressLine2}'
+          : address.addressLine1,
+      addressLine1: address.addressLine1,
+      addressLine2: address.addressLine2,
+      postalCode: address.postalCode,
+      city: address.city,
+      state: address.state,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    );
+  }
+
+  factory DeliveryAddress.fromCustomerContact(dynamic contact) {
+    return DeliveryAddress(
+      fullName: contact.name,
+      phone: contact.phone,
+    );
+  }
+
   final String? fullName;
   final String? phone;
   final String? address;

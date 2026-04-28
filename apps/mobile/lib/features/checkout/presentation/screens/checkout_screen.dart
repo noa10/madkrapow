@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,9 @@ import 'package:go_router/go_router.dart';
 import '../../../../config/routes.dart';
 import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/price_formatter.dart';
+import '../../../../generated/tables/customer_addresses.dart';
+import '../../../../generated/tables/customer_contacts.dart';
+import '../../../profile/data/profile_repository.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../data/checkout_models.dart';
 import '../../providers/checkout_providers.dart';
@@ -17,51 +22,108 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _postalCodeController = TextEditingController();
-  final _cityController = TextEditingController(text: 'Shah Alam');
-  final _stateController = TextEditingController(text: 'Selangor');
+  // Manual contact form controllers
+  final _manualNameController = TextEditingController();
+  final _manualPhoneController = TextEditingController();
+
+  // Manual address form controllers
+  final _manualAddressLine1Controller = TextEditingController();
+  final _manualAddressLine2Controller = TextEditingController();
+  final _manualPostalCodeController = TextEditingController();
+  final _manualCityController = TextEditingController(text: 'Shah Alam');
+  final _manualStateController = TextEditingController(text: 'Selangor');
+
   bool _isLoading = false;
   String? _errorText;
+  bool _saveContactToProfile = false;
+  bool _saveAddressToProfile = false;
+
+  Timer? _quoteDebounce;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Delay initialization to let providers settle
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeFromProfile();
+    });
+  }
+
+  void _initializeFromProfile() {
+    if (_initialized) return;
+    final profile = ref.read(profileProvider).value;
+    if (profile == null) return;
+
+    _initialized = true;
+
+    // Initialize contact
+    final defaultContact = profile.contacts.isNotEmpty
+        ? profile.contacts.firstWhere(
+            (c) => c.isDefault,
+            orElse: () => profile.contacts.first,
+          )
+        : null;
+    ref
+        .read(checkoutProvider.notifier)
+        .initializeContact(
+          defaultContact,
+          profile.customer.name,
+          profile.customer.phone,
+        );
+
+    // Initialize address
+    final defaultAddress = profile.addresses.isNotEmpty
+        ? profile.addresses.firstWhere(
+            (a) => a.isDefault,
+            orElse: () => profile.addresses.first,
+          )
+        : null;
+    ref.read(checkoutProvider.notifier).initializeAddress(defaultAddress);
+
+    // Pre-fill manual form controllers
+    if (defaultContact != null) {
+      _manualNameController.text = defaultContact.name;
+      _manualPhoneController.text = defaultContact.phone;
+    } else {
+      _manualNameController.text = profile.customer.name ?? '';
+      _manualPhoneController.text = profile.customer.phone ?? '';
+    }
+
+    if (defaultAddress != null) {
+      _manualAddressLine1Controller.text = defaultAddress.addressLine1;
+      _manualAddressLine2Controller.text = defaultAddress.addressLine2 ?? '';
+      _manualPostalCodeController.text = defaultAddress.postalCode;
+      _manualCityController.text = defaultAddress.city;
+      _manualStateController.text = defaultAddress.state;
+    }
+  }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _addressController.dispose();
-    _postalCodeController.dispose();
-    _cityController.dispose();
-    _stateController.dispose();
+    _quoteDebounce?.cancel();
+    _manualNameController.dispose();
+    _manualPhoneController.dispose();
+    _manualAddressLine1Controller.dispose();
+    _manualAddressLine2Controller.dispose();
+    _manualPostalCodeController.dispose();
+    _manualCityController.dispose();
+    _manualStateController.dispose();
     super.dispose();
   }
 
   Future<void> _fetchDeliveryQuote() async {
     final checkout = ref.read(checkoutProvider);
+    final address = checkout.deliveryAddress;
+    if (address == null) return;
     if (checkout.deliveryType != DeliveryType.delivery) return;
-    if (_addressController.text.trim().isEmpty) return;
 
     try {
-      await ref
-          .read(checkoutProvider.notifier)
-          .fetchDeliveryQuote(
-            DeliveryAddress(
-              fullName: _nameController.text.trim(),
-              phone: _phoneController.text.trim(),
-              address: _addressController.text.trim(),
-              postalCode: _postalCodeController.text.trim(),
-              city: _cityController.text.trim(),
-              state: _stateController.text.trim(),
-            ),
-          );
+      await ref.read(checkoutProvider.notifier).fetchDeliveryQuote(address);
     } on AuthRequiredException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            duration: const Duration(seconds: 4),
-          ),
+          SnackBar(content: Text(e.message), duration: const Duration(seconds: 4)),
         );
         context.go(
           '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
@@ -81,6 +143,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
+  void _onManualAddressChanged() {
+    _quoteDebounce?.cancel();
+    _quoteDebounce = Timer(const Duration(milliseconds: 800), () {
+      final checkout = ref.read(checkoutProvider);
+      if (checkout.useManualAddress && checkout.deliveryType == DeliveryType.delivery) {
+        final address = DeliveryAddress(
+          addressLine1: _manualAddressLine1Controller.text.trim(),
+          addressLine2: _manualAddressLine2Controller.text.trim().isEmpty
+              ? null
+              : _manualAddressLine2Controller.text.trim(),
+          postalCode: _manualPostalCodeController.text.trim(),
+          city: _manualCityController.text.trim(),
+          state: _manualStateController.text.trim(),
+        );
+        ref.read(checkoutProvider.notifier).setDeliveryAddress(address);
+        _fetchDeliveryQuote();
+      }
+    });
+  }
+
   Future<void> _handleCheckout() async {
     if (!_validateForm()) return;
 
@@ -90,9 +172,63 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     });
 
     try {
-      final cart = ref.read(cartProvider);
       final checkout = ref.read(checkoutProvider);
+      final profile = ref.read(profileProvider).value;
+      final cart = ref.read(cartProvider);
       final repo = ref.read(checkoutRepositoryProvider);
+
+      // If saving manual contact to profile
+      if (checkout.useManualContact && _saveContactToProfile && profile != null) {
+        await ref.read(profileRepositoryProvider).addContact({
+          'customer_id': profile.customer.id,
+          'name': _manualNameController.text.trim(),
+          'phone': _manualPhoneController.text.trim(),
+          'is_default': profile.contacts.isEmpty,
+        });
+        ref.invalidate(profileProvider);
+      }
+
+      // If saving manual address to profile
+      if (checkout.useManualAddress && _saveAddressToProfile && profile != null) {
+        await ref.read(profileRepositoryProvider).addAddress({
+          'customer_id': profile.customer.id,
+          'label': null,
+          'address_line1': _manualAddressLine1Controller.text.trim(),
+          'address_line2': _manualAddressLine2Controller.text.trim().isEmpty
+              ? null
+              : _manualAddressLine2Controller.text.trim(),
+          'city': _manualCityController.text.trim(),
+          'state': _manualStateController.text.trim(),
+          'postal_code': _manualPostalCodeController.text.trim(),
+          'country': 'Malaysia',
+          'is_default': profile.addresses.isEmpty,
+        });
+        ref.invalidate(profileProvider);
+      }
+
+      // Build delivery address for checkout
+      final contactInfo = checkout.contactInfo ??
+          DeliveryAddress(
+            fullName: _manualNameController.text.trim(),
+            phone: _manualPhoneController.text.trim(),
+          );
+
+      final deliveryAddress = checkout.deliveryType == DeliveryType.delivery
+          ? DeliveryAddress(
+              fullName: contactInfo.fullName,
+              phone: contactInfo.phone,
+              address: checkout.deliveryAddress?.address,
+              addressLine1: checkout.deliveryAddress?.addressLine1 ?? _manualAddressLine1Controller.text.trim(),
+              addressLine2: checkout.deliveryAddress?.addressLine2 ?? (_manualAddressLine2Controller.text.trim().isEmpty
+                  ? null
+                  : _manualAddressLine2Controller.text.trim()),
+              postalCode: checkout.deliveryAddress?.postalCode ?? _manualPostalCodeController.text.trim(),
+              city: checkout.deliveryAddress?.city ?? _manualCityController.text.trim(),
+              state: checkout.deliveryAddress?.state ?? _manualStateController.text.trim(),
+              latitude: checkout.deliveryAddress?.latitude,
+              longitude: checkout.deliveryAddress?.longitude,
+            )
+          : null;
 
       // Build checkout items from cart
       final checkoutItems = cart.map(
@@ -118,22 +254,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final request = CheckoutRequest(
         items: checkoutItems.toList(),
-        deliveryAddress: DeliveryAddress(
-          fullName: _nameController.text.trim(),
-          phone: _phoneController.text.trim(),
-          address: checkout.deliveryType == DeliveryType.delivery
-              ? _addressController.text.trim()
-              : null,
-          postalCode: checkout.deliveryType == DeliveryType.delivery
-              ? _postalCodeController.text.trim()
-              : null,
-          city: checkout.deliveryType == DeliveryType.delivery
-              ? _cityController.text.trim()
-              : null,
-          state: checkout.deliveryType == DeliveryType.delivery
-              ? _stateController.text.trim()
-              : null,
-        ),
+        deliveryAddress: deliveryAddress ?? contactInfo,
         deliveryFee: deliveryFee,
         deliveryType: checkout.deliveryType,
         fulfillmentType: checkout.fulfillmentType,
@@ -154,10 +275,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } on AuthRequiredException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            duration: const Duration(seconds: 4),
-          ),
+          SnackBar(content: Text(e.message), duration: const Duration(seconds: 4)),
         );
         context.go(
           '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
@@ -174,17 +292,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   bool _validateForm() {
     final checkout = ref.read(checkoutProvider);
-    if (_nameController.text.trim().isEmpty) {
-      setState(() => _errorText = 'Name is required');
-      return false;
-    }
-    if (_phoneController.text.trim().isEmpty) {
-      setState(() => _errorText = 'Phone number is required');
-      return false;
+    if (checkout.useManualContact) {
+      if (_manualNameController.text.trim().isEmpty) {
+        setState(() => _errorText = 'Name is required');
+        return false;
+      }
+      if (_manualPhoneController.text.trim().isEmpty) {
+        setState(() => _errorText = 'Phone number is required');
+        return false;
+      }
     }
     if (checkout.deliveryType == DeliveryType.delivery) {
-      if (_addressController.text.trim().isEmpty) {
-        setState(() => _errorText = 'Delivery address is required');
+      if (checkout.useManualAddress) {
+        if (_manualAddressLine1Controller.text.trim().isEmpty) {
+          setState(() => _errorText = 'Delivery address is required');
+          return false;
+        }
+      } else if (checkout.selectedAddressId == null) {
+        setState(() => _errorText = 'Please select or enter a delivery address');
         return false;
       }
     }
@@ -194,6 +319,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final checkout = ref.watch(checkoutProvider);
+    final profileAsync = ref.watch(profileProvider);
     final cart = ref.watch(cartProvider);
     final subtotal = ref.read(cartProvider.notifier).subtotalCents;
     final deliveryFee = checkout.deliveryQuote?.feeCents ?? 0;
@@ -201,205 +327,642 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Delivery type selector
-            _SectionTitle('Delivery Method'),
-            const SizedBox(height: 8),
-            _DeliveryTypeSelector(
-              selected: checkout.deliveryType,
-              onChanged: (type) {
-                ref.read(checkoutProvider.notifier).setDeliveryType(type);
-                if (type == DeliveryType.delivery) {
-                  _fetchDeliveryQuote();
-                }
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Contact info (always shown)
-            _SectionTitle('Contact Info'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Full Name',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Delivery address (only for delivery)
-            if (checkout.deliveryType == DeliveryType.delivery) ...[
-              _SectionTitle('Delivery Address'),
+      body: profileAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Failed to load profile: $e')),
+        data: (profile) => SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Delivery type selector
+              _SectionTitle('Delivery Method'),
               const SizedBox(height: 8),
-              TextField(
-                controller: _addressController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Address',
-                  prefixIcon: Icon(Icons.location_on_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _postalCodeController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Postal Code',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _cityController,
-                      decoration: const InputDecoration(labelText: 'City'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _stateController,
-                decoration: const InputDecoration(labelText: 'State'),
-              ),
-              const SizedBox(height: 12),
-              // Get delivery quote button
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _fetchDeliveryQuote,
-                  icon: const Icon(Icons.local_shipping_outlined, size: 18),
-                  label: const Text('Calculate Delivery Fee'),
-                ),
+              _DeliveryTypeSelector(
+                selected: checkout.deliveryType,
+                onChanged: (type) {
+                  ref.read(checkoutProvider.notifier).setDeliveryType(type);
+                  if (type == DeliveryType.delivery && checkout.deliveryAddress != null) {
+                    _fetchDeliveryQuote();
+                  }
+                },
               ),
               const SizedBox(height: 24),
-            ],
 
-            // Fulfillment type
-            _SectionTitle('Fulfillment'),
-            const SizedBox(height: 8),
-            _FulfillmentSelector(
-              selected: checkout.fulfillmentType,
-              onChanged: (type) =>
-                  ref.read(checkoutProvider.notifier).setFulfillmentType(type),
-            ),
-            const SizedBox(height: 24),
+              // Contact Info Section
+              _SectionTitle('Contact Info'),
+              const SizedBox(height: 8),
+              _ContactSection(
+                profile: profile,
+                checkout: checkout,
+                nameController: _manualNameController,
+                phoneController: _manualPhoneController,
+                saveToProfile: _saveContactToProfile,
+                onToggleSave: (v) => setState(() => _saveContactToProfile = v),
+                onContactSelected: (contact) {
+                  ref.read(checkoutProvider.notifier).selectContact(contact?.id);
+                  ref.read(checkoutProvider.notifier).setContactInfo(
+                        DeliveryAddress.fromCustomerContact(contact!),
+                      );
+                },
+                onToggleManual: (v) {
+                  ref.read(checkoutProvider.notifier).toggleManualContact(v);
+                  if (v && profile.customer.name != null) {
+                    _manualNameController.text = profile.customer.name!;
+                  }
+                  if (v && profile.customer.phone != null) {
+                    _manualPhoneController.text = profile.customer.phone!;
+                  }
+                },
+                onAddressChanged: null,
+              ),
+              const SizedBox(height: 24),
 
-            // Order summary
-            _SectionTitle('Order Summary'),
-            const SizedBox(height: 8),
-            ...cart.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${item.quantity}x ${item.name}',
+              // Delivery Address Section (Delivery only)
+              if (checkout.deliveryType == DeliveryType.delivery) ...[
+                _SectionTitle('Delivery Address'),
+                const SizedBox(height: 8),
+                _AddressSection(
+                  profile: profile,
+                  checkout: checkout,
+                  addressLine1Controller: _manualAddressLine1Controller,
+                  addressLine2Controller: _manualAddressLine2Controller,
+                  postalCodeController: _manualPostalCodeController,
+                  cityController: _manualCityController,
+                  stateController: _manualStateController,
+                  saveToProfile: _saveAddressToProfile,
+                  onToggleSave: (v) => setState(() => _saveAddressToProfile = v),
+                  onAddressSelected: (address) {
+                    ref.read(checkoutProvider.notifier).selectAddress(
+                          address?.id,
+                          address: address,
+                        );
+                    _fetchDeliveryQuote();
+                  },
+                  onToggleManual: (v) {
+                    ref.read(checkoutProvider.notifier).toggleManualAddress(v);
+                    if (!v && profile.addresses.isNotEmpty) {
+                      final defaultAddr = profile.addresses.firstWhere(
+                        (a) => a.isDefault,
+                        orElse: () => profile.addresses.first,
+                      );
+                      ref.read(checkoutProvider.notifier).selectAddress(
+                            defaultAddr.id,
+                            address: defaultAddr,
+                          );
+                      _fetchDeliveryQuote();
+                    }
+                  },
+                  onAddressChanged: _onManualAddressChanged,
+                ),
+                const SizedBox(height: 12),
+                // Manual quote button
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: checkout.useManualAddress ? _fetchDeliveryQuote : null,
+                    icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                    label: const Text('Calculate Delivery Fee'),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+
+              // Fulfillment type
+              _SectionTitle('Fulfillment'),
+              const SizedBox(height: 8),
+              _FulfillmentSelector(
+                selected: checkout.fulfillmentType,
+                onChanged: (type) =>
+                    ref.read(checkoutProvider.notifier).setFulfillmentType(type),
+              ),
+              const SizedBox(height: 24),
+
+              // Order summary
+              _SectionTitle('Order Summary'),
+              const SizedBox(height: 8),
+              ...cart.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${item.quantity}x ${item.name}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                      Text(
+                        formatPrice(item.lineTotalCents),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 24),
+              Row(
+                children: [
+                  const Expanded(child: Text('Subtotal')),
+                  Text(formatPrice(subtotal)),
+                ],
+              ),
+              if (checkout.deliveryType == DeliveryType.delivery) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Delivery Fee')),
                     Text(
-                      formatPrice(item.lineTotalCents),
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      deliveryFee > 0
+                          ? formatPrice(deliveryFee)
+                          : checkout.deliveryQuote != null
+                              ? formatPrice(deliveryFee)
+                              : 'Calculating...',
                     ),
                   ],
                 ),
-              ),
-            ),
-            const Divider(height: 24),
-            Row(
-              children: [
-                const Expanded(child: Text('Subtotal')),
-                Text(formatPrice(subtotal)),
               ],
-            ),
-            if (checkout.deliveryType == DeliveryType.delivery) ...[
-              const SizedBox(height: 4),
+              const Divider(height: 24),
               Row(
                 children: [
-                  const Expanded(child: Text('Delivery Fee')),
+                  Expanded(
+                    child: Text(
+                      'Total',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                  ),
                   Text(
-                    deliveryFee > 0
-                        ? formatPrice(deliveryFee)
-                        : 'Calculating...',
+                    formatPrice(total),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                   ),
                 ],
               ),
-            ],
-            const Divider(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Total',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+
+              // Error text
+              if (_errorText != null) ...[
+                const SizedBox(height: 12),
                 Text(
-                  formatPrice(total),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
+                  _errorText!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 13,
                   ),
                 ),
               ],
-            ),
 
-            // Error text
-            if (_errorText != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _errorText!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
+              const SizedBox(height: 32),
+
+              // Pay button
+              FilledButton(
+                onPressed: _isLoading ? null : _handleCheckout,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
                 ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('Pay ${formatPrice(total)}'),
               ),
+              const SizedBox(height: 32),
             ],
-
-            const SizedBox(height: 32),
-
-            // Pay button
-            FilledButton(
-              onPressed: _isLoading ? null : _handleCheckout,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(double.infinity, 52),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text('Pay ${formatPrice(total)}'),
-            ),
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );
   }
 }
+
+// ── Contact Section Widget ──────────────────────────────────────────────
+
+class _ContactSection extends StatefulWidget {
+  const _ContactSection({
+    required this.profile,
+    required this.checkout,
+    required this.nameController,
+    required this.phoneController,
+    required this.saveToProfile,
+    required this.onToggleSave,
+    required this.onContactSelected,
+    required this.onToggleManual,
+    required this.onAddressChanged,
+  });
+
+  final CustomerProfile profile;
+  final CheckoutState checkout;
+  final TextEditingController nameController;
+  final TextEditingController phoneController;
+  final bool saveToProfile;
+  final ValueChanged<bool> onToggleSave;
+  final void Function(CustomerContactsRow?) onContactSelected;
+  final ValueChanged<bool> onToggleManual;
+  final VoidCallback? onAddressChanged;
+
+  @override
+  State<_ContactSection> createState() => _ContactSectionState();
+}
+
+class _ContactSectionState extends State<_ContactSection> {
+  @override
+  Widget build(BuildContext context) {
+    final contacts = widget.profile.contacts;
+    final isManual = widget.checkout.useManualContact;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Saved contacts list
+        if (contacts.isNotEmpty) ...[
+          for (final contact in contacts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ContactCard(
+                contact: contact,
+                isSelected: !isManual && widget.checkout.selectedContactId == contact.id,
+                onTap: () => widget.onContactSelected(contact),
+              ),
+            ),
+          Row(
+            children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'or',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                ),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+        ],
+        // Manual entry toggle
+        TextButton.icon(
+          onPressed: () => widget.onToggleManual(!isManual),
+          icon: Icon(
+            isManual ? Icons.expand_less : Icons.edit_outlined,
+            size: 18,
+          ),
+          label: Text(isManual ? 'Hide Manual Entry' : 'Enter Contact Manually'),
+        ),
+        // Manual entry form
+        if (isManual) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.nameController,
+            decoration: const InputDecoration(
+              labelText: 'Full Name',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            onChanged: (_) => widget.onAddressChanged?.call(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.phoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Phone Number',
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+            onChanged: (_) => widget.onAddressChanged?.call(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Checkbox(
+                value: widget.saveToProfile,
+                onChanged: (v) => widget.onToggleSave(v ?? false),
+              ),
+              const Text('Save to my profile for next time'),
+            ],
+          ),
+        ],
+        // Manage contacts link
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: TextButton.icon(
+            onPressed: () => context.push(AppRoutes.contacts),
+            icon: const Icon(Icons.manage_accounts, size: 18),
+            label: const Text('Manage Contacts'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContactCard extends StatelessWidget {
+  const _ContactCard({
+    required this.contact,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final CustomerContactsRow contact;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isSelected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+          width: isSelected ? 2 : 1,
+        ),
+      ),
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      contact.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      contact.phone,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (contact.isDefault)
+                Chip(
+                  label: const Text('Default'),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Address Section Widget ──────────────────────────────────────────────
+
+class _AddressSection extends StatefulWidget {
+  const _AddressSection({
+    required this.profile,
+    required this.checkout,
+    required this.addressLine1Controller,
+    required this.addressLine2Controller,
+    required this.postalCodeController,
+    required this.cityController,
+    required this.stateController,
+    required this.saveToProfile,
+    required this.onToggleSave,
+    required this.onAddressSelected,
+    required this.onToggleManual,
+    required this.onAddressChanged,
+  });
+
+  final CustomerProfile profile;
+  final CheckoutState checkout;
+  final TextEditingController addressLine1Controller;
+  final TextEditingController addressLine2Controller;
+  final TextEditingController postalCodeController;
+  final TextEditingController cityController;
+  final TextEditingController stateController;
+  final bool saveToProfile;
+  final ValueChanged<bool> onToggleSave;
+  final void Function(CustomerAddressesRow?) onAddressSelected;
+  final ValueChanged<bool> onToggleManual;
+  final VoidCallback onAddressChanged;
+
+  @override
+  State<_AddressSection> createState() => _AddressSectionState();
+}
+
+class _AddressSectionState extends State<_AddressSection> {
+  @override
+  Widget build(BuildContext context) {
+    final addresses = widget.profile.addresses;
+    final isManual = widget.checkout.useManualAddress;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Saved addresses list
+        if (addresses.isNotEmpty) ...[
+          for (final address in addresses)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _AddressCard(
+                address: address,
+                isSelected: !isManual && widget.checkout.selectedAddressId == address.id,
+                onTap: () => widget.onAddressSelected(address),
+              ),
+            ),
+          Row(
+            children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'or',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                ),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+        ],
+        // Manual entry toggle
+        TextButton.icon(
+          onPressed: () => widget.onToggleManual(!isManual),
+          icon: Icon(
+            isManual ? Icons.expand_less : Icons.edit_outlined,
+            size: 18,
+          ),
+          label: Text(isManual ? 'Hide Manual Entry' : 'Enter Address Manually'),
+        ),
+        // Manual entry form
+        if (isManual) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.addressLine1Controller,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Address Line 1',
+              prefixIcon: Icon(Icons.location_on_outlined),
+            ),
+            onChanged: (_) => widget.onAddressChanged(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.addressLine2Controller,
+            decoration: const InputDecoration(labelText: 'Address Line 2 (optional)'),
+            onChanged: (_) => widget.onAddressChanged(),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.postalCodeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Postal Code'),
+                  onChanged: (_) => widget.onAddressChanged(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: widget.cityController,
+                  decoration: const InputDecoration(labelText: 'City'),
+                  onChanged: (_) => widget.onAddressChanged(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.stateController,
+            decoration: const InputDecoration(labelText: 'State'),
+            onChanged: (_) => widget.onAddressChanged(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Checkbox(
+                value: widget.saveToProfile,
+                onChanged: (v) => widget.onToggleSave(v ?? false),
+              ),
+              const Text('Save to my profile for next time'),
+            ],
+          ),
+        ],
+        // Manage addresses link
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: TextButton.icon(
+            onPressed: () => context.push(AppRoutes.addresses),
+            icon: const Icon(Icons.manage_search, size: 18),
+            label: const Text('Manage Addresses'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AddressCard extends StatelessWidget {
+  const _AddressCard({
+    required this.address,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final CustomerAddressesRow address;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final displayAddress = [
+      address.addressLine1,
+      if (address.addressLine2 != null && address.addressLine2!.isNotEmpty)
+        address.addressLine2,
+      '${address.city}, ${address.state} ${address.postalCode}',
+    ].join('\n');
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isSelected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+          width: isSelected ? 2 : 1,
+        ),
+      ),
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          address.label ?? 'Address',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      displayAddress,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (address.isDefault)
+                Chip(
+                  label: const Text('Default'),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Section Title ────────────────────────────────────────────────────────
 
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.title);
@@ -409,12 +972,14 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(
-        context,
-      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
     );
   }
 }
+
+// ── Delivery Type Selector ───────────────────────────────────────────────
 
 class _DeliveryTypeSelector extends StatelessWidget {
   const _DeliveryTypeSelector({
@@ -445,6 +1010,8 @@ class _DeliveryTypeSelector extends StatelessWidget {
     );
   }
 }
+
+// ── Fulfillment Selector ─────────────────────────────────────────────────
 
 class _FulfillmentSelector extends StatelessWidget {
   const _FulfillmentSelector({required this.selected, required this.onChanged});

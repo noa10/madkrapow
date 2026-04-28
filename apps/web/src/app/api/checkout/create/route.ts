@@ -20,8 +20,8 @@ const CheckoutItemSchema = z.object({
 const CheckoutRequestSchema = z.object({
   items: z.array(CheckoutItemSchema).min(1),
   deliveryAddress: z.object({
-    fullName: z.string().min(1, 'Name is required'),
-    phone: z.string().min(1, 'Phone is required'),
+    fullName: z.string().optional(),
+    phone: z.string().optional(),
     address: z.string().optional(),
     address_line1: z.string().optional(),
     address_line2: z.string().optional(),
@@ -52,6 +52,12 @@ const CheckoutRequestSchema = z.object({
 }).superRefine((data, ctx) => {
   if (data.deliveryType === 'delivery') {
     const addr = data.deliveryAddress;
+    if (!addr.fullName?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'fullName'], message: 'Name is required for delivery' });
+    }
+    if (!addr.phone?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'phone'], message: 'Phone is required for delivery' });
+    }
     if (!addr.address?.trim() && !addr.address_line1?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliveryAddress', 'address'], message: 'Address is required for delivery' });
     }
@@ -222,8 +228,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         .from('customers')
         .insert({
           auth_user_id: user.id,
-          name: user.user_metadata?.full_name || deliveryAddress.fullName,
-          phone: deliveryAddress.phone,
+          name: user.user_metadata?.full_name || deliveryAddress.fullName || '',
+          phone: deliveryAddress.phone || '',
         })
         .select('id')
         .single()

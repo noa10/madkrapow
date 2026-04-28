@@ -27,8 +27,8 @@ const BulkCheckoutRequestSchema = z.object({
     dropoff_instructions: z.string().optional(),
   }),
   deliveryAddress: z.object({
-    fullName: z.string().min(1),
-    phone: z.string().min(1),
+    fullName: z.string().optional(),
+    phone: z.string().optional(),
     address: z.string().optional(),
     postalCode: z.string().optional(),
     city: z.string().optional(),

@@ -63,6 +63,22 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
+              // Saved contacts
+              Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.contact_phone_outlined),
+                      title: const Text('Saved Contacts'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(AppRoutes.contacts),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
               // Saved addresses
               Card(
                 child: Column(

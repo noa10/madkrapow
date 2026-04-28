@@ -9,6 +9,7 @@ abstract class AppRoutes {
   static const orderDetail = '/orders/:id';
   static const orders = '/orders';
   static const profile = '/profile';
+  static const contacts = '/profile/contacts';
   static const addresses = '/profile/addresses';
   static const signIn = '/auth/signin';
   static const signUp = '/auth/signup';

@@ -3,16 +3,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/supabase_provider.dart';
 import '../../../generated/tables/customer_addresses.dart';
+import '../../../generated/tables/customer_contacts.dart';
 import '../../../generated/tables/customers.dart';
 
 class CustomerProfile {
   const CustomerProfile({
     required this.customer,
     this.addresses = const [],
+    this.contacts = const [],
   });
 
   final CustomersRow customer;
   final List<CustomerAddressesRow> addresses;
+  final List<CustomerContactsRow> contacts;
 }
 
 class ProfileRepository {
@@ -48,8 +51,20 @@ class ProfileRepository {
     final addresses =
         addressesRes.map((json) => CustomerAddressesRow.fromJson(json)).toList();
 
-    return CustomerProfile(customer: customer, addresses: addresses);
+    // Fetch contacts
+    final contactsRes = await _supabase
+        .from('customer_contacts')
+        .select()
+        .eq('customer_id', customer.id)
+        .order('is_default', ascending: false);
+
+    final contacts =
+        contactsRes.map((json) => CustomerContactsRow.fromJson(json)).toList();
+
+    return CustomerProfile(customer: customer, addresses: addresses, contacts: contacts);
   }
+
+  // ── Addresses ──────────────────────────────────────────────────
 
   /// Add a new address.
   Future<CustomerAddressesRow> addAddress(Map<String, dynamic> data) async {
@@ -76,6 +91,50 @@ class ProfileRepository {
         .delete()
         .eq('id', addressId);
   }
+
+  // ── Contacts ───────────────────────────────────────────────────
+
+  /// Add a new contact.
+  Future<CustomerContactsRow> addContact(Map<String, dynamic> data) async {
+    final res = await _supabase
+        .from('customer_contacts')
+        .insert(data)
+        .select()
+        .single();
+    return CustomerContactsRow.fromJson(res);
+  }
+
+  /// Update an existing contact.
+  Future<void> updateContact(String contactId, Map<String, dynamic> data) async {
+    await _supabase
+        .from('customer_contacts')
+        .update(data)
+        .eq('id', contactId);
+  }
+
+  /// Delete a contact.
+  Future<void> deleteContact(String contactId) async {
+    await _supabase
+        .from('customer_contacts')
+        .delete()
+        .eq('id', contactId);
+  }
+
+  /// Set a contact as the default for the customer.
+  Future<void> setDefaultContact(String customerId, String contactId) async {
+    // Unset current default
+    await _supabase
+        .from('customer_contacts')
+        .update({'is_default': false})
+        .eq('customer_id', customerId);
+    // Set new default
+    await _supabase
+        .from('customer_contacts')
+        .update({'is_default': true})
+        .eq('id', contactId);
+  }
+
+  // ── Customer Profile ───────────────────────────────────────────
 
   /// Update customer profile.
   Future<void> updateCustomer(String customerId, Map<String, dynamic> data) async {

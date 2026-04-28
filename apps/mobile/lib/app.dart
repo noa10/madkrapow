@@ -21,6 +21,7 @@ import 'features/menu/presentation/screens/home_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'features/orders/presentation/screens/order_history_screen.dart';
 import 'features/profile/presentation/screens/address_management_screen.dart';
+import 'features/profile/presentation/screens/contact_management_screen.dart';
 import 'features/profile/presentation/screens/profile_screen.dart';
 import 'features/menu/presentation/screens/item_detail_screen.dart';
 
@@ -33,6 +34,7 @@ const _protectedRoutes = [
   AppRoutes.orders,
   AppRoutes.profile,
   AppRoutes.addresses,
+  AppRoutes.contacts,
 ];
 
 bool _isProtectedRoute(String location) {
@@ -196,6 +198,11 @@ GoRouter _createRouter(Ref ref) {
                     path: 'addresses',
                     builder: (context, state) =>
                         const AddressManagementScreen(),
+                  ),
+                  GoRoute(
+                    path: 'contacts',
+                    builder: (context, state) =>
+                        const ContactManagementScreen(),
                   ),
                 ],
               ),

@@ -19,6 +19,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     // Activate realtime watcher and periodic refresh
     ref.watch(menuRealtimeWatcherProvider);
     ref.watch(menuPeriodicRefreshProvider);

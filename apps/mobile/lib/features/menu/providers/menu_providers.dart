@@ -66,7 +66,6 @@ final menuRealtimeWatcherProvider = Provider<void>((ref) {
   });
 
   channel = repo.subscribeToMenuChanges(onChange: onMenuChange);
-  ref.read(menuRealtimeSubscriptionProvider.notifier).state = channel;
 });
 
 /// 60-second periodic fallback provider.

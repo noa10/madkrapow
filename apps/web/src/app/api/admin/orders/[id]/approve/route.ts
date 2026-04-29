@@ -5,7 +5,7 @@ import { env } from '@/lib/validators/env'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-03-25.dahlia' as const,
+  apiVersion: '2026-04-22.dahlia' as const,
 })
 
 const ApproveRequestSchema = z.discriminatedUnion('action', [

@@ -6,6 +6,8 @@ import '../../providers/admin_order_providers.dart';
 import '../../data/merchant_order_repository.dart';
 import '../widgets/admin_status_stepper.dart';
 import '../widgets/advance_status_button.dart';
+import '../widgets/driver_info_card.dart';
+import '../widgets/driver_map.dart';
 import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../../../../core/utils/price_formatter.dart';
@@ -159,6 +161,38 @@ class _OrderDetailContent extends StatelessWidget {
         ),
 
         const SizedBox(height: 16),
+
+        // Driver info & map (only for delivery orders)
+        if (order.deliveryType == 'delivery') ...[
+          DriverInfoCard(
+            driverName: detail.shipment?.driverName,
+            driverPhone: detail.shipment?.driverPhone,
+            driverPlate: detail.shipment?.driverPlate,
+            driverPhotoUrl: detail.shipment?.driverPhotoUrl,
+            driverLocationUpdatedAt: detail.shipment?.driverLocationUpdatedAt,
+            shareLink: detail.shipment?.shareLink,
+            lalamoveOrderId: order.lalamoveOrderId,
+          ),
+          if (detail.shipment?.driverLatitude != null &&
+              detail.shipment?.driverLongitude != null &&
+              order.deliveryAddressJson != null &&
+              order.deliveryAddressJson!['latitude'] != null &&
+              order.deliveryAddressJson!['longitude'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: DriverMap(
+                driverLatitude: detail.shipment!.driverLatitude,
+                driverLongitude: detail.shipment!.driverLongitude,
+                destinationLatitude:
+                    (order.deliveryAddressJson!['latitude'] as num)
+                        .toDouble(),
+                destinationLongitude:
+                    (order.deliveryAddressJson!['longitude'] as num)
+                        .toDouble(),
+              ),
+            ),
+          const SizedBox(height: 16),
+        ],
 
         // Order items
         Card(

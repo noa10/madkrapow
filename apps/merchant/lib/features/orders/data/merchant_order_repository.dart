@@ -118,8 +118,23 @@ class MerchantOrderRepository {
     final events =
         eventsRes.map((json) => OrderEventsRow.fromJson(json)).toList();
 
+    final shipmentRes = await _supabase
+        .from('lalamove_shipments')
+        .select()
+        .eq('order_id', orderId)
+        .order('created_at', ascending: false)
+        .limit(1);
+
+    final LalamoveShipmentsRow? shipment =
+        shipmentRes.isNotEmpty
+            ? LalamoveShipmentsRow.fromJson(shipmentRes.first)
+            : null;
+
     return OrderDetail(
-        order: order, items: itemsWithModifiers, events: events);
+        order: order,
+        items: itemsWithModifiers,
+        events: events,
+        shipment: shipment);
   }
 
   /// Advance order status via the API route (server-side validation).
@@ -176,6 +191,17 @@ class MerchantOrderRepository {
           ),
           callback: (_) => onUpdate(),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'lalamove_shipments',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'order_id',
+            value: orderId,
+          ),
+          callback: (_) => onUpdate(),
+        )
         .subscribe();
   }
 
@@ -200,15 +226,17 @@ class MerchantOrderRepository {
   }
 }
 
-/// Aggregated order detail with items and events.
+/// Aggregated order detail with items, events, and optional shipment.
 class OrderDetail {
   final OrdersRow order;
   final List<OrderItemWithModifiers> items;
   final List<OrderEventsRow> events;
+  final LalamoveShipmentsRow? shipment;
 
   OrderDetail({
     required this.order,
     required this.items,
     required this.events,
+    this.shipment,
   });
 }

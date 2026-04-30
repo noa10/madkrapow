@@ -6,6 +6,8 @@ import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/order_repository.dart';
+import '../widgets/daily_date_picker.dart';
+import '../widgets/order_stats_card.dart';
 
 class OrderHistoryScreen extends ConsumerWidget {
   const OrderHistoryScreen({super.key});
@@ -18,44 +20,23 @@ class OrderHistoryScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('My Orders')),
       body: AsyncValueWidget(
         value: ordersAsync,
-        data: (orders) {
-          if (orders.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.receipt_long_outlined,
-                    size: 64,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.3),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No orders yet',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Place your first order to see it here',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
+        data: (orders) => Column(
+          children: [
+            const DailyDatePicker(),
+            const OrderStatsCard(),
+            const SizedBox(height: 8),
+            if (orders.isEmpty)
+              Expanded(child: _EmptyOrdersState())
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: orders.length,
+                  itemBuilder: (context, index) => _OrderCard(order: orders[index]),
+                ),
               ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: orders.length,
-            itemBuilder: (context, index) => _OrderCard(order: orders[index]),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
@@ -128,6 +109,42 @@ class _OrderCard extends StatelessWidget {
     final dt = date is DateTime ? date : DateTime.tryParse(date.toString());
     if (dt == null) return date.toString();
     return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _EmptyOrdersState extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dateFilter = ref.watch(orderDateFilterProvider);
+    final theme = Theme.of(context);
+    final isToday = dateFilter.displayLabel == 'Today';
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.receipt_long_outlined,
+            size: 64,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isToday ? 'No orders yet' : 'No orders on this day',
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isToday
+                ? 'Place your first order to see it here'
+                : 'Try selecting a different date',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

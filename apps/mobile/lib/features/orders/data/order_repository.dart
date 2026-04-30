@@ -6,6 +6,7 @@ import '../../../generated/tables/lalamove_shipments.dart';
 import '../../../generated/tables/order_items.dart';
 import '../../../generated/tables/order_item_modifiers.dart';
 import '../../../generated/tables/orders.dart';
+import '../models/date_filter.dart';
 
 /// An order item together with its selected modifiers/addons.
 class OrderItemWithModifiers {
@@ -95,8 +96,12 @@ class OrderRepository {
         order: order, items: itemsWithModifiers, shipment: shipment);
   }
 
-  /// Fetch order history for the current user.
-  Future<List<OrdersRow>> fetchOrderHistory(String userId) async {
+  /// Fetch order history for the current user, optionally filtered by date range.
+  Future<List<OrdersRow>> fetchOrderHistory(
+    String userId, {
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
     // Resolve customer_id from auth_user_id
     final customerRes = await _supabase
         .from('customers')
@@ -108,11 +113,21 @@ class OrderRepository {
 
     final customerId = customerRes['id'] as String;
 
-    final ordersRes = await _supabase
+    var query = _supabase
         .from('orders')
         .select()
-        .eq('customer_id', customerId)
-        .order('created_at', ascending: false);
+        .eq('customer_id', customerId);
+
+    if (startDate != null) {
+      query = query.gte('created_at', startDate.toIso8601String());
+    }
+    if (endDate != null) {
+      query = query.lte('created_at', endDate.toIso8601String());
+    }
+
+    final ordersRes = await query
+        .order('created_at', ascending: false)
+        .limit(200);
 
     return ordersRes.map((json) => OrdersRow.fromJson(json)).toList();
   }
@@ -172,10 +187,48 @@ final orderDetailProvider =
   return repo.fetchOrderDetails(orderId);
 });
 
-/// Order history for the current user.
+/// Active date filter for order history. Defaults to today.
+final orderDateFilterProvider = StateProvider<DateFilter>((ref) => DateFilter());
+
+/// Order history for the current user, filtered by the selected date.
 final orderHistoryProvider = FutureProvider<List<OrdersRow>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
   final repo = ref.watch(orderRepositoryProvider);
-  return repo.fetchOrderHistory(user.id);
+  final dateFilter = ref.watch(orderDateFilterProvider);
+  return repo.fetchOrderHistory(
+    user.id,
+    startDate: dateFilter.dayStart,
+    endDate: dateFilter.dayEnd,
+  );
 });
+
+/// Aggregated summary of completed and cancelled orders for the selected date.
+final orderSummaryProvider = Provider<OrderSummary>((ref) {
+  final ordersAsync = ref.watch(orderHistoryProvider);
+  final orders = ordersAsync.valueOrNull ?? <OrdersRow>[];
+
+  final completedCount = orders
+      .where((o) => o.status == 'picked_up' || o.status == 'delivered')
+      .length;
+  final cancelledCount = orders.where((o) => o.status == 'cancelled').length;
+
+  return OrderSummary(
+    totalOrders: orders.length,
+    completedCount: completedCount,
+    cancelledCount: cancelledCount,
+  );
+});
+
+/// Immutable summary of order counts.
+class OrderSummary {
+  const OrderSummary({
+    required this.totalOrders,
+    required this.completedCount,
+    required this.cancelledCount,
+  });
+
+  final int totalOrders;
+  final int completedCount;
+  final int cancelledCount;
+}

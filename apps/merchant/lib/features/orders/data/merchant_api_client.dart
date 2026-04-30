@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../config/env.dart';
+import '../../../core/utils/api_url_resolver.dart';
 import '../../../core/utils/auth_exceptions.dart';
 
 // ignore_for_file: use_null_aware_elements
@@ -16,7 +17,7 @@ class MerchantApiClient {
 
   final SupabaseClient _supabase;
 
-  String get _baseUrl => AppEnv.webApiUrl;
+  String get _baseUrl => resolveApiUrl(AppEnv.webApiUrl);
 
   /// Build headers with a valid auth token. Throws if session is missing.
   Map<String, String> get _headers {

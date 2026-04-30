@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../data/order_repository.dart';
+import '../widgets/driver_info_card.dart';
+import '../widgets/driver_map.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/status_stepper.dart';
 
@@ -144,29 +146,33 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 const SizedBox(height: 16),
 
                 // Driver info
-                if (details.shipment?.driverName != null)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Driver',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (details.shipment!.driverName != null)
-                            _infoRow(Icons.person, details.shipment!.driverName!),
-                          if (details.shipment!.driverPhone != null)
-                            _infoRow(Icons.phone, details.shipment!.driverPhone!),
-                          if (details.shipment!.driverPlate != null)
-                            _infoRow(Icons.directions_car,
-                                details.shipment!.driverPlate!),
-                        ],
-                      ),
+                if (order.deliveryType == 'delivery')
+                  DriverInfoCard(
+                    driverName: details.shipment?.driverName,
+                    driverPhone: details.shipment?.driverPhone,
+                    driverPlate: details.shipment?.driverPlate,
+                    driverPhotoUrl: details.shipment?.driverPhotoUrl,
+                    driverLocationUpdatedAt:
+                        details.shipment?.driverLocationUpdatedAt,
+                    shareLink: details.shipment?.shareLink,
+                    lalamoveOrderId: order.lalamoveOrderId,
+                  ),
+                if (details.shipment?.driverLatitude != null &&
+                    details.shipment?.driverLongitude != null &&
+                    order.deliveryAddressJson != null &&
+                    order.deliveryAddressJson!['latitude'] != null &&
+                    order.deliveryAddressJson!['longitude'] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: DriverMap(
+                      driverLatitude: details.shipment!.driverLatitude,
+                      driverLongitude: details.shipment!.driverLongitude,
+                      destinationLatitude:
+                          (order.deliveryAddressJson!['latitude'] as num)
+                              .toDouble(),
+                      destinationLongitude:
+                          (order.deliveryAddressJson!['longitude'] as num)
+                              .toDouble(),
                     ),
                   ),
 
@@ -213,19 +219,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
-      ),
-    );
-  }
-
-  Widget _infoRow(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
-          const SizedBox(width: 8),
-          Text(text),
-        ],
       ),
     );
   }

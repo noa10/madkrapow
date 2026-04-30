@@ -148,6 +148,12 @@ class MenuRepository {
     }
   }
 
+  Future<void> reorderCategories(List<String> categoryIds) async {
+    for (int i = 0; i < categoryIds.length; i++) {
+      await _apiClient.updateCategory(categoryIds[i], sortOrder: i);
+    }
+  }
+
   // -- Modifier Groups --
 
   Future<List<ModifierGroupsRow>> fetchModifierGroups() async {

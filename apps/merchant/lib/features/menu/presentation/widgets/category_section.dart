@@ -1,26 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/routes.dart';
 import '../../../../generated/database.dart';
+import '../../providers/menu_providers.dart';
 import 'menu_item_tile.dart';
 
-class CategorySection extends StatefulWidget {
+class CategorySection extends ConsumerStatefulWidget {
   const CategorySection({
     super.key,
     required this.category,
     required this.items,
+    this.canMoveUp = false,
+    this.canMoveDown = false,
+    this.onMoveUp,
+    this.onMoveDown,
   });
 
   final CategoriesRow category;
   final List<MenuItemsRow> items;
+  final bool canMoveUp;
+  final bool canMoveDown;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
 
   @override
-  State<CategorySection> createState() => _CategorySectionState();
+  ConsumerState<CategorySection> createState() => _CategorySectionState();
 }
 
-class _CategorySectionState extends State<CategorySection> {
+class _CategorySectionState extends ConsumerState<CategorySection> {
   bool _expanded = true;
+  late List<MenuItemsRow> _items;
+  int _dataVersion = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List.of(widget.items);
+  }
+
+  @override
+  void didUpdateWidget(CategorySection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.items != oldWidget.items) {
+      _items = List.of(widget.items);
+      _dataVersion++;
+    }
+  }
 
   void _editCategory() {
     context.push('/menu/categories/${widget.category.id}');
@@ -28,6 +55,32 @@ class _CategorySectionState extends State<CategorySection> {
 
   void _newItem() {
     context.push('${AppRoutes.menuItemNew}?categoryId=${widget.category.id}');
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    setState(() {
+      final item = _items.removeAt(oldIndex);
+      _items.insert(newIndex, item);
+    });
+
+    final repo = ref.read(menuRepositoryProvider);
+    repo.reorderItems(_items.map((e) => e.id).toList());
+  }
+
+  Widget _proxyDecorator(Widget child, int index, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final animValue = Curves.easeInOut.transform(animation.value);
+        return Material(
+          elevation: 4 + 2 * animValue,
+          shadowColor: Colors.black.withValues(alpha: 0.3),
+          child: child,
+        );
+      },
+      child: child,
+    );
   }
 
   @override
@@ -74,6 +127,18 @@ class _CategorySectionState extends State<CategorySection> {
                           ),
                         ),
                       if (!widget.category.isActive) const SizedBox(width: 6),
+                      if (widget.onMoveUp != null)
+                        IconButton(
+                          icon: const Icon(Icons.arrow_upward, size: 20),
+                          onPressed: widget.canMoveUp ? widget.onMoveUp : null,
+                          tooltip: 'Move up',
+                        ),
+                      if (widget.onMoveDown != null)
+                        IconButton(
+                          icon: const Icon(Icons.arrow_downward, size: 20),
+                          onPressed: widget.canMoveDown ? widget.onMoveDown : null,
+                          tooltip: 'Move down',
+                        ),
                       IconButton(
                         icon: const Icon(Icons.edit, size: 20),
                         onPressed: _editCategory,
@@ -95,7 +160,7 @@ class _CategorySectionState extends State<CategorySection> {
 
           // Items list
           if (_expanded)
-            widget.items.isEmpty
+            _items.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.all(16),
                     child: Center(
@@ -112,10 +177,32 @@ class _CategorySectionState extends State<CategorySection> {
                       ),
                     ),
                   )
-                : Column(
-                    children: widget.items.map((item) {
-                      return MenuItemTile(item: item);
-                    }).toList(),
+                : ReorderableListView.builder(
+                    key: ValueKey('reorder_${widget.category.id}_$_dataVersion'),
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _items.length,
+                    onReorder: _onReorder,
+                    proxyDecorator: _proxyDecorator,
+                    itemBuilder: (context, index) {
+                      final item = _items[index];
+                      return Row(
+                        key: ValueKey(item.id),
+                        children: [
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 4,
+                              ),
+                              child: Icon(Icons.drag_handle, color: Colors.grey),
+                            ),
+                          ),
+                          Expanded(child: MenuItemTile(item: item)),
+                        ],
+                      );
+                    },
                   ),
         ],
       ),

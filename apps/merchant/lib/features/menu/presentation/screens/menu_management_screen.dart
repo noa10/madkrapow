@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/routes.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../providers/menu_providers.dart';
+import '../../data/menu_repository.dart';
 import '../widgets/category_section.dart';
 
 class MenuManagementScreen extends ConsumerStatefulWidget {
@@ -18,6 +19,7 @@ class MenuManagementScreen extends ConsumerStatefulWidget {
 
 class _MenuManagementScreenState extends ConsumerState<MenuManagementScreen> {
   RealtimeChannel? _realtimeChannel;
+  bool _isReordering = false;
 
   @override
   void initState() {
@@ -42,6 +44,31 @@ class _MenuManagementScreenState extends ConsumerState<MenuManagementScreen> {
       _realtimeChannel = null;
     }
     super.dispose();
+  }
+
+  Future<void> _moveCategory(int fromIndex, int toIndex) async {
+    if (_isReordering) return;
+
+    final categories = ref.read(categoriesWithItemsProvider).valueOrNull;
+    if (categories == null || categories.isEmpty) return;
+
+    setState(() => _isReordering = true);
+
+    final reordered = List<CategoryWithItems>.from(categories);
+    final item = reordered.removeAt(fromIndex);
+    reordered.insert(toIndex, item);
+
+    try {
+      final repo = ref.read(menuRepositoryProvider);
+      await repo.reorderCategories(
+        reordered.map((c) => c.category.id).toList(),
+      );
+      ref.invalidate(categoriesWithItemsProvider);
+    } finally {
+      if (mounted) {
+        setState(() => _isReordering = false);
+      }
+    }
   }
 
   @override
@@ -94,9 +121,16 @@ class _MenuManagementScreenState extends ConsumerState<MenuManagementScreen> {
               itemCount: categories.length,
               itemBuilder: (context, index) {
                 final categoryWithItems = categories[index];
-                return CategorySection(
-                  category: categoryWithItems.category,
-                  items: categoryWithItems.items,
+                return AbsorbPointer(
+                  absorbing: _isReordering,
+                  child: CategorySection(
+                    category: categoryWithItems.category,
+                    items: categoryWithItems.items,
+                    canMoveUp: index > 0,
+                    canMoveDown: index < categories.length - 1,
+                    onMoveUp: () => _moveCategory(index, index - 1),
+                    onMoveDown: () => _moveCategory(index, index + 1),
+                  ),
                 );
               },
             );

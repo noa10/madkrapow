@@ -63,13 +63,13 @@ class MenuRepository {
         .from('categories')
         .select()
         .eq('is_active', true)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
 
     final itemsRes = await _supabase
         .from('menu_items')
         .select()
         .eq('is_available', true)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
 
     final junctionRes = await _supabase
         .from('menu_item_modifier_groups')
@@ -155,7 +155,7 @@ class MenuRepository {
         .from('modifier_groups')
         .select()
         .inFilter('id', modifierGroupIds)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
 
     final groups =
         groupsRes.map((json) => ModifierGroupsRow.fromJson(json)).toList();
@@ -167,7 +167,7 @@ class MenuRepository {
         .select()
         .inFilter('modifier_group_id', groupIdList)
         .eq('is_available', true)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
 
     final allModifiers =
         modifiersRes.map((json) => ModifiersRow.fromJson(json)).toList();

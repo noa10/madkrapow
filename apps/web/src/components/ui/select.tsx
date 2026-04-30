@@ -11,6 +11,8 @@ interface SelectContextValue {
   name?: string;
   disabled?: boolean;
   required?: boolean;
+  content?: React.ReactNode;
+  setContent?: (children: React.ReactNode) => void;
 }
 
 const SelectContext = React.createContext<SelectContextValue>({});
@@ -39,6 +41,7 @@ const Select: React.FC<SelectProps> = ({
   required,
 }) => {
   const [internalValue, setInternalValue] = React.useState(defaultValue ?? "");
+  const [content, setContent] = React.useState<React.ReactNode>(null);
 
   const controlled = value !== undefined;
   const currentValue = controlled ? value : internalValue;
@@ -59,6 +62,8 @@ const Select: React.FC<SelectProps> = ({
         name,
         disabled,
         required,
+        content,
+        setContent,
       }}
     >
       {children}
@@ -76,7 +81,7 @@ interface SelectTriggerProps {
 
 const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
   ({ className, children, placeholder }, ref) => {
-    const { value, onValueChange, name, disabled, required } = useSelectContext();
+    const { value, onValueChange, name, disabled, required, content } = useSelectContext();
 
     return (
       <div className="relative">
@@ -98,6 +103,7 @@ const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
             </option>
           )}
           {children}
+          {content}
         </select>
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground">
           <svg
@@ -124,11 +130,18 @@ const SelectValue = ({ children, placeholder }: { children?: React.ReactNode; pl
   return <>{placeholder ?? children}</>;
 };
 
-/* ---------- SelectContent ---------- */
+/* ---------- SelectContent (stashes children into context for SelectTrigger to render) ---------- */
 
-const SelectContent = ({ children, className }: { children?: React.ReactNode; className?: string }) => {
-  return <div className={className}>{children}</div>;
+const SelectContent = ({ children, className: _className }: { children?: React.ReactNode; className?: string }) => {
+  const { setContent } = useSelectContext();
+
+  React.useLayoutEffect(() => {
+    setContent?.(children);
+  });
+
+  return null;
 };
+SelectContent.displayName = "SelectContent";
 
 /* ---------- SelectItem ---------- */
 

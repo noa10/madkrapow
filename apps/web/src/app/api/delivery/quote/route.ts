@@ -65,21 +65,28 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
 
     const serviceType = service_type || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE'
 
+    // Lalamove's regex only allows up to 15 decimal places; geocoded values
+    // often exceed this. 8 decimals gives sub-millimetre precision.
+    const fmt = (v: number | string) => {
+      const n = typeof v === 'string' ? parseFloat(v) : v
+      return n.toFixed(8)
+    }
+
     const quotation = await lalamove.getQuotation({
       serviceType,
       language: 'en_MY',
       stops: [
         {
           coordinates: {
-            lat: String(env.STORE_LATITUDE),
-            lng: String(env.STORE_LONGITUDE),
+            lat: fmt(env.STORE_LATITUDE),
+            lng: fmt(env.STORE_LONGITUDE),
           },
           address: env.STORE_ADDRESS,
         },
         {
           coordinates: {
-            lat: String(dropoff.latitude),
-            lng: String(dropoff.longitude),
+            lat: fmt(dropoff.latitude),
+            lng: fmt(dropoff.longitude),
           },
           address: dropoff.address,
         },

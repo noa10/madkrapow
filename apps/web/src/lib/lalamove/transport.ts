@@ -92,6 +92,7 @@ export class LalamoveTransport {
         const message =
           (errorBody as { message?: string }).message ||
           `Lalamove API error: ${response.status}`
+        console.error('[Lalamove] Full error body:', JSON.stringify(errorBody, null, 2))
         throw new LalamoveApiError(message, response.status, errorBody)
       }
     }

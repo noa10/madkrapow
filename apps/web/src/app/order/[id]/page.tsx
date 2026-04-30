@@ -550,6 +550,8 @@ export default function OrderTrackingPage() {
                 driver_name={driverName}
                 driver_phone={driverPhone}
                 driver_plate_number={driverPlate}
+                driver_photo_url={shipment?.driver_photo_url ?? null}
+                driver_location_updated_at={shipment?.driver_location_updated_at ?? null}
               />
 
               {/* Live Driver Tracking Map */}
@@ -569,6 +571,7 @@ export default function OrderTrackingPage() {
                 driverName={driverName}
                 orderStatus={order.status}
                 deliveryType={order.delivery_type}
+                driverLocationUpdatedAt={shipment?.driver_location_updated_at ?? null}
               />
 
               {/* Delivery Address / Pickup Info */}

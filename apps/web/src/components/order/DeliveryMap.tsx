@@ -14,6 +14,19 @@ interface DeliveryMapProps {
   driverName: string | null
   orderStatus: string
   deliveryType: string
+  driverLocationUpdatedAt?: string | null
+}
+
+function getMapUpdatedText(timestamp: string): string {
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+
+  if (diffSec < 60) return `Updated ${diffSec}s ago`
+  if (diffMin < 60) return `Updated ${diffMin} min ago`
+  return `Updated ${Math.floor(diffMin / 60)}h ago`
 }
 
 const containerStyle = {
@@ -29,6 +42,7 @@ export function DeliveryMap({
   driverName,
   orderStatus,
   deliveryType,
+  driverLocationUpdatedAt,
 }: DeliveryMapProps) {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -127,7 +141,7 @@ export function DeliveryMap({
         <Navigation className="h-5 w-5 text-primary" />
         Live Tracking
       </h2>
-      <div className="rounded-lg overflow-hidden">
+      <div className="rounded-lg overflow-hidden relative">
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={driverPosition}
@@ -187,6 +201,11 @@ export function DeliveryMap({
             />
           )}
         </GoogleMap>
+        {driverLatitude && driverLongitude && driverLocationUpdatedAt && (
+          <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md pointer-events-none">
+            {getMapUpdatedText(driverLocationUpdatedAt)}
+          </div>
+        )}
       </div>
       {mapLoaded && (
         <p className="text-xs text-muted-foreground text-center mt-3">

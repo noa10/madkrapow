@@ -91,3 +91,6 @@ pubspec.lock
 # Local config / generated
 entities.json
 mempalace.yaml
+
+# Backup files
+*.backup

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
-import { getAuthenticatedUser } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/admin/require-admin'
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-04-22.dahlia' as const,
@@ -38,22 +38,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApproveResult>> {
   try {
-    // Auth verification — supports both cookie (web) and Bearer token (mobile)
-    const { user, supabase: db } = await getAuthenticatedUser(req)
-    if (!user || !db) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
+    const guard = await requireAdmin(req)
+    if ("error" in guard) {
+      return guard.error as NextResponse<ApproveResult>
     }
 
-    // Admin role check (replaces the previous TODO)
-    if ((user.app_metadata?.role as string) !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden — admin role required' },
-        { status: 403 }
-      )
-    }
+    const { user, supabase: db } = guard
 
     const { id: orderId } = await params
     const rawBody = await req.text()

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/admin/require-admin';
 import { z } from 'zod';
 
 const VALID_TRANSITIONS: Record<string, string> = {
@@ -21,16 +21,12 @@ export async function POST(
   try {
     const { id } = await params;
 
-    // Auth verification — supports both cookie (web) and Bearer token (mobile)
-    const { user, supabase: db } = await getAuthenticatedUser(req);
-    if (!user || !db) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const guard = await requireAdmin(req);
+    if ("error" in guard) {
+      return guard.error;
     }
 
-    // Admin role check
-    if ((user.app_metadata?.role as string) !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden — admin role required' }, { status: 403 });
-    }
+    const { user, supabase: db } = guard;
 
     let body: unknown;
     try {

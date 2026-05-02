@@ -184,7 +184,7 @@ CREATE POLICY "admin_select_all_shipments" ON lalamove_shipments FOR SELECT USIN
     SELECT 1 FROM customers c
     WHERE c.auth_user_id = auth.uid()
       AND (auth.jwt() ->> 'role' = 'service_role'
-        OR auth.jwt() -> 'user_metadata' ->> 'role' = 'admin')
+        OR auth.jwt() -> 'app_metadata' ->> 'role' = 'admin')
   )
 );
 

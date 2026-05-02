@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { getBrowserClient } from "@/lib/supabase/client";
-import { isAdminUser } from "@/lib/auth/roles";
+import { hasAnyRole, ALL_STAFF_ROLES } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -94,7 +94,9 @@ export function AuthForm() {
         return;
       }
 
-      router.replace(isAdminUser(data.user ?? data.session?.user) ? "/admin" : "/");
+      const user = data.user ?? data.session?.user;
+      const redirectPath = hasAnyRole(user, ALL_STAFF_ROLES) ? "/admin" : "/";
+      router.replace(redirectPath);
       router.refresh();
     } catch {
       setError("Unable to connect. Please check your connection");

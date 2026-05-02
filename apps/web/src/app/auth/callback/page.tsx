@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { isAdminUser } from '@/lib/auth/roles'
+import { hasAnyRole, ALL_STAFF_ROLES } from '@/lib/auth/roles'
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
@@ -78,7 +78,7 @@ export default function AuthCallbackPage() {
         }
 
         if (session) {
-          window.location.href = isAdminUser(session.user) ? '/admin' : '/'
+          window.location.href = hasAnyRole(session.user, ALL_STAFF_ROLES) ? '/admin' : '/'
           return
         }
 
@@ -104,7 +104,7 @@ export default function AuthCallbackPage() {
             console.error('Code exchange error:', exchangeError)
             setError(getAuthErrorMessage(exchangeError))
           } else if (newSession) {
-            window.location.href = isAdminUser(newSession.user) ? '/admin' : '/'
+            window.location.href = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? '/admin' : '/'
             return
           }
         }

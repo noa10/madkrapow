@@ -5,11 +5,15 @@ import 'package:go_router/go_router.dart';
 
 import 'config/routes.dart';
 import 'config/theme.dart';
+import 'core/constants/roles.dart';
 import 'core/providers/supabase_provider.dart';
 import 'core/widgets/admin_shell.dart';
 import 'features/auth/presentation/screens/admin_sign_in_screen.dart';
 import 'features/auth/providers/admin_auth_providers.dart';
 import 'features/analytics/presentation/screens/analytics_screen.dart';
+import 'features/employees/presentation/screens/employee_list_screen.dart';
+import 'features/employees/presentation/screens/employee_form_screen.dart';
+import 'features/employees/providers/employee_providers.dart';
 import 'features/menu/presentation/screens/category_form_screen.dart';
 import 'features/menu/presentation/screens/menu_item_form_screen.dart';
 import 'features/menu/presentation/screens/menu_management_screen.dart';
@@ -18,8 +22,14 @@ import 'features/menu/providers/menu_providers.dart';
 import 'features/notifications/providers/notification_providers.dart';
 import 'features/orders/presentation/screens/admin_orders_screen.dart';
 import 'features/orders/presentation/screens/admin_order_detail_screen.dart';
+import 'features/orders/presentation/screens/kitchen_display_screen.dart';
 import 'features/orders/providers/admin_order_providers.dart';
+import 'features/analytics/presentation/screens/sales_reports_screen.dart';
 import 'features/promos/presentation/screens/placeholder_more_screen.dart';
+import 'features/promos/presentation/screens/promo_list_screen.dart';
+import 'features/promos/presentation/screens/promo_form_screen.dart';
+import 'features/promos/providers/promo_providers.dart';
+import 'features/settings/presentation/screens/settings_screen.dart';
 import 'main.dart' show firebaseInitialized;
 
 // Navigator keys for each branch of the shell
@@ -36,22 +46,37 @@ GoRouter _createRouter(Ref ref) {
     refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
       final user = ref.read(currentUserProvider);
-      final isAdmin = ref.read(isAdminProvider);
+      final staffRole = ref.read(staffRoleProvider);
       final location = state.matchedLocation;
 
       // Allow signin route always
       if (location == AppRoutes.signin) {
-        // If already admin, go to orders
-        if (user != null && isAdmin) return AppRoutes.orders;
+        // If already authenticated with a valid role, go to orders
+        if (user != null && staffRole != null) return AppRoutes.orders;
         return null;
       }
 
-      // UX-only guard: redirect non-authenticated or non-admin to signin.
+      // UX-only guard: redirect non-authenticated or unknown role to signin.
       // Real authorization is enforced at:
-      // 1. API route level: getAuthenticatedUser + admin role check
-      // 2. RLS level: app_metadata.role = 'admin' policies
-      if (user == null || !isAdmin) {
+      // 1. API route level: getAuthenticatedUser + role check
+      // 2. RLS level: app_metadata.role policies
+      if (user == null || staffRole == null) {
         return AppRoutes.signin;
+      }
+
+      // Role-based route guards
+      final role = staffRole;
+      if (location == AppRoutes.menu && !role.canAccessMenu) {
+        return AppRoutes.orders;
+      }
+      if (location == AppRoutes.analytics && !role.canAccessAnalytics && !role.canAccessStaff) {
+        return AppRoutes.orders;
+      }
+      if (location.startsWith('/analytics/staff') && !role.canAccessStaff) {
+        return AppRoutes.orders;
+      }
+      if (location == AppRoutes.settings && role != StaffRole.admin) {
+        return AppRoutes.orders;
       }
 
       return null;
@@ -61,6 +86,16 @@ GoRouter _createRouter(Ref ref) {
       GoRoute(
         path: AppRoutes.signin,
         builder: (context, state) => const AdminSignInScreen(),
+      ),
+      // Kitchen Display (outside shell, pushed from Orders tab)
+      GoRoute(
+        path: AppRoutes.kitchen,
+        builder: (context, state) => const KitchenDisplayScreen(),
+      ),
+      // Settings (outside shell, pushed from More tab)
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
       // Shell route with bottom navigation (4 branches)
       StatefulShellRoute.indexedStack(
@@ -125,13 +160,35 @@ GoRouter _createRouter(Ref ref) {
               ),
             ],
           ),
-          // Branch 2: Analytics
+          // Branch 2: Analytics (admin) or Staff (manager)
           StatefulShellBranch(
             navigatorKey: _analyticsNavigatorKey,
             routes: [
               GoRoute(
                 path: AppRoutes.analytics,
-                builder: (context, state) => const AnalyticsScreen(),
+                builder: (context, state) => const _RoleAwareBranch2Screen(),
+                routes: [
+                  GoRoute(
+                    path: 'reports',
+                    builder: (context, state) => const SalesReportsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'staff',
+                    builder: (context, state) => const EmployeeListScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'new',
+                        builder: (context, state) => const EmployeeFormScreen(),
+                      ),
+                      GoRoute(
+                        path: ':id/edit',
+                        builder: (context, state) => _EmployeeEditLoader(
+                          employeeId: state.pathParameters['id']!,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -142,6 +199,24 @@ GoRouter _createRouter(Ref ref) {
               GoRoute(
                 path: AppRoutes.more,
                 builder: (context, state) => const PlaceholderMoreScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'promos',
+                    builder: (context, state) => const PromoListScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'new',
+                        builder: (context, state) => const PromoFormScreen(),
+                      ),
+                      GoRoute(
+                        path: ':id/edit',
+                        builder: (context, state) => _PromoEditLoader(
+                          promoId: state.pathParameters['id']!,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -203,10 +278,10 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
     );
     if (!uuidRegex.hasMatch(orderId)) return;
 
-    // Only navigate if user is authenticated admin
+    // Only navigate if user is authenticated with a valid staff role
     final user = ref.read(currentUserProvider);
-    final isAdmin = ref.read(isAdminProvider);
-    if (user == null || !isAdmin) return;
+    final staffRole = ref.read(staffRoleProvider);
+    if (user == null || staffRole == null) return;
 
     final router = ref.read(routerProvider);
     router.go('/orders/$orderId');
@@ -225,8 +300,9 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
     ref.listenManual(authStateProvider, (_, _) {
       if (!mounted) return;
       final user = ref.read(currentUserProvider);
-      final isAdmin = ref.read(isAdminProvider);
-      if (user != null && isAdmin) {
+      final staffRole = ref.read(staffRoleProvider);
+      // Register FCM for all authenticated staff; server filters by role
+      if (user != null && staffRole != null) {
         ref.read(fcmRepositoryProvider).registerToken();
         ref.read(fcmRepositoryProvider).setupTokenRefresh();
       } else {
@@ -238,6 +314,54 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
   @override
   Widget build(BuildContext context) {
     return widget.child;
+  }
+}
+
+/// Shows AnalyticsScreen for admin, EmployeeListScreen for manager,
+/// and redirects for other roles (handled by GoRouter redirect).
+class _RoleAwareBranch2Screen extends ConsumerWidget {
+  const _RoleAwareBranch2Screen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final staffRole = ref.watch(staffRoleProvider);
+    if (staffRole == StaffRole.admin) {
+      return const AnalyticsScreen();
+    }
+    if (staffRole == StaffRole.manager) {
+      return const EmployeeListScreen();
+    }
+    // Fallback for unauthorized access (should be redirected by router)
+    return const Center(child: CircularProgressIndicator());
+  }
+}
+
+/// Loads an employee by ID and renders the edit form.
+class _EmployeeEditLoader extends ConsumerWidget {
+  const _EmployeeEditLoader({required this.employeeId});
+
+  final String employeeId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final employeesAsync = ref.watch(employeesProvider);
+    return employeesAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Loading...')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, _) => Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Failed to load employee: $err')),
+      ),
+      data: (employees) {
+        final employee = employees.firstWhere(
+          (e) => e.id == employeeId,
+          orElse: () => throw Exception('Employee not found'),
+        );
+        return EmployeeFormScreen(employee: employee);
+      },
+    );
   }
 }
 
@@ -283,6 +407,35 @@ class _CategoryEditLoader extends ConsumerWidget {
         body: Center(child: Text('Failed to load category: $err')),
       ),
       data: (category) => CategoryFormScreen(category: category),
+    );
+  }
+}
+
+/// Loads a promo by ID and renders the edit form.
+class _PromoEditLoader extends ConsumerWidget {
+  const _PromoEditLoader({required this.promoId});
+
+  final String promoId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final promosAsync = ref.watch(promosProvider);
+    return promosAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Loading...')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, _) => Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(child: Text('Failed to load promo: $err')),
+      ),
+      data: (promos) {
+        final promo = promos.firstWhere(
+          (p) => p.id == promoId,
+          orElse: () => throw Exception('Promo not found'),
+        );
+        return PromoFormScreen(promo: promo);
+      },
     );
   }
 }

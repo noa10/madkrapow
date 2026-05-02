@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/admin_auth_providers.dart';
 
@@ -15,6 +16,33 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedEmail();
+  }
+
+  Future<void> _loadRememberedEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('remembered_email');
+    if (email != null && mounted) {
+      setState(() {
+        _rememberMe = true;
+        _emailController.text = email;
+      });
+    }
+  }
+
+  Future<void> _persistEmail(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('remembered_email', email);
+    } else {
+      await prefs.remove('remembered_email');
+    }
+  }
 
   @override
   void dispose() {
@@ -41,6 +69,8 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    } else {
+      await _persistEmail(_emailController.text.trim());
     }
   }
 
@@ -122,6 +152,20 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                       return null;
                     },
                     onFieldSubmitted: (_) => _signIn(),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Remember Me checkbox
+                  CheckboxListTile(
+                    value: _rememberMe,
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _rememberMe = value);
+                      }
+                    },
+                    title: const Text('Remember Me'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
                   ),
                   const SizedBox(height: 24),
 

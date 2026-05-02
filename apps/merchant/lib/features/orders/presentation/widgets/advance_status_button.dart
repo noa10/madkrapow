@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/admin_order_providers.dart';
+import '../../../../features/auth/providers/admin_auth_providers.dart';
+import '../../../../core/constants/roles.dart';
 
 /// Button to advance an order to its next valid status.
 /// Server-side VALID_TRANSITIONS enforced by the API route.
@@ -21,10 +23,41 @@ class AdvanceStatusButton extends ConsumerWidget {
 
   static const _cancelableStatuses = {'paid', 'accepted', 'preparing'};
 
+  String? _roleAwareNextStatus(StaffRole? role) {
+    final next = _nextStatus[currentStatus];
+    if (next == null) return null;
+
+    switch (role) {
+      case StaffRole.kitchen:
+        // Kitchen can only advance to preparing and ready
+        if (next == 'preparing' || next == 'ready') return next;
+        return null;
+      case StaffRole.cashier:
+      case StaffRole.admin:
+      case StaffRole.manager:
+      case null:
+        return next;
+    }
+  }
+
+  bool _canCancel(StaffRole? role) {
+    if (!_cancelableStatuses.contains(currentStatus)) return false;
+    switch (role) {
+      case StaffRole.kitchen:
+        return false;
+      case StaffRole.cashier:
+      case StaffRole.admin:
+      case StaffRole.manager:
+      case null:
+        return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nextStatus = _nextStatus[currentStatus];
-    final canCancel = _cancelableStatuses.contains(currentStatus);
+    final staffRole = ref.watch(staffRoleProvider);
+    final nextStatus = _roleAwareNextStatus(staffRole);
+    final canCancel = _canCancel(staffRole);
     final isTerminal = nextStatus == null;
 
     return Row(
@@ -109,8 +142,9 @@ class AdvanceStatusButton extends ConsumerWidget {
   Future<void> _advanceStatus(
     BuildContext context,
     WidgetRef ref,
-    String nextStatus,
+    String? nextStatus,
   ) async {
+    if (nextStatus == null) return;
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       await repo.updateOrderStatus(orderId, nextStatus);

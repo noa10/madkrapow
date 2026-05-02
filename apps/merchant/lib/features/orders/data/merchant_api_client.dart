@@ -33,6 +33,43 @@ class MerchantApiClient {
     };
   }
 
+  /// Generic POST request to an admin API endpoint.
+  /// POST /api/admin/{path}
+  Future<Map<String, dynamic>> post(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api$path'),
+      headers: _headers,
+      body: body != null ? jsonEncode(body) : null,
+    );
+
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  /// Test HubboPOS connection via the web API.
+  /// POST /api/admin/hubbopos/test-connection
+  Future<void> testHubboPosConnection() async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/admin/hubbopos/test-connection'),
+      headers: _headers,
+    );
+
+    _handleResponse(response);
+  }
+
+  /// Trigger a full HubboPOS sync via the web API.
+  /// POST /api/admin/hubbopos/sync
+  Future<void> syncHubboPos() async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/admin/hubbopos/sync'),
+      headers: _headers,
+    );
+
+    _handleResponse(response);
+  }
+
   /// Advance an order's status via the web API.
   /// POST /api/admin/orders/:id/status
   Future<void> updateOrderStatus(String orderId, String newStatus) async {

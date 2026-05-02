@@ -8,6 +8,9 @@ class AuthForm extends StatefulWidget {
     this.showNameField = false,
     this.isLoading = false,
     this.errorText,
+    this.rememberedEmail,
+    this.showRememberMe = true,
+    this.onRememberMeChanged,
   });
 
   final Future<void> Function({
@@ -19,6 +22,9 @@ class AuthForm extends StatefulWidget {
   final bool showNameField;
   final bool isLoading;
   final String? errorText;
+  final String? rememberedEmail;
+  final bool showRememberMe;
+  final ValueChanged<bool>? onRememberMeChanged;
 
   @override
   State<AuthForm> createState() => _AuthFormState();
@@ -26,10 +32,29 @@ class AuthForm extends StatefulWidget {
 
 class _AuthFormState extends State<AuthForm> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  late final TextEditingController _emailController;
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   bool _obscurePassword = true;
+  late bool _rememberMe;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(
+      text: widget.rememberedEmail ?? '',
+    );
+    _rememberMe = widget.rememberedEmail != null;
+  }
+
+  @override
+  void didUpdateWidget(AuthForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.rememberedEmail != oldWidget.rememberedEmail) {
+      _emailController.text = widget.rememberedEmail ?? '';
+      _rememberMe = widget.rememberedEmail != null;
+    }
+  }
 
   @override
   void dispose() {
@@ -120,6 +145,21 @@ class _AuthFormState extends State<AuthForm> {
               return null;
             },
           ),
+          if (widget.showRememberMe) ...[
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _rememberMe,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _rememberMe = value);
+                  widget.onRememberMeChanged?.call(value);
+                }
+              },
+              title: const Text('Remember Me'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
           if (widget.errorText != null) ...[
             const SizedBox(height: 12),
             Text(

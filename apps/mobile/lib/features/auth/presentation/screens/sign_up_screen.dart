@@ -100,6 +100,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                   showNameField: true,
                   isLoading: _isLoading,
                   errorText: _errorText,
+                  showRememberMe: false,
                 ),
                 const SizedBox(height: 16),
                 Row(

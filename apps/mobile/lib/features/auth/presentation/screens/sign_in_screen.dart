@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
@@ -17,6 +18,34 @@ class SignInScreen extends ConsumerStatefulWidget {
 class _SignInScreenState extends ConsumerState<SignInScreen> {
   bool _isLoading = false;
   String? _errorText;
+  bool _rememberMe = false;
+  String? _rememberedEmail;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedEmail();
+  }
+
+  Future<void> _loadRememberedEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('remembered_email');
+    if (mounted) {
+      setState(() {
+        _rememberedEmail = email;
+        _rememberMe = email != null;
+      });
+    }
+  }
+
+  Future<void> _persistEmail(bool rememberMe, String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (rememberMe) {
+      await prefs.setString('remembered_email', email);
+    } else {
+      await prefs.remove('remembered_email');
+    }
+  }
 
   Future<void> _handleSignIn({
     required String email,
@@ -33,6 +62,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             email: email,
             password: password,
           );
+      await _persistEmail(_rememberMe, email);
       if (mounted) {
         final from = GoRouterState.of(context).uri.queryParameters['from'];
         context.go(from ?? AppRoutes.home);
@@ -103,6 +133,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   submitLabel: 'Sign In',
                   isLoading: _isLoading,
                   errorText: _errorText,
+                  rememberedEmail: _rememberedEmail,
+                  onRememberMeChanged: (value) {
+                    setState(() => _rememberMe = value);
+                  },
                 ),
                 const SizedBox(height: 16),
                 Row(

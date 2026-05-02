@@ -3,11 +3,13 @@
 import { useEffect, useState, Suspense, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, Clock, Package, ArrowRight, Loader2, CreditCard } from 'lucide-react'
+import { CheckCircle, Clock, Package, ArrowRight, Loader2, CreditCard, ExternalLink } from 'lucide-react'
+import confetti from 'canvas-confetti'
 import { useCartStore } from '@/stores/cart'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
 
 type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out'
 
@@ -23,6 +25,37 @@ function SuccessContent() {
   useEffect(() => {
     clearCart()
   }, [clearCart])
+
+  useEffect(() => {
+    if (paymentStatus === 'confirmed') {
+      const duration = 3000
+      const end = Date.now() + duration
+      const colors = ['#d2b07b', '#ffffff', '#22c55e']
+
+      const frame = () => {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 },
+          colors,
+          disableForReducedMotion: true,
+        })
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 },
+          colors,
+          disableForReducedMotion: true,
+        })
+        if (Date.now() < end) {
+          requestAnimationFrame(frame)
+        }
+      }
+      requestAnimationFrame(frame)
+    }
+  }, [paymentStatus])
 
   const checkStatus = useCallback(async (supabase: ReturnType<typeof getBrowserClient>, orderId: string) => {
     const { data, error } = await supabase
@@ -86,11 +119,13 @@ function SuccessContent() {
 
             {paymentStatus === 'confirmed' && (
               <>
-                <div className="h-20 w-20 rounded-full bg-green-500/10 flex items-center justify-center mb-6">
+                <div className="h-20 w-20 rounded-full bg-green-500/10 flex items-center justify-center mb-6 animate-scale-in">
                   <CheckCircle className="h-10 w-10 text-green-500" />
                 </div>
-                <h1 className="text-3xl font-semibold font-display mb-2">Payment Confirmed!</h1>
-                <p className="text-muted-foreground text-center max-w-md">
+                <h1 className="text-3xl font-semibold font-display mb-2 animate-fade-in-up">
+                  Payment Confirmed!
+                </h1>
+                <p className="text-muted-foreground text-center max-w-md animate-fade-in-up">
                   Your order has been placed successfully.
                 </p>
               </>
@@ -109,8 +144,10 @@ function SuccessContent() {
             )}
           </div>
 
-          <div className="max-w-md mx-auto space-y-4 mt-4">
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+          <div className="max-w-md mx-auto space-y-4 mt-4 animate-fade-in-up">
+            <div className="rounded-xl border bg-card p-6 space-y-4 shadow-sm">
+              <h2 className="text-lg font-semibold font-display">Order Details</h2>
+
               {orderId && (
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-muted">
@@ -118,7 +155,7 @@ function SuccessContent() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Order ID</p>
-                    <p className="font-medium">{orderId}</p>
+                    <p className="font-medium font-mono text-sm">{orderId}</p>
                   </div>
                 </div>
               )}
@@ -134,10 +171,30 @@ function SuccessContent() {
                   </p>
                 </div>
               </div>
+
+              <div className="border-t border-primary/30 pt-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <ExternalLink className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Track Delivery</p>
+                    <p className="font-medium text-sm">
+                      {orderId ? (
+                        <Link href={`/order/${orderId}`} className="text-primary hover:underline">
+                          View live tracking
+                        </Link>
+                      ) : (
+                        'Available once order is confirmed'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3 pt-2">
-              <Button asChild className="w-full" size="lg">
+              <Button asChild className="w-full shadow-gold" size="lg">
                 <Link href={orderId ? `/order/${orderId}` : '/'}>
                   Track Order
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -163,9 +220,7 @@ export default function OrderSuccessPage() {
       fallback={
         <main className="min-h-screen bg-background">
           <PageContainer size="narrow">
-            <div className="flex items-center justify-center py-20">
-              <div className="text-muted-foreground">Loading...</div>
-            </div>
+            <OrderSuccessSkeleton />
           </PageContainer>
         </main>
       }

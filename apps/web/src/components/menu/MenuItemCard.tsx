@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -8,17 +8,18 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import type { MenuItemWithModifiers } from '@/lib/queries/menu'
 import { buildItemHref } from '@/lib/item-url'
 
-interface MenuItemCardProps {
-  item: MenuItemWithModifiers
-}
-
-interface PromoPreview {
+export interface PromoPreview {
   promoCode: string
   discountedCents: number
   originalCents: number
   savingsCents: number
   discountType: 'percentage' | 'fixed'
   scope: 'item' | 'order'
+}
+
+interface MenuItemCardProps {
+  item: MenuItemWithModifiers
+  promoPreview?: PromoPreview | null
 }
 
 function formatPrice(priceCents: number): string {
@@ -33,7 +34,7 @@ function PlaceholderImage({ alt: _alt }: { alt: string }) {
   )
 }
 
-export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardProps) {
+export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: MenuItemCardProps) {
   const descriptionSnippet = item.description
     ? item.description.length > 80
       ? item.description.slice(0, 80) + '...'
@@ -45,38 +46,17 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
     ? `View details and customize ${item.name}`
     : `View details for ${item.name}`
 
-  const [promoPreview, setPromoPreview] = useState<PromoPreview | null>(null)
-
-  useEffect(() => {
-    async function fetchPromo() {
-      try {
-        const res = await fetch('/api/promos/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ itemId: item.id, cartSubtotalCents: 0 }),
-        })
-        const data = await res.json()
-        if (data.previews && data.previews.length > 0) {
-          setPromoPreview(data.previews[0])
-        }
-      } catch {
-        // Silently ignore promo fetch errors — menu should still render
-      }
-    }
-    fetchPromo()
-  }, [item.id])
-
   const showDiscount = promoPreview && promoPreview.savingsCents > 0
 
   return (
     <Card
-      className="overflow-hidden flex flex-col h-full group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 border-transparent hover:border-primary/30"
+      className="overflow-hidden flex flex-col h-full group transition-all duration-300 hover:shadow-gold hover:-translate-y-1 border-transparent hover:border-primary/30"
     >
       <Link
         href={itemHref}
         aria-label={detailActionLabel}
         data-testid="menu-item-primary-link"
-        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-t-lg"
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-t-lg flex flex-col flex-1"
       >
         <div className="relative w-full aspect-square overflow-hidden">
           {item.image_url ? (
@@ -93,12 +73,12 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
           )}
         </div>
 
-        <CardContent className="flex-1 p-4">
+        <CardContent className="flex-1 p-5">
           <h3 className="font-heading font-semibold text-lg line-clamp-1 group-hover:text-primary transition-colors">
             {item.name}
           </h3>
           {descriptionSnippet && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+            <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
               {descriptionSnippet}
             </p>
           )}
@@ -115,7 +95,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
         </CardContent>
       </Link>
 
-      <CardFooter className="p-4 pt-0">
+      <CardFooter className="p-5 pt-0 mt-auto">
         <Button asChild variant="outline" className="w-full border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground" size="sm">
           <Link href={itemHref} aria-label={detailActionLabel} data-testid="menu-item-view-link">
             {item.has_modifiers ? 'Customize' : 'View'}

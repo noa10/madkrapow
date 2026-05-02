@@ -36,6 +36,7 @@ export function QuantitySelector({
         onClick={handleDecrease}
         disabled={quantity <= min}
         aria-label="Decrease quantity"
+        className="h-11 w-11 bg-muted active:scale-[0.95] focus:bg-primary focus:text-primary-foreground"
       >
         <Minus className="h-4 w-4" />
       </Button>
@@ -48,6 +49,7 @@ export function QuantitySelector({
         onClick={handleIncrease}
         disabled={quantity >= max}
         aria-label="Increase quantity"
+        className="h-11 w-11 bg-muted active:scale-[0.95] focus:bg-primary focus:text-primary-foreground"
       >
         <Plus className="h-4 w-4" />
       </Button>

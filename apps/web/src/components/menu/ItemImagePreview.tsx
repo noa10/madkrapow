@@ -10,7 +10,7 @@ interface ItemImagePreviewProps {
 
 function PlaceholderImage() {
   return (
-    <div className="relative w-full aspect-square bg-muted flex items-center justify-center rounded-2xl border">
+    <div className="relative w-full aspect-[4/3] bg-muted flex items-center justify-center rounded-2xl border">
       <span className="text-muted-foreground">No image</span>
     </div>
   )
@@ -53,7 +53,7 @@ export function ItemImagePreview({ imageUrl, itemName }: ItemImagePreviewProps) 
         aria-label={`Open ${itemName} image in zoom view`}
         data-testid="item-image-preview-button"
       >
-        <div className="relative mx-auto aspect-square w-full max-w-[360px]">
+        <div className="relative mx-auto aspect-[4/3] w-full max-w-[420px]">
           <Image
             src={imageUrl}
             alt={itemName}

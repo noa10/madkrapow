@@ -1,15 +1,17 @@
 import { MenuItemCard } from './MenuItemCard'
 import type { CategoryWithMenuItems } from '@/lib/queries/menu'
+import type { PromoPreview } from './MenuItemCard'
 
 interface MenuSectionProps {
   category: CategoryWithMenuItems
+  promoPreviews?: Map<string, PromoPreview | null>
 }
 
-export function MenuSection({ category }: MenuSectionProps) {
+export function MenuSection({ category, promoPreviews }: MenuSectionProps) {
   if (category.menu_items.length === 0) return null
 
   return (
-    <section 
+    <section
       id={`category-${category.id}`}
       className="scroll-m-20 py-8 md:py-12"
     >
@@ -20,7 +22,7 @@ export function MenuSection({ category }: MenuSectionProps) {
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
           {category.menu_items.map((item) => (
-            <MenuItemCard key={item.id} item={item} />
+            <MenuItemCard key={item.id} item={item} promoPreview={promoPreviews?.get(item.id) ?? null} />
           ))}
         </div>
       </div>

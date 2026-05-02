@@ -36,7 +36,7 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
     setIsDeleting(true)
     setTimeout(() => {
       removeItem(item.menu_item_id, modifierIds)
-    }, 200)
+    }, 300)
   }
 
   const modifierTotal = item.selected_modifiers.reduce(
@@ -92,7 +92,11 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
     : 0
 
   return (
-    <div className="relative overflow-hidden">
+    <div
+      className={`relative overflow-hidden rounded-xl border bg-card transition-all duration-300 ${
+        isDeleting ? 'opacity-0 -translate-x-4 max-h-0 border-0 py-0 my-0' : 'max-h-40 py-0 my-0'
+      }`}
+    >
       <div
         className={`absolute inset-y-0 right-0 flex items-center justify-center bg-destructive px-4 transition-opacity ${swipeProgress === 0 ? 'pointer-events-none' : ''}`}
         style={{ opacity: swipeProgress }}
@@ -101,22 +105,23 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
       </div>
       <div
         ref={itemRef}
-        className={`flex items-center gap-3 bg-background p-3 transition-opacity ${isDeleting ? 'opacity-0' : ''}`}
+        className="flex items-center gap-3 p-3"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground/40" />
         {imageUrl ? (
           <Image
             src={imageUrl}
             alt={itemName}
-            width={48}
-            height={48}
-            className="h-12 w-12 rounded-md object-cover flex-shrink-0"
+            width={56}
+            height={56}
+            sizes="56px"
+            className="h-14 w-14 rounded-lg object-cover flex-shrink-0"
           />
         ) : (
-          <div className="h-12 w-12 rounded-md bg-muted flex-shrink-0" />
+          <div className="h-14 w-14 rounded-lg bg-muted flex-shrink-0" />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
@@ -133,13 +138,13 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
                 </p>
               )}
             </div>
-            <div className="text-right">
+            <div className="text-right flex-shrink-0">
               {discount > 0 ? (
                 <div>
                   <span className="text-xs text-muted-foreground line-through block">
                     {formatPrice(item.quantity * (item.unit_price + modifierTotal))}
                   </span>
-                  <span className="font-medium text-sm text-green-600 block">
+                  <span className="font-medium text-sm text-primary block">
                     {formatPrice(itemTotal)}
                   </span>
                 </div>
@@ -151,18 +156,20 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
             </div>
           </div>
           <div className="flex items-center justify-between mt-2">
-            <QuantitySelector
-              quantity={item.quantity}
-              onChange={handleQuantityChange}
-              min={0}
-              max={10}
-            />
+            <div className="min-h-[44px] flex items-center">
+              <QuantitySelector
+                quantity={item.quantity}
+                onChange={handleQuantityChange}
+                min={0}
+                max={10}
+              />
+            </div>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon"
               onClick={handleRemove}
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:border-destructive"
+              className="h-11 w-11 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
               aria-label="Remove item"
             >
               <Trash2 className="h-4 w-4" />

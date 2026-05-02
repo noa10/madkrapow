@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { MapPin, Loader2, Users, ArrowLeft } from 'lucide-react'
+import { MapPin, Loader2, Users, ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
@@ -15,6 +15,9 @@ import { TimeSlotPicker } from '@/components/checkout/TimeSlotPicker'
 import { BulkOrderForm } from '@/components/checkout/BulkOrderForm'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { PromoCodeInput } from '@/components/checkout/PromoCodeInput'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { CheckoutSkeleton } from '@/components/ui/PageSkeleton'
+import { cn } from '@/lib/utils'
 
 import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
 
@@ -50,6 +53,36 @@ interface StoreSettings {
   kitchen_lead_minutes: number
 }
 
+function StepIndicator({ currentStep }: { currentStep: number }) {
+  const steps = ['Cart', 'Details', 'Payment', 'Confirm']
+  return (
+    <div className="flex items-center gap-2 mb-8">
+      {steps.map((step, i) => (
+        <div key={step} className="flex items-center gap-2">
+          <span
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              i < currentStep && 'bg-primary/20 text-primary',
+              i === currentStep && 'bg-primary text-primary-foreground',
+              i > currentStep && 'bg-muted text-muted-foreground'
+            )}
+          >
+            {step}
+          </span>
+          {i < 3 && (
+            <div
+              className={cn(
+                'h-px w-4',
+                i < currentStep ? 'bg-primary/40' : 'bg-border'
+              )}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function CheckoutPage() {
   const items = useCartStore((state) => state.items)
   const getSubtotal = useCartStore((state) => state.getSubtotal)
@@ -80,28 +113,31 @@ export default function CheckoutPage() {
 
   const subtotal = useMemo(() => getSubtotal(), [items])
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
-  const clearPromos = useCartStore((state) => state.clearPromos)
-  const applyPromo = useCartStore((state) => state.applyPromo)
   const deliveryFee = deliveryType === 'self_pickup'
     ? 0
     : (deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100))
   const total = subtotal + deliveryFee - promoDiscount
 
-  // Fetch menu-level promo previews for display badges
-  // Note: per-item discounts (setDiscountPerItem) are NOT set here for order-scoped
-  // promos to avoid double-counting with the auto-promos useEffect below.
+  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown
+
+  const itemIdsKey = useMemo(
+    () => [...new Set(items.map((i) => i.menu_item_id))].sort().join(','),
+    [items]
+  )
+
   useEffect(() => {
     async function fetchMenuPromos() {
       const uniqueItemIds = [...new Set(items.map((item) => item.menu_item_id))]
       if (uniqueItemIds.length === 0) return
 
       try {
+        const originalSubtotal = getOriginalSubtotal()
         const responses = await Promise.all(
           uniqueItemIds.map(async (itemId) => {
             const res = await fetch('/api/promos/preview', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ itemId, cartSubtotalCents: getOriginalSubtotal() }),
+              body: JSON.stringify({ itemId, cartSubtotalCents: originalSubtotal }),
             })
             if (!res.ok) return { itemId, preview: null }
             const data = await res.json()
@@ -116,7 +152,6 @@ export default function CheckoutPage() {
           })
         )
 
-        // Apply per-item discounts only for item-scoped promos (not order-scoped)
         for (const { itemId, preview } of responses) {
           if (preview && preview.discountType === 'percentage' && preview.savingsCents > 0 && preview.scope === 'item') {
             useCartStore.getState().setDiscountPerItem(itemId, preview.savingsCents)
@@ -127,9 +162,8 @@ export default function CheckoutPage() {
       }
     }
     fetchMenuPromos()
-  }, [items.map((i) => i.menu_item_id).join(',')])
+  }, [itemIdsKey, getOriginalSubtotal])
 
-  // Fetch auto-applied promos
   useEffect(() => {
     async function fetchAutoPromos() {
       const originalSubtotal = getOriginalSubtotal()
@@ -141,9 +175,9 @@ export default function CheckoutPage() {
           body: JSON.stringify({ subtotalCents: originalSubtotal, deliveryFeeCents: deliveryFee }),
         })
         const data = await res.json()
-        clearPromos()
+        useCartStore.getState().clearPromos()
         for (const p of data.applied ?? []) {
-          applyPromo({
+          useCartStore.getState().applyPromo({
             code: p.code,
             description: p.description,
             scope: p.scope,
@@ -157,9 +191,8 @@ export default function CheckoutPage() {
       }
     }
     fetchAutoPromos()
-  }, [getOriginalSubtotal(), deliveryFee, clearPromos, applyPromo])
+  }, [subtotal, deliveryFee])
 
-  // Quote expiry check
   const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
 
   const menuItemMap = useMemo(() => {
@@ -237,7 +270,6 @@ export default function CheckoutPage() {
     fetchSettings()
   }, [])
 
-  // Refresh delivery quote
   const handleRefreshQuote = useCallback(async () => {
     console.log('[Checkout] handleRefreshQuote called', {
       lat: deliveryAddress?.latitude,
@@ -291,11 +323,9 @@ export default function CheckoutPage() {
     }
   }, [deliveryAddress, clearShippingQuote])
 
-  // Auto-refresh delivery quote when store is hydrated and address exists
   const hasAttemptedQuoteRefresh = useRef(false)
 
   useEffect(() => {
-    // Wait for store hydration — deliveryAddress will be null until hydrated
     if (hasAttemptedQuoteRefresh.current) return
     if (deliveryType !== 'delivery') return
     if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) return
@@ -304,7 +334,6 @@ export default function CheckoutPage() {
 
     console.log('[Checkout] Auto-refresh triggered after hydration')
 
-    // Only refresh if quote is expired or never fetched
     if (!isQuoteExpired() && deliveryQuote) {
       console.log('[Checkout] Quote is fresh, skipping refresh')
       return
@@ -327,10 +356,14 @@ export default function CheckoutPage() {
     !needsScheduleSelection &&
     !quoteExpired
 
+  const currentStep = needsDeliveryAddress && !hasDeliveryAddress ? 1
+    : needsScheduleSelection ? 1
+    : isBulkMode ? 1
+    : 2
+
   const handlePayNow = async () => {
     if (!canCheckout || isProcessing) return
 
-    // Block checkout if quote expired for delivery orders
     if (quoteExpired) {
       setError('Your delivery quote has expired. Please refresh the quote.')
       return
@@ -377,7 +410,6 @@ export default function CheckoutPage() {
         fulfillmentType,
         scheduledFor: scheduledWindow?.window_start,
         promoCodes: useCartStore.getState().appliedPromos.map(p => ({ code: p.code, scope: p.scope })),
-        // v3 shipping fields
         ...(quotationId && stopIds && priceBreakdown && {
           quotationId,
           serviceType,
@@ -489,8 +521,17 @@ export default function CheckoutPage() {
     return (
       <main className="min-h-screen bg-background">
         <PageContainer size="narrow">
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="py-8">
+            <div className="flex items-center gap-4 mb-8">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/cart">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Cart
+                </Link>
+              </Button>
+              <h1 className="text-xl font-semibold font-display">Checkout</h1>
+            </div>
+            <CheckoutSkeleton />
           </div>
         </PageContainer>
       </main>
@@ -511,14 +552,14 @@ export default function CheckoutPage() {
               </Button>
               <h1 className="text-xl font-semibold font-display">Order Submitted</h1>
             </div>
-            <div className="flex flex-col items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-12 animate-fade-in-up">
               <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                 <span className="text-2xl text-green-500">&#10003;</span>
               </div>
-              <h2 className="text-xl font-semibold mb-2 text-center">Bulk Order Submitted!</h2>
+              <h2 className="text-xl font-semibold mb-2 text-center font-display">Bulk Order Submitted!</h2>
               <p className="text-muted-foreground text-center mb-6">{successMessage}</p>
               <Link href="/orders">
-                <Button>View My Orders</Button>
+                <Button className="shadow-gold">View My Orders</Button>
               </Link>
             </div>
           </div>
@@ -546,7 +587,7 @@ export default function CheckoutPage() {
                 Your cart is empty. Add some items first.
               </p>
               <Link href="/">
-                <Button>Browse Menu</Button>
+                <Button className="shadow-gold">Browse Menu</Button>
               </Link>
             </div>
           </div>
@@ -559,21 +600,21 @@ export default function CheckoutPage() {
     <main className="min-h-screen bg-background">
       <PageContainer>
         <div className="py-6 md:py-10">
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-4 mb-4">
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/#menu">
+              <Link href="/cart">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Menu
+                Back to Cart
               </Link>
             </Button>
             <h1 className="text-2xl font-semibold font-display">Checkout</h1>
           </div>
 
+          <StepIndicator currentStep={currentStep} />
+
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-            {/* Left Column: Order Details */}
             <div className="lg:col-span-3 space-y-6">
-              {/* Order Summary */}
-              <section className="rounded-lg border bg-card p-5">
+              <section className="rounded-xl border bg-card p-5 shadow-sm">
                 <h2 className="text-lg font-semibold mb-4 font-display">Order Summary</h2>
                 <div className="space-y-4">
                   {checkoutItems.map((item, index) => (
@@ -584,6 +625,7 @@ export default function CheckoutPage() {
                           alt={item.name}
                           width={56}
                           height={56}
+                          sizes="56px"
                           className="h-14 w-14 rounded-lg object-cover flex-shrink-0"
                         />
                       ) : (
@@ -615,7 +657,6 @@ export default function CheckoutPage() {
                 </div>
               </section>
 
-              {/* Bulk Order Toggle */}
               <Button
                 variant={isBulkMode ? 'default' : 'outline'}
                 className="w-full gap-2"
@@ -638,9 +679,8 @@ export default function CheckoutPage() {
                 <BulkOrderForm onSubmit={handleBulkSubmit} isSubmitting={isProcessing} />
               ) : (
                 <>
-                  {/* Delivery Address */}
                   {deliveryType === 'delivery' && (
-                    <section className="rounded-lg border bg-card p-5">
+                    <section className="rounded-xl border bg-card p-5 shadow-sm">
                       <h2 className="text-lg font-semibold mb-4 font-display">Delivery Address</h2>
                       {showAddressInput ? (
                         <div className="space-y-4">
@@ -688,19 +728,16 @@ export default function CheckoutPage() {
                     </section>
                   )}
 
-                  {/* Delivery Type Selector */}
-                  <section className="rounded-lg border bg-card p-5">
+                  <section className="rounded-xl border bg-card p-5 shadow-sm">
                     <DeliveryTypeSelector pickupEnabled={storeSettings?.pickup_enabled ?? true} />
                   </section>
 
-                  {/* Fulfillment Selector */}
-                  <section className="rounded-lg border bg-card p-5">
+                  <section className="rounded-xl border bg-card p-5 shadow-sm">
                     <FulfillmentSelector />
                   </section>
 
-                  {/* Time Slot Picker */}
                   {fulfillmentType === 'scheduled' && (
-                    <section className="rounded-lg border bg-card p-5">
+                    <section className="rounded-xl border bg-card p-5 shadow-sm">
                       <h2 className="text-lg font-semibold mb-4 font-display">Pick a Time Slot</h2>
                       <TimeSlotPicker
                         operatingHours={storeSettings?.operating_hours ?? null}
@@ -713,10 +750,9 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* Right Column: Payment Summary (sticky) */}
             <div className="lg:col-span-2">
               <div className="lg:sticky lg:top-24 space-y-4">
-                <section className="rounded-lg border bg-card p-5">
+                <section className="rounded-xl border bg-card p-5 shadow-sm">
                   <h2 className="text-lg font-semibold mb-4 font-display">Payment Details</h2>
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
@@ -727,22 +763,22 @@ export default function CheckoutPage() {
                       <span className="text-muted-foreground">
                         {deliveryType === 'self_pickup' ? 'Pickup' : 'Delivery Fee'}
                       </span>
-                      <span>
-                        {deliveryType === 'self_pickup'
-                          ? 'Free'
-                          : deliveryFee > 0
-                            ? formatPrice(deliveryFee)
-                            : 'Calculated at checkout'}
-                      </span>
+                      {deliveryType === 'self_pickup' ? (
+                        <span>Free</span>
+                      ) : isDeliveryFeeLoading ? (
+                        <Skeleton className="h-4 w-20" />
+                      ) : deliveryFee > 0 ? (
+                        <span>{formatPrice(deliveryFee)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Calculated at checkout</span>
+                      )}
                     </div>
-                    {/* Service type and quote info */}
                     {deliveryType === 'delivery' && serviceType && (
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Service</span>
                         <span>{serviceType === 'CAR' ? 'Car' : 'Motorcycle'}</span>
                       </div>
                     )}
-                    {/* Quote expiry warning */}
                     {quoteExpired && (
                       <div className="p-2 bg-amber-500/10 rounded-lg text-sm flex items-center justify-between">
                         <span className="text-amber-600">Quote expired</span>
@@ -754,28 +790,27 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                     )}
-                    {/* Menu promo savings */}
                     {menuPromoSavings > 0 && (
-                      <div className="flex justify-between text-sm text-green-600">
+                      <div className="flex justify-between text-sm text-primary">
                         <span>Menu Promo Savings</span>
                         <span>-{formatPrice(menuPromoSavings)}</span>
                       </div>
                     )}
-                    {/* Promo code input and applied promos */}
                     <PromoCodeInput
                       subtotalCents={subtotal}
                       deliveryFeeCents={deliveryFee}
                     />
-                    {/* Promo code discount line */}
                     {promoDiscount > 0 && (
-                      <div className="flex justify-between text-sm text-green-600">
+                      <div className="flex justify-between text-sm text-primary">
                         <span>Promo Code Discount</span>
                         <span>-{formatPrice(promoDiscount)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-lg font-semibold border-t border-border pt-3">
-                      <span>Total</span>
-                      <span className="text-primary">{formatPrice(total)}</span>
+                    <div className="border-t border-primary/30 pt-4 mt-4">
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span>Total</span>
+                        <span className="text-primary">{formatPrice(total)}</span>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -787,7 +822,7 @@ export default function CheckoutPage() {
                 )}
 
                 <Button
-                  className="w-full"
+                  className="w-full shadow-gold"
                   size="lg"
                   onClick={handlePayNow}
                   disabled={!canCheckout || isProcessing}

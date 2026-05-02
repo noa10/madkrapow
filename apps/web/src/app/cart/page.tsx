@@ -42,41 +42,45 @@ export default function CartPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-md mx-auto">
-        <header className="sticky top-0 z-10 bg-background border-b px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-semibold">Your Cart</h1>
-            {!isEmpty && (
-              <span className="text-sm text-muted-foreground ml-auto">
-                {items.length} {items.length === 1 ? 'item' : 'items'}
-              </span>
-            )}
-          </div>
-        </header>
+      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-white/8 px-4 py-4 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" className="h-9 w-9">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <h1 className="text-xl font-bold font-display">Your Cart</h1>
+          {!isEmpty && (
+            <span className="text-sm text-muted-foreground ml-auto">
+              {items.length} {items.length === 1 ? 'item' : 'items'}
+            </span>
+          )}
+        </div>
+      </header>
 
+      <div className="max-w-4xl mx-auto">
         {isLoading ? (
           <div className="p-4 flex items-center justify-center">
             <div className="text-muted-foreground">Loading...</div>
           </div>
         ) : isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <ShoppingBag className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-lg font-medium mb-2">Your cart is empty</h2>
-            <p className="text-muted-foreground text-center mb-6">
+          <div className="flex flex-col items-center justify-center py-24 px-4 animate-fade-in-up">
+            <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center mb-6">
+              <ShoppingBag className="h-12 w-12 text-muted-foreground" />
+            </div>
+            <h2 className="text-xl font-semibold font-display mb-2">Your cart is empty</h2>
+            <p className="text-muted-foreground text-center mb-8 max-w-xs">
               Looks like you haven&apos;t added any items yet.
             </p>
             <Link href="/">
-              <Button>Start Shopping</Button>
+              <Button size="lg" className="shadow-gold">
+                Browse Menu
+              </Button>
             </Link>
           </div>
         ) : (
-          <>
-            <div className="p-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-4">
+            <div className="space-y-2">
               {items.map((item, index) => (
                 <CartItem
                   key={`${item.menu_item_id}-${index}`}
@@ -87,14 +91,10 @@ export default function CartPage() {
               ))}
             </div>
 
-            <CartSummary subtotal={subtotal} minOrderAmount={0} />
-
-            <div className="p-4 text-center">
-              <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
-                Continue Shopping
-              </Link>
+            <div className="lg:sticky lg:top-24 self-start">
+              <CartSummary subtotal={subtotal} minOrderAmount={0} />
             </div>
-          </>
+          </div>
         )}
       </div>
     </main>

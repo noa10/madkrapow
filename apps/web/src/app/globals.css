@@ -26,6 +26,7 @@
   --color-gold-muted: hsl(38 45% 40%);
   --color-gold-glow: rgba(210, 176, 123, 0.15);
   --color-gold-subtle: rgba(210, 176, 123, 0.08);
+  --shadow-gold: 0 0 20px rgba(210, 176, 123, 0.15);
   --radius-lg: 0.5rem;
   --radius-md: calc(0.5rem - 2px);
   --radius-sm: calc(0.5rem - 4px);

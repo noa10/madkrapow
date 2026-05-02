@@ -24,6 +24,7 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
               fill
               className="object-cover opacity-40"
               priority
+              sizes="100vw"
             />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(90deg,rgba(8,8,8,0.92)_10%,rgba(8,8,8,0.68)_48%,rgba(8,8,8,0.9)_100%)]" />
           </div>
@@ -35,7 +36,7 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
                 Since February 2023 · Kampung Subang Baru, Shah Alam
               </div>
 
-              <h1 className="max-w-4xl font-display text-5xl leading-[0.94] text-white sm:text-6xl lg:text-7xl xl:text-[5.8rem]">
+              <h1 className="max-w-4xl font-display text-5xl tracking-tight leading-[1.1] text-white sm:text-6xl lg:text-7xl xl:text-[5.8rem] animate-fade-in-up">
                 Hot, fiery Phad Kra Phao
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#f1d7aa] to-[#c59661]"> delivered to your door.</span>
               </h1>

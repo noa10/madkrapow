@@ -7,6 +7,7 @@ import { ModifierGroup } from './ModifierGroup'
 import { SpecialInstructions } from './SpecialInstructions'
 import { Button } from '@/components/ui/button'
 import { useCartStore, type SelectedModifier } from '@/stores/cart'
+import { useToastStore } from '@/stores/toast'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
 
 interface MenuItemDetailProps {
@@ -20,6 +21,8 @@ function formatPrice(priceCents: number): string {
 export function MenuItemDetail({ item }: MenuItemDetailProps) {
   const router = useRouter()
   const addItem = useCartStore((state) => state.addItem)
+  const openDrawer = useCartStore((state) => state.openDrawer)
+  const addToast = useToastStore((state) => state.addToast)
 
   const [quantity, setQuantity] = useState(1)
   const [specialInstructions, setSpecialInstructions] = useState('')
@@ -89,6 +92,12 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
       unit_price: item.price_cents,
     })
 
+    addToast({
+      type: 'success',
+      title: 'Added to cart',
+      description: `${quantity}x ${item.name} — ${formatPrice(totalPriceCents)}`,
+    })
+    openDrawer()
     router.back()
   }
 
@@ -120,7 +129,7 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
       <div className="flex items-center justify-between py-4 border-t">
         <div>
           <p className="text-sm text-muted-foreground">Total</p>
-          <p className="text-2xl font-semibold text-orange-600">
+          <p className="text-2xl font-semibold text-primary">
             {formatPrice(totalPriceCents)}
           </p>
         </div>
@@ -128,7 +137,7 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
           size="lg"
           onClick={handleAddToCart}
           disabled={!allRequiredGroupsSatisfied}
-          className="bg-orange-600 hover:bg-orange-700"
+          className="w-full sm:w-auto shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
         >
           Add to Cart
         </Button>

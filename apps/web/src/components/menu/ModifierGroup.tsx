@@ -69,9 +69,9 @@ export function ModifierGroup({
               <label
                 key={modifier.id}
                 className={cn(
-                  'flex items-center gap-3 p-3 rounded-md border cursor-pointer',
+                  'flex items-center gap-3 p-3 min-h-11 rounded-md border cursor-pointer',
                   'hover:bg-muted/50 transition-colors',
-                  isSelected && 'border-primary bg-primary/5'
+                  isSelected && 'border-primary ring-1 ring-primary bg-primary/5'
                 )}
               >
                 <input
@@ -94,9 +94,9 @@ export function ModifierGroup({
             <label
               key={modifier.id}
               className={cn(
-                'flex items-center gap-3 p-3 rounded-md border cursor-pointer',
+                'flex items-center gap-3 p-3 min-h-11 rounded-md border cursor-pointer',
                 'hover:bg-muted/50 transition-colors',
-                isSelected && 'border-primary bg-primary/5'
+                isSelected && 'border-primary ring-1 ring-primary bg-primary/5'
               )}
             >
               <input

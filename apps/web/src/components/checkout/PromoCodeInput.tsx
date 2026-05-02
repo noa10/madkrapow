@@ -6,10 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useCartStore, type AppliedPromo } from '@/stores/cart'
+import { useToastStore } from '@/stores/toast'
 
 interface PromoCodeInputProps {
   subtotalCents: number
   deliveryFeeCents: number
+}
+
+function formatPrice(cents: number): string {
+  return `RM ${(cents / 100).toFixed(2)}`
 }
 
 export function PromoCodeInput({ subtotalCents, deliveryFeeCents }: PromoCodeInputProps) {
@@ -20,6 +25,7 @@ export function PromoCodeInput({ subtotalCents, deliveryFeeCents }: PromoCodeInp
   const appliedPromos = useCartStore((state) => state.appliedPromos)
   const applyPromo = useCartStore((state) => state.applyPromo)
   const removePromo = useCartStore((state) => state.removePromo)
+  const addToast = useToastStore((state) => state.addToast)
 
   const handleValidate = async () => {
     if (!code.trim()) return
@@ -54,9 +60,21 @@ export function PromoCodeInput({ subtotalCents, deliveryFeeCents }: PromoCodeInp
         discountCents: data.discountCents,
       })
 
+      addToast({
+        type: 'promo',
+        title: 'Promo applied!',
+        description: `${data.promoCode} — save ${formatPrice(data.discountCents)}`,
+      })
+
       setCode('')
-    } catch (err) {
+    } catch {
       setError('Unable to validate promo code')
+      addToast({
+        type: 'error',
+        title: 'Something went wrong',
+        description: 'Could not validate the promo code. Please try again.',
+        action: { label: 'Retry', onClick: () => handleValidate() },
+      })
     } finally {
       setIsValidating(false)
     }

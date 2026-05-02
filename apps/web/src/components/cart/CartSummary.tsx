@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { ArrowRight, ShoppingBag } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCartStore } from '@/stores/cart'
 
@@ -33,20 +33,36 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
   }
 
   return (
-    <div className="border-t bg-card p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground">Subtotal</span>
-        <span className="text-xl font-semibold">{formatPrice(subtotal)}</span>
+    <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4">
+      <h2 className="text-lg font-semibold font-display">Order Summary</h2>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Subtotal</span>
+          <span className="font-medium">{formatPrice(subtotal)}</span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Delivery</span>
+          <span className="text-sm text-muted-foreground">Calculated at checkout</span>
+        </div>
       </div>
 
       {isBelowMinimum && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
           Minimum order: {formatPrice(minOrderAmount)}. Add {formatPrice(remainingForMinimum)} more to checkout.
         </p>
       )}
 
+      <div className="border-t border-primary/30 pt-4 mt-4">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">Total</span>
+          <span className="text-xl font-bold text-primary">{formatPrice(subtotal)}</span>
+        </div>
+      </div>
+
       <Button
-        className="w-full"
+        className="w-full shadow-gold"
         size="lg"
         onClick={handleCheckout}
         disabled={!canCheckout}
@@ -54,13 +70,6 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
         Checkout
         <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
-
-      {isEmpty && (
-        <div className="text-center">
-          <ShoppingBag className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground">Your cart is empty</p>
-        </div>
-      )}
     </div>
   )
 }

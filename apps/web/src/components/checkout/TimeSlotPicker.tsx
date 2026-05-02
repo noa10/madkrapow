@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { useCheckoutStore } from '@/stores/checkout'
 
 interface OperatingHours {
@@ -48,12 +49,7 @@ function generateTimeSlots(
     const slotEnd = new Date(selectedDate)
     slotEnd.setHours(h + 1, 0, 0, 0)
 
-    // Skip past slots (considering kitchen lead time)
     if (slotStart < minTime) continue
-
-    // For pickup, slots can start earlier than delivery
-    // For delivery, add extra buffer for driver arrival
-    // For now, both use the same kitchen lead time
 
     slots.push({
       start: slotStart.toISOString(),
@@ -137,13 +133,13 @@ export function TimeSlotPicker({
 
   return (
     <div className="space-y-4">
-      {/* Date navigation */}
       <div className="flex items-center justify-between">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setSelectedDateIndex(Math.max(0, selectedDateIndex - 1))}
           disabled={selectedDateIndex === 0}
+          className="h-11 w-11"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -159,29 +155,29 @@ export function TimeSlotPicker({
             )
           }
           disabled={selectedDateIndex >= availableDates.length - 1}
+          className="h-11 w-11"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Date chips */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {availableDates.map((date, index) => (
           <button
             key={date.toISOString()}
             onClick={() => setSelectedDateIndex(index)}
-            className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={cn(
+              'flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] active:scale-[0.98]',
               index === selectedDateIndex
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
+            )}
           >
             {formatDateShort(date)}
           </button>
         ))}
       </div>
 
-      {/* Time slots */}
       {timeSlots.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-4">
           No available time slots for this date.
@@ -192,11 +188,12 @@ export function TimeSlotPicker({
             <button
               key={slot.start}
               onClick={() => handleSlotSelect(slot)}
-              className={`px-3 py-3 rounded-lg text-sm font-medium transition-colors border ${
+              className={cn(
+                'px-3 py-3 rounded-lg text-sm font-medium transition-all border min-h-[44px] active:scale-[0.98]',
                 isSelected(slot.start)
-                  ? 'bg-primary text-primary-foreground border-primary'
+                  ? 'bg-primary text-primary-foreground border-primary shadow-gold'
                   : 'bg-background text-foreground border-border hover:border-primary'
-              }`}
+              )}
             >
               {slot.label}
             </button>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { X, ShoppingCart } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { CartItem } from './CartItem'
@@ -23,6 +23,7 @@ export function CartDrawer() {
   const removePromo = useCartStore((state) => state.removePromo)
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const touchStartX = useRef<number | null>(null)
 
   useEffect(() => {
     getMenuItems()
@@ -46,6 +47,20 @@ export function CartDrawer() {
     }
   }, [isOpen])
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }, [])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null) return
+    const diff = touchStartX.current - e.changedTouches[0].clientX
+    // Swipe left more than 80px to close
+    if (diff > 80) {
+      onClose()
+    }
+    touchStartX.current = null
+  }, [onClose])
+
   const subtotal = isHydrated ? getSubtotal() : 0
   const displayItems = isHydrated ? items : []
   const discountTotal = isHydrated ? getDiscountTotal() : 0
@@ -53,7 +68,7 @@ export function CartDrawer() {
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -67,11 +82,13 @@ export function CartDrawer() {
         role="dialog"
         aria-modal="true"
         aria-label="Shopping cart"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between border-b px-4 py-4">
             <h2 className="text-lg font-semibold">Your Cart</h2>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close cart">
               <X className="h-5 w-5" />
             </Button>
           </div>

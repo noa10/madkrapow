@@ -22,6 +22,76 @@ class CheckoutRepository {
         'Authorization': 'Bearer $_authToken',
       };
 
+  /// Validate a promo code via /api/checkout/validate-promo.
+  Future<AppliedPromo> validatePromo({
+    required String code,
+    required int subtotalCents,
+    required int deliveryFeeCents,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/checkout/validate-promo'),
+      headers: _headers,
+      body: jsonEncode({
+        'code': code,
+        'subtotalCents': subtotalCents,
+        'deliveryFeeCents': deliveryFeeCents,
+      }),
+    );
+
+    if (response.statusCode == 401) {
+      throw const AuthRequiredException(
+        'Your session has expired. Please sign in again.',
+      );
+    }
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || body['valid'] == false) {
+      throw Exception(body['error'] ?? 'Invalid promo code');
+    }
+
+    return AppliedPromo(
+      code: body['promoCode'] as String,
+      description: body['description'] as String? ?? '',
+      scope: body['scope'] as String,
+      discountType: body['discountType'] as String,
+      discountValue: body['discountValue'] as int,
+      discountCents: body['discountCents'] as int,
+    );
+  }
+
+  /// Fetch auto-applied promos via /api/promos/auto.
+  Future<List<AppliedPromo>> fetchAutoPromos({
+    required int subtotalCents,
+    required int deliveryFeeCents,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/promos/auto'),
+      headers: _headers,
+      body: jsonEncode({
+        'subtotalCents': subtotalCents,
+        'deliveryFeeCents': deliveryFeeCents,
+      }),
+    );
+
+    if (response.statusCode != 200) return [];
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final promos = body['applied'] as List?;
+    if (promos == null) return [];
+
+    return promos.map((p) {
+      final map = p as Map<String, dynamic>;
+      return AppliedPromo(
+        code: map['code'] as String,
+        description: map['description'] as String? ?? '',
+        scope: map['scope'] as String,
+        discountType: map['discountType'] as String,
+        discountValue: map['discountValue'] as int,
+        discountCents: map['discountCents'] as int,
+      );
+    }).toList();
+  }
+
   /// Create a checkout session via the web API.
   /// Returns the Stripe Checkout URL to redirect the user to.
   Future<CheckoutResult> createCheckout(CheckoutRequest request) async {

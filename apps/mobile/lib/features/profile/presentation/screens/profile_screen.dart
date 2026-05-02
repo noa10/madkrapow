@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../config/routes.dart';
 import '../../../../core/widgets/async_value_widget.dart';
@@ -114,6 +115,8 @@ class ProfileScreen extends ConsumerWidget {
               // Sign out
               OutlinedButton.icon(
                 onPressed: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.remove('remembered_email');
                   await ref.read(authRepositoryProvider).signOut();
                   if (context.mounted) context.go(AppRoutes.signIn);
                 },

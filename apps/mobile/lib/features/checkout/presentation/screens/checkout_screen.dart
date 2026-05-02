@@ -13,6 +13,7 @@ import '../../../profile/data/profile_repository.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../data/checkout_models.dart';
 import '../../providers/checkout_providers.dart';
+import '../widgets/promo_code_input.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({super.key});
@@ -97,6 +98,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _manualCityController.text = defaultAddress.city;
       _manualStateController.text = defaultAddress.state;
     }
+
+    // Fetch auto-promos after initialization
+    final subtotal = ref.read(cartProvider.notifier).subtotalCents;
+    _fetchAutoPromos(subtotalCents: subtotal, deliveryFeeCents: 0);
   }
 
   @override
@@ -141,6 +146,30 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         );
       }
     }
+  }
+
+  Future<void> _fetchAutoPromos({required int subtotalCents, required int deliveryFeeCents}) async {
+    if (subtotalCents <= 0) return;
+    try {
+      await ref.read(checkoutProvider.notifier).fetchAndApplyAutoPromos(
+        subtotalCents: subtotalCents,
+        deliveryFeeCents: deliveryFeeCents,
+      );
+    } catch (e) {
+      // Silently fail — auto-promos are non-critical
+    }
+  }
+
+  Future<void> _handlePromoApply(String code, int subtotalCents, int deliveryFeeCents) async {
+    await ref.read(checkoutProvider.notifier).validateAndApplyPromo(
+      code: code,
+      subtotalCents: subtotalCents,
+      deliveryFeeCents: deliveryFeeCents,
+    );
+  }
+
+  void _handleRemovePromo(String code) {
+    ref.read(checkoutProvider.notifier).removePromo(code);
   }
 
   void _onManualAddressChanged() {
@@ -262,6 +291,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         serviceType: checkout.serviceType,
         stopIds: checkout.stopIds,
         priceBreakdown: checkout.priceBreakdown,
+        appliedPromos: checkout.appliedPromos,
       );
 
       final result = await repo.createCheckout(request);
@@ -323,10 +353,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final cart = ref.watch(cartProvider);
     final subtotal = ref.read(cartProvider.notifier).subtotalCents;
     final deliveryFee = checkout.deliveryQuote?.feeCents ?? 0;
-    final total = subtotal + deliveryFee;
+    final discountTotal = checkout.discountTotalCents;
+    final total = subtotal + deliveryFee - discountTotal;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Checkout')),
+      appBar: AppBar(
+        title: const Text('Checkout'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.canPop() ? context.pop() : context.go(AppRoutes.home),
+        ),
+      ),
       body: profileAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Failed to load profile: $e')),
@@ -438,6 +475,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               ),
               const SizedBox(height: 24),
 
+              // Promo code section
+              _SectionTitle('Promo Code'),
+              const SizedBox(height: 8),
+              PromoCodeInput(
+                subtotalCents: subtotal,
+                deliveryFeeCents: deliveryFee,
+                appliedPromos: checkout.appliedPromos,
+                onApply: _handlePromoApply,
+                onRemove: _handleRemovePromo,
+              ),
+              const SizedBox(height: 24),
+
               // Order summary
               _SectionTitle('Order Summary'),
               const SizedBox(height: 8),
@@ -478,6 +527,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           : checkout.deliveryQuote != null
                               ? formatPrice(deliveryFee)
                               : 'Calculating...',
+                    ),
+                  ],
+                ),
+              ],
+              if (discountTotal > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Promo Discount')),
+                    Text(
+                      '-${formatPrice(discountTotal)}',
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary),
                     ),
                   ],
                 ),

@@ -30,6 +30,7 @@ class CheckoutState {
     this.selectedAddressId,
     this.useManualContact = false,
     this.useManualAddress = false,
+    this.appliedPromos = const [],
   });
 
   final DeliveryAddress? deliveryAddress;
@@ -48,6 +49,11 @@ class CheckoutState {
   final String? selectedAddressId;
   final bool useManualContact;
   final bool useManualAddress;
+  final List<AppliedPromo> appliedPromos;
+
+  int get discountTotalCents {
+    return appliedPromos.fold(0, (sum, p) => sum + p.discountCents);
+  }
 
   CheckoutState copyWith({
     DeliveryAddress? deliveryAddress,
@@ -67,6 +73,7 @@ class CheckoutState {
     bool? useManualAddress,
     bool clearShippingQuote = false,
     bool clearScheduledFor = false,
+    List<AppliedPromo>? appliedPromos,
   }) {
     return CheckoutState(
       deliveryAddress: deliveryAddress ?? this.deliveryAddress,
@@ -84,6 +91,7 @@ class CheckoutState {
       selectedAddressId: selectedAddressId ?? this.selectedAddressId,
       useManualContact: useManualContact ?? this.useManualContact,
       useManualAddress: useManualAddress ?? this.useManualAddress,
+      appliedPromos: appliedPromos ?? this.appliedPromos,
     );
   }
 
@@ -194,6 +202,70 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
         selectedAddressId: defaultAddress.id,
         deliveryAddress: DeliveryAddress.fromCustomerAddress(defaultAddress),
       );
+    }
+  }
+
+  // ── Promo Methods ───────────────────────────────────────────────────
+
+  /// Apply a validated promo to the checkout.
+  void applyPromo(AppliedPromo promo) {
+    final currentCodes = state.appliedPromos.map((p) => p.code).toSet();
+    if (currentCodes.contains(promo.code)) return;
+
+    // Check stacking: one per category (order vs delivery)
+    final existing = state.appliedPromos.where((p) => p.scope == promo.scope).toList();
+    final updated = existing.isEmpty
+        ? [...state.appliedPromos, promo]
+        : [
+            ...state.appliedPromos.where((p) => p.scope != promo.scope),
+            if (promo.discountCents > existing.first.discountCents) promo else existing.first,
+          ];
+
+    state = state.copyWith(appliedPromos: updated);
+  }
+
+  /// Remove a promo by its code.
+  void removePromo(String code) {
+    state = state.copyWith(
+      appliedPromos: state.appliedPromos.where((p) => p.code != code).toList(),
+    );
+  }
+
+  /// Clear all applied promos.
+  void clearPromos() {
+    state = state.copyWith(appliedPromos: []);
+  }
+
+  /// Validate a promo code and apply it if valid.
+  /// Returns the applied promo on success, throws on failure.
+  Future<AppliedPromo> validateAndApplyPromo({
+    required String code,
+    required int subtotalCents,
+    required int deliveryFeeCents,
+  }) async {
+    final repo = ref.read(checkoutRepositoryProvider);
+    final validated = await repo.validatePromo(
+      code: code,
+      subtotalCents: subtotalCents,
+      deliveryFeeCents: deliveryFeeCents,
+    );
+    applyPromo(validated);
+    return validated;
+  }
+
+  /// Fetch and apply auto-promos based on current cart totals.
+  Future<void> fetchAndApplyAutoPromos({
+    required int subtotalCents,
+    required int deliveryFeeCents,
+  }) async {
+    final repo = ref.read(checkoutRepositoryProvider);
+    final autoPromos = await repo.fetchAutoPromos(
+      subtotalCents: subtotalCents,
+      deliveryFeeCents: deliveryFeeCents,
+    );
+    clearPromos();
+    for (final promo in autoPromos) {
+      applyPromo(promo);
     }
   }
 

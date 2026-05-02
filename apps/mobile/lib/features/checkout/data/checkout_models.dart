@@ -126,6 +126,29 @@ class CheckoutModifier {
       };
 }
 
+class AppliedPromo {
+  const AppliedPromo({
+    required this.code,
+    required this.description,
+    required this.scope,
+    required this.discountType,
+    required this.discountValue,
+    required this.discountCents,
+  });
+
+  final String code;
+  final String description;
+  final String scope; // 'order' or 'delivery'
+  final String discountType; // 'percentage' or 'fixed'
+  final int discountValue;
+  final int discountCents;
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'scope': scope,
+      };
+}
+
 class CheckoutRequest {
   const CheckoutRequest({
     required this.items,
@@ -138,6 +161,7 @@ class CheckoutRequest {
     this.serviceType,
     this.stopIds,
     this.priceBreakdown,
+    this.appliedPromos = const [],
   });
 
   final List<CheckoutItem> items;
@@ -150,6 +174,7 @@ class CheckoutRequest {
   final String? serviceType;
   final StopIds? stopIds;
   final PriceBreakdown? priceBreakdown;
+  final List<AppliedPromo> appliedPromos;
 
   Map<String, dynamic> toJson() => {
         'items': items.map((i) => i.toJson()).toList(),
@@ -162,6 +187,10 @@ class CheckoutRequest {
         if (serviceType != null) 'serviceType': serviceType,
         if (stopIds != null) 'stopIds': stopIds!.toJson(),
         if (priceBreakdown != null) 'priceBreakdown': priceBreakdown!.toJson(),
+        if (appliedPromos.isNotEmpty)
+          'promoCodes': appliedPromos
+              .map((p) => {'code': p.code, 'scope': p.scope})
+              .toList(),
       };
 }
 

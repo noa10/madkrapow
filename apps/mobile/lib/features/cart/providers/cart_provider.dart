@@ -62,9 +62,36 @@ class CartNotifier extends Notifier<List<CartItem>> {
   /// Total number of items (sum of quantities).
   int get totalItems => state.fold(0, (sum, item) => sum + item.quantity);
 
-  /// Subtotal in cents (sum of all line totals).
+  /// Subtotal in cents (sum of all line totals, after promo discounts applied).
   int get subtotalCents =>
       state.fold(0, (sum, item) => sum + item.lineTotalCents);
+
+  /// Original subtotal before promo discounts.
+  int get originalSubtotalCents =>
+      state.fold(0, (sum, item) => sum + item.originalLineTotalCents);
+
+  /// Total promo discount across all cart items.
+  int get totalDiscountCents =>
+      state.fold(0, (sum, item) => sum + (item.discountPerUnitCents * item.quantity));
+
+  /// Apply promo discounts to cart items based on previews.
+  void applyPromoDiscounts(Map<String, int> itemDiscounts) {
+    for (int i = 0; i < state.length; i++) {
+      final discount = itemDiscounts[state[i].menuItemId] ?? 0;
+      state[i].discountPerUnitCents = discount;
+    }
+    state = [...state];
+    _persist();
+  }
+
+  /// Clear all promo discounts from cart items.
+  void clearPromoDiscounts() {
+    for (int i = 0; i < state.length; i++) {
+      state[i].discountPerUnitCents = 0;
+    }
+    state = [...state];
+    _persist();
+  }
 
   /// Find item index by menu item ID and modifier IDs.
   /// Mirrors web's findItemIndex from stores/cart.ts:37-45.

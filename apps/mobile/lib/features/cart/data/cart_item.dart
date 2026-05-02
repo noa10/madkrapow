@@ -45,6 +45,7 @@ class CartItem {
     this.specialInstructions = '',
     this.name = '',
     this.imageUrl,
+    this.discountPerUnitCents = 0,
   });
 
   final String menuItemId;
@@ -54,6 +55,7 @@ class CartItem {
   List<SelectedModifier> selectedModifiers;
   String specialInstructions;
   final String? imageUrl;
+  int discountPerUnitCents;
 
   /// Item key for deduplication — mirrors web's getModifierKey.
   /// Same item + same modifiers = increment quantity.
@@ -63,8 +65,17 @@ class CartItem {
     return '$menuItemId:${modIds.join(",")}';
   }
 
-  /// Line total: (unit price + all modifier deltas) * quantity.
+  /// Line total: (unit price - discount + all modifier deltas) * quantity.
   int get lineTotalCents {
+    final modTotal = selectedModifiers.fold<int>(
+      0,
+      (sum, m) => sum + m.priceDeltaCents,
+    );
+    return quantity * (unitPrice - discountPerUnitCents + modTotal);
+  }
+
+  /// Original line total without promo discount.
+  int get originalLineTotalCents {
     final modTotal = selectedModifiers.fold<int>(
       0,
       (sum, m) => sum + m.priceDeltaCents,
@@ -81,6 +92,7 @@ class CartItem {
             selectedModifiers.map((m) => m.toJson()).toList(),
         'special_instructions': specialInstructions,
         'image_url': imageUrl,
+        'discount_per_unit_cents': discountPerUnitCents,
       };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
@@ -96,6 +108,7 @@ class CartItem {
           [],
       specialInstructions: json['special_instructions'] as String? ?? '',
       imageUrl: json['image_url'] as String?,
+      discountPerUnitCents: json['discount_per_unit_cents'] as int? ?? 0,
     );
   }
 }

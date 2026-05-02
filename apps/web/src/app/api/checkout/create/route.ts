@@ -17,6 +17,11 @@ const CheckoutItemSchema = z.object({
   })).default([]),
 })
 
+const PromoCodeEntrySchema = z.object({
+  code: z.string().min(1),
+  scope: z.enum(['order', 'delivery']),
+})
+
 const CheckoutRequestSchema = z.object({
   items: z.array(CheckoutItemSchema).min(1),
   deliveryAddress: z.object({
@@ -49,6 +54,8 @@ const CheckoutRequestSchema = z.object({
     extraMileage: z.string().optional(),
     surcharge: z.string().optional(),
   }).optional(),
+  // Promo codes — array of { code, scope } for stacking
+  promoCodes: z.array(PromoCodeEntrySchema).default([]),
 }).superRefine((data, ctx) => {
   if (data.deliveryType === 'delivery') {
     const addr = data.deliveryAddress;
@@ -135,12 +142,39 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
-    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown } = parsed.data
+    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown, promoCodes } = parsed.data
 
     // Self-pickup cannot have delivery fee
     const effectiveDeliveryFee = deliveryType === 'self_pickup' ? 0 : deliveryFee
 
-    // Fetch store settings for scheduling validation
+    // ── Validate all prices from database (never trust client) ─────
+    const menuItemIds = items.map(i => i.id)
+    const { data: dbItems, error: dbError } = await supabase
+      .from('menu_items')
+      .select('id, name, price_cents, image_url')
+      .in('id', menuItemIds)
+
+    if (dbError || !dbItems) {
+      console.error('[API] Failed to fetch menu items:', dbError)
+      return NextResponse.json(
+        { success: false, error: 'Unable to validate prices', code: 'PRICE_VALIDATION_FAILED' },
+        { status: 500 }
+      )
+    }
+
+    // Calculate subtotal from DB prices (server-truth)
+    let subtotalCents = 0
+    const validatedItems = items.map(item => {
+      const dbItem = dbItems.find(d => d.id === item.id)
+      if (!dbItem) {
+        throw new Error(`Menu item not found: ${item.id}`)
+      }
+      const lineTotal = dbItem.price_cents * item.quantity
+      subtotalCents += lineTotal
+      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
+    })
+
+    // ── Fetch store settings for scheduling validation ─────────────
     const { data: storeSettings } = await supabase
       .from('store_settings')
       .select('kitchen_lead_minutes, pickup_enabled, operating_hours')
@@ -244,37 +278,73 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       customerId = newCustomer.id
     }
 
-    // Validate all prices from database (never trust client)
-    const menuItemIds = items.map(i => i.id)
-    const { data: dbItems, error: dbError } = await supabase
-      .from('menu_items')
-      .select('id, name, price_cents, image_url')
-      .in('id', menuItemIds)
+    // ── Promo validation and discount calculation ──────────────────
+    let totalDiscountCents = 0
+    let orderPromoCodeId: string | null = null
 
-    if (dbError || !dbItems) {
-      console.error('[API] Failed to fetch menu items:', dbError)
-      return NextResponse.json(
-        { success: false, error: 'Unable to validate prices', code: 'PRICE_VALIDATION_FAILED' },
-        { status: 500 }
-      )
+    if (promoCodes.length > 0) {
+      const now = new Date().toISOString()
+      const byScope = new Map<string, (typeof promoCodes)[number]>()
+      for (const entry of promoCodes) {
+        if (!byScope.has(entry.scope)) byScope.set(entry.scope, entry)
+      }
+
+      for (const entry of byScope.values()) {
+        const { data: promo, error: promoError } = await supabase
+          .from('promo_codes')
+          .select('*')
+          .eq('code', entry.code.toLowerCase())
+          .eq('scope', entry.scope)
+          .eq('is_active', true)
+          .gte('valid_until', now)
+          .lte('valid_from', now)
+          .maybeSingle()
+
+        if (promoError || !promo) continue
+        if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) continue
+
+        const base = promo.scope === 'delivery' ? effectiveDeliveryFee : subtotalCents
+        if (promo.min_order_amount_cents && base < promo.min_order_amount_cents) continue
+
+        let discountCents = promo.discount_type === 'percentage'
+          ? Math.round(base * (promo.discount_value / 100))
+          : promo.discount_value
+
+        const maxCap = promo.max_discount_cents ?? base
+        discountCents = Math.min(discountCents, maxCap, base)
+
+        totalDiscountCents += discountCents
+        if (promo.scope === 'order' && !orderPromoCodeId) {
+          orderPromoCodeId = promo.id
+        }
+      }
     }
 
-    // Calculate subtotal from DB prices (server-truth)
-    let subtotalCents = 0
-    const validatedItems = items.map(item => {
-      const dbItem = dbItems.find(d => d.id === item.id)
-      if (!dbItem) {
-        throw new Error(`Menu item not found: ${item.id}`)
-      }
-      const lineTotal = dbItem.price_cents * item.quantity
-      subtotalCents += lineTotal
-      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
-    })
+    // Clamp: discount cannot exceed cart total
+    totalDiscountCents = Math.min(totalDiscountCents, subtotalCents + effectiveDeliveryFee)
 
-    const totalCents = subtotalCents + effectiveDeliveryFee
+    const totalCents = subtotalCents + effectiveDeliveryFee - totalDiscountCents
+
+    // Generate order number first (needed for Stripe coupon metadata)
+    const orderNumber = generateOrderNumber()
+
+    // ── Create Stripe Coupons for order-scoped promos ──────────────
+    const stripeCouponIds: string[] = []
+    if (totalDiscountCents > 0 && orderPromoCodeId) {
+      const coupon = await stripe.coupons.create({
+        amount_off: totalDiscountCents,
+        currency: 'myr',
+        duration: 'once',
+        max_redemptions: 1,
+        metadata: {
+          promo_code_id: orderPromoCodeId,
+          order_number: orderNumber,
+        },
+      })
+      stripeCouponIds.push(coupon.id)
+    }
 
     // Create order
-    const orderNumber = generateOrderNumber()
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
@@ -286,7 +356,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         status: 'pending',
         subtotal_cents: subtotalCents,
         delivery_fee_cents: effectiveDeliveryFee,
+        discount_cents: totalDiscountCents,
         total_cents: totalCents,
+        promo_code_id: orderPromoCodeId,
         delivery_address_json: deliveryType === 'delivery' ? {
           ...deliveryAddress,
           // Ensure lat/lng is preserved for v3 API
@@ -310,6 +382,72 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         { success: false, error: 'Unable to create order. Please try again.', code: 'ORDER_FAILED' },
         { status: 500 }
       )
+    }
+
+    // Record order_promo_applications and increment usage counters
+    if (totalDiscountCents > 0 && promoCodes.length > 0) {
+      const now = new Date().toISOString()
+      const appliedPromos: Array<{
+        order_id: string
+        promo_id: string
+        scope: string
+        discount_cents: number
+      }> = []
+
+      const byScope = new Map<string, (typeof promoCodes)[number]>()
+      for (const entry of promoCodes) {
+        if (!byScope.has(entry.scope)) byScope.set(entry.scope, entry)
+      }
+
+      for (const entry of byScope.values()) {
+        const { data: promo } = await supabase
+          .from('promo_codes')
+          .select('id, scope, discount_type, discount_value, max_discount_cents, min_order_amount_cents')
+          .eq('code', entry.code.toLowerCase())
+          .eq('scope', entry.scope)
+          .eq('is_active', true)
+          .gte('valid_until', now)
+          .lte('valid_from', now)
+          .maybeSingle()
+
+        if (!promo) continue
+
+        const base = promo.scope === 'delivery' ? effectiveDeliveryFee : subtotalCents
+        if (promo.min_order_amount_cents && base < promo.min_order_amount_cents) continue
+
+        let discountCents = promo.discount_type === 'percentage'
+          ? Math.round(base * (promo.discount_value / 100))
+          : promo.discount_value
+
+        const maxCap = promo.max_discount_cents ?? base
+        discountCents = Math.min(discountCents, maxCap, base)
+
+        if (discountCents > 0) {
+          appliedPromos.push({
+            order_id: order.id,
+            promo_id: promo.id,
+            scope: promo.scope,
+            discount_cents: discountCents,
+          })
+        }
+      }
+
+      if (appliedPromos.length > 0) {
+        const { error: appError } = await supabase
+          .from('order_promo_applications')
+          .insert(appliedPromos)
+
+        if (appError) {
+          console.error('[API] Failed to record promo applications:', appError)
+        }
+
+        // Increment usage counters for each applied promo
+        for (const ap of appliedPromos) {
+          await supabase.rpc('increment_promo_code_usage', {
+            p_promo_id: ap.promo_id,
+          })
+        }
+      }
     }
 
     // Create shipment draft if quotation data is provided (delivery orders only)
@@ -440,6 +578,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
+      discounts: stripeCouponIds.length > 0
+        ? stripeCouponIds.map(id => ({ coupon: id }))
+        : undefined,
       success_url: `${env.NEXT_PUBLIC_URL}/order/success?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${env.NEXT_PUBLIC_URL}/checkout`,
       metadata: {

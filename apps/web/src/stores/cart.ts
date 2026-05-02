@@ -7,27 +7,43 @@ export type SelectedModifier = {
   price_delta_cents: number
 }
 
+export type AppliedPromo = {
+  code: string
+  description: string
+  scope: 'order' | 'delivery'
+  discountType: 'percentage' | 'fixed'
+  discountValue: number
+  discountCents: number
+}
+
 export type CartItem = {
   menu_item_id: string
   quantity: number
   selected_modifiers: SelectedModifier[]
   special_instructions: string
   unit_price: number
+  discount_per_unit_cents?: number
 }
 
 type CartState = {
   items: CartItem[]
   isDrawerOpen: boolean
   isHydrated: boolean
+  appliedPromos: AppliedPromo[]
   toggleDrawer: () => void
   openDrawer: () => void
   closeDrawer: () => void
-  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void
+  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number; discount_per_unit_cents?: number }) => void
+  getOriginalSubtotal: () => number
   removeItem: (menuItemId: string, modifierIds: string[]) => void
   updateQuantity: (menuItemId: string, modifierIds: string[], quantity: number) => void
   clear: () => void
   getTotalItems: () => number
   getSubtotal: () => number
+  getDiscountTotal: () => number
+  applyPromo: (promo: AppliedPromo) => void
+  removePromo: (code: string) => void
+  clearPromos: () => void
 }
 
 const getModifierKey = (modifiers: SelectedModifier[]): string => {
@@ -50,6 +66,7 @@ export const useCartStore = create<CartState>()(
       items: [],
       isDrawerOpen: false,
       isHydrated: false,
+      appliedPromos: [],
       toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
       openDrawer: () => set({ isDrawerOpen: true }),
       closeDrawer: () => set({ isDrawerOpen: false }),
@@ -100,7 +117,7 @@ export const useCartStore = create<CartState>()(
         })
       },
 
-      clear: () => set({ items: [] }),
+      clear: () => set({ items: [], appliedPromos: [] }),
 
       getTotalItems: () => {
         return get().items.reduce((sum, item) => sum + item.quantity, 0)
@@ -112,8 +129,40 @@ export const useCartStore = create<CartState>()(
             (modSum, mod) => modSum + mod.price_delta_cents,
             0
           )
+          const discount = item.discount_per_unit_cents ?? 0
+          return sum + item.quantity * (item.unit_price - discount + modifierTotal)
+        }, 0)
+      },
+
+      getOriginalSubtotal: () => {
+        return get().items.reduce((sum, item) => {
+          const modifierTotal = item.selected_modifiers.reduce(
+            (modSum, mod) => modSum + mod.price_delta_cents,
+            0
+          )
           return sum + item.quantity * (item.unit_price + modifierTotal)
         }, 0)
+      },
+
+      getDiscountTotal: () => {
+        return get().appliedPromos.reduce((sum, promo) => sum + promo.discountCents, 0)
+      },
+
+      applyPromo: (promo) => {
+        const existing = get().appliedPromos.find(p => p.code === promo.code)
+        if (!existing) {
+          set((state) => ({ appliedPromos: [...state.appliedPromos, promo] }))
+        }
+      },
+
+      removePromo: (code) => {
+        set((state) => ({
+          appliedPromos: state.appliedPromos.filter(p => p.code !== code)
+        }))
+      },
+
+      clearPromos: () => {
+        set({ appliedPromos: [] })
       },
     }),
     {

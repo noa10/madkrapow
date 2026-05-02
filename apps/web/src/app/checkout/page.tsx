@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { MapPin, Loader2, Users } from 'lucide-react'
+import { MapPin, Loader2, Users, ArrowLeft } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
@@ -14,6 +14,7 @@ import { FulfillmentSelector } from '@/components/checkout/FulfillmentSelector'
 import { TimeSlotPicker } from '@/components/checkout/TimeSlotPicker'
 import { BulkOrderForm } from '@/components/checkout/BulkOrderForm'
 import { PageContainer } from '@/components/layout/PageContainer'
+import { PromoCodeInput } from '@/components/checkout/PromoCodeInput'
 
 import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
 
@@ -75,10 +76,42 @@ export default function CheckoutPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const subtotal = useMemo(() => getSubtotal(), [getSubtotal])
+  const promoDiscount = useCartStore((state) => state.getDiscountTotal())
+  const clearPromos = useCartStore((state) => state.clearPromos)
+  const applyPromo = useCartStore((state) => state.applyPromo)
   const deliveryFee = deliveryType === 'self_pickup'
     ? 0
     : (deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100))
-  const total = subtotal + deliveryFee
+  const total = subtotal + deliveryFee - promoDiscount
+
+  // Fetch auto-applied promos
+  useEffect(() => {
+    async function fetchAutoPromos() {
+      if (subtotal <= 0) return
+      try {
+        const res = await fetch('/api/promos/auto', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subtotalCents: subtotal, deliveryFeeCents: deliveryFee }),
+        })
+        const data = await res.json()
+        clearPromos()
+        for (const p of data.applied ?? []) {
+          applyPromo({
+            code: p.code,
+            description: p.description,
+            scope: p.scope,
+            discountType: p.discountType,
+            discountValue: p.discountValue,
+            discountCents: p.discountCents,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to fetch auto-promos:', err)
+      }
+    }
+    fetchAutoPromos()
+  }, [subtotal, deliveryFee, clearPromos, applyPromo])
 
   // Quote expiry check
   const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
@@ -286,6 +319,7 @@ export default function CheckoutPage() {
         deliveryType,
         fulfillmentType,
         scheduledFor: scheduledWindow?.window_start,
+        promoCodes: useCartStore.getState().appliedPromos.map(p => ({ code: p.code, scope: p.scope })),
         // v3 shipping fields
         ...(quotationId && stopIds && priceBreakdown && {
           quotationId,
@@ -411,7 +445,15 @@ export default function CheckoutPage() {
       <main className="min-h-screen bg-background">
         <PageContainer size="narrow">
           <div className="py-8">
-            <h1 className="text-xl font-semibold font-display mb-8">Order Submitted</h1>
+            <div className="flex items-center gap-4 mb-8">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/#menu">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Menu
+                </Link>
+              </Button>
+              <h1 className="text-xl font-semibold font-display">Order Submitted</h1>
+            </div>
             <div className="flex flex-col items-center justify-center py-12">
               <div className="h-16 w-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                 <span className="text-2xl text-green-500">&#10003;</span>
@@ -433,7 +475,15 @@ export default function CheckoutPage() {
       <main className="min-h-screen bg-background">
         <PageContainer size="narrow">
           <div className="py-8">
-            <h1 className="text-xl font-semibold font-display mb-8">Checkout</h1>
+            <div className="flex items-center gap-4 mb-8">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/#menu">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Menu
+                </Link>
+              </Button>
+              <h1 className="text-xl font-semibold font-display">Checkout</h1>
+            </div>
             <div className="flex flex-col items-center justify-center py-12">
               <p className="text-muted-foreground text-center mb-6">
                 Your cart is empty. Add some items first.
@@ -452,7 +502,15 @@ export default function CheckoutPage() {
     <main className="min-h-screen bg-background">
       <PageContainer>
         <div className="py-6 md:py-10">
-          <h1 className="text-2xl font-semibold font-display mb-8">Checkout</h1>
+          <div className="flex items-center gap-4 mb-8">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/#menu">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Menu
+              </Link>
+            </Button>
+            <h1 className="text-2xl font-semibold font-display">Checkout</h1>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             {/* Left Column: Order Details */}
@@ -628,6 +686,18 @@ export default function CheckoutPage() {
                         >
                           Refresh
                         </button>
+                      </div>
+                    )}
+                    {/* Promo code input and applied promos */}
+                    <PromoCodeInput
+                      subtotalCents={subtotal}
+                      deliveryFeeCents={deliveryFee}
+                    />
+                    {/* Promo discount line */}
+                    {promoDiscount > 0 && (
+                      <div className="flex justify-between text-sm text-green-600">
+                        <span>Promo Discount</span>
+                        <span>-{formatPrice(promoDiscount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-lg font-semibold border-t border-border pt-3">

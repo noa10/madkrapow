@@ -8,12 +8,19 @@ import { CartSummary } from './CartSummary'
 import { Button } from '@/components/ui/button'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
 
+function formatPrice(priceCents: number): string {
+  return `RM ${(priceCents / 100).toFixed(2)}`
+}
+
 export function CartDrawer() {
   const isHydrated = useCartStore((state) => state.isHydrated)
   const isOpen = useCartStore((state) => state.isDrawerOpen)
   const onClose = useCartStore((state) => state.closeDrawer)
   const items = useCartStore((state) => state.items)
   const getSubtotal = useCartStore((state) => state.getSubtotal)
+  const getDiscountTotal = useCartStore((state) => state.getDiscountTotal)
+  const appliedPromos = useCartStore((state) => state.appliedPromos)
+  const removePromo = useCartStore((state) => state.removePromo)
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
 
@@ -41,6 +48,7 @@ export function CartDrawer() {
 
   const subtotal = isHydrated ? getSubtotal() : 0
   const displayItems = isHydrated ? items : []
+  const discountTotal = isHydrated ? getDiscountTotal() : 0
 
   return (
     <>
@@ -91,7 +99,31 @@ export function CartDrawer() {
             )}
           </div>
 
-          <CartSummary subtotal={subtotal} minOrderAmount={0} />
+          {/* Applied promos */}
+          {appliedPromos.length > 0 && (
+            <div className="px-4 py-3 border-t bg-primary/5">
+              <h3 className="text-sm font-medium mb-2">Applied Promos</h3>
+              <div className="space-y-1">
+                {appliedPromos.map((promo) => (
+                  <div key={promo.code} className="flex items-center justify-between">
+                    <span className="text-sm text-green-600">
+                      -{formatPrice(promo.discountCents)} ({promo.code})
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-muted-foreground"
+                      onClick={() => removePromo(promo.code)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <CartSummary subtotal={subtotal - discountTotal} minOrderAmount={0} />
         </div>
       </div>
     </>

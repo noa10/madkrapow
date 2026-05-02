@@ -11,6 +11,7 @@ import '../../../../generated/tables/customer_addresses.dart';
 import '../../../../generated/tables/customer_contacts.dart';
 import '../../../profile/data/profile_repository.dart';
 import '../../../cart/providers/cart_provider.dart';
+import '../../../menu/providers/promo_preview_provider.dart';
 import '../../data/checkout_models.dart';
 import '../../providers/checkout_providers.dart';
 import '../widgets/promo_code_input.dart';
@@ -102,6 +103,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     // Fetch auto-promos after initialization
     final subtotal = ref.read(cartProvider.notifier).subtotalCents;
     _fetchAutoPromos(subtotalCents: subtotal, deliveryFeeCents: 0);
+
+    // Refresh menu-level promo discounts for cart items
+    _refreshPromoDiscounts();
   }
 
   @override
@@ -158,6 +162,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (e) {
       // Silently fail — auto-promos are non-critical
     }
+  }
+
+  void _refreshPromoDiscounts() {
+    // Refresh menu-level promo discounts for cart items (fire-and-forget)
+    refreshCartPromoDiscounts(ref);
   }
 
   Future<void> _handlePromoApply(String code, int subtotalCents, int deliveryFeeCents) async {
@@ -501,10 +510,30 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
-                      Text(
-                        formatPrice(item.lineTotalCents),
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      if (item.discountPerUnitCents > 0) ...[
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              formatPrice(item.lineTotalCents),
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            Text(
+                              formatPrice(item.originalLineTotalCents),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else
+                        Text(
+                          formatPrice(item.lineTotalCents),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                     ],
                   ),
                 ),
@@ -516,6 +545,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   Text(formatPrice(subtotal)),
                 ],
               ),
+              if (ref.read(cartProvider.notifier).originalSubtotalCents > subtotal) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Menu Promo Savings')),
+                    Text(
+                      '-${formatPrice(ref.read(cartProvider.notifier).originalSubtotalCents - subtotal)}',
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ],
+                ),
+              ],
               if (checkout.deliveryType == DeliveryType.delivery) ...[
                 const SizedBox(height: 4),
                 Row(

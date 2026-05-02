@@ -4,8 +4,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/utils/price_formatter.dart';
+import '../../../checkout/data/checkout_models.dart' show PromoPreview;
 import '../widgets/store_closed_banner.dart';
 import '../../providers/menu_providers.dart';
+import '../../providers/promo_preview_provider.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -243,15 +245,16 @@ class _CategorySection extends StatelessWidget {
   }
 }
 
-class _MenuItemTile extends StatelessWidget {
+class _MenuItemTile extends ConsumerWidget {
   const _MenuItemTile({required this.itemWithModifiers});
 
   final MenuItemWithModifiers itemWithModifiers;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final item = itemWithModifiers.item;
     final theme = Theme.of(context);
+    final promoAsync = ref.watch(promoPreviewProvider(item.id));
 
     return InkWell(
       onTap: () => context.push('/item/${item.id}'),
@@ -315,28 +318,7 @@ class _MenuItemTile extends StatelessWidget {
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(
-                        formatPrice(item.priceCents),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (itemWithModifiers.hasModifiers) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          'Customizable',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.5,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                  _buildPrice(context, theme, item.priceCents, promoAsync),
                 ],
               ),
             ),
@@ -347,6 +329,62 @@ class _MenuItemTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPrice(
+    BuildContext context,
+    ThemeData theme,
+    int originalPriceCents,
+    AsyncValue<PromoPreview?> promoAsync,
+  ) {
+    final promo = promoAsync.valueOrNull;
+    final showDiscount = promo != null && promo.savingsCents > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (showDiscount) ...[
+              Text(
+                formatPrice(promo.discountedCents),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                formatPrice(originalPriceCents),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+            ] else ...[
+              Text(
+                formatPrice(originalPriceCents),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (itemWithModifiers.hasModifiers) ...[
+                const SizedBox(width: 8),
+                Text(
+                  'Customizable',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

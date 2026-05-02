@@ -9,6 +9,7 @@ import '../../../../generated/tables/modifiers.dart';
 import '../../../cart/data/cart_item.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../data/menu_repository.dart';
+import '../../providers/promo_preview_provider.dart';
 
 class ItemDetailScreen extends ConsumerStatefulWidget {
   const ItemDetailScreen({super.key, required this.itemId});
@@ -62,6 +63,60 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       }
       _selectedModifiers[group.group.id] = selected;
     });
+  }
+
+  Widget _buildItemPrice(BuildContext context, String itemId, int priceCents) {
+    final promoAsync = ref.watch(promoPreviewProvider(itemId));
+
+    return promoAsync.when(
+      data: (promo) {
+        // Any promo with savings: show discounted price + strikethrough original
+        if (promo != null && promo.savingsCents > 0) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                formatPrice(promo.discountedCents),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                formatPrice(priceCents),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(
+                    alpha: 0.5,
+                  ),
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+            ],
+          );
+        }
+        return Text(
+          formatPrice(priceCents),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
+        );
+      },
+      loading: () => Text(
+        formatPrice(priceCents),
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      error: (err, st) => Text(
+        formatPrice(priceCents),
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 
   @override
@@ -162,13 +217,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         ),
                       ],
                       const SizedBox(height: 16),
-                      Text(
-                        formatPrice(item.item.priceCents),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      _buildItemPrice(context, item.item.id, item.item.priceCents),
                     ],
                   ),
                 ),

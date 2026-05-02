@@ -41,6 +41,8 @@ type CartState = {
   getTotalItems: () => number
   getSubtotal: () => number
   getDiscountTotal: () => number
+  setDiscountPerItem: (menuItemId: string, discountCents: number) => void
+  clearDiscounts: () => void
   applyPromo: (promo: AppliedPromo) => void
   removePromo: (code: string) => void
   clearPromos: () => void
@@ -146,6 +148,22 @@ export const useCartStore = create<CartState>()(
 
       getDiscountTotal: () => {
         return get().appliedPromos.reduce((sum, promo) => sum + promo.discountCents, 0)
+      },
+
+      setDiscountPerItem: (menuItemId, discountCents) => {
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.menu_item_id === menuItemId
+              ? { ...item, discount_per_unit_cents: discountCents }
+              : item
+          ),
+        }))
+      },
+
+      clearDiscounts: () => {
+        set((state) => ({
+          items: state.items.map((item) => ({ ...item, discount_per_unit_cents: 0 })),
+        }))
       },
 
       applyPromo: (promo) => {

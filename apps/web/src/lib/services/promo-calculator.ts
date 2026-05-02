@@ -126,16 +126,20 @@ function computeDiscount(
 }
 
 /**
- * Compute per-item discount for a PERCENTAGE promo.
- * Only used for menu-level display — fixed discounts are order-level only.
+ * Compute per-item discount for any promo type.
+ * Used for menu-level price slash display.
  */
 export function computePerItemDiscount(
   promo: Pick<PromoCode, 'discount_type' | 'discount_value' | 'max_discount_cents'>,
   originalPriceCents: number,
 ): number {
-  if (promo.discount_type !== 'percentage') return 0
-
-  const discount = Math.round(originalPriceCents * (promo.discount_value / 100))
-  const maxCap = promo.max_discount_cents ?? originalPriceCents
-  return Math.min(discount, maxCap, originalPriceCents)
+  if (promo.discount_type === 'percentage') {
+    const discount = Math.round(originalPriceCents * (promo.discount_value / 100))
+    const maxCap = promo.max_discount_cents ?? originalPriceCents
+    return Math.min(discount, maxCap, originalPriceCents)
+  }
+  if (promo.discount_type === 'fixed') {
+    return Math.min(promo.discount_value, originalPriceCents)
+  }
+  return 0
 }

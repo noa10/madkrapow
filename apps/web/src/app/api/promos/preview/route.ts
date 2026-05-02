@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { computePerItemDiscount } from '@/lib/services/promo-calculator'
 
 const PreviewRequestSchema = z.object({
-  itemId: z.string().uuid(),
+  itemId: z.string().min(1),
   cartSubtotalCents: z.number().int().nonnegative().optional().default(0),
 })
 
@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ previews: [] }, { status: 200 })
     }
 
-    // Fetch active auto promos with their target items in a single batched join
-    const { data: promos, error: promosError } = await supabase
+    // ── Phase 1: item-targeted promos (promo_items!inner) ──────────
+    const { data: targetedPromos, error: targetedError } = await supabase
       .from('promo_codes')
       .select('*, promo_items!inner(menu_item_id, role)')
       .eq('promo_items.menu_item_id', itemId)
@@ -53,12 +53,32 @@ export async function POST(req: NextRequest) {
       .gte('valid_until', now)
       .lte('valid_from', now)
 
-    if (promosError || !promos || promos.length === 0) {
+    // ── Phase 2: order-scoped auto promos with NO promo_items (apply to all items) ──
+    const { data: globalPromos, error: globalError } = await supabase
+      .from('promo_codes')
+      .select('*, promo_items(menu_item_id, role)')
+      .eq('is_active', true)
+      .eq('application_type', 'auto')
+      .eq('scope', 'order')
+      .gte('valid_until', now)
+      .lte('valid_from', now)
+
+    // Filter global promos to those with zero promo_items rows (i.e. apply to all items)
+    const unscopedGlobal = (globalPromos ?? []).filter(
+      p => !p.promo_items || p.promo_items.length === 0
+    )
+
+    const allPromos = [
+      ...(targetedPromos ?? []),
+      ...unscopedGlobal,
+    ]
+
+    if ((targetedError && globalError) || allPromos.length === 0) {
       return NextResponse.json({ previews: [] }, { status: 200 })
     }
 
     // Filter by usage limits and min order amount
-    const eligible = promos.filter(p => {
+    const eligible = allPromos.filter(p => {
       if (p.max_uses !== null && p.current_uses >= p.max_uses) return false
       // Only check min_order when cart has items (nonzero subtotal)
       if (cartSubtotalCents > 0 && p.min_order_amount_cents) {
@@ -77,28 +97,16 @@ export async function POST(req: NextRequest) {
     )
 
     const originalPriceCents = menuItem.price_cents
-    const previews = []
+    const discountCents = computePerItemDiscount(bestPromo, originalPriceCents)
 
-    if (bestPromo.discount_type === 'percentage') {
-      const discountCents = computePerItemDiscount(bestPromo, originalPriceCents)
-      previews.push({
-        promoCode: bestPromo.code,
-        discountedCents: originalPriceCents - discountCents,
-        originalCents: originalPriceCents,
-        savingsCents: discountCents,
-        discountType: 'percentage' as const,
-      })
-    } else {
-      // FIXED promo: no per-item price change — badge only
-      previews.push({
-        promoCode: bestPromo.code,
-        discountedCents: originalPriceCents,
-        originalCents: originalPriceCents,
-        savingsCents: 0,
-        discountType: 'fixed' as const,
-        badge: 'Promo active',
-      })
-    }
+    const previews = [{
+      promoCode: bestPromo.code,
+      discountedCents: originalPriceCents - discountCents,
+      originalCents: originalPriceCents,
+      savingsCents: discountCents,
+      discountType: bestPromo.discount_type,
+      scope: bestPromo.scope,
+    }]
 
     return NextResponse.json({ previews }, { status: 200 })
   } catch (error) {

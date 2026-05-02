@@ -222,6 +222,7 @@ class _FilterSection extends ConsumerWidget {
                 SizedBox(
                   width: 160,
                   child: DropdownButtonFormField<DateRangePreset>(
+                    isExpanded: true,
                     initialValue: preset,
                     decoration: const InputDecoration(
                       labelText: 'Date Range',
@@ -272,6 +273,7 @@ class _FilterSection extends ConsumerWidget {
                 SizedBox(
                   width: 160,
                   child: DropdownButtonFormField<String?>(
+                    isExpanded: true,
                     initialValue: categoryFilter,
                     decoration: const InputDecoration(
                       labelText: 'Category',
@@ -299,6 +301,7 @@ class _FilterSection extends ConsumerWidget {
                 SizedBox(
                   width: 160,
                   child: DropdownButtonFormField<String?>(
+                    isExpanded: true,
                     initialValue: paymentFilter,
                     decoration: const InputDecoration(
                       labelText: 'Payment Method',
@@ -868,7 +871,7 @@ class _StatusCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bgColor, fgColor) = switch (status) {
-      'completed' || 'delivered' =>
+      'completed' =>
         (Colors.green.shade800, Colors.green.shade200),
       'paid' => (Colors.blue.shade800, Colors.blue.shade200),
       _ => (Colors.orange.shade800, Colors.orange.shade200),
@@ -919,18 +922,31 @@ class _ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.error_outline, size: 48, color: Colors.red),
-          const SizedBox(height: 8),
-          Text(error.toString()),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 12),
+            Text(
+              error.toString(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Check logs for [SalesReports] tags for details.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }

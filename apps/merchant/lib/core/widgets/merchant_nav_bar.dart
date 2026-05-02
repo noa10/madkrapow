@@ -69,11 +69,6 @@ class MerchantNavBar extends ConsumerWidget {
             label: 'Menu',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outlined),
-            selectedIcon: Icon(Icons.people),
-            label: 'Staff',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.more_horiz_outlined),
             selectedIcon: Icon(Icons.more_horiz),
             label: 'More',

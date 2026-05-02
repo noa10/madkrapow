@@ -21,10 +21,10 @@ class AppRoutes {
   static const categoryDetail = '/menu/categories/:id';
   static const modifiers = '/menu/modifiers';
 
-  // Staff sub-routes (nested under /analytics in GoRouter)
-  static const staffList = '/analytics/staff';
-  static const staffNew = '/analytics/staff/new';
-  static const staffEdit = '/analytics/staff/:id/edit';
+  // Staff sub-routes (nested under /more in GoRouter)
+  static const staffList = '/more/staff';
+  static const staffNew = '/more/staff/new';
+  static const staffEdit = '/more/staff/:id/edit';
 
   // Promo sub-routes
   static const promoList = '/more/promos';
@@ -32,7 +32,7 @@ class AppRoutes {
   static const promoEdit = '/more/promos/:id/edit';
 
   // Sales Reports
-  static const salesReports = '/analytics/reports';
+  static const salesReports = '/more/reports';
 
   // Settings
   static const settings = '/settings';

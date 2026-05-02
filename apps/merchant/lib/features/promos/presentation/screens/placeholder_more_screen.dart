@@ -60,7 +60,7 @@ class PlaceholderMoreScreen extends ConsumerWidget {
             title: const Text('Staff Management'),
             subtitle: const Text('Manage employees and roles'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/analytics/staff'),
+            onTap: () => context.go(AppRoutes.staffList),
           ),
           const Divider(),
         ],

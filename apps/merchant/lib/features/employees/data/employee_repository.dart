@@ -35,15 +35,17 @@ class Employee {
 
   factory Employee.fromJson(Map<String, dynamic> json) {
     return Employee(
-      id: json['id'] as String,
+      id: json['id'] as String? ?? '',
       authUserId: json['auth_user_id'] as String?,
-      name: json['name'] as String,
-      email: json['email'] as String,
+      name: json['name'] as String? ?? '',
+      email: json['email'] as String? ?? '',
       phone: json['phone'] as String?,
-      role: json['role'] as String,
+      role: json['role'] as String? ?? '',
       isActive: json['is_active'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+          DateTime.now(),
     );
   }
 
@@ -122,7 +124,8 @@ class EmployeeRepository {
       body: jsonEncode(body),
     );
 
-    final data = _handleResponse(response);
+    final responseBody = _handleResponse(response);
+    final data = responseBody['data'] as Map<String, dynamic>;
     return Employee.fromJson(data);
   }
 
@@ -147,7 +150,8 @@ class EmployeeRepository {
       body: jsonEncode(updates),
     );
 
-    final data = _handleResponse(response);
+    final body = _handleResponse(response);
+    final data = body['data'] as Map<String, dynamic>;
     return Employee.fromJson(data);
   }
 
@@ -159,7 +163,8 @@ class EmployeeRepository {
       headers: _headers,
     );
 
-    final data = _handleResponse(response);
+    final body = _handleResponse(response);
+    final data = body['data'] as Map<String, dynamic>;
     return Employee.fromJson(data);
   }
 

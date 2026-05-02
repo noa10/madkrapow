@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Visual stepper showing the order status progression.
-/// paid → accepted → preparing → ready → picked_up → delivered
+/// paid → preparing → ready → picked_up/delivered
 /// Cancelled orders get a distinct red indicator instead of the stepper.
 class AdminStatusStepper extends StatelessWidget {
   const AdminStatusStepper({super.key, required this.currentStatus});
@@ -10,10 +10,9 @@ class AdminStatusStepper extends StatelessWidget {
 
   static const _steps = [
     ('paid', 'Paid', Icons.payment),
-    ('accepted', 'Accepted', Icons.check_circle_outline),
     ('preparing', 'Preparing', Icons.restaurant),
     ('ready', 'Ready', Icons.done_all),
-    ('picked_up', 'Picked Up', Icons.delivery_dining_outlined),
+    ('picked_up', 'Picked Up', Icons.person_pin),
     ('delivered', 'Delivered', Icons.task_alt),
   ];
 

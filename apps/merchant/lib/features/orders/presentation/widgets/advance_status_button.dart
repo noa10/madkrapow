@@ -14,14 +14,13 @@ class AdvanceStatusButton extends ConsumerWidget {
   final String currentStatus;
 
   static const _nextStatus = {
-    'paid': 'accepted',
+    'paid': 'preparing',
     'accepted': 'preparing',
     'preparing': 'ready',
     'ready': 'picked_up',
-    'picked_up': 'delivered',
   };
 
-  static const _cancelableStatuses = {'paid', 'accepted', 'preparing'};
+  static const _cancelableStatuses = {'paid', 'preparing'};
 
   String? _roleAwareNextStatus(StaffRole? role) {
     final next = _nextStatus[currentStatus];
@@ -93,7 +92,7 @@ class AdvanceStatusButton extends ConsumerWidget {
           ),
 
         // Terminal state indicator
-        if (isTerminal && currentStatus == 'delivered')
+        if (isTerminal && (currentStatus == 'picked_up' || currentStatus == 'delivered'))
           const Expanded(
             child: Center(
               child: Row(
@@ -130,11 +129,9 @@ class AdvanceStatusButton extends ConsumerWidget {
 
   String _label(String status) {
     return switch (status) {
-      'accepted' => 'Accepted',
       'preparing' => 'Preparing',
       'ready' => 'Ready',
       'picked_up' => 'Picked Up',
-      'delivered' => 'Delivered',
       _ => status,
     };
   }

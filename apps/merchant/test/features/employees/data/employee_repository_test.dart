@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:merchant/features/employees/data/employee_repository.dart';
+import 'package:madkrapow_merchant/features/employees/data/employee_repository.dart';
 
 void main() {
   group('Employee.fromJson', () {

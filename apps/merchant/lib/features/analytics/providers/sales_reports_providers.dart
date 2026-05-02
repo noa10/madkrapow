@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/supabase_provider.dart';
+import '../../orders/providers/admin_order_providers.dart';
 import '../data/sales_reports_repository.dart';
 
 /// Provides the SalesReportsRepository instance.
 final salesReportsRepositoryProvider = Provider<SalesReportsRepository>((ref) {
-  return SalesReportsRepository(ref.read(supabaseProvider));
+  final apiClient = ref.watch(merchantApiClientProvider);
+  developer.log('[SalesReportsProvider] Creating repository with apiClient: $apiClient',
+      name: 'salesReportsRepositoryProvider');
+  return SalesReportsRepository(apiClient);
 });
 
 /// Date range preset values.
@@ -74,49 +78,49 @@ class SalesReportNotifier extends AsyncNotifier<SalesReportData> {
     final customStart = ref.read(salesCustomStartProvider);
     final customEnd = ref.read(salesCustomEndProvider);
 
-    final (start, end) = _computeDateRange(preset, customStart, customEnd);
+    developer.log('[SalesReportNotifier] _fetch() starting: preset=$preset',
+        name: 'SalesReportNotifier');
 
     final repo = ref.read(salesReportsRepositoryProvider);
-    return repo.fetchReport(start: start, end: end);
+    try {
+      final result = await repo.fetchReport(
+        preset: _presetToParam(preset),
+        customStart: customStart,
+        customEnd: customEnd,
+      );
+      developer.log(
+          '[SalesReportNotifier] _fetch() success: ${result.orders.length} orders',
+          name: 'SalesReportNotifier');
+      return result;
+    } catch (e, st) {
+      developer.log('[SalesReportNotifier] _fetch() error: $e',
+          name: 'SalesReportNotifier', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  String _presetToParam(DateRangePreset preset) {
+    switch (preset) {
+      case DateRangePreset.today:
+        return 'today';
+      case DateRangePreset.yesterday:
+        return 'yesterday';
+      case DateRangePreset.last7Days:
+        return 'last7days';
+      case DateRangePreset.last30Days:
+        return 'last30days';
+      case DateRangePreset.thisWeek:
+        return 'thisWeek';
+      case DateRangePreset.thisMonth:
+        return 'thisMonth';
+      case DateRangePreset.custom:
+        return 'custom';
+    }
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() => _fetch());
-  }
-
-  (DateTime, DateTime) _computeDateRange(
-    DateRangePreset preset,
-    DateTime? customStart,
-    DateTime? customEnd,
-  ) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (preset) {
-      case DateRangePreset.today:
-        return (today, today.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.yesterday:
-        final yesterday = today.subtract(const Duration(days: 1));
-        return (yesterday, yesterday.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.last7Days:
-        return (today.subtract(const Duration(days: 6)), today.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.last30Days:
-        return (today.subtract(const Duration(days: 29)), today.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.thisWeek:
-        final weekday = today.weekday;
-        final monday = today.subtract(Duration(days: weekday - 1));
-        final sunday = monday.add(const Duration(days: 6));
-        return (monday, sunday.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.thisMonth:
-        final firstOfMonth = DateTime(today.year, today.month, 1);
-        final lastOfMonth = DateTime(today.year, today.month + 1, 0);
-        return (firstOfMonth, lastOfMonth.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-      case DateRangePreset.custom:
-        final start = customStart ?? today;
-        final end = customEnd ?? today;
-        return (start, end.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1)));
-    }
   }
 }
 

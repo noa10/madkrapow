@@ -38,9 +38,11 @@ class MerchantAppShell extends ConsumerWidget {
   int _navIndexToBranchIndex(StaffRole? role, int navIndex) {
     switch (role) {
       case StaffRole.admin:
-      case StaffRole.manager:
-        // 4 tabs: Orders(0), Menu(1), Analytics/Staff(2), More(3)
+        // 4 tabs: Orders(0), Menu(1), Analytics(2), More(3)
         return navIndex;
+      case StaffRole.manager:
+        // 3 tabs: Orders(0), Menu(1), More(2) -> branch 0, 1, 3
+        return [0, 1, 3][navIndex];
       case StaffRole.cashier:
       case StaffRole.kitchen:
       case null:
@@ -53,8 +55,13 @@ class MerchantAppShell extends ConsumerWidget {
   int _branchIndexToNavIndex(StaffRole? role, int branchIndex) {
     switch (role) {
       case StaffRole.admin:
-      case StaffRole.manager:
         return branchIndex;
+      case StaffRole.manager:
+        // 3 tabs: Orders(0→0), Menu(1→1), More(2→3)
+        if (branchIndex == 0) return 0;
+        if (branchIndex == 1) return 1;
+        if (branchIndex == 3) return 2;
+        return 0;
       case StaffRole.cashier:
       case StaffRole.kitchen:
       case null:

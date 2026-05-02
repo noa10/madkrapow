@@ -69,10 +69,10 @@ GoRouter _createRouter(Ref ref) {
       if (location == AppRoutes.menu && !role.canAccessMenu) {
         return AppRoutes.orders;
       }
-      if (location == AppRoutes.analytics && !role.canAccessAnalytics && !role.canAccessStaff) {
+      if (location == AppRoutes.analytics && !role.canAccessAnalytics) {
         return AppRoutes.orders;
       }
-      if (location.startsWith('/analytics/staff') && !role.canAccessStaff) {
+      if (location.startsWith('/more/staff') && !role.canAccessStaff) {
         return AppRoutes.orders;
       }
       if (location == AppRoutes.settings && role != StaffRole.admin) {
@@ -160,13 +160,23 @@ GoRouter _createRouter(Ref ref) {
               ),
             ],
           ),
-          // Branch 2: Analytics (admin) or Staff (manager)
+          // Branch 2: Analytics (admin only)
           StatefulShellBranch(
             navigatorKey: _analyticsNavigatorKey,
             routes: [
               GoRoute(
                 path: AppRoutes.analytics,
                 builder: (context, state) => const _RoleAwareBranch2Screen(),
+              ),
+            ],
+          ),
+          // Branch 3: More
+          StatefulShellBranch(
+            navigatorKey: _moreNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.more,
+                builder: (context, state) => const PlaceholderMoreScreen(),
                 routes: [
                   GoRoute(
                     path: 'reports',
@@ -188,18 +198,6 @@ GoRouter _createRouter(Ref ref) {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
-          ),
-          // Branch 3: More
-          StatefulShellBranch(
-            navigatorKey: _moreNavigatorKey,
-            routes: [
-              GoRoute(
-                path: AppRoutes.more,
-                builder: (context, state) => const PlaceholderMoreScreen(),
-                routes: [
                   GoRoute(
                     path: 'promos',
                     builder: (context, state) => const PromoListScreen(),
@@ -317,8 +315,10 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
   }
 }
 
-/// Shows AnalyticsScreen for admin, EmployeeListScreen for manager,
-/// and redirects for other roles (handled by GoRouter redirect).
+/// Shows AnalyticsScreen for admin.
+/// Managers no longer have a dedicated Analytics/Staff branch tab —
+/// staff management was moved to the More tab, so this screen
+/// redirects managers to orders.
 class _RoleAwareBranch2Screen extends ConsumerWidget {
   const _RoleAwareBranch2Screen();
 
@@ -328,11 +328,12 @@ class _RoleAwareBranch2Screen extends ConsumerWidget {
     if (staffRole == StaffRole.admin) {
       return const AnalyticsScreen();
     }
-    if (staffRole == StaffRole.manager) {
-      return const EmployeeListScreen();
-    }
-    // Fallback for unauthorized access (should be redirected by router)
-    return const Center(child: CircularProgressIndicator());
+    // For managers and other roles, redirect to orders
+    // (GoRouter redirect should catch most cases before reaching here)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.go(AppRoutes.orders);
+    });
+    return const SizedBox.shrink();
   }
 }
 

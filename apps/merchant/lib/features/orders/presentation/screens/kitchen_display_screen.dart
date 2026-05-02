@@ -17,30 +17,30 @@ final kitchenOrdersProvider = FutureProvider<List<OrdersRow>>((ref) async {
 
 const _statusColors = {
   'paid': Color(0xFF0EA5E9),
-  'accepted': Color(0xFF8B5CF6),
   'preparing': Color(0xFFF97316),
   'ready': Color(0xFF10B981),
+  'delivering': Color(0xFF6366F1),
 };
 
 const _statusLabels = {
   'paid': 'Paid',
-  'accepted': 'Accepted',
   'preparing': 'Preparing',
   'ready': 'Ready',
+  'delivering': 'Delivering',
 };
 
 const _kitchenTransitions = {
-  'paid': 'accepted',
-  'accepted': 'preparing',
+  'paid': 'preparing',
   'preparing': 'ready',
-  'ready': 'picked_up',
+  'ready': 'delivering',
+  'delivering': 'completed',
 };
 
 const _transitionConfig = {
-  'paid': ('Accept Order', Icons.check_circle_outline),
-  'accepted': ('Start Preparing', Icons.restaurant),
+  'paid': ('Start Preparing', Icons.restaurant),
   'preparing': ('Mark Ready', Icons.inventory_2_outlined),
-  'ready': ('Hand to Driver', Icons.local_shipping),
+  'ready': ('Start Delivery', Icons.local_shipping),
+  'delivering': ('Complete Order', Icons.check_circle_outline),
 };
 
 String _getAddress(Map<String, dynamic>? json) {

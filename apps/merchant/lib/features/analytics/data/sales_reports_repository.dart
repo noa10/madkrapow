@@ -1,6 +1,7 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
 
 import '../../../generated/database.dart';
+import '../../orders/data/merchant_api_client.dart';
 
 /// Holds raw data fetched for the sales report.
 class SalesReportData {
@@ -17,39 +18,48 @@ class SalesReportData {
   });
 }
 
-/// Fetches sales report data from Supabase for a given date range.
+/// Fetches sales report data from the server-side admin API.
+/// Uses the service-role client on the server to bypass RLS.
 class SalesReportsRepository {
-  SalesReportsRepository(this._supabase);
+  SalesReportsRepository(this._apiClient);
 
-  final SupabaseClient _supabase;
+  final MerchantApiClient _apiClient;
 
+  /// [preset] must be one of: today, yesterday, last7days, last30days, thisWeek,
+  /// thisMonth, custom. [customStart] / [customEnd] are required when preset is 'custom'.
   Future<SalesReportData> fetchReport({
-    required DateTime start,
-    required DateTime end,
+    required String preset,
+    DateTime? customStart,
+    DateTime? customEnd,
   }) async {
-    final results = await Future.wait([
-      _supabase
-          .from('orders')
-          .select()
-          .gte('created_at', start.toIso8601String())
-          .lte('created_at', end.toIso8601String())
-          .inFilter('status', ['paid', 'completed']),
-      _supabase.from('order_items').select(),
-      _supabase
-          .from('categories')
-          .select('id, name')
-          .eq('is_active', true),
-      _supabase.from('menu_items').select('id, category_id, name'),
-    ]);
+    final queryParams = <String, String>{
+      'preset': preset,
+    };
+    if (preset == 'custom') {
+      if (customStart != null) {
+        queryParams['start'] =
+            '${customStart.year}-${customStart.month.toString().padLeft(2, '0')}-${customStart.day.toString().padLeft(2, '0')}';
+      }
+      if (customEnd != null) {
+        queryParams['end'] =
+            '${customEnd.year}-${customEnd.month.toString().padLeft(2, '0')}-${customEnd.day.toString().padLeft(2, '0')}';
+      }
+    }
 
-    final orders =
-        (results[0] as List<dynamic>).map((j) => OrdersRow.fromJson(j as Map<String, dynamic>)).toList();
-    final orderItems =
-        (results[1] as List<dynamic>).map((j) => OrderItemsRow.fromJson(j as Map<String, dynamic>)).toList();
-    final categories =
-        (results[2] as List<dynamic>).map((j) => CategoriesRow.fromJson(j as Map<String, dynamic>)).toList();
-    final menuItems =
-        (results[3] as List<dynamic>).map((j) => MenuItemsRow.fromJson(j as Map<String, dynamic>)).toList();
+    developer.log('[SalesReports] Fetching with params: $queryParams',
+        name: 'SalesReportsRepository');
+    final response = await _apiClient.get('/admin/sales-reports', queryParams);
+    developer.log('[SalesReports] Response keys: ${response.keys.toList()}',
+        name: 'SalesReportsRepository');
+
+    final orders = _parseList(response, 'orders', OrdersRow.fromJson);
+    final orderItems = _parseList(response, 'orderItems', OrderItemsRow.fromJson);
+    final categories = _parseList(response, 'categories', CategoriesRow.fromJson);
+    final menuItems = _parseList(response, 'menuItems', MenuItemsRow.fromJson);
+
+    developer.log(
+        '[SalesReports] Parsed: ${orders.length} orders, ${orderItems.length} items, ${categories.length} categories, ${menuItems.length} menuItems',
+        name: 'SalesReportsRepository');
 
     return SalesReportData(
       orders: orders,
@@ -57,5 +67,18 @@ class SalesReportsRepository {
       categories: categories,
       menuItems: menuItems,
     );
+  }
+
+  List<T> _parseList<T>(
+    Map<String, dynamic> json,
+    String key,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
+    final list = json[key];
+    if (list is! List) return [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(fromJson)
+        .toList();
   }
 }

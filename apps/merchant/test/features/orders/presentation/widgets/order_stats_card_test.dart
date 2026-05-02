@@ -54,7 +54,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 2 completed (delivered + picked_up)
+      // 2 completed (completed + delivering)
       // 2 cancelled
       final completedFinder = find.text('2');
       final cancelledFinder = find.text('2');
@@ -62,11 +62,11 @@ void main() {
       expect(cancelledFinder, findsNWidgets(2));
     });
 
-    testWidgets('completed includes both delivered and picked_up',
+    testWidgets('completed includes both completed and delivering',
         (tester) async {
       final orders = [
-        _makeOrder(status: 'delivered'),
-        _makeOrder(status: 'picked_up'),
+        _makeOrder(status: 'completed'),
+        _makeOrder(status: 'delivering'),
         _makeOrder(status: 'cancelled'),
       ];
 

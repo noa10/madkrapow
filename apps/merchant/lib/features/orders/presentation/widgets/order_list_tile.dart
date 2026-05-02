@@ -86,11 +86,10 @@ class OrderListTile extends StatelessWidget {
   Color _statusColor(String status) {
     return switch (status) {
       'paid' => Colors.orange,
-      'accepted' => Colors.blue,
       'preparing' => Colors.amber,
       'ready' => Colors.green,
-      'picked_up' => Colors.teal,
-      'delivered' => Colors.grey,
+      'delivering' => Colors.teal,
+      'completed' => Colors.grey,
       'cancelled' => Colors.red,
       _ => Colors.grey,
     };

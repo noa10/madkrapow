@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../config/routes.dart';
 import '../../providers/admin_order_providers.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/flat_order_list.dart';
@@ -70,6 +72,13 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Orders'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.kitchen),
+            tooltip: 'Kitchen Display',
+            onPressed: () => context.push(AppRoutes.kitchen),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,

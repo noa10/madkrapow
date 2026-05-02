@@ -7,7 +7,6 @@ import { getAuthenticatedUser } from '@/lib/supabase/server'
 const CheckoutItemSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  price: z.number().int().positive(), // cents
   quantity: z.number().positive().int(),
   image: z.string().optional(),
   modifiers: z.array(z.object({

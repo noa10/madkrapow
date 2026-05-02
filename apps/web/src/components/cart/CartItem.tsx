@@ -43,7 +43,8 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
     (sum, mod) => sum + mod.price_delta_cents,
     0
   )
-  const itemTotal = item.quantity * (item.unit_price + modifierTotal)
+  const discount = item.discount_per_unit_cents ?? 0
+  const itemTotal = item.quantity * (item.unit_price - discount + modifierTotal)
 
   const formatPrice = (cents: number) => {
     return `RM${(cents / 100).toFixed(2)}`
@@ -132,9 +133,22 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
                 </p>
               )}
             </div>
-            <span className="font-medium text-sm whitespace-nowrap">
-              {formatPrice(itemTotal)}
-            </span>
+            <div className="text-right">
+              {discount > 0 ? (
+                <div>
+                  <span className="text-xs text-muted-foreground line-through block">
+                    {formatPrice(item.quantity * (item.unit_price + modifierTotal))}
+                  </span>
+                  <span className="font-medium text-sm text-green-600 block">
+                    {formatPrice(itemTotal)}
+                  </span>
+                </div>
+              ) : (
+                <span className="font-medium text-sm whitespace-nowrap">
+                  {formatPrice(itemTotal)}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center justify-between mt-2">
             <QuantitySelector

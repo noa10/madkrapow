@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,15 @@ import { buildItemHref } from '@/lib/item-url'
 
 interface MenuItemCardProps {
   item: MenuItemWithModifiers
+}
+
+interface PromoPreview {
+  promoCode: string
+  discountedCents: number
+  originalCents: number
+  savingsCents: number
+  discountType: 'percentage' | 'fixed'
+  scope: 'item' | 'order'
 }
 
 function formatPrice(priceCents: number): string {
@@ -35,6 +44,29 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
   const detailActionLabel = item.has_modifiers
     ? `View details and customize ${item.name}`
     : `View details for ${item.name}`
+
+  const [promoPreview, setPromoPreview] = useState<PromoPreview | null>(null)
+
+  useEffect(() => {
+    async function fetchPromo() {
+      try {
+        const res = await fetch('/api/promos/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemId: item.id, cartSubtotalCents: 0 }),
+        })
+        const data = await res.json()
+        if (data.previews && data.previews.length > 0) {
+          setPromoPreview(data.previews[0])
+        }
+      } catch {
+        // Silently ignore promo fetch errors — menu should still render
+      }
+    }
+    fetchPromo()
+  }, [item.id])
+
+  const showDiscount = promoPreview && promoPreview.savingsCents > 0
 
   return (
     <Card
@@ -70,7 +102,16 @@ export const MenuItemCard = memo(function MenuItemCard({ item }: MenuItemCardPro
               {descriptionSnippet}
             </p>
           )}
-          <p className="font-medium mt-2 text-primary">{formatPrice(item.price_cents)}</p>
+          <div className="mt-2 flex items-baseline gap-2">
+            {showDiscount ? (
+              <>
+                <p className="font-medium text-primary">{formatPrice(promoPreview.discountedCents)}</p>
+                <p className="text-sm text-muted-foreground line-through">{formatPrice(promoPreview.originalCents)}</p>
+              </>
+            ) : (
+              <p className="font-medium text-primary">{formatPrice(item.price_cents)}</p>
+            )}
+          </div>
         </CardContent>
       </Link>
 

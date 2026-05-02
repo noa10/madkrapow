@@ -37,6 +37,8 @@ interface CheckoutItem {
   id: string
   name: string
   price: number
+  originalPrice?: number
+  discountPerUnit?: number
   quantity: number
   image?: string
   modifiers?: Array<{ id: string; name: string; price_delta_cents: number }>
@@ -51,6 +53,7 @@ interface StoreSettings {
 export default function CheckoutPage() {
   const items = useCartStore((state) => state.items)
   const getSubtotal = useCartStore((state) => state.getSubtotal)
+  const getOriginalSubtotal = useCartStore((state) => state.getOriginalSubtotal)
   const clearCart = useCartStore((state) => state.clear)
 
   const deliveryAddress = useCheckoutStore((state) => state.delivery_address)
@@ -75,7 +78,7 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  const subtotal = useMemo(() => getSubtotal(), [getSubtotal])
+  const subtotal = useMemo(() => getSubtotal(), [items])
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
   const clearPromos = useCartStore((state) => state.clearPromos)
   const applyPromo = useCartStore((state) => state.applyPromo)
@@ -84,15 +87,58 @@ export default function CheckoutPage() {
     : (deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100))
   const total = subtotal + deliveryFee - promoDiscount
 
+  // Fetch menu-level promo previews for display badges
+  // Note: per-item discounts (setDiscountPerItem) are NOT set here for order-scoped
+  // promos to avoid double-counting with the auto-promos useEffect below.
+  useEffect(() => {
+    async function fetchMenuPromos() {
+      const uniqueItemIds = [...new Set(items.map((item) => item.menu_item_id))]
+      if (uniqueItemIds.length === 0) return
+
+      try {
+        const responses = await Promise.all(
+          uniqueItemIds.map(async (itemId) => {
+            const res = await fetch('/api/promos/preview', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ itemId, cartSubtotalCents: getOriginalSubtotal() }),
+            })
+            if (!res.ok) return { itemId, preview: null }
+            const data = await res.json()
+            const previews = data.previews as Array<{
+              promoCode: string
+              discountType: string
+              savingsCents: number
+              scope: string
+            }> | undefined
+            const preview = previews?.[0] ?? null
+            return { itemId, preview }
+          })
+        )
+
+        // Apply per-item discounts only for item-scoped promos (not order-scoped)
+        for (const { itemId, preview } of responses) {
+          if (preview && preview.discountType === 'percentage' && preview.savingsCents > 0 && preview.scope === 'item') {
+            useCartStore.getState().setDiscountPerItem(itemId, preview.savingsCents)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch menu promo previews:', err)
+      }
+    }
+    fetchMenuPromos()
+  }, [items.map((i) => i.menu_item_id).join(',')])
+
   // Fetch auto-applied promos
   useEffect(() => {
     async function fetchAutoPromos() {
-      if (subtotal <= 0) return
+      const originalSubtotal = getOriginalSubtotal()
+      if (originalSubtotal <= 0) return
       try {
         const res = await fetch('/api/promos/auto', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subtotalCents: subtotal, deliveryFeeCents: deliveryFee }),
+          body: JSON.stringify({ subtotalCents: originalSubtotal, deliveryFeeCents: deliveryFee }),
         })
         const data = await res.json()
         clearPromos()
@@ -111,7 +157,7 @@ export default function CheckoutPage() {
       }
     }
     fetchAutoPromos()
-  }, [subtotal, deliveryFee, clearPromos, applyPromo])
+  }, [getOriginalSubtotal(), deliveryFee, clearPromos, applyPromo])
 
   // Quote expiry check
   const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
@@ -126,10 +172,14 @@ export default function CheckoutPage() {
   const checkoutItems: CheckoutItem[] = useMemo(() => {
     return items.map((item) => {
       const menuItem = menuItemMap[item.menu_item_id]
+      const modifierTotal = item.selected_modifiers.reduce((sum, mod) => sum + mod.price_delta_cents, 0)
+      const discount = item.discount_per_unit_cents ?? 0
       return {
         id: item.menu_item_id,
         name: menuItem?.name || `Item ${item.menu_item_id.slice(0, 8)}`,
-        price: item.unit_price + item.selected_modifiers.reduce((sum, mod) => sum + mod.price_delta_cents, 0),
+        price: item.unit_price - discount + modifierTotal,
+        originalPrice: item.unit_price + modifierTotal,
+        discountPerUnit: discount,
         quantity: item.quantity,
         image: menuItem?.image_url || undefined,
         modifiers: item.selected_modifiers.map((mod) => ({
@@ -140,6 +190,13 @@ export default function CheckoutPage() {
       }
     })
   }, [items, menuItemMap])
+
+  const menuPromoSavings = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const discount = item.discount_per_unit_cents ?? 0
+      return sum + item.quantity * discount
+    }, 0)
+  }, [items])
 
   useEffect(() => {
     async function fetchData() {
@@ -543,7 +600,16 @@ export default function CheckoutPage() {
                           </div>
                         )}
                       </div>
-                      <span className="flex-shrink-0">{formatPrice(item.price * item.quantity)}</span>
+                      <span className="flex-shrink-0">
+                        {item.discountPerUnit && item.discountPerUnit > 0 ? (
+                          <div className="text-right">
+                            <div className="text-primary font-medium">{formatPrice(item.price * item.quantity)}</div>
+                            <div className="text-[11px] text-muted-foreground line-through">{formatPrice((item.originalPrice ?? item.price) * item.quantity)}</div>
+                          </div>
+                        ) : (
+                          formatPrice(item.price * item.quantity)
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -688,15 +754,22 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                     )}
+                    {/* Menu promo savings */}
+                    {menuPromoSavings > 0 && (
+                      <div className="flex justify-between text-sm text-green-600">
+                        <span>Menu Promo Savings</span>
+                        <span>-{formatPrice(menuPromoSavings)}</span>
+                      </div>
+                    )}
                     {/* Promo code input and applied promos */}
                     <PromoCodeInput
                       subtotalCents={subtotal}
                       deliveryFeeCents={deliveryFee}
                     />
-                    {/* Promo discount line */}
+                    {/* Promo code discount line */}
                     {promoDiscount > 0 && (
                       <div className="flex justify-between text-sm text-green-600">
-                        <span>Promo Discount</span>
+                        <span>Promo Code Discount</span>
                         <span>-{formatPrice(promoDiscount)}</span>
                       </div>
                     )}

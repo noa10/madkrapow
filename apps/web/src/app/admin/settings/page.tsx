@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { RefreshCw, Activity, AlertTriangle, CheckCircle, XCircle, Clock, ListTodo } from "lucide-react";
 
 async function getHubboPosStatus() {
@@ -31,6 +32,13 @@ async function getHubboPosStatus() {
 }
 
 export default async function AdminSettingsPage() {
+  const supabase = await getServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = user?.app_metadata?.role as string | undefined;
+  if (!user || role !== 'admin') {
+    redirect('/admin');
+  }
+
   const { settings, queuePending, recentSync } = await getHubboPosStatus();
 
   const isEnabled = settings?.hubbo_pos_enabled;

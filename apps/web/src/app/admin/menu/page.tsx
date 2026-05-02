@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useRoleGuard } from "@/hooks/use-role-guard";
 
 interface Category {
   id: string;
@@ -250,6 +251,7 @@ function SortableModifierRow({
 }
 
 export default function AdminMenuPage() {
+  const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin", "manager"]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -940,6 +942,18 @@ export default function AdminMenuPage() {
     if (cents === 0) return "Free";
     return `+RM ${(cents / 100).toFixed(2)}`;
   };
+
+  if (guardLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (loading) {
     return (

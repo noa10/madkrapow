@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, MapPin, Loader2, ChefHat, Package, Truck, Check } from 'lucide-react';
+import { Clock, User, MapPin, Loader2, ChefHat, Package, Truck, Check, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
+import { useRoleGuard } from '@/hooks/use-role-guard';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
@@ -21,6 +22,7 @@ function getAddressString(address: Record<string, unknown>): string {
 }
 
 export default function KitchenDisplayPage() {
+  const { hasAccess, isLoading: isAccessLoading } = useRoleGuard(["admin", "manager", "kitchen"]);
   const { orders, loading, error } = useAdminOrders();
   // Filter orders to show only active ones for the kitchen
   const filteredOrders = useMemo(() => {
@@ -32,13 +34,27 @@ export default function KitchenDisplayPage() {
     return [];
   }, [orders, loading]);
 
-  if (loading) {
+  if (isAccessLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
           <p className="text-xl md:text-2xl font-medium text-muted-foreground">Loading orders...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background p-4">
+        <Card className="max-w-md bg-card border-destructive/50">
+          <CardContent className="pt-6 text-center">
+            <ShieldAlert className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <p className="text-destructive font-medium text-xl">Access Denied</p>
+            <p className="text-muted-foreground mt-2">You don&apos;t have permission to view the kitchen display.</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }

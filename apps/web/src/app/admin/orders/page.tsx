@@ -14,7 +14,8 @@ import {
   format,
 } from "date-fns"
 import { getBrowserClient } from "@/lib/supabase/client"
-import { Package, Loader2 } from "lucide-react"
+import { useRoleGuard } from "@/hooks/use-role-guard"
+import { Package, Loader2, ShieldAlert } from "lucide-react"
 import { NewOrderAlert, triggerNewOrderAlert } from "@/components/admin/NewOrderAlert"
 import { AdminOrdersFilterBar } from "@/components/admin/orders/AdminOrdersFilterBar"
 import { AdminOrdersCardView, type OrdersByDateGroup } from "@/components/admin/orders/AdminOrdersCardView"
@@ -92,6 +93,7 @@ function calculateTotalCents(orders: Order[]) {
 }
 
 export default function AdminOrdersPage() {
+  const { hasAccess, isLoading: isAccessLoading } = useRoleGuard(["admin", "manager", "cashier"]);
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -213,12 +215,23 @@ export default function AdminOrdersPage() {
     return { summaryLabel: "Total Sales", summaryTotalCents: 0 }
   }, [dateFilter, filteredOrders, orders, customDateRange])
 
-  if (loading) {
+  if (isAccessLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="text-xs text-muted-foreground">Loading orders...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <ShieldAlert className="h-8 w-8 text-destructive" />
+          <span className="text-sm text-muted-foreground">You don&apos;t have permission to view orders and revenue data.</span>
         </div>
       </div>
     )

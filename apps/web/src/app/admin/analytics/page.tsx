@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { format, subDays, startOfDay, endOfDay, eachDayOfInterval } from "date-fns";
 import { DollarSign, Package, ShoppingCart, TrendingUp, Calendar } from "lucide-react";
+import { useRoleGuard } from "@/hooks/use-role-guard";
 
 interface TopSellingItem {
   name: string;
@@ -44,6 +45,7 @@ type DateRange = "7d" | "30d" | "90d" | "custom";
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
 export default function AnalyticsPage() {
+  const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin"]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const [customStart, setCustomStart] = useState("");
@@ -201,6 +203,18 @@ export default function AnalyticsPage() {
     { name: "New Customers", value: customerData.new },
     { name: "Returning", value: customerData.returning },
   ];
+
+  if (guardLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (loading) {
     return (

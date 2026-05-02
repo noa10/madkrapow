@@ -2,9 +2,22 @@ import { getServerClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, Clock, DollarSign, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function AdminDashboard() {
   const supabase = await getServerClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/auth");
+  }
+
+  const userRole = (user.app_metadata?.role as string) || null;
+  const staffRoles = ["admin", "manager", "cashier", "kitchen"];
+  if (!userRole || !staffRoles.includes(userRole)) {
+    redirect("/");
+  }
 
   // Get start of today
   const today = new Date();

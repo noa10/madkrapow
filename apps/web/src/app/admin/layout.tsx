@@ -2,47 +2,102 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAdminGuard } from "@/lib/admin/auth-guard";
-  import {
-    LayoutDashboard,
-    ShoppingCart,
-    Utensils,
-    BarChart3,
-    Settings,
-    LogOut,
-    FileText,
-    ChefHat,
-  } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getBrowserClient } from "@/lib/supabase/client";
+import { type StaffRole } from "@/lib/auth/roles";
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Utensils,
+  BarChart3,
+  Settings,
+  LogOut,
+  FileText,
+  ChefHat,
+  Users,
+  Ticket,
+} from "lucide-react";
 
-  export default function AdminLayout({
-    children,
-  }: {
-    children: React.ReactNode;
-  }) {
-    const { isAdmin, isLoading } = useAdminGuard();
-    const pathname = usePathname();
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  roles: StaffRole[];
+}
 
-    if (isLoading) {
-      return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        </div>
-      );
+const allNavItems: NavItem[] = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "manager", "cashier", "kitchen"] },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingCart, roles: ["admin", "manager", "cashier"] },
+  { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat, roles: ["admin", "manager", "kitchen"] },
+  { href: "/admin/menu", label: "Menu", icon: Utensils, roles: ["admin", "manager"] },
+  { href: "/admin/employees", label: "Employees", icon: Users, roles: ["admin", "manager"] },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, roles: ["admin"] },
+  { href: "/admin/analytics/reports", label: "Reports", icon: FileText, roles: ["admin", "manager"] },
+  { href: "/admin/promos", label: "Promos", icon: Ticket, roles: ["admin", "manager"] },
+  { href: "/admin/settings", label: "Settings", icon: Settings, roles: ["admin"] },
+];
+
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const pathname = usePathname();
+  const supabase = getBrowserClient();
+
+  useEffect(() => {
+    const checkRole = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setHasAccess(false);
+          return;
+        }
+
+        const role = (user.app_metadata?.role as string) || null;
+        setUserRole(role);
+
+        // Any staff role gets access to /admin layout (page guards handle finer control)
+        const staffRoles: StaffRole[] = ["admin", "manager", "cashier", "kitchen"];
+        setHasAccess(staffRoles.includes(role as StaffRole));
+      } catch (error) {
+        console.error("Role check failed:", error);
+        setHasAccess(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkRole();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!isLoading && !hasAccess) {
+      window.location.href = "/";
     }
+  }, [isLoading, hasAccess]);
 
-    if (!isAdmin) {
-      return null; // Will be redirected by useAdminGuard
-    }
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
-    const navItems = [
-      { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
-      { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat },
-      { href: "/admin/menu", label: "Menu", icon: Utensils },
-      { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/admin/analytics/reports", label: "Reports", icon: FileText },
-      { href: "/admin/settings", label: "Settings", icon: Settings },
-    ];
+  if (!hasAccess) {
+    return null;
+  }
+
+  const navItems = allNavItems.filter((item) =>
+    item.roles.includes(userRole as StaffRole)
+  );
 
   return (
     <div className="flex min-h-screen bg-background">

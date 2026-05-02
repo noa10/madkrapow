@@ -1,22 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { Menu } from "lucide-react";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { type StaffRole } from "@/lib/auth/roles";
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Utensils,
-  BarChart3,
-  Settings,
-  LogOut,
-  FileText,
-  ChefHat,
-  Users,
-  Ticket,
-} from "lucide-react";
+import { AdminSidebar } from "@/components/layout/AdminSidebar";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
   href: string;
@@ -26,15 +16,15 @@ interface NavItem {
 }
 
 const allNavItems: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "manager", "cashier", "kitchen"] },
-  { href: "/admin/orders", label: "Orders", icon: ShoppingCart, roles: ["admin", "manager", "cashier"] },
-  { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat, roles: ["admin", "manager", "kitchen"] },
-  { href: "/admin/menu", label: "Menu", icon: Utensils, roles: ["admin", "manager"] },
-  { href: "/admin/employees", label: "Employees", icon: Users, roles: ["admin", "manager"] },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, roles: ["admin"] },
-  { href: "/admin/analytics/reports", label: "Reports", icon: FileText, roles: ["admin", "manager"] },
-  { href: "/admin/promos", label: "Promos", icon: Ticket, roles: ["admin", "manager"] },
-  { href: "/admin/settings", label: "Settings", icon: Settings, roles: ["admin"] },
+  { href: "/admin", label: "Dashboard", icon: () => null, roles: ["admin", "manager", "cashier", "kitchen"] },
+  { href: "/admin/orders", label: "Orders", icon: () => null, roles: ["admin", "manager", "cashier"] },
+  { href: "/admin/kitchen", label: "Kitchen", icon: () => null, roles: ["admin", "manager", "kitchen"] },
+  { href: "/admin/menu", label: "Menu", icon: () => null, roles: ["admin", "manager"] },
+  { href: "/admin/employees", label: "Employees", icon: () => null, roles: ["admin", "manager"] },
+  { href: "/admin/analytics", label: "Analytics", icon: () => null, roles: ["admin"] },
+  { href: "/admin/analytics/reports", label: "Reports", icon: () => null, roles: ["admin", "manager"] },
+  { href: "/admin/promos", label: "Promos", icon: () => null, roles: ["admin", "manager"] },
+  { href: "/admin/settings", label: "Settings", icon: () => null, roles: ["admin"] },
 ];
 
 export default function AdminLayout({
@@ -45,8 +35,20 @@ export default function AdminLayout({
   const [isLoading, setIsLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const supabase = getBrowserClient();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("sidebar:admin");
+    if (stored !== null) {
+      setCollapsed(stored === "true");
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar:admin", String(collapsed));
+  }, [collapsed]);
 
   useEffect(() => {
     const checkRole = async () => {
@@ -63,7 +65,6 @@ export default function AdminLayout({
         const role = (user.app_metadata?.role as string) || null;
         setUserRole(role);
 
-        // Any staff role gets access to /admin layout (page guards handle finer control)
         const staffRoles: StaffRole[] = ["admin", "manager", "cashier", "kitchen"];
         setHasAccess(staffRoles.includes(role as StaffRole));
       } catch (error) {
@@ -85,7 +86,7 @@ export default function AdminLayout({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
@@ -100,45 +101,37 @@ export default function AdminLayout({
   );
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sticky Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex-shrink-0 sticky top-0 h-screen flex flex-col">
-        <div className="p-4 border-b border-border">
-          <h1 className="text-xl font-bold text-primary font-heading">Admin Panel</h1>
-        </div>
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-border">
-          <Link
-            href="/"
-            className="flex items-center gap-3 px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground rounded-lg"
+    <div className="min-h-screen bg-background">
+      {/* Mobile header */}
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/8 bg-black/60 backdrop-blur-xl px-4 py-3 lg:hidden">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle navigation menu"
           >
-            <LogOut className="h-5 w-5" />
-            <span>Back to Store</span>
-          </Link>
+            <Menu className="h-5 w-5 text-foreground" />
+          </Button>
+          <span className="text-sm font-semibold font-heading text-foreground">
+            Mad Krapow Admin
+          </span>
         </div>
-      </aside>
+      </header>
 
-      {/* Scrollable Main Content */}
-      <main className="flex-1 p-6 overflow-y-auto max-h-screen text-foreground">{children}</main>
+      {/* Sidebar */}
+      <AdminSidebar
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
+        navItems={navItems}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((prev) => !prev)}
+      />
+
+      {/* Main content */}
+      <main className={cn("min-h-screen transition-all duration-300 ease-in-out", collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]")}>
+        <div className="p-4 md:p-6 lg:p-8">{children}</div>
+      </main>
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Calendar,
   ToggleLeft,
   ToggleRight,
+  Package,
 } from "lucide-react";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,18 @@ interface PromoCode {
   created_at: string;
 }
 
+interface MenuItem {
+  id: string;
+  name: string;
+  price_cents: number;
+}
+
+interface CategoryWithItems {
+  id: string;
+  name: string;
+  items: MenuItem[];
+}
+
 interface PromoFormData {
   code: string;
   description: string;
@@ -59,6 +72,7 @@ interface PromoFormData {
   valid_from: string;
   valid_until: string;
   is_active: boolean;
+  targetMenuItemIds: Set<string>;
 }
 
 const EMPTY_FORM: PromoFormData = {
@@ -74,6 +88,7 @@ const EMPTY_FORM: PromoFormData = {
   valid_from: new Date().toISOString().split("T")[0],
   valid_until: "",
   is_active: true,
+  targetMenuItemIds: new Set(),
 };
 
 function getPromoStatus(promo: PromoCode): { label: string; color: string } {
@@ -114,11 +129,45 @@ export default function AdminPromosPage() {
   const [formData, setFormData] = useState<PromoFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  // Menu items for target selector
+  const [menuCategories, setMenuCategories] = useState<CategoryWithItems[]>([]);
+  const [menuLoading, setMenuLoading] = useState(false);
+
   // Delete confirmation
   const [deletingPromo, setDeletingPromo] = useState<PromoCode | null>(null);
 
   // Toggling
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const showItemSelector = formData.scope === "order" && formData.application_type === "auto";
+
+  const fetchMenuItems = useCallback(async () => {
+    setMenuLoading(true);
+    const supabase = getBrowserClient();
+    const [catRes, itemRes] = await Promise.all([
+      supabase.from("categories").select("id, name").order("sort_order"),
+      supabase.from("menu_items").select("id, name, price_cents, category_id").eq("is_available", true).order("name"),
+    ]);
+    if (catRes.data && itemRes.data) {
+      const cats: CategoryWithItems[] = catRes.data.map((c: { id: string; name: string }) => ({
+        id: c.id,
+        name: c.name,
+        items: itemRes.data.filter((i: { category_id: string }) => i.category_id === c.id),
+      }));
+      setMenuCategories(cats.filter((c) => c.items.length > 0));
+    }
+    setMenuLoading(false);
+  }, []);
+
+  const fetchPromoTargetItems = useCallback(async (promoId: string): Promise<string[]> => {
+    const supabase = getBrowserClient();
+    const { data } = await supabase
+      .from("promo_items")
+      .select("menu_item_id")
+      .eq("promo_id", promoId)
+      .eq("role", "target");
+    return (data || []).map((r: { menu_item_id: string }) => r.menu_item_id);
+  }, []);
 
   const fetchPromos = useCallback(async () => {
     const supabase = getBrowserClient();
@@ -141,11 +190,12 @@ export default function AdminPromosPage() {
 
   const openCreateForm = () => {
     setEditingPromo(null);
-    setFormData({ ...EMPTY_FORM, valid_from: new Date().toISOString().split("T")[0] });
+    setFormData({ ...EMPTY_FORM, valid_from: new Date().toISOString().split("T")[0], targetMenuItemIds: new Set() });
     setIsFormOpen(true);
+    fetchMenuItems();
   };
 
-  const openEditForm = (promo: PromoCode) => {
+  const openEditForm = async (promo: PromoCode) => {
     setEditingPromo(promo);
     setFormData({
       code: promo.code,
@@ -160,8 +210,14 @@ export default function AdminPromosPage() {
       valid_from: promo.valid_from ? new Date(promo.valid_from).toISOString().split("T")[0] : "",
       valid_until: promo.valid_until ? new Date(promo.valid_until).toISOString().split("T")[0] : "",
       is_active: promo.is_active,
+      targetMenuItemIds: new Set(),
     });
     setIsFormOpen(true);
+    await fetchMenuItems();
+    if (promo.scope === "order" && promo.application_type === "auto") {
+      const targetIds = await fetchPromoTargetItems(promo.id);
+      setFormData((prev) => ({ ...prev, targetMenuItemIds: new Set(targetIds) }));
+    }
   };
 
   const closeForm = () => {
@@ -197,6 +253,8 @@ export default function AdminPromosPage() {
     };
 
     try {
+      let promoId = editingPromo?.id;
+
       if (editingPromo) {
         const { error } = await supabase
           .from("promo_codes")
@@ -204,10 +262,34 @@ export default function AdminPromosPage() {
           .eq("id", editingPromo.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("promo_codes")
-          .insert(payload);
+          .insert(payload)
+          .select("id")
+          .single();
         if (error) throw error;
+        promoId = data.id;
+      }
+
+      // Save target menu items for order+auto promos
+      if (promoId && showItemSelector) {
+        await supabase.from("promo_items").delete().eq("promo_id", promoId).eq("role", "target");
+        const ids = Array.from(formData.targetMenuItemIds);
+        if (ids.length > 0) {
+          const rows = ids.map((menuItemId) => ({
+            promo_id: promoId,
+            menu_item_id: menuItemId,
+            role: "target",
+            quantity: 1,
+          }));
+          const { error: itemErr } = await supabase.from("promo_items").insert(rows);
+          if (itemErr) throw itemErr;
+        }
+      }
+
+      // Clear target items if switching away from order+auto
+      if (promoId && !showItemSelector && editingPromo) {
+        await supabase.from("promo_items").delete().eq("promo_id", promoId).eq("role", "target");
       }
 
       closeForm();
@@ -515,6 +597,79 @@ export default function AdminPromosPage() {
                     </select>
                   </div>
                 </div>
+
+                {/* Target Menu Items (only for order + auto promos) */}
+                {showItemSelector && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <Package className="h-4 w-4" />
+                        Target Menu Items
+                      </label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const allIds = menuCategories.flatMap((c) => c.items.map((i) => i.id));
+                            setFormData((prev) => ({ ...prev, targetMenuItemIds: new Set(allIds) }));
+                          }}
+                        >
+                          Select all
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setFormData((prev) => ({ ...prev, targetMenuItemIds: new Set() }))}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Select items this promo applies to. Leave empty to apply to all items.</p>
+                    {menuLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
+                        {menuCategories.map((cat) => (
+                          <div key={cat.id}>
+                            <div className="text-xs font-semibold text-primary mt-1 mb-0.5 px-1">{cat.name}</div>
+                            {cat.items.map((item) => {
+                              const checked = formData.targetMenuItemIds.has(item.id);
+                              return (
+                                <label
+                                  key={item.id}
+                                  className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setFormData((prev) => {
+                                        const next = new Set(prev.targetMenuItemIds);
+                                        if (checked) next.delete(item.id);
+                                        else next.add(item.id);
+                                        return { ...prev, targetMenuItemIds: next };
+                                      });
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-gray-300"
+                                  />
+                                  <span className="flex-1">{item.name}</span>
+                                  <span className="text-xs text-muted-foreground">RM {(item.price_cents / 100).toFixed(2)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">{formData.targetMenuItemIds.size} item(s) selected</p>
+                  </div>
+                )}
 
                 {/* Discount */}
                 <div className="grid gap-3 sm:grid-cols-3">

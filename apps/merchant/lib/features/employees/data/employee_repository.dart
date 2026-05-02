@@ -13,7 +13,7 @@ import '../../../core/utils/auth_exceptions.dart';
 class Employee {
   Employee({
     required this.id,
-    required this.authUserId,
+    this.authUserId,
     required this.name,
     required this.email,
     this.phone,
@@ -24,7 +24,7 @@ class Employee {
   });
 
   final String id;
-  final String authUserId;
+  final String? authUserId;
   final String name;
   final String email;
   final String? phone;
@@ -36,7 +36,7 @@ class Employee {
   factory Employee.fromJson(Map<String, dynamic> json) {
     return Employee(
       id: json['id'] as String,
-      authUserId: json['auth_user_id'] as String,
+      authUserId: json['auth_user_id'] as String?,
       name: json['name'] as String,
       email: json['email'] as String,
       phone: json['phone'] as String?,
@@ -50,7 +50,7 @@ class Employee {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'auth_user_id': authUserId,
+      if (authUserId != null) 'auth_user_id': authUserId,
       'name': name,
       'email': email,
       if (phone != null) 'phone': phone,

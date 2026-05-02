@@ -220,7 +220,7 @@ class _FilterSection extends ConsumerWidget {
               runSpacing: 12,
               children: [
                 SizedBox(
-                  width: 180,
+                  width: 160,
                   child: DropdownButtonFormField<DateRangePreset>(
                     initialValue: preset,
                     decoration: const InputDecoration(
@@ -247,7 +247,7 @@ class _FilterSection extends ConsumerWidget {
                 ),
                 if (preset == DateRangePreset.custom) ...[
                   SizedBox(
-                    width: 180,
+                    width: 160,
                     child: _DatePickerButton(
                       label: 'Start Date',
                       initialDate: ref.watch(salesCustomStartProvider),
@@ -258,7 +258,7 @@ class _FilterSection extends ConsumerWidget {
                     ),
                   ),
                   SizedBox(
-                    width: 180,
+                    width: 160,
                     child: _DatePickerButton(
                       label: 'End Date',
                       initialDate: ref.watch(salesCustomEndProvider),
@@ -270,7 +270,7 @@ class _FilterSection extends ConsumerWidget {
                   ),
                 ],
                 SizedBox(
-                  width: 180,
+                  width: 160,
                   child: DropdownButtonFormField<String?>(
                     initialValue: categoryFilter,
                     decoration: const InputDecoration(
@@ -297,7 +297,7 @@ class _FilterSection extends ConsumerWidget {
                   ),
                 ),
                 SizedBox(
-                  width: 180,
+                  width: 160,
                   child: DropdownButtonFormField<String?>(
                     initialValue: paymentFilter,
                     decoration: const InputDecoration(

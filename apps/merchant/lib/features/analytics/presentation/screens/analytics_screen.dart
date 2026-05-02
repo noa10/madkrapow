@@ -105,7 +105,7 @@ class _AnalyticsContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        DailyPulseCard(pulse: data.pulse),
+        DailyPulseCard(pulse: data.pulse, totals: data.totals),
         const SizedBox(height: 16),
         RevenueChart(trends: data.trends),
         const SizedBox(height: 16),

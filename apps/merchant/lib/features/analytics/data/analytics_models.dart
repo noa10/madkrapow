@@ -79,19 +79,39 @@ class TopItem {
       );
 }
 
+class AnalyticsTotals {
+  final int orderCount;
+  final int revenueCents;
+
+  const AnalyticsTotals({
+    required this.orderCount,
+    required this.revenueCents,
+  });
+
+  factory AnalyticsTotals.fromJson(Map<String, dynamic> json) => AnalyticsTotals(
+        orderCount: json['order_count'] as int? ?? 0,
+        revenueCents: json['revenue_cents'] as int? ?? 0,
+      );
+}
+
 class AnalyticsData {
   final DailyPulse pulse;
+  final AnalyticsTotals totals;
   final List<TrendPoint> trends;
   final List<TopItem> topItems;
 
   const AnalyticsData({
     required this.pulse,
+    required this.totals,
     required this.trends,
     required this.topItems,
   });
 
   factory AnalyticsData.fromJson(Map<String, dynamic> json) => AnalyticsData(
         pulse: DailyPulse.fromJson(json['pulse'] as Map<String, dynamic>),
+        totals: json['totals'] != null
+            ? AnalyticsTotals.fromJson(json['totals'] as Map<String, dynamic>)
+            : const AnalyticsTotals(orderCount: 0, revenueCents: 0),
         trends: (json['trends'] as List<dynamic>?)
                 ?.map((e) => TrendPoint.fromJson(e as Map<String, dynamic>))
                 .toList() ??

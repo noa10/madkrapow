@@ -7,6 +7,7 @@ import "@fontsource/plus-jakarta-sans/600.css";
 import "@fontsource/plus-jakarta-sans/700.css";
 import "./globals.css";
 import { CartDrawer } from "@/components/cart/CartDrawer";
+import { ToastContainer } from "@/components/ui/ToastContainer";
 
 export const metadata: Metadata = {
   title: "Mad Krapow - Thai Street Food",
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body className="font-body antialiased">
         {children}
         <CartDrawer />
+        <ToastContainer />
       </body>
     </html>
   );

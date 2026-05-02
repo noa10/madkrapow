@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../config/env.dart';
 import '../../../core/utils/auth_exceptions.dart';
 import '../data/checkout_models.dart';
+export '../data/checkout_models.dart' show PromoPreview;
 
 /// HTTP client for the web app's API routes.
 /// All calls require a Supabase auth token in the Authorization header.
@@ -156,6 +157,28 @@ class CheckoutRepository {
         'Make sure the web app is running and WEB_API_URL is correct. '
         '(${e.message})',
       );
+    }
+  }
+
+  /// Fetch promo preview for a single item via /api/promos/preview.
+  /// Returns null if no promo is available for this item.
+  Future<PromoPreview?> fetchPromoPreview(String itemId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/api/promos/preview'),
+        headers: _headers,
+        body: jsonEncode({'itemId': itemId, 'cartSubtotalCents': 0}),
+      );
+
+      if (response.statusCode != 200) return null;
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final previews = body['previews'] as List?;
+      if (previews == null || previews.isEmpty) return null;
+
+      return PromoPreview.fromJson(previews[0] as Map<String, dynamic>);
+    } catch (_) {
+      return null;
     }
   }
 }

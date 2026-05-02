@@ -315,3 +315,38 @@ class DeliveryQuoteResult {
     );
   }
 }
+
+class PromoPreview {
+  const PromoPreview({
+    required this.promoCode,
+    required this.discountedCents,
+    required this.originalCents,
+    required this.savingsCents,
+    required this.discountType,
+    required this.scope,
+    this.badge,
+  });
+
+  final String promoCode;
+  final int discountedCents;
+  final int originalCents;
+  final int savingsCents;
+  final String discountType; // 'percentage' or 'fixed'
+  final String scope; // 'item' or 'order'
+  final String? badge;
+
+  bool get isItemScoped => scope == 'item';
+  bool get isOrderScoped => scope == 'order';
+
+  factory PromoPreview.fromJson(Map<String, dynamic> json) {
+    return PromoPreview(
+      promoCode: json['promoCode'] as String,
+      discountedCents: json['discountedCents'] as int,
+      originalCents: json['originalCents'] as int,
+      savingsCents: json['savingsCents'] as int,
+      discountType: json['discountType'] as String,
+      scope: json['scope'] as String? ?? 'item',
+      badge: json['badge'] as String?,
+    );
+  }
+}

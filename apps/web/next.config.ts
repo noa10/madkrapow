@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+let nextConfig: NextConfig = {
+  poweredByHeader: false,
+  compress: true,
   images: {
     remotePatterns: [
       {
@@ -34,5 +36,10 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['lucide-react', 'recharts', '@supabase/ssr'],
   },
 };
+
+if (process.env.ANALYZE === "true") {
+  const withBundleAnalyzer = require("@next/bundle-analyzer")({ enabled: true });
+  nextConfig = withBundleAnalyzer(nextConfig);
+}
 
 export default nextConfig;

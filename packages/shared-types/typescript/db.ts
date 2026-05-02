@@ -831,6 +831,7 @@ export type Database = {
           scheduled_for: string | null
           scheduled_notes: string | null
           status: string
+          promo_code_id: string | null
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
           subtotal_cents: number
@@ -947,6 +948,7 @@ export type Database = {
           scheduled_for?: string | null
           scheduled_notes?: string | null
           status?: string
+          promo_code_id?: string | null
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           subtotal_cents?: number
@@ -979,6 +981,8 @@ export type Database = {
       }
       promo_codes: {
         Row: {
+          application_type: string
+          campaign_id: string | null
           code: string
           created_at: string
           current_uses: number
@@ -987,13 +991,18 @@ export type Database = {
           discount_value: number
           id: string
           is_active: boolean
+          max_discount_cents: number | null
           max_uses: number | null
           min_order_amount_cents: number | null
+          rules: Json | null
+          scope: string
           updated_at: string
           valid_from: string | null
           valid_until: string | null
         }
         Insert: {
+          application_type?: string
+          campaign_id?: string | null
           code: string
           created_at?: string
           current_uses?: number
@@ -1002,13 +1011,18 @@ export type Database = {
           discount_value: number
           id?: string
           is_active?: boolean
+          max_discount_cents?: number | null
           max_uses?: number | null
           min_order_amount_cents?: number | null
+          rules?: Json | null
+          scope?: string
           updated_at?: string
           valid_from?: string | null
           valid_until?: string | null
         }
         Update: {
+          application_type?: string
+          campaign_id?: string | null
           code?: string
           created_at?: string
           current_uses?: number
@@ -1017,13 +1031,135 @@ export type Database = {
           discount_value?: number
           id?: string
           is_active?: boolean
+          max_discount_cents?: number | null
           max_uses?: number | null
           min_order_amount_cents?: number | null
+          rules?: Json | null
+          scope?: string
           updated_at?: string
           valid_from?: string | null
           valid_until?: string | null
         }
+        Relationships: [
+          {
+            foreignKeyName: "promo_codes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isRelation: true
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      campaigns: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
         Relationships: []
+      }
+      promo_items: {
+        Row: {
+          id: string
+          promo_id: string
+          menu_item_id: string
+          role: string
+          quantity: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          promo_id: string
+          menu_item_id: string
+          role?: string
+          quantity?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          promo_id?: string
+          menu_item_id?: string
+          role?: string
+          quantity?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_items_promo_id_fkey"
+            columns: ["promo_id"]
+            isRelation: true
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promo_items_menu_item_id_fkey"
+            columns: ["menu_item_id"]
+            isRelation: true
+            referencedRelation: "menu_items"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      order_promo_applications: {
+        Row: {
+          id: string
+          order_id: string
+          promo_id: string
+          scope: string
+          discount_cents: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          order_id: string
+          promo_id: string
+          scope: string
+          discount_cents?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          order_id?: string
+          promo_id?: string
+          scope?: string
+          discount_cents?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_promo_applications_order_id_fkey"
+            columns: ["order_id"]
+            isRelation: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_promo_applications_promo_id_fkey"
+            columns: ["promo_id"]
+            isRelation: true
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       store_settings: {
         Row: {

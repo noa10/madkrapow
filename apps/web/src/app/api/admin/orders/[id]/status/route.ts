@@ -3,11 +3,10 @@ import { requireAdmin } from '@/lib/admin/require-admin';
 import { z } from 'zod';
 
 const VALID_TRANSITIONS: Record<string, string> = {
-  paid: 'accepted',
+  paid: 'preparing',
   accepted: 'preparing',
   preparing: 'ready',
   ready: 'picked_up',
-  picked_up: 'delivered',
 };
 
 const requestSchema = z.object({

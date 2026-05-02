@@ -15,16 +15,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const response = NextResponse.json({ success: true }, { status: 200 })
 
     // Verify webhook signature
-    const signature = req.headers.get('x-lalamove-signature') || ''
-    const secret = process.env.LALAMOVE_API_SECRET || ''
+    const signature = req.headers.get('x-lalamove-signature')
+    const secret = process.env.LALAMOVE_API_SECRET
 
-    if (signature && secret) {
-      try {
-        verifyWebhookSignature(body, signature, secret)
-      } catch {
-        console.error('[Lalamove Webhook] Invalid signature')
-        return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })
-      }
+    if (!secret) {
+      console.error('[Lalamove Webhook] LALAMOVE_API_SECRET not configured')
+      return NextResponse.json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
+    }
+
+    if (!signature) {
+      console.error('[Lalamove Webhook] Missing x-lalamove-signature header')
+      return NextResponse.json({ success: false, error: 'Missing signature header' }, { status: 401 })
+    }
+
+    try {
+      verifyWebhookSignature(body, signature, secret)
+    } catch {
+      console.error('[Lalamove Webhook] Invalid signature')
+      return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })
     }
 
     // Parse payload
@@ -177,6 +185,18 @@ async function handleStatusChange(
     .from('lalamove_shipments')
     .update(updateData)
     .eq('id', shipment.id)
+
+  // Guard against overwriting cancelled orders
+  const { data: currentOrder } = await supabase
+    .from('orders')
+    .select('status')
+    .eq('id', shipment.order_id)
+    .single()
+
+  if (currentOrder?.status === 'cancelled') {
+    console.warn(`[Lalamove Webhook] Order ${shipment.order_id} is cancelled, skipping status update`)
+    return
+  }
 
   // Update orders table if lifecycle truly changes
   const orderStatus = mapDispatchToOrderStatus(newDispatchStatus)

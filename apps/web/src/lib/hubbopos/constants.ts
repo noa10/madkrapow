@@ -49,7 +49,7 @@ export const HUBBOPOS_ORDER_STATUSES = [
   'cancelled',
 ] as const;
 
-// MadKrapow order status values
+// MadKrapow order status values (must match DB CHECK constraint)
 export const MADKRAPOW_ORDER_STATUSES = [
   'pending',
   'paid',
@@ -81,6 +81,7 @@ export const STATUS_MAP_HUBBOPOS_TO_MADKRAPOW: Record<string, string> = {
   preparing: 'preparing',
   ready: 'ready',
   picked_up: 'picked_up',
+  delivering: 'picked_up',
   delivered: 'delivered',
   completed: 'delivered',
   cancelled: 'cancelled',

@@ -125,8 +125,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    // Idempotency: skip if already paid
-    if (['paid', 'accepted', 'preparing', 'ready'].includes(order.status)) {
+    // Idempotency: skip if already paid or cancelled
+    if (['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
       console.log(`[Webhook] Order ${orderId} already in status '${order.status}', skipping`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
@@ -152,13 +152,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const fulfillmentType = order.fulfillment_type || 'asap'
 
     if (deliveryType === 'self_pickup') {
-      // Self-pickup: no delivery booking, move straight to accepted
+      // Self-pickup: no delivery booking, move straight to preparing
       await supabase
         .from('orders')
-        .update({ status: 'accepted', dispatch_status: 'not_ready' })
+        .update({ status: 'preparing', dispatch_status: 'not_ready' })
         .eq('id', orderId)
 
-      console.log('[Webhook] Self-pickup order accepted:', orderId)
+      console.log('[Webhook] Self-pickup order preparing:', orderId)
 
     } else if (fulfillmentType === 'scheduled') {
       // Scheduled delivery: queue for later dispatch by cron

@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 
@@ -115,6 +116,22 @@ function SortableMenuItemRow({
         >
           <GripVertical className="h-4 w-4" />
         </button>
+      </td>
+      <td className="py-3 hidden sm:table-cell">
+        {item.image_url ? (
+          <Image
+            src={item.image_url}
+            alt={item.name}
+            width={48}
+            height={48}
+            className="rounded object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-12 h-12 rounded bg-muted flex items-center justify-center">
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </div>
+        )}
       </td>
       <td className="py-3">
         <div className="font-medium">{item.name}</div>
@@ -965,9 +982,9 @@ export default function AdminMenuPage() {
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card className="bg-card border-destructive/50 shadow-sm rounded-xl">
         <CardContent className="pt-6">
-          <p className="text-red-600 text-center">{error}</p>
+          <p className="text-destructive text-center">{error}</p>
         </CardContent>
       </Card>
     );
@@ -976,8 +993,8 @@ export default function AdminMenuPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold">Menu Management</h1>
-        <Button asChild>
+        <h1 className="text-2xl font-bold font-display">Menu Management</h1>
+        <Button asChild className="shadow-gold">
           <Link href="/admin/menu/items/new">
             <Plus className="h-4 w-4 mr-2" />
             Add New Item
@@ -999,7 +1016,7 @@ export default function AdminMenuPage() {
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="flex h-10 w-full sm:w-[200px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-10 w-full sm:w-[200px] items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="all">All Categories</option>
           {categories.map((category) => (
@@ -1011,14 +1028,14 @@ export default function AdminMenuPage() {
       </div>
 
       {/* Menu Items Table */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Menu Items</CardTitle>
+          <CardTitle className="text-lg font-display">Menu Items</CardTitle>
         </CardHeader>
         <CardContent>
           {filteredAndSortedItems.length === 0 ? (
-            <div className="text-center py-8">
-              <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <div className="rounded-xl border bg-card p-12 text-center">
+              <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">
                 {menuItems.length === 0
                   ? "No menu items yet"
@@ -1063,8 +1080,9 @@ export default function AdminMenuPage() {
                               <thead>
                                 <tr className="border-b text-left text-xs text-muted-foreground">
                                   <th className="pb-2 w-8"></th>
+                                  <th className="pb-2 font-medium hidden sm:table-cell">Photo</th>
                                   <th className="pb-2 font-medium">Name</th>
-                                  <th className="pb-2 font-medium">Category</th>
+                                  <th className="pb-2 font-medium hidden sm:table-cell">Category</th>
                                   <th className="pb-2 font-medium">Price</th>
                                   <th className="pb-2 font-medium">Status</th>
                                   <th className="pb-2 font-medium text-right">Actions</th>
@@ -1099,10 +1117,10 @@ export default function AdminMenuPage() {
       </Card>
 
       {/* Categories Section */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Categories</CardTitle>
+            <CardTitle className="text-lg font-display">Categories</CardTitle>
             <Button size="sm" onClick={openCreateForm}>
               <Plus className="h-4 w-4 mr-1" />
               Add Category
@@ -1111,8 +1129,8 @@ export default function AdminMenuPage() {
         </CardHeader>
         <CardContent>
           {categories.length === 0 ? (
-            <div className="text-center py-8">
-              <Tag className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <div className="rounded-xl border bg-card p-12 text-center">
+              <Tag className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">No categories yet</p>
               <Button className="mt-4" onClick={openCreateForm}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -1209,10 +1227,10 @@ export default function AdminMenuPage() {
       {/* Category Form Modal */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md mx-4">
+          <Card className="bg-card border-border shadow-sm rounded-xl w-full max-w-md mx-4">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>
+                <CardTitle className="font-display">
                   {editingCategory ? "Edit Category" : "New Category"}
                 </CardTitle>
                 <Button variant="ghost" size="icon" onClick={closeForm}>
@@ -1268,10 +1286,10 @@ export default function AdminMenuPage() {
       )}
 
       {/* Modifier Groups Section */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Modifier Groups</CardTitle>
+            <CardTitle className="text-lg font-display">Modifier Groups</CardTitle>
             <Button size="sm" onClick={handleCreateGroup}>
               <Plus className="h-4 w-4 mr-1" />
               New Group
@@ -1359,7 +1377,7 @@ export default function AdminMenuPage() {
           )}
 
           {modifierGroups.length === 0 && !editingGroup ? (
-            <div className="text-center py-8">
+            <div className="rounded-xl border bg-card p-12 text-center">
               <p className="text-muted-foreground">
                 No modifier groups yet. Create one to allow customers to customize their orders.
               </p>
@@ -1581,9 +1599,9 @@ export default function AdminMenuPage() {
       </Card>
 
       {/* Item-Modifier Bindings Section */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Item-Modifier Bindings</CardTitle>
+          <CardTitle className="text-lg font-display">Item-Modifier Bindings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -1606,7 +1624,7 @@ export default function AdminMenuPage() {
             <>
               {bindingsLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
               ) : modifierGroups.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">

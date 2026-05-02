@@ -97,9 +97,9 @@ export default function EmployeesPage() {
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card className="border-destructive/50 bg-card shadow-sm rounded-xl">
         <CardContent className="pt-6">
-          <p className="text-red-600 text-center">{error}</p>
+          <p className="text-destructive text-center">{error}</p>
         </CardContent>
       </Card>
     );
@@ -108,11 +108,11 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-heading flex items-center gap-2">
+        <h1 className="text-2xl font-bold font-display flex items-center gap-2">
           <Users className="h-6 w-6" />
           Employees
         </h1>
-        <Button asChild>
+        <Button asChild className="shadow-gold">
           <Link href="/admin/employees/new">
             <Plus className="h-4 w-4 mr-2" />
             Add Employee
@@ -120,14 +120,14 @@ export default function EmployeesPage() {
         </Button>
       </div>
 
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">All Staff</CardTitle>
+          <CardTitle className="text-lg font-display">All Staff</CardTitle>
         </CardHeader>
         <CardContent>
           {employees.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <div className="rounded-xl border bg-card p-12 text-center">
+              <Users className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">No employees yet</p>
               <Button asChild className="mt-4">
                 <Link href="/admin/employees/new">Add Your First Employee</Link>
@@ -177,7 +177,7 @@ export default function EmployeesPage() {
                               disabled={deletingId === employee.id}
                             >
                               {deletingId === employee.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
                               ) : (
                                 <UserX className="h-4 w-4 text-destructive" />
                               )}

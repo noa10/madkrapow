@@ -171,7 +171,10 @@ export function Header({ className }: HeaderProps) {
             onClick={openDrawer}
             className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,rgba(210,176,123,0.24),rgba(210,176,123,0.08))] px-5 py-2.5 text-xs font-medium uppercase tracking-[0.32em] text-gold transition hover:brightness-110"
           >
-            Cart · {totalItems.toString().padStart(2, "0")}
+            Cart ·{' '}
+            <span key={totalItems} className="inline-block animate-scale-in">
+              {totalItems.toString().padStart(2, '0')}
+            </span>
           </button>
           <Button
             variant="ghost"

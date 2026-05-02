@@ -52,7 +52,7 @@ interface OrderItemModifier {
   modifier_price_delta_cents: number
 }
 
-const ACTIVE_STATUSES = ["pending", "paid", "accepted", "preparing", "ready", "picked_up"]
+const ACTIVE_STATUSES = ["pending", "paid", "accepted", "preparing", "ready"]
 
 export default function ProfilePage() {
   const router = useRouter()

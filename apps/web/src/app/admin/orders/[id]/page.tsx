@@ -64,11 +64,10 @@ interface Order {
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
   paid: { color: "bg-blue-100 text-blue-800", label: "Paid" },
-  accepted: { color: "bg-purple-100 text-purple-800", label: "Accepted" },
   preparing: { color: "bg-orange-100 text-orange-800", label: "Preparing" },
   ready: { color: "bg-green-100 text-green-800", label: "Ready" },
-  picked_up: { color: "bg-indigo-100 text-indigo-800", label: "Picked Up" },
-  delivered: { color: "bg-teal-100 text-teal-800", label: "Delivered" },
+  delivering: { color: "bg-indigo-100 text-indigo-800", label: "Delivering" },
+  completed: { color: "bg-teal-100 text-teal-800", label: "Completed" },
   cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
 };
 

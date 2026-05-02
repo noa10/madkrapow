@@ -12,7 +12,7 @@ interface DashboardStatsProps {
   }>
 }
 
-const ACTIVE_STATUSES = ["pending", "paid", "accepted", "preparing", "ready", "picked_up"]
+const ACTIVE_STATUSES = ["pending", "paid", "accepted", "preparing", "ready"]
 
 const statCards = [
   {
@@ -47,7 +47,7 @@ const statCards = [
     color: "text-teal-400",
     bgColor: "bg-teal-400/10",
     getValue: (orders: DashboardStatsProps["orders"]) =>
-      orders.filter((o) => o.status === "delivered" || o.status === "cancelled").length,
+      orders.filter((o) => o.status === "picked_up" || o.status === "delivered" || o.status === "cancelled").length,
     format: (v: number) => v.toString(),
   },
 ]

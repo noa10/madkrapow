@@ -64,13 +64,13 @@ export default async function AdminSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold font-display">Settings</h1>
         <p className="text-muted-foreground">Manage your store settings</p>
       </div>
 
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>
-          <CardTitle>General Settings</CardTitle>
+          <CardTitle className="font-display">General Settings</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
@@ -79,33 +79,33 @@ export default async function AdminSettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>
-          <CardTitle>HubboPOS Integration</CardTitle>
+          <CardTitle className="font-display">HubboPOS Integration</CardTitle>
           <CardDescription>POS synchronization and connection management</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Status Row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${isEnabled ? "bg-emerald-500/10" : "bg-gray-500/10"}`}><Activity className={`h-4 w-4 ${isEnabled ? "text-emerald-500" : "text-gray-500"}`} /></span>
               <span className="text-sm text-muted-foreground">Status</span>
               <Badge className={isEnabled ? "bg-emerald-500 text-white" : "bg-gray-500 text-white"}>
                 {isEnabled ? "Enabled" : "Disabled"}
               </Badge>
             </div>
             <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${healthStatus === "healthy" ? "bg-emerald-500/10" : healthStatus === "degraded" ? "bg-amber-500/10" : healthStatus === "unhealthy" ? "bg-red-500/10" : "bg-gray-500/10"}`}><CheckCircle className={`h-4 w-4 ${healthStatus === "healthy" ? "text-emerald-500" : healthStatus === "degraded" ? "text-amber-500" : healthStatus === "unhealthy" ? "text-red-500" : "text-gray-500"}`} /></span>
               <span className="text-sm text-muted-foreground">Health</span>
               <Badge className={healthColor}>{healthStatus}</Badge>
             </div>
             <div className="flex items-center gap-2">
-              <AlertTriangle className={`h-4 w-4 ${circuitColor}`} />
+              <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${circuitState === "closed" ? "bg-emerald-500/10" : circuitState === "half_open" ? "bg-amber-500/10" : "bg-red-500/10"}`}><AlertTriangle className={`h-4 w-4 ${circuitColor}`} /></span>
               <span className="text-sm text-muted-foreground">Circuit</span>
               <span className={`text-sm font-medium ${circuitColor}`}>{circuitState}</span>
             </div>
             <div className="flex items-center gap-2">
-              <ListTodo className="h-4 w-4 text-muted-foreground" />
+              <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${queuePending > 0 ? "bg-red-500/10" : "bg-gray-500/10"}`}><ListTodo className={`h-4 w-4 ${queuePending > 0 ? "text-red-500" : "text-gray-500"}`} /></span>
               <span className="text-sm text-muted-foreground">Queue</span>
               <Badge variant={queuePending > 0 ? "destructive" : "secondary"}>{queuePending}</Badge>
             </div>
@@ -113,7 +113,7 @@ export default async function AdminSettingsPage() {
 
           {/* Connection Details */}
           {isEnabled && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-secondary/30 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/50 rounded-xl">
               <div>
                 <p className="text-sm text-muted-foreground">Merchant ID</p>
                 <p className="font-mono text-sm">{settings?.hubbo_pos_merchant_id || "Not configured"}</p>
@@ -145,7 +145,7 @@ export default async function AdminSettingsPage() {
 
           {/* Last Error */}
           {settings?.hubbo_pos_last_error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
               <div className="flex items-center gap-2 mb-1">
                 <XCircle className="h-4 w-4 text-red-500" />
                 <p className="text-sm font-medium text-red-500">Last Error</p>
@@ -161,7 +161,7 @@ export default async function AdminSettingsPage() {
 
           {/* Recent Sync */}
           {recentSync && (
-            <div className="p-4 bg-secondary/30 rounded-lg">
+            <div className="p-4 bg-muted/50 rounded-xl">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm font-medium">Most Recent Sync</p>

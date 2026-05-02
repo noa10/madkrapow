@@ -79,13 +79,13 @@ function OrdersContent() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <h1 className="text-lg font-semibold font-heading text-foreground">Order History</h1>
+            <h1 className="text-xl font-bold font-display">Order History</h1>
           </div>
           <div className="hidden lg:block">
-            <h1 className="text-xl font-semibold font-heading text-foreground">Order History</h1>
+            <h1 className="text-xl font-bold font-display">Order History</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Browse and track all your orders</p>
           </div>
-          <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+          <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-white/8">
             <Link href="/profile">
               Back to Dashboard
             </Link>
@@ -104,7 +104,7 @@ function OrdersContent() {
         {/* Content */}
         {isLoading && (
           <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         )}
 
@@ -115,7 +115,7 @@ function OrdersContent() {
         )}
 
         {!isLoading && !error && orders.length === 0 && (
-          <div className="rounded-xl border border-white/8 bg-card/60 p-12 text-center backdrop-blur-sm">
+          <div className="rounded-xl border border-white/8 bg-card p-12 text-center backdrop-blur-sm">
             <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground mb-4 text-sm">No orders found</p>
             <Button asChild>
@@ -145,7 +145,7 @@ export default function OrdersPage() {
     <Suspense
       fallback={
         <main className="min-h-screen bg-background flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </main>
       }
     >

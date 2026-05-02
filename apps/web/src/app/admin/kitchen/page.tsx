@@ -48,7 +48,7 @@ export default function KitchenDisplayPage() {
   if (!hasAccess) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background p-4">
-        <Card className="max-w-md bg-card border-destructive/50">
+        <Card className="max-w-md bg-card border-destructive/50 shadow-sm rounded-xl">
           <CardContent className="pt-6 text-center">
             <ShieldAlert className="h-12 w-12 text-destructive mx-auto mb-4" />
             <p className="text-destructive font-medium text-xl">Access Denied</p>
@@ -62,7 +62,7 @@ export default function KitchenDisplayPage() {
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background p-4">
-        <Card className="max-w-md bg-card border-destructive/50">
+        <Card className="max-w-md bg-card border-destructive/50 shadow-sm rounded-xl">
           <CardContent className="pt-6 text-center">
             <p className="text-destructive font-medium text-xl">Error loading orders: {error}</p>
           </CardContent>
@@ -75,19 +75,17 @@ export default function KitchenDisplayPage() {
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto">
         <header className="mb-6 md:mb-8">
-          <h1 className="text-3xl md:text-5xl font-bold text-foreground font-heading">Kitchen Display</h1>
+          <h1 className="text-3xl md:text-5xl font-bold text-foreground font-display">Kitchen Display</h1>
           <p className="text-lg md:text-xl text-muted-foreground mt-2 font-medium">
             {filteredOrders.length} active order{filteredOrders.length !== 1 ? 's' : ''}
           </p>
         </header>
 
         {filteredOrders.length === 0 ? (
-          <Card className="text-center py-16 bg-card border-border">
+          <Card className="rounded-xl border bg-card p-12 text-center shadow-sm">
             <CardContent>
-              <div className="mx-auto h-20 w-20 rounded-full bg-secondary flex items-center justify-center">
-                <Clock className="h-10 w-10 text-muted-foreground" />
-              </div>
-              <h3 className="mt-6 text-2xl md:text-3xl font-medium text-foreground">No Active Orders</h3>
+              <Clock className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+              <h3 className="mt-6 text-2xl md:text-3xl font-medium text-foreground font-display">No Active Orders</h3>
               <p className="mt-2 text-lg text-muted-foreground">New orders will appear here automatically</p>
             </CardContent>
           </Card>
@@ -111,10 +109,10 @@ function OrderCard({ order }: OrderCardProps) {
   const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
 
   return (
-    <Card className="overflow-hidden hover:shadow-xl transition-all cursor-default border-2 border-border bg-card">
+    <Card className="overflow-hidden hover:shadow-xl transition-all cursor-default border-2 border-border bg-card shadow-sm rounded-xl">
       <CardHeader className="pb-4 border-b border-border bg-secondary/30">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-xl md:text-2xl font-bold font-heading text-foreground">
+          <CardTitle className="text-xl md:text-2xl font-bold font-display text-foreground">
             #{order.id.slice(0, 8)}
           </CardTitle>
           <Badge className={`${statusConfig.color} text-base md:text-lg px-3 py-1 font-bold border-none`}>
@@ -130,7 +128,9 @@ function OrderCard({ order }: OrderCardProps) {
       <CardContent className="p-5 md:p-6 bg-card">
         <div className="space-y-4">
           <div className="flex items-start gap-3">
-            <User className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
+            <div className="rounded-lg p-1.5 bg-primary/10 flex-shrink-0">
+              <User className="h-4 w-4 text-primary" />
+            </div>
             <div className="text-base md:text-lg">
               <div className="font-semibold text-foreground">{order.customer_name || "Guest Customer"}</div>
               {order.customer_phone && (
@@ -140,7 +140,9 @@ function OrderCard({ order }: OrderCardProps) {
           </div>
 
           <div className="flex items-start gap-3">
-            <MapPin className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
+            <div className="rounded-lg p-1.5 bg-primary/10 flex-shrink-0">
+              <MapPin className="h-4 w-4 text-primary" />
+            </div>
             <div className="text-base md:text-lg">
               <div className="font-semibold text-foreground">Delivery Address</div>
               <div className="text-muted-foreground break-words">{order.delivery_address_json ? getAddressString(order.delivery_address_json as Record<string, unknown>) : 'No address'}</div>
@@ -171,11 +173,10 @@ function OrderCard({ order }: OrderCardProps) {
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   pending: { color: "bg-amber-500/20 text-amber-500 border border-amber-500/50", label: "Pending" },
   paid: { color: "bg-sky-500 text-white", label: "Paid" },
-  accepted: { color: "bg-violet-500 text-white", label: "Accepted" },
   preparing: { color: "bg-orange-500 text-white", label: "Preparing" },
   ready: { color: "bg-emerald-500 text-white", label: "Ready" },
-  picked_up: { color: "bg-indigo-500 text-white", label: "Picked Up" },
-  delivered: { color: "bg-teal-500 text-white", label: "Delivered" },
+  delivering: { color: "bg-indigo-500 text-white", label: "Delivering" },
+  completed: { color: "bg-teal-500 text-white", label: "Completed" },
   cancelled: { color: "bg-destructive text-destructive-foreground", label: "Cancelled" },
 };
 
@@ -187,10 +188,9 @@ interface KitchenStatusTransitionButtonsProps {
 }
 
 const KITCHEN_STATUS_FLOW = [
-  { status: "paid", label: "Accept Order", icon: Check, next: "accepted" },
-  { status: "accepted", label: "Start Preparing", icon: ChefHat, next: "preparing" },
+  { status: "paid", label: "Start Preparing", icon: ChefHat, next: "preparing" },
   { status: "preparing", label: "Mark Ready", icon: Package, next: "ready" },
-  { status: "ready", label: "Hand to Driver", icon: Truck, next: "picked_up" },
+  { status: "ready", label: "Mark Picked Up", icon: Package, next: "picked_up" },
 ];
 
 function KitchenStatusTransitionButtons({
@@ -236,10 +236,10 @@ function KitchenStatusTransitionButtons({
   const Icon = currentStep.icon;
 
   return (
-    <Button 
-      onClick={handleTransition} 
-      disabled={loading} 
-      className="w-full gap-2 py-6 text-lg md:text-xl h-auto"
+    <Button
+      onClick={handleTransition}
+      disabled={loading}
+      className="w-full gap-2 py-6 text-lg md:text-xl h-auto shadow-gold"
     >
       {loading ? (
         <Loader2 className="h-6 w-6 animate-spin" />

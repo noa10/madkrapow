@@ -11,11 +11,9 @@ interface StatusTransitionButtonsProps {
 }
 
 const STATUS_FLOW = [
-  { status: "paid", label: "Accept Order", icon: Check, next: "accepted" },
-  { status: "accepted", label: "Start Preparing", icon: ChefHat, next: "preparing" },
+  { status: "paid", label: "Start Preparing", icon: ChefHat, next: "preparing" },
   { status: "preparing", label: "Mark Ready", icon: Package, next: "ready" },
-  { status: "ready", label: "Hand to Driver", icon: Truck, next: "picked_up" },
-  { status: "picked_up", label: "Mark as Delivered", icon: Check, next: "delivered" },
+  { status: "ready", label: "Mark Picked Up", icon: Package, next: "picked_up" },
 ];
 
 export function StatusTransitionButtons({
@@ -28,7 +26,7 @@ export function StatusTransitionButtons({
 
   const currentStep = STATUS_FLOW.find((s) => s.status === currentStatus);
   const canTransition =
-    currentStep && !["delivered", "cancelled"].includes(currentStatus);
+    currentStep && !["picked_up", "delivered", "cancelled"].includes(currentStatus);
 
   const handleTransition = useCallback(async () => {
     if (!currentStep || !orderId) return;

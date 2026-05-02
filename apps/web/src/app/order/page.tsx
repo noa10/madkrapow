@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { ShoppingCart, MapPin, CreditCard, Truck } from 'lucide-react'
+import { ClientPageShell } from '@/components/layout/ClientPageShell'
 
 const steps = [
   {
@@ -32,6 +33,7 @@ const steps = [
 
 export default function OrderPage() {
   return (
+    <ClientPageShell activeHref="/order">
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(180deg,rgba(8,8,8,0.92)_0%,rgba(8,8,8,1)_100%)]" />
 
@@ -101,5 +103,6 @@ export default function OrderPage() {
         </div>
       </div>
     </div>
+    </ClientPageShell>
   )
 }

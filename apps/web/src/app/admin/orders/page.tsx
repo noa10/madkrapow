@@ -250,7 +250,7 @@ export default function AdminOrdersPage() {
       <NewOrderAlert />
       <div className="space-y-6">
         {/* Header */}
-        <h1 className="text-xl font-bold font-heading text-foreground">Orders</h1>
+        <h1 className="text-xl font-bold font-display text-foreground">Orders</h1>
 
         {/* Sales Summary */}
         <AdminOrdersSalesSummary label={summaryLabel} totalCents={summaryTotalCents} />
@@ -280,8 +280,8 @@ export default function AdminOrdersPage() {
 
         {/* Content */}
         {filteredOrders.length === 0 ? (
-          <div className="rounded-xl border border-white/8 bg-card/60 p-12 text-center backdrop-blur-sm">
-            <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+          <div className="rounded-xl border bg-card p-12 text-center">
+            <Package className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground text-sm mb-4">No orders match this filter</p>
           </div>
         ) : (

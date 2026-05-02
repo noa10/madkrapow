@@ -366,9 +366,9 @@ export default function AdminPromosPage() {
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card className="border-destructive/50 bg-card shadow-sm rounded-xl">
         <CardContent className="pt-6">
-          <p className="text-red-600 text-center">{error}</p>
+          <p className="text-destructive text-center">{error}</p>
         </CardContent>
       </Card>
     );
@@ -377,8 +377,8 @@ export default function AdminPromosPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold">Promotions</h1>
-        <Button onClick={openCreateForm}>
+        <h1 className="text-2xl font-bold font-display">Promotions</h1>
+        <Button onClick={openCreateForm} className="shadow-gold">
           <Plus className="h-4 w-4 mr-2" />
           New Promotion
         </Button>
@@ -392,7 +392,7 @@ export default function AdminPromosPage() {
             placeholder="Search promos..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 bg-background"
           />
         </div>
         <select
@@ -407,14 +407,14 @@ export default function AdminPromosPage() {
       </div>
 
       {/* Promo List */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Active Promotions ({filteredPromos.length})</CardTitle>
+          <CardTitle className="text-lg font-display">Active Promotions ({filteredPromos.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {filteredPromos.length === 0 ? (
-            <div className="text-center py-8">
-              <Tag className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <div className="rounded-xl border bg-card p-12 text-center">
+              <Tag className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground">
                 {promos.length === 0 ? "No promotions yet" : "No promos match your filters"}
               </p>
@@ -500,7 +500,7 @@ export default function AdminPromosPage() {
                               disabled={togglingId === promo.id}
                             >
                               {togglingId === promo.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
                               ) : promo.is_active ? (
                                 <ToggleRight className="h-5 w-5 text-green-600" />
                               ) : (
@@ -539,10 +539,10 @@ export default function AdminPromosPage() {
       {/* Create/Edit Form Modal */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-card border-border shadow-sm rounded-xl">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>{editingPromo ? "Edit Promotion" : "New Promotion"}</CardTitle>
+                <CardTitle className="font-display">{editingPromo ? "Edit Promotion" : "New Promotion"}</CardTitle>
                 <Button variant="ghost" size="icon" onClick={closeForm}>
                   <X className="h-4 w-4" />
                 </Button>
@@ -631,7 +631,7 @@ export default function AdminPromosPage() {
                     <p className="text-xs text-muted-foreground">Select items this promo applies to. Leave empty to apply to all items.</p>
                     {menuLoading ? (
                       <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
                       </div>
                     ) : (
                       <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
@@ -776,7 +776,7 @@ export default function AdminPromosPage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={saving}>
-                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin text-primary" />}
                     {editingPromo ? "Update" : "Create"}
                   </Button>
                 </div>

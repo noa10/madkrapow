@@ -42,7 +42,7 @@ interface AnalyticsOrderItem {
 
 type DateRange = "7d" | "30d" | "90d" | "custom";
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
+const COLORS = ["hsl(38 60% 55%)", "hsl(192 80% 50%)"];
 
 export default function AnalyticsPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin"]);
@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
         .select("*")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
-        .in("status", ["completed", "delivered", "paid", "accepted", "preparing", "ready", "picked_up"]),
+        .in("status", ["paid", "accepted", "preparing", "ready", "picked_up", "delivered"]),
 
       supabase
         .from("order_items")
@@ -177,25 +177,29 @@ export default function AnalyticsPage() {
       title: "Total Revenue",
       value: formatCurrency(stats.totalRevenue),
       icon: DollarSign,
-      color: "text-green-600",
+      bgClass: "bg-primary/10",
+      colorClass: "text-primary",
     },
     {
       title: "Total Orders",
       value: stats.totalOrders,
       icon: ShoppingCart,
-      color: "text-blue-600",
+      bgClass: "bg-sky-400/10",
+      colorClass: "text-sky-400",
     },
     {
       title: "Avg Order Value",
       value: formatCurrency(stats.avgOrderValue),
       icon: TrendingUp,
-      color: "text-purple-600",
+      bgClass: "bg-emerald-400/10",
+      colorClass: "text-emerald-400",
     },
     {
       title: "Items Sold",
       value: stats.totalItemsSold,
       icon: Package,
-      color: "text-orange-600",
+      bgClass: "bg-amber-400/10",
+      colorClass: "text-amber-400",
     },
   ];
 
@@ -227,14 +231,14 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Analytics</h1>
+        <h1 className="text-2xl font-bold font-display">Analytics</h1>
         
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value as DateRange)}
-            className="border rounded-md px-3 py-2 text-sm"
+            className="bg-background border-border rounded-md px-3 py-2 text-sm"
           >
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
@@ -264,22 +268,24 @@ export default function AnalyticsPage() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => (
-          <Card key={stat.title}>
+          <Card key={stat.title} className="bg-card border-border shadow-sm rounded-xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
+              <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
+              <div className={`rounded-lg p-1.5 ${stat.bgClass}`}>
+                <stat.icon className={`h-4 w-4 ${stat.colorClass}`} />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+              <div className="text-2xl font-bold font-display">{stat.value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="bg-card border-border shadow-sm rounded-xl">
           <CardHeader>
-            <CardTitle>Revenue & Orders</CardTitle>
+            <CardTitle className="font-display">Revenue & Orders</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -298,16 +304,16 @@ export default function AnalyticsPage() {
                     ];
                   }}
                 />
-                <Bar yAxisId="left" dataKey="revenue" fill="#8884d8" name="revenue" />
-                <Bar yAxisId="right" dataKey="orders" fill="#82ca9d" name="orders" />
+                <Bar yAxisId="left" dataKey="revenue" fill="hsl(38 60% 55%)" name="revenue" />
+                <Bar yAxisId="right" dataKey="orders" fill="hsl(192 80% 50%)" name="orders" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card border-border shadow-sm rounded-xl">
           <CardHeader>
-            <CardTitle>Revenue Trend</CardTitle>
+            <CardTitle className="font-display">Revenue Trend</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -322,7 +328,7 @@ export default function AnalyticsPage() {
                 <Line
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#8884d8"
+                  stroke="hsl(38 60% 55%)"
                   strokeWidth={2}
                   dot={false}
                 />
@@ -333,9 +339,9 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="bg-card border-border shadow-sm rounded-xl">
           <CardHeader>
-            <CardTitle>Top Selling Items</CardTitle>
+            <CardTitle className="font-display">Top Selling Items</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -362,9 +368,9 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card border-border shadow-sm rounded-xl">
           <CardHeader>
-            <CardTitle>Customer Insights</CardTitle>
+            <CardTitle className="font-display">Customer Insights</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>

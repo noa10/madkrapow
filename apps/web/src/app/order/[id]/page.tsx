@@ -19,8 +19,20 @@ import {
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { DriverInfo } from '@/components/order/DriverInfo'
-import { DeliveryMap } from '@/components/order/DeliveryMap'
+import dynamic from 'next/dynamic'
 import { PageContainer } from '@/components/layout/PageContainer'
+
+const DeliveryMap = dynamic(
+  () => import('@/components/order/DeliveryMap').then((mod) => mod.DeliveryMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border bg-card p-5 h-[300px] flex items-center justify-center">
+        <div className="animate-pulse bg-muted rounded-md w-full h-full" />
+      </div>
+    ),
+  }
+)
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 
 interface ShipmentData {
@@ -93,17 +105,16 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   accepted: 'Accepted',
   preparing: 'Preparing',
   ready: 'Ready',
-  picked_up: 'Out for Delivery',
+  picked_up: 'Picked Up',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
 }
 
 const ORDER_STEPS: { key: string; label: string }[] = [
   { key: 'paid', label: 'Paid' },
-  { key: 'accepted', label: 'Accepted' },
   { key: 'preparing', label: 'Preparing' },
   { key: 'ready', label: 'Ready' },
-  { key: 'picked_up', label: 'On the way' },
+  { key: 'picked_up', label: 'Picked Up' },
   { key: 'delivered', label: 'Delivered' },
 ]
 
@@ -621,6 +632,7 @@ export default function OrderTrackingPage() {
                                 alt={item.menu_item_name}
                                 width={40}
                                 height={40}
+                                sizes="40px"
                                 className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                               />
                             ) : (

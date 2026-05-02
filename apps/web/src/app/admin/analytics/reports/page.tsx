@@ -2,7 +2,6 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, FileSpreadsheet, Calendar, Filter } from "lucide-react";
-import { format, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { Download, FileSpreadsheet, Calendar, Filter, DollarSign, ShoppingCart, TrendingUp, Truck, Tag } from "lucide-react";
+import { format } from "date-fns";
 
 interface Order {
   id: string;
@@ -65,34 +64,6 @@ interface ReportData {
 
 type DatePreset = "today" | "yesterday" | "last7days" | "last30days" | "thisWeek" | "thisMonth" | "custom";
 
-function getDateRange(preset: DatePreset, customStart?: string, customEnd?: string): { start: Date; end: Date } {
-  const now = new Date();
-  const today = startOfDay(now);
-  const yesterday = startOfDay(subDays(now, 1));
-  
-  switch (preset) {
-    case "today":
-      return { start: today, end: endOfDay(now) };
-    case "yesterday":
-      return { start: yesterday, end: endOfDay(yesterday) };
-    case "last7days":
-      return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
-    case "last30days":
-      return { start: startOfDay(subDays(now, 29)), end: endOfDay(now) };
-    case "thisWeek":
-      return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
-    case "thisMonth":
-      return { start: startOfMonth(now), end: endOfMonth(now) };
-    case "custom":
-      return {
-        start: startOfDay(new Date(customStart || now)),
-        end: endOfDay(new Date(customEnd || now))
-      };
-    default:
-      return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
-  }
-}
-
 function convertCentsToRM(cents: number): string {
   return (cents / 100).toFixed(2);
 }
@@ -113,35 +84,31 @@ export default function SalesReportsPage() {
       setIsInitialLoad(false);
     }
     setLoading(true);
-    const supabase = getBrowserClient();
-    
-    const { start, end } = getDateRange(datePreset, customStart, customEnd);
 
-    const [ordersRes, orderItemsRes, categoriesRes, menuItemsRes] = await Promise.all([
-      supabase
-        .from("orders")
-        .select("*")
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .in("status", ["paid", "completed"]),
-      supabase
-        .from("order_items")
-        .select("*"),
-      supabase
-        .from("categories")
-        .select("id, name")
-        .eq("is_active", true),
-      supabase
-        .from("menu_items")
-        .select("id, category_id, name"),
-    ]);
+    const params = new URLSearchParams({ preset: datePreset });
+    if (datePreset === "custom" && customStart) params.set("start", customStart);
+    if (datePreset === "custom" && customEnd) params.set("end", customEnd);
 
-    setReportData({
-      orders: ordersRes.data || [],
-      orderItems: orderItemsRes.data || [],
-      categories: categoriesRes.data || [],
-      menuItems: menuItemsRes.data || [],
-    });
+    try {
+      const res = await fetch(`/api/admin/sales-reports?${params}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("[Sales Reports] API error:", body.error ?? res.status);
+        setReportData({ orders: [], orderItems: [], categories: [], menuItems: [] });
+      } else {
+        const data = await res.json();
+        setReportData({
+          orders: data.orders ?? [],
+          orderItems: data.orderItems ?? [],
+          categories: data.categories ?? [],
+          menuItems: data.menuItems ?? [],
+        });
+      }
+    } catch (err) {
+      console.error("[Sales Reports] Fetch failed:", err);
+      setReportData({ orders: [], orderItems: [], categories: [], menuItems: [] });
+    }
+
     setLoading(false);
   }, [datePreset, customStart, customEnd, isInitialLoad]);
 
@@ -280,16 +247,16 @@ export default function SalesReportsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Sales Reports</h1>
+        <h1 className="text-2xl font-bold font-display">Sales Reports</h1>
         <Button onClick={exportToCSV} disabled={!filteredData || loading}>
           <Download className="h-4 w-4 mr-2" />
           Export CSV
         </Button>
       </div>
 
-      <Card>
+      <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 font-display">
             <Filter className="h-5 w-5" />
             Filters
           </CardTitle>
@@ -383,52 +350,67 @@ export default function SalesReportsPage() {
       ) : stats && (
         <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
+                <div className="rounded-lg p-1.5 bg-primary/10">
+                  <DollarSign className="h-4 w-4 text-primary" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalRevenue)}</div>
+                <div className="text-2xl font-bold font-display text-foreground">RM {convertCentsToRM(stats.totalRevenue)}</div>
               </CardContent>
             </Card>
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
+                <div className="rounded-lg p-1.5 bg-sky-400/10">
+                  <ShoppingCart className="h-4 w-4 text-sky-400" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">{stats.totalOrders}</div>
+                <div className="text-2xl font-bold font-display text-foreground">{stats.totalOrders}</div>
               </CardContent>
             </Card>
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Avg Order Value</CardTitle>
+                <div className="rounded-lg p-1.5 bg-emerald-400/10">
+                  <TrendingUp className="h-4 w-4 text-emerald-400" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.avgOrderValue)}</div>
+                <div className="text-2xl font-bold font-display text-foreground">RM {convertCentsToRM(stats.avgOrderValue)}</div>
               </CardContent>
             </Card>
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Delivery Fees</CardTitle>
+                <div className="rounded-lg p-1.5 bg-violet-400/10">
+                  <Truck className="h-4 w-4 text-violet-400" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalDeliveryFees)}</div>
+                <div className="text-2xl font-bold font-display text-foreground">RM {convertCentsToRM(stats.totalDeliveryFees)}</div>
               </CardContent>
             </Card>
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Discounts</CardTitle>
+                <div className="rounded-lg p-1.5 bg-rose-400/10">
+                  <Tag className="h-4 w-4 text-rose-400" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">RM {convertCentsToRM(stats.totalDiscounts)}</div>
+                <div className="text-2xl font-bold font-display text-foreground">RM {convertCentsToRM(stats.totalDiscounts)}</div>
               </CardContent>
             </Card>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 font-display">
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
                   Revenue by Category
                 </CardTitle>
@@ -459,9 +441,9 @@ export default function SalesReportsPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card border-border">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 font-display">
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
                   Payment Method Breakdown
                 </CardTitle>
@@ -489,9 +471,9 @@ export default function SalesReportsPage() {
             </Card>
           </div>
 
-          <Card className="bg-card border-border">
+          <Card className="bg-card border-border shadow-sm rounded-xl">
             <CardHeader>
-              <CardTitle className="font-heading">Order Details</CardTitle>
+              <CardTitle className="font-display">Order Details</CardTitle>
             </CardHeader>
             <CardContent>
               {filteredData?.orders.length && filteredData.orders.length > 0 ? (
@@ -515,7 +497,8 @@ export default function SalesReportsPage() {
                         <TableCell className="text-muted-foreground whitespace-nowrap">{format(new Date(order.created_at), "MMM dd, HH:mm")}</TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
-                            order.status === "completed" || order.status === "delivered" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                            order.status === "delivered" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                            order.status === "picked_up" ? "bg-sky-500/10 text-sky-500 border-sky-500/20" :
                             order.status === "paid" ? "bg-sky-500/10 text-sky-500 border-sky-500/20" :
                             "bg-amber-500/10 text-amber-500 border-amber-500/20"
                           }`}>

@@ -15,7 +15,7 @@ interface MenuItemDetailProps {
 }
 
 function formatPrice(priceCents: number): string {
-  return `RM ${(priceCents / 100).toFixed(2)}`
+  return (priceCents / 100).toFixed(2)
 }
 
 export function MenuItemDetail({ item }: MenuItemDetailProps) {
@@ -126,28 +126,22 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
 
       <SpecialInstructions value={specialInstructions} onChange={setSpecialInstructions} />
 
-      <div className="flex items-center justify-between py-4 border-t">
-        <div>
-          <p className="text-sm text-muted-foreground">Total</p>
-          <p className="text-2xl font-semibold text-primary">
-            {formatPrice(totalPriceCents)}
-          </p>
-        </div>
-        <Button
-          size="lg"
-          onClick={handleAddToCart}
-          disabled={!allRequiredGroupsSatisfied}
-          className="w-full sm:w-auto shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
-        >
-          Add to Cart
-        </Button>
-      </div>
-
       {!allRequiredGroupsSatisfied && (
         <p className="text-sm text-destructive text-center">
           Please select all required options
         </p>
       )}
+
+      <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-6 border-t bg-card/95 backdrop-blur-sm p-4 z-30 rounded-b-2xl">
+        <Button
+          size="lg"
+          onClick={handleAddToCart}
+          disabled={!allRequiredGroupsSatisfied}
+          className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+        >
+          add to basket - {formatPrice(totalPriceCents)} (Incl. tax)
+        </Button>
+      </div>
     </div>
   )
 }

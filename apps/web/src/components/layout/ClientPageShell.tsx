@@ -24,7 +24,8 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
   useEffect(() => {
     const stored = localStorage.getItem("sidebar:client")
     if (stored === "true") {
-      setCollapsed(true)
+      const handle = requestAnimationFrame(() => setCollapsed(true))
+      return () => cancelAnimationFrame(handle)
     }
   }, [])
 

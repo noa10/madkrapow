@@ -104,7 +104,7 @@ export function MenuView({ categories }: MenuViewProps) {
       {categories.length > 0 && (
         <div id="categories">
           <nav className="sticky top-16 z-40 backdrop-blur-md bg-background/80 border-b border-white/10 lg:top-0">
-            <div className="max-w-7xl mx-auto px-4">
+            <div className="max-w-7xl mx-auto px-4 w-full">
               <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
                 {categories.map((category) => (
                   <button

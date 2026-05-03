@@ -77,7 +77,7 @@ export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false,
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className={cn("transition-opacity", collapsed && "hidden")}>
+                <span className={cn("transition-opacity", collapsed && "lg:hidden")}>
                   {item.label}
                 </span>
               </Link>

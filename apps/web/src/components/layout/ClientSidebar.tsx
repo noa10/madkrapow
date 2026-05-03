@@ -111,7 +111,7 @@ export function ClientSidebar({
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className={cn("transition-opacity", collapsed && "hidden")}>
+                <span className={cn("transition-opacity", collapsed && "lg:hidden")}>
                   {item.label}
                 </span>
               </Link>
@@ -154,7 +154,7 @@ export function ClientSidebar({
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
                 >
                   <Store className="h-3.5 w-3.5 shrink-0" />
-                  <span className={cn(collapsed && "hidden")}>Admin Panel</span>
+                  <span className={cn(collapsed && "lg:hidden")}>Admin Panel</span>
                 </Link>
               )}
               <Link
@@ -163,7 +163,7 @@ export function ClientSidebar({
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
               >
                 <Home className="h-3.5 w-3.5 shrink-0" />
-                <span className={cn(collapsed && "hidden")}>Dashboard</span>
+                <span className={cn(collapsed && "lg:hidden")}>Dashboard</span>
               </Link>
               <Link
                 href="/orders"
@@ -171,7 +171,7 @@ export function ClientSidebar({
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
               >
                 <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
-                <span className={cn(collapsed && "hidden")}>Order History</span>
+                <span className={cn(collapsed && "lg:hidden")}>Order History</span>
               </Link>
               <button
                 onClick={async () => {
@@ -183,7 +183,7 @@ export function ClientSidebar({
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-red-400 w-full text-left"
               >
                 <LogOut className="h-3.5 w-3.5 shrink-0" />
-                <span className={cn(collapsed && "hidden")}>Sign Out</span>
+                <span className={cn(collapsed && "lg:hidden")}>Sign Out</span>
               </button>
             </div>
           ) : (
@@ -195,7 +195,7 @@ export function ClientSidebar({
                 collapsed && "justify-center"
               )}
             >
-              <span className={cn(collapsed && "hidden")}>Login</span>
+              <span className={cn(collapsed && "lg:hidden")}>Login</span>
             </Link>
           )}
         </div>

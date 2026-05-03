@@ -1,17 +1,11 @@
 import { notFound, permanentRedirect } from 'next/navigation'
 import { getItemById, type FullMenuItem } from '@/lib/queries/menu'
-import { MenuItemDetail } from '@/components/menu/MenuItemDetail'
-import { ItemImagePreview } from '@/components/menu/ItemImagePreview'
+import { ItemDetailClient } from '@/components/menu/ItemDetailClient'
 import { buildItemHref, parseItemRouteParam } from '@/lib/item-url'
 import { ClientPageShell } from '@/components/layout/ClientPageShell'
-import { BackButton } from '@/components/layout/BackButton'
 
 interface PageProps {
   params: Promise<{ id: string }>
-}
-
-function formatPrice(priceCents: number): string {
-  return `RM ${(priceCents / 100).toFixed(2)}`
 }
 
 async function getItem(id: string): Promise<FullMenuItem | null> {
@@ -44,34 +38,7 @@ export default async function ItemDetailPage({ params }: PageProps) {
 
   return (
     <ClientPageShell activeHref="/menu">
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
-          <BackButton />
-          <div className="grid gap-6 lg:grid-cols-[minmax(300px,420px)_1fr] lg:items-start">
-            <aside className="lg:sticky lg:top-6">
-              <ItemImagePreview imageUrl={item.image_url} itemName={item.name} />
-            </aside>
-
-            <section className="rounded-2xl border bg-card p-5 sm:p-6 animate-fade-in-up" data-testid="item-detail-content-panel">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">{item.category.name}</p>
-                <h1 className="text-3xl font-bold">{item.name}</h1>
-              </div>
-              <p className="text-2xl font-semibold text-primary">
-                {formatPrice(item.price_cents)}
-              </p>
-            </div>
-
-            {item.description && (
-              <p className="text-muted-foreground mb-6">{item.description}</p>
-            )}
-
-            <MenuItemDetail item={item} />
-            </section>
-          </div>
-        </div>
-      </div>
+      <ItemDetailClient item={item} />
     </ClientPageShell>
   )
 }

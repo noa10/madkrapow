@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -10,8 +9,6 @@ import {
   ShoppingBag,
   Store,
   LogOut,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
@@ -20,6 +17,7 @@ import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles"
 import { useCartStore } from "@/stores/cart"
 import { cn } from "@/lib/utils"
 import { ResponsiveSidebar } from "@/components/layout/ResponsiveSidebar"
+import { SidebarHeader } from "@/components/layout/SidebarHeader"
 
 interface NavItem {
   href: string
@@ -88,41 +86,12 @@ export function ClientSidebar({
       mobileWidth="w-[260px]"
     >
       <div className="flex h-full flex-col">
-        {/* Logo */}
-        <div className="px-5 py-6 flex items-center justify-between">
-          <Link href="/" className="inline-block" onClick={onMobileClose}>
-            {collapsed ? (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold/15 text-lg font-bold text-gold font-heading">
-                MK
-              </div>
-            ) : (
-              <Image
-                src="/madkrapow-logo.png"
-                alt="Mad Krapow"
-                width={0}
-                height={0}
-                className="h-12 w-auto"
-                sizes="192px"
-                priority
-              />
-            )}
-          </Link>
-          {/* Desktop collapse toggle */}
-          <button
-            onClick={onToggleCollapsed}
-            className={cn(
-              "hidden rounded-lg p-2 text-muted-foreground transition hover:text-foreground lg:block",
-              collapsed && "mx-auto"
-            )}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </button>
-        </div>
+        <SidebarHeader
+          collapsed={collapsed}
+          onToggleCollapsed={onToggleCollapsed}
+          logoHref="/"
+          logoTooltip="Home"
+        />
 
         {/* Navigation */}
         <nav className="space-y-1 px-3">

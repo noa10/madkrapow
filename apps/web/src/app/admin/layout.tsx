@@ -2,6 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
+import {
+  LayoutDashboard,
+  ClipboardList,
+  ChefHat,
+  UtensilsCrossed,
+  Users,
+  BarChart3,
+  FileBarChart2,
+  BadgePercent,
+  Settings,
+} from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client";
 import { type StaffRole } from "@/lib/auth/roles";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
@@ -9,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
+  key: string;
   href: string;
   label: string;
   icon: React.ElementType;
@@ -16,15 +28,15 @@ interface NavItem {
 }
 
 const allNavItems: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: () => null, roles: ["admin", "manager", "cashier", "kitchen"] },
-  { href: "/admin/orders", label: "Orders", icon: () => null, roles: ["admin", "manager", "cashier"] },
-  { href: "/admin/kitchen", label: "Kitchen", icon: () => null, roles: ["admin", "manager", "kitchen"] },
-  { href: "/admin/menu", label: "Menu", icon: () => null, roles: ["admin", "manager"] },
-  { href: "/admin/employees", label: "Employees", icon: () => null, roles: ["admin", "manager"] },
-  { href: "/admin/analytics", label: "Analytics", icon: () => null, roles: ["admin"] },
-  { href: "/admin/analytics/reports", label: "Reports", icon: () => null, roles: ["admin", "manager"] },
-  { href: "/admin/promos", label: "Promos", icon: () => null, roles: ["admin", "manager"] },
-  { href: "/admin/settings", label: "Settings", icon: () => null, roles: ["admin"] },
+  { key: "dashboard", label: "Dashboard", href: "/admin", icon: LayoutDashboard, roles: ["admin", "manager", "cashier", "kitchen"] },
+  { key: "orders", label: "Orders", href: "/admin/orders", icon: ClipboardList, roles: ["admin", "manager", "cashier"] },
+  { key: "kitchen", label: "Kitchen", href: "/admin/kitchen", icon: ChefHat, roles: ["admin", "manager", "kitchen"] },
+  { key: "menu", label: "Menu", href: "/admin/menu", icon: UtensilsCrossed, roles: ["admin", "manager"] },
+  { key: "employees", label: "Employees", href: "/admin/employees", icon: Users, roles: ["admin", "manager"] },
+  { key: "analytics", label: "Analytics", href: "/admin/analytics", icon: BarChart3, roles: ["admin"] },
+  { key: "reports", label: "Reports", href: "/admin/analytics/reports", icon: FileBarChart2, roles: ["admin", "manager"] },
+  { key: "promos", label: "Promos", href: "/admin/promos", icon: BadgePercent, roles: ["admin", "manager"] },
+  { key: "settings", label: "Settings", href: "/admin/settings", icon: Settings, roles: ["admin"] },
 ];
 
 export default function AdminLayout({

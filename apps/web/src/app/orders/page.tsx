@@ -35,6 +35,7 @@ function OrdersContent() {
   const [activeFilter, setActiveFilter] = useState(initialStatus)
   const [viewMode, setViewMode] = useState<ViewMode>("cards")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     async function fetchOrders() {
@@ -67,9 +68,14 @@ function OrdersContent() {
 
   return (
     <>
-      <DashboardSidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+      <DashboardSidebar
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
-      <DashboardPageContainer>
+      <DashboardPageContainer collapsed={sidebarCollapsed}>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3 lg:hidden">

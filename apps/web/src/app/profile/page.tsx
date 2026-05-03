@@ -66,6 +66,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [reorderingId, setReorderingId] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const activeOrders = orders.filter((o) => ACTIVE_STATUSES.includes(o.status))
   const pastOrders = orders.filter((o) => !ACTIVE_STATUSES.includes(o.status))
@@ -218,9 +219,14 @@ export default function ProfilePage() {
 
   return (
     <>
-      <DashboardSidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+      <DashboardSidebar
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
-      <DashboardPageContainer>
+      <DashboardPageContainer collapsed={sidebarCollapsed}>
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3 lg:hidden">

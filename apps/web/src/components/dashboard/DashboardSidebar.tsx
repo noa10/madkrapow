@@ -7,10 +7,14 @@ import { Home, ShoppingBag, LogOut, Store } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { ResponsiveSidebar } from "@/components/layout/ResponsiveSidebar"
+import { SidebarHeader } from "@/components/layout/SidebarHeader"
+import { Tooltip } from "@/components/ui/Tooltip"
 
 interface DashboardSidebarProps {
   mobileOpen: boolean
   onMobileClose: () => void
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
 const sidebarNavItems = [
@@ -18,7 +22,7 @@ const sidebarNavItems = [
   { href: "/orders", label: "Order History", icon: ShoppingBag },
 ]
 
-export function DashboardSidebar({ mobileOpen, onMobileClose }: DashboardSidebarProps) {
+export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false, onToggleCollapsed }: DashboardSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -42,59 +46,56 @@ export function DashboardSidebar({ mobileOpen, onMobileClose }: DashboardSidebar
     onMobileClose()
   }
 
-  return (
-    <ResponsiveSidebar mobileOpen={mobileOpen} onMobileClose={onMobileClose}>
-      <div className="flex h-full flex-col">
-        {/* Logo */}
-        <div className="px-5 py-6">
-          <Link href="/" className="inline-block">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold/15 text-lg font-bold text-gold font-heading">
-                MK
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-foreground font-heading tracking-wide">
-                  Mad Krapow
-                </div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
-                  Customer
-                </div>
-              </div>
-            </div>
-          </Link>
-        </div>
+  const desktopWidth = collapsed ? "w-[72px]" : "w-[260px]"
 
-        {/* Navigation */}
+  return (
+    <ResponsiveSidebar mobileOpen={mobileOpen} onMobileClose={onMobileClose} desktopWidth={desktopWidth}>
+      <div className="flex h-full flex-col">
+        <SidebarHeader
+          collapsed={collapsed}
+          onToggleCollapsed={onToggleCollapsed ?? (() => {})}
+          logoHref="/"
+          logoTooltip="Home"
+        />
+
         <nav className="space-y-1 px-3">
           {sidebarNavItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
-            return (
+            const link = (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => onMobileClose()}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
+                  collapsed
+                    ? "flex justify-center p-3 rounded-lg transition-all duration-200"
+                    : "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
                   isActive
                     ? "bg-gold/15 text-gold font-medium"
                     : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                 )}
               >
-                <Icon className="h-4 w-4" />
-                {item.label}
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className={cn("transition-opacity", collapsed && "hidden")}>
+                  {item.label}
+                </span>
               </Link>
+            )
+            return collapsed ? (
+              <Tooltip key={item.href} content={item.label}>
+                {link}
+              </Tooltip>
+            ) : (
+              link
             )
           })}
         </nav>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Bottom section */}
         <div className="space-y-3 p-4 border-t border-white/8">
-          {/* User info */}
-          {userEmail && (
+          {userEmail && !collapsed && (
             <div className="flex items-center gap-3 px-2 py-1">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-muted-foreground">
                 {userInitial}
@@ -105,23 +106,45 @@ export function DashboardSidebar({ mobileOpen, onMobileClose }: DashboardSidebar
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex flex-col gap-2">
-            <Link
-              href="/"
-              onClick={() => onMobileClose()}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-            >
-              <Store className="h-3.5 w-3.5" />
-              Back to Store
-            </Link>
-            <button
-              onClick={handleSignOut}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-red-400"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign Out
-            </button>
+            {collapsed ? (
+              <Tooltip content="Back to Store">
+                <Link
+                  href="/"
+                  onClick={() => onMobileClose()}
+                  className="flex justify-center p-3 rounded-lg text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                >
+                  <Store className="h-5 w-5 shrink-0" />
+                </Link>
+              </Tooltip>
+            ) : (
+              <Link
+                href="/"
+                onClick={() => onMobileClose()}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              >
+                <Store className="h-3.5 w-3.5" />
+                Back to Store
+              </Link>
+            )}
+            {collapsed ? (
+              <Tooltip content="Sign Out">
+                <button
+                  onClick={handleSignOut}
+                  className="flex justify-center p-3 rounded-lg text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-red-400"
+                >
+                  <LogOut className="h-5 w-5 shrink-0" />
+                </button>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-red-400"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign Out
+              </button>
+            )}
           </div>
         </div>
       </div>

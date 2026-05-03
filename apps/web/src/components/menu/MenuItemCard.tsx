@@ -3,10 +3,10 @@
 import { memo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import type { MenuItemWithModifiers } from '@/lib/queries/menu'
 import { buildItemHref } from '@/lib/item-url'
+import { cn } from '@/lib/utils'
 
 export interface PromoPreview {
   promoCode: string
@@ -26,10 +26,10 @@ function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
 }
 
-function PlaceholderImage({ alt: _alt }: { alt: string }) {
+function PlaceholderImage() {
   return (
-    <div className="relative w-full aspect-square bg-muted flex items-center justify-center">
-      <span className="text-muted-foreground text-sm">No image</span>
+    <div className="h-full w-full bg-muted flex items-center justify-center">
+      <span className="text-muted-foreground text-xs">No image</span>
     </div>
   )
 }
@@ -49,40 +49,38 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: M
   const showDiscount = promoPreview && promoPreview.savingsCents > 0
 
   return (
-    <Card
-      className="overflow-hidden flex flex-col h-full group transition-all duration-300 hover:shadow-gold hover:-translate-y-1 border-transparent hover:border-primary/30"
-    >
+    <Card className="overflow-hidden group transition-all duration-300 hover:shadow-gold hover:-translate-y-0.5 border-transparent hover:border-primary/30">
       <Link
         href={itemHref}
         aria-label={detailActionLabel}
         data-testid="menu-item-primary-link"
-        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-t-lg flex flex-col flex-1"
+        className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        <div className="relative w-full aspect-square overflow-hidden">
+        <div className="relative h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-lg">
           {item.image_url ? (
             <Image
               src={item.image_url}
               alt={item.name}
               fill
-              className="object-cover transition-transform duration-300 group-hover:scale-105 pointer-events-none"
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+              sizes="96px"
               draggable={false}
             />
           ) : (
-            <PlaceholderImage alt={item.name} />
+            <PlaceholderImage />
           )}
         </div>
 
-        <CardContent className="flex-1 p-5">
-          <h3 className="font-heading font-semibold text-lg line-clamp-1 group-hover:text-primary transition-colors">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-heading font-semibold text-base sm:text-lg line-clamp-1 group-hover:text-primary transition-colors">
             {item.name}
           </h3>
           {descriptionSnippet && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-3">
+            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
               {descriptionSnippet}
             </p>
           )}
-          <div className="mt-2 flex items-baseline gap-2">
+          <div className="mt-1.5 flex items-baseline gap-2">
             {showDiscount ? (
               <>
                 <p className="font-medium text-primary">{formatPrice(promoPreview.discountedCents)}</p>
@@ -92,16 +90,19 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: M
               <p className="font-medium text-primary">{formatPrice(item.price_cents)}</p>
             )}
           </div>
-        </CardContent>
-      </Link>
+        </div>
 
-      <CardFooter className="p-5 pt-0 mt-auto">
-        <Button asChild variant="outline" className="w-full border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground" size="sm">
-          <Link href={itemHref} aria-label={detailActionLabel} data-testid="menu-item-view-link">
+        <div className="hidden sm:flex flex-col items-end justify-center">
+          <span className={cn(
+            "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider transition-colors",
+            item.has_modifiers
+              ? "border-primary/40 text-primary group-hover:bg-primary group-hover:text-primary-foreground"
+              : "border-muted-foreground/30 text-muted-foreground group-hover:bg-muted"
+          )}>
             {item.has_modifiers ? 'Customize' : 'View'}
-          </Link>
-        </Button>
-      </CardFooter>
+          </span>
+        </div>
+      </Link>
     </Card>
   )
 })

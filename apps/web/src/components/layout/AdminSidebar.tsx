@@ -28,6 +28,14 @@ export function AdminSidebar({ mobileOpen, onMobileClose, navItems, collapsed = 
 
   const desktopWidth = collapsed ? "w-[72px]" : "w-[260px]"
 
+  const activeItem = navItems
+    .filter(
+      (item) =>
+        pathname === item.href ||
+        (item.href !== "/admin" && pathname.startsWith(item.href + "/"))
+    )
+    .sort((a, b) => b.href.length - a.href.length)[0]
+
   return (
     <ResponsiveSidebar mobileOpen={mobileOpen} onMobileClose={onMobileClose} desktopWidth={desktopWidth}>
       <div className="flex h-full flex-col">
@@ -41,9 +49,7 @@ export function AdminSidebar({ mobileOpen, onMobileClose, navItems, collapsed = 
         {/* Navigation */}
         <nav className="space-y-1 px-3">
           {navItems.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/admin" && pathname.startsWith(item.href))
+            const isActive = activeItem?.key === item.key
             const link = (
               <Link
                 key={item.key}

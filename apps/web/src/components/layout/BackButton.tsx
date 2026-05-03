@@ -27,7 +27,7 @@ export function BackButton({
   return (
     <button onClick={handleClick} className={className}>
       <ArrowLeft className="h-4 w-4" />
-      ← {label}
+      {label}
     </button>
   )
 }

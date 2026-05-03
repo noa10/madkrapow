@@ -50,7 +50,7 @@ export function ResponsiveSidebar({
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 hidden h-screen flex-col bg-black/60 backdrop-blur-xl border-r border-white/8 lg:flex",
+          "fixed left-0 top-0 z-50 hidden h-[100dvh] flex-col bg-black/60 backdrop-blur-xl border-r border-white/8 overflow-hidden lg:flex",
           desktopWidth,
           className,
           desktopClassName
@@ -63,7 +63,7 @@ export function ResponsiveSidebar({
       {mobileOpen && (
         <aside
           className={cn(
-            "fixed left-0 top-0 z-50 h-screen bg-surface-elevated border-r border-white/8 lg:hidden",
+            "fixed left-0 top-0 z-50 h-[100dvh] bg-surface-elevated border-r border-white/8 overflow-hidden lg:hidden",
             mobileWidth,
             className,
             mobileClassName

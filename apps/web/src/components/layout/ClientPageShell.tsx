@@ -33,7 +33,13 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
     localStorage.setItem("sidebar:client", String(collapsed))
   }, [collapsed])
 
-  const toggleCollapsed = () => setCollapsed((prev) => !prev)
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      window.dispatchEvent(new CustomEvent("sidebar-toggle", { detail: { collapsed: next } }))
+      return next
+    })
+  }
 
   return (
     <div className="min-h-screen bg-background">

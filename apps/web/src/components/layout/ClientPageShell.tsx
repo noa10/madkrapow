@@ -18,12 +18,15 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
   const openDrawer = useCartStore((state) => state.openDrawer)
 
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false
-    const stored = localStorage.getItem("sidebar:client")
-    return stored === "true"
-  })
+  const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    const stored = localStorage.getItem("sidebar:client")
+    if (stored === "true") {
+      setCollapsed(true)
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem("sidebar:client", String(collapsed))
@@ -81,7 +84,7 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
         {/* Main Content */}
         <main
           className={cn(
-            "flex-1 transition-all duration-300 ease-in-out",
+            "flex-1 w-full overflow-x-hidden transition-all duration-300 ease-in-out",
             "pt-16 lg:pt-0",
             collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]"
           )}

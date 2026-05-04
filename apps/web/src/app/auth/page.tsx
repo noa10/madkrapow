@@ -1,9 +1,15 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { AuthForm } from '@/components/auth/AuthForm'
 
-export default function LoginPage() {
+function LoginPageContent() {
+  const searchParams = useSearchParams()
+  const redirectParam = searchParams.get('redirect')
+  const isCheckoutRedirect = redirectParam === '/checkout'
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(180deg,rgba(8,8,8,0.92)_0%,rgba(8,8,8,1)_100%)]" />
@@ -23,7 +29,10 @@ export default function LoginPage() {
                 <span className="bg-[var(--text-gradient-gold)] bg-clip-text text-transparent"> continue</span>
               </h1>
               <p className="max-w-xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
-                Log in to place orders faster, save your delivery details, and keep track of your latest Mad Krapow orders.
+                {isCheckoutRedirect
+                  ? "Create an account or sign in to complete your checkout. Your cart is safe and waiting for you."
+                  : "Log in to place orders faster, save your delivery details, and keep track of your latest Mad Krapow orders."
+                }
               </p>
             </div>
 
@@ -40,10 +49,10 @@ export default function LoginPage() {
             </div>
 
             <Link
-              href="/"
+              href={isCheckoutRedirect ? "/cart" : "/"}
               className="inline-flex rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)]"
             >
-              Back to menu
+              {isCheckoutRedirect ? "Back to cart" : "Back to menu"}
             </Link>
           </div>
 
@@ -63,5 +72,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginPageContent />
+    </Suspense>
   )
 }

@@ -43,6 +43,18 @@ function getAuthErrorMessage(error: { code?: string; message?: string }): string
   return errorMessages[error.code || ""] || error.message || "An unexpected error occurred";
 }
 
+/** Only allow same-origin relative redirect paths */
+function isValidRedirect(redirect: string | null): redirect is string {
+  if (!redirect || !redirect.startsWith('/')) return false
+  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
+  return true
+}
+
+function getRedirectPath(params: URLSearchParams): string {
+  const redirect = params.get('redirect')
+  return isValidRedirect(redirect) ? redirect : '/'
+}
+
 export default function AuthCallbackPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -78,7 +90,11 @@ export default function AuthCallbackPage() {
         }
 
         if (session) {
-          window.location.href = hasAnyRole(session.user, ALL_STAFF_ROLES) ? '/admin' : '/'
+          const urlParams = new URL(window.location.href)
+          const params = new URLSearchParams(urlParams.search)
+          const defaultPath = hasAnyRole(session.user, ALL_STAFF_ROLES) ? '/admin' : '/'
+          const redirectPath = getRedirectPath(params)
+          window.location.href = hasAnyRole(session.user, ALL_STAFF_ROLES) ? (redirectPath === '/' ? '/admin' : redirectPath) : redirectPath
           return
         }
 
@@ -104,7 +120,9 @@ export default function AuthCallbackPage() {
             console.error('Code exchange error:', exchangeError)
             setError(getAuthErrorMessage(exchangeError))
           } else if (newSession) {
-            window.location.href = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? '/admin' : '/'
+            const defaultPath = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? '/admin' : '/'
+            const redirectPath = getRedirectPath(params)
+            window.location.href = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? (redirectPath === '/' ? '/admin' : redirectPath) : redirectPath
             return
           }
         }

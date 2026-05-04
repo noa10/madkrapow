@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,8 +43,17 @@ function getAuthErrorMessage(error: { code?: string; message?: string }): string
   return errorMessages[error.code || ""] || error.message || "An unexpected error occurred";
 }
 
+/** Only allow same-origin relative redirect paths */
+function isValidRedirect(redirect: string | null): redirect is string {
+  if (!redirect || !redirect.startsWith('/')) return false
+  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
+  return true
+}
+
 export default function SignUpPage() {
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const redirectParam = searchParams.get('redirect')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -57,11 +67,15 @@ export default function SignUpPage() {
     setError(null)
 
     try {
+      const redirectUrl = new URL('/auth/callback', window.location.origin)
+      if (isValidRedirect(redirectParam)) {
+        redirectUrl.searchParams.set('redirect', redirectParam)
+      }
       const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectUrl.toString(),
         },
       })
 
@@ -78,6 +92,9 @@ export default function SignUpPage() {
   }
 
   if (isSuccess) {
+    const backHref = isValidRedirect(redirectParam)
+      ? `/auth?redirect=${encodeURIComponent(redirectParam)}`
+      : '/auth'
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
@@ -87,11 +104,11 @@ export default function SignUpPage() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Check your email</h1>
             <p className="text-gray-600 mb-6">
-              We&apos;ve sent a confirmation link to <strong>{email}</strong>. 
+              We&apos;ve sent a confirmation link to <strong>{email}</strong>.
               Check your inbox and follow the instructions to verify your account.
             </p>
             <a
-              href="/auth"
+              href={backHref}
               className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -103,12 +120,16 @@ export default function SignUpPage() {
     )
   }
 
+  const signInHref = isValidRedirect(redirectParam)
+    ? `/auth?redirect=${encodeURIComponent(redirectParam)}`
+    : '/auth'
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
         <div className="mb-6">
           <a
-            href="/auth"
+            href={signInHref}
             className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
@@ -193,7 +214,7 @@ export default function SignUpPage() {
 
         <p className="mt-6 text-center text-sm text-gray-600">
           Already have an account?{' '}
-          <a href="/auth" className="text-primary hover:text-primary/80 hover:underline font-medium">
+          <a href={signInHref} className="text-primary hover:text-primary/80 hover:underline font-medium">
             Sign in
           </a>
         </p>

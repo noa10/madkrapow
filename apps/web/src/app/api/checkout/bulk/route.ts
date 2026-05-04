@@ -69,6 +69,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       )
     }
 
+    if (!user.email_confirmed_at) {
+      return NextResponse.json(
+        { success: false, error: 'Please verify your email address to continue with checkout', code: 'EMAIL_NOT_VERIFIED' },
+        { status: 403 }
+      )
+    }
+
     const body = await req.json()
     const parsed = BulkCheckoutRequestSchema.safeParse(body)
 

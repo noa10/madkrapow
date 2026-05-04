@@ -116,6 +116,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
+    if (!user.email_confirmed_at) {
+      console.warn('[API] Checkout blocked: Email not verified for user', user.id)
+      return NextResponse.json(
+        { success: false, error: 'Please verify your email address to continue with checkout', code: 'EMAIL_NOT_VERIFIED' },
+        { status: 403 }
+      )
+    }
+
     let body
     try {
       body = await req.json()

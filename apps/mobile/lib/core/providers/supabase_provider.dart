@@ -25,6 +25,13 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   return ref.watch(currentUserProvider) != null;
 });
 
+/// Whether the authenticated user's email is verified.
+final isEmailVerifiedProvider = Provider<bool>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return false;
+  return user.emailConfirmedAt != null;
+});
+
 /// A Listenable that notifies when auth state changes.
 /// Used by GoRouter.refreshListenable to re-evaluate redirects.
 class AuthStateListenable extends ChangeNotifier {

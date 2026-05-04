@@ -92,6 +92,18 @@ class ProfileRepository {
         .eq('id', addressId);
   }
 
+  /// Set an address as the default for the customer.
+  Future<void> setDefaultAddress(String customerId, String addressId) async {
+    await _supabase
+        .from('customer_addresses')
+        .update({'is_default': false})
+        .eq('customer_id', customerId);
+    await _supabase
+        .from('customer_addresses')
+        .update({'is_default': true})
+        .eq('id', addressId);
+  }
+
   // ── Contacts ───────────────────────────────────────────────────
 
   /// Add a new contact.

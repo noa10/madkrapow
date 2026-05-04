@@ -11,7 +11,10 @@ import { DashboardPageContainer } from "@/components/dashboard/DashboardPageCont
 import { DashboardStats } from "@/components/dashboard/DashboardStats"
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import { ActiveOrdersSection } from "@/components/dashboard/ActiveOrdersSection"
-import { ProfileInfoCard } from "@/components/dashboard/ProfileInfoCard"
+import { AddressManager } from "@/components/profile/AddressManager"
+import { ContactManager } from "@/components/profile/ContactManager"
+import { PersonalInfoEditor } from "@/components/profile/PersonalInfoEditor"
+import { PasswordChangeForm } from "@/components/profile/PasswordChangeForm"
 import { RecentOrdersSection } from "@/components/dashboard/RecentOrdersSection"
 import { Button } from "@/components/ui/button"
 
@@ -28,12 +31,20 @@ interface CustomerAddress {
   is_default: boolean
 }
 
+interface CustomerContact {
+  id: string
+  name: string
+  phone: string
+  is_default: boolean
+}
+
 interface Customer {
   id: string
   name: string | null
   phone: string | null
   email: string | null
   addresses: CustomerAddress[]
+  contacts: CustomerContact[]
 }
 
 interface Order {
@@ -266,7 +277,22 @@ export default function ProfilePage() {
           <ActiveOrdersSection orders={activeOrders} />
 
           {/* Profile & Addresses */}
-          <ProfileInfoCard customer={customer} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <PersonalInfoEditor customer={customer} onChange={fetchData} />
+            <PasswordChangeForm />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <AddressManager
+              customerId={customer?.id || ""}
+              addresses={customer?.addresses || []}
+              onChange={fetchData}
+            />
+            <ContactManager
+              customerId={customer?.id || ""}
+              contacts={customer?.contacts || []}
+              onChange={fetchData}
+            />
+          </div>
 
           {/* Recent Orders */}
           <RecentOrdersSection

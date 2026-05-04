@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../generated/tables/customers.dart';
 import '../../../../config/routes.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../auth/providers/auth_providers.dart';
@@ -63,6 +64,29 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Edit profile
+              Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.edit_outlined),
+                      title: const Text('Edit Profile'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showEditProfileDialog(context, ref, profile.customer),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.lock_outline),
+                      title: const Text('Change Password'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(AppRoutes.updatePassword),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
 
               // Saved contacts
               Card(
@@ -130,6 +154,69 @@ class ProfileScreen extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  void _showEditProfileDialog(BuildContext context, WidgetRef ref, CustomersRow customer) {
+    final nameController = TextEditingController(text: customer.name ?? '');
+    final phoneController = TextEditingController(text: customer.phone ?? '');
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Profile'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await ref.read(profileRepositoryProvider).updateCustomer(
+                customer.id,
+                {
+                  'name': nameController.text.trim().isNotEmpty
+                      ? nameController.text.trim()
+                      : null,
+                  'phone': phoneController.text.trim().isNotEmpty
+                      ? phoneController.text.trim()
+                      : null,
+                },
+              );
+              ref.invalidate(profileProvider);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
   }

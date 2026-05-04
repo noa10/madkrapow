@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/widgets/async_value_widget.dart';
+import '../../../../generated/tables/customer_contacts.dart';
 import '../../data/profile_repository.dart';
 
 class ContactManagementScreen extends ConsumerWidget {
@@ -100,7 +101,11 @@ class ContactManagementScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (!contact.isDefault)
-                        IconButton(
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: () => _showEditContactDialog(context, ref, contact),
+                      ),
+                      IconButton(
                           icon: const Icon(Icons.star_border, size: 20),
                           onPressed: () async {
                             await ref
@@ -148,6 +153,72 @@ class ContactManagementScreen extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+
+  void _showEditContactDialog(BuildContext context, WidgetRef ref, CustomerContactsRow contact) {
+    final nameController = TextEditingController(text: contact.name);
+    final phoneController = TextEditingController(text: contact.phone);
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Contact'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                  validator: (v) =>
+                      v?.trim().isEmpty ?? true ? 'Required' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                  validator: (v) =>
+                      v?.trim().isEmpty ?? true ? 'Required' : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+
+              await ref.read(profileRepositoryProvider).updateContact(
+                contact.id,
+                {
+                  'name': nameController.text.trim(),
+                  'phone': phoneController.text.trim(),
+                },
+              );
+
+              ref.invalidate(profileProvider);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
   }

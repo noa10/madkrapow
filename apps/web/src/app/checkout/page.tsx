@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { MapPin, Loader2, Users, ArrowLeft, ShoppingBag } from 'lucide-react'
+import { MapPin, Loader2, Users, ArrowLeft, ShoppingBag, Mail, RefreshCw } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
@@ -18,8 +18,10 @@ import { PromoCodeInput } from '@/components/checkout/PromoCodeInput'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { CheckoutSkeleton } from '@/components/ui/PageSkeleton'
 import { cn } from '@/lib/utils'
+import { getBrowserClient } from '@/lib/supabase/client'
 
 import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
+import { SavedAddressSelector, SavedContactSelector } from '@/components/checkout/SavedSelectors'
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
@@ -89,6 +91,86 @@ export default function CheckoutPage() {
   const getOriginalSubtotal = useCartStore((state) => state.getOriginalSubtotal)
   const clearCart = useCartStore((state) => state.clear)
 
+  // Auth & verification state
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isVerified, setIsVerified] = useState(true)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+
+  useEffect(() => {
+    async function checkAuth() {
+      const supabase = getBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        // Middleware should have redirected, but as a safety net
+        window.location.href = '/auth?redirect=/checkout'
+        return
+      }
+      setUserEmail(user.email ?? null)
+      const confirmed = !!user.email_confirmed_at
+      setIsVerified(confirmed)
+      setAuthChecked(true)
+    }
+    checkAuth()
+  }, [])
+
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const res = await fetch('/api/customer/profile')
+        const data = await res.json()
+        if (data.success) {
+          setProfileAddresses(data.addresses || [])
+          setProfileContacts(data.contacts || [])
+          const defaultContact = data.contacts?.find((c: { is_default: boolean }) => c.is_default) || data.contacts?.[0]
+          const defaultAddress = data.addresses?.find((a: { is_default: boolean }) => a.is_default) || data.addresses?.[0]
+          if (defaultContact || defaultAddress) {
+            const current = useCheckoutStore.getState().delivery_address
+            useCheckoutStore.getState().setDeliveryAddress({
+              full_name: defaultContact?.name || current?.full_name || '',
+              phone: defaultContact?.phone || current?.phone || '',
+              address_line1: defaultAddress?.address_line1 || current?.address_line1 || '',
+              address_line2: defaultAddress?.address_line2 || current?.address_line2,
+              city: defaultAddress?.city || current?.city || '',
+              state: defaultAddress?.state || current?.state || '',
+              postal_code: defaultAddress?.postal_code || current?.postal_code || '',
+              country: defaultAddress?.country || current?.country || 'Malaysia',
+              latitude: defaultAddress?.latitude || current?.latitude,
+              longitude: defaultAddress?.longitude || current?.longitude,
+            })
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile:', err)
+      } finally {
+        setIsLoadingProfile(false)
+      }
+    }
+    fetchProfile()
+  }, [])
+
+  const handleResendVerification = async () => {
+    if (!userEmail) return
+    setResendStatus('sending')
+    try {
+      const supabase = getBrowserClient()
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: userEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?redirect=/checkout`,
+        },
+      })
+      if (error) {
+        setResendStatus('error')
+      } else {
+        setResendStatus('sent')
+      }
+    } catch {
+      setResendStatus('error')
+    }
+  }
+
   const deliveryAddress = useCheckoutStore((state) => state.delivery_address)
   const deliveryQuote = useCheckoutStore((state) => state.delivery_quote)
   const deliveryType = useCheckoutStore((state) => state.delivery_type)
@@ -108,8 +190,32 @@ export default function CheckoutPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBulkMode, setIsBulkMode] = useState(false)
   const [showAddressInput, setShowAddressInput] = useState(false)
+  const [showContactInput, setShowContactInput] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  const [profileAddresses, setProfileAddresses] = useState<Array<{
+    id: string
+    label: string | null
+    address_line1: string
+    address_line2: string | null
+    city: string
+    state: string
+    postal_code: string
+    country: string
+    latitude: number | null
+    longitude: number | null
+    is_default: boolean
+  }>>([])
+
+  const [profileContacts, setProfileContacts] = useState<Array<{
+    id: string
+    name: string
+    phone: string
+    is_default: boolean
+  }>>([])
+
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
 
   const subtotal = useMemo(() => getSubtotal(), [items])
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
@@ -538,6 +644,70 @@ export default function CheckoutPage() {
     )
   }
 
+  // Show verification prompt if authenticated but email not confirmed
+  if (authChecked && !isVerified) {
+    return (
+      <main className="min-h-screen bg-background">
+        <PageContainer size="narrow">
+          <div className="py-8">
+            <div className="flex items-center gap-4 mb-8">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/cart">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Cart
+                </Link>
+              </Button>
+              <h1 className="text-xl font-semibold font-display">Checkout</h1>
+            </div>
+            <div className="flex flex-col items-center justify-center py-12 animate-fade-in-up">
+              <div className="h-16 w-16 rounded-full bg-amber-500/10 flex items-center justify-center mb-4">
+                <Mail className="h-8 w-8 text-amber-500" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2 text-center font-display">Verify your email to continue</h2>
+              <p className="text-muted-foreground text-center mb-6 max-w-md">
+                We sent a verification link to <strong>{userEmail}</strong>.
+                Please check your inbox and confirm your email address to proceed with checkout.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleResendVerification}
+                  disabled={resendStatus === 'sending' || resendStatus === 'sent'}
+                >
+                  {resendStatus === 'sending' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : resendStatus === 'sent' ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Verification email sent
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Resend verification email
+                    </>
+                  )}
+                </Button>
+                <Button variant="ghost" asChild>
+                  <Link href="/cart">Back to Cart</Link>
+                </Button>
+              </div>
+              {resendStatus === 'error' && (
+                <p className="text-destructive text-sm mt-3">Failed to resend verification email. Please try again.</p>
+              )}
+              <p className="text-xs text-muted-foreground mt-6">
+                Already verified? <button onClick={() => window.location.reload()} className="text-primary hover:underline">Refresh this page</button>
+              </p>
+            </div>
+          </div>
+        </PageContainer>
+      </main>
+    )
+  }
+
   if (successMessage) {
     return (
       <main className="min-h-screen bg-background">
@@ -679,6 +849,48 @@ export default function CheckoutPage() {
                 <BulkOrderForm onSubmit={handleBulkSubmit} isSubmitting={isProcessing} />
               ) : (
                 <>
+                  <section className="rounded-xl border bg-card p-5 shadow-sm">
+                    <h2 className="text-lg font-semibold mb-4 font-display">Contact Info</h2>
+                    {isLoadingProfile ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : profileContacts.length > 0 && !showContactInput ? (
+                      <SavedContactSelector
+                        contacts={profileContacts}
+                        onAddNew={() => setShowContactInput(true)}
+                      />
+                    ) : showContactInput ? (
+                      <div className="space-y-4">
+                        <DeliveryAddressInput
+                          onAddressSelect={() => {
+                            setShowContactInput(false)
+                            setShowAddressInput(false)
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setShowContactInput(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center p-4 border border-dashed rounded-lg">
+                        <p className="text-muted-foreground mb-3">No saved contacts</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowContactInput(true)}
+                        >
+                          Add Contact
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+
                   {deliveryType === 'delivery' && (
                     <section className="rounded-xl border bg-card p-5 shadow-sm">
                       <h2 className="text-lg font-semibold mb-4 font-display">Delivery Address</h2>
@@ -696,6 +908,15 @@ export default function CheckoutPage() {
                             Cancel
                           </Button>
                         </div>
+                      ) : isLoadingProfile ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : profileAddresses.length > 0 && !showAddressInput ? (
+                        <SavedAddressSelector
+                          addresses={profileAddresses}
+                          onAddNew={() => setShowAddressInput(true)}
+                        />
                       ) : hasDeliveryAddress ? (
                         <div className="flex items-start gap-3 p-3 bg-muted rounded-lg">
                           <MapPin className="h-5 w-5 text-primary mt-0.5" />

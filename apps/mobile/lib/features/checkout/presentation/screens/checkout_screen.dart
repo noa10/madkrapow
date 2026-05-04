@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
+import '../../../../core/providers/supabase_provider.dart';
 import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/tables/customer_addresses.dart';
@@ -39,6 +41,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String? _errorText;
   bool _saveContactToProfile = false;
   bool _saveAddressToProfile = false;
+  bool _isResendingVerification = false;
+  bool _verificationResent = false;
 
   Timer? _quoteDebounce;
   bool _initialized = false;
@@ -321,8 +325,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
+      final msg = e.toString().replaceAll('Exception: ', '');
+      if (mounted && msg.contains('EMAIL_NOT_VERIFIED')) {
+        setState(() => _errorText = 'Please verify your email to continue with checkout.');
+      } else if (mounted) {
+        setState(() => _errorText = msg);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -355,8 +362,126 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     return true;
   }
 
+  Future<void> _handleResendVerification() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null || user.email == null) return;
+
+    setState(() {
+      _isResendingVerification = true;
+      _verificationResent = false;
+    });
+
+    try {
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: user.email!,
+        emailRedirectTo: 'madkrapow://${AppRoutes.authCallback}',
+      );
+      if (mounted) setState(() => _verificationResent = true);
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _errorText = e.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _errorText = 'Failed to resend verification email.');
+      }
+    } finally {
+      if (mounted) setState(() => _isResendingVerification = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isVerified = ref.watch(isEmailVerifiedProvider);
+    final user = ref.watch(currentUserProvider);
+
+    // Defense-in-depth: if user is authenticated but unverified, show prompt
+    if (user != null && !isVerified) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Checkout')),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.mark_email_read_outlined,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Verify your email to checkout',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'We sent a verification link to ${user.email ?? 'your email'}. '
+                    'Please check your inbox and confirm your email address.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  if (_verificationResent) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green[700], size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Verification email sent!',
+                            style: TextStyle(color: Colors.green[700]),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_errorText != null) ...[
+                    Text(_errorText!, style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 16),
+                  ],
+                  FilledButton.icon(
+                    onPressed: _isResendingVerification ? null : _handleResendVerification,
+                    icon: _isResendingVerification
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: const Text('Resend verification email'),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      // Re-check verification status
+                      ref.invalidate(authStateProvider);
+                    },
+                    child: const Text('I\'ve verified my email'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => context.go(AppRoutes.cart),
+                    child: const Text('Back to Cart'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final checkout = ref.watch(checkoutProvider);
     final profileAsync = ref.watch(profileProvider);
     final cart = ref.watch(cartProvider);

@@ -18,6 +18,19 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   bool _isLoading = false;
   String? _errorText;
   bool _emailSent = false;
+  String? _redirectPath;
+
+  @override
+  void initState() {
+    super.initState();
+    // Read redirect param from the current route
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final state = GoRouterState.of(context);
+      setState(() {
+        _redirectPath = state.uri.queryParameters['from'];
+      });
+    });
+  }
 
   Future<void> _handleSignUp({
     required String email,
@@ -47,6 +60,11 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   @override
   Widget build(BuildContext context) {
     if (_emailSent) {
+      // After signup, navigate to email verification screen with redirect preserved
+      final verifyPath = _redirectPath != null
+          ? '${AppRoutes.emailVerification}?redirect=${Uri.encodeComponent(_redirectPath!)}'
+          : AppRoutes.emailVerification;
+
       return Scaffold(
         body: SafeArea(
           child: Center(
@@ -74,6 +92,11 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                   ),
                   const SizedBox(height: 24),
                   FilledButton(
+                    onPressed: () => context.go(verifyPath),
+                    child: const Text('Go to Verification'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
                     onPressed: () => context.go(AppRoutes.signIn),
                     child: const Text('Back to Sign In'),
                   ),
@@ -84,6 +107,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
         ),
       );
     }
+
+    final signInPath = _redirectPath != null
+        ? '${AppRoutes.signIn}?from=${Uri.encodeComponent(_redirectPath!)}'
+        : AppRoutes.signIn;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Create Account')),
@@ -111,7 +138,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     TextButton(
-                      onPressed: () => context.go(AppRoutes.signIn),
+                      onPressed: () => context.go(signInPath),
                       child: const Text('Sign In'),
                     ),
                   ],

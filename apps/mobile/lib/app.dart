@@ -8,6 +8,7 @@ import 'core/providers/supabase_provider.dart';
 import 'core/widgets/app_shell.dart';
 import 'features/auth/presentation/screens/auth_callback_screen.dart';
 import 'features/auth/presentation/screens/auth_splash_screen.dart';
+import 'features/auth/presentation/screens/email_verification_screen.dart';
 import 'features/auth/presentation/screens/reset_password_screen.dart';
 import 'features/auth/presentation/screens/sign_in_screen.dart';
 import 'features/auth/presentation/screens/sign_up_screen.dart';
@@ -37,8 +38,25 @@ const _protectedRoutes = [
   AppRoutes.contacts,
 ];
 
+/// Routes that require both authentication AND email verification.
+const _verifiedRoutes = [
+  AppRoutes.checkout,
+  AppRoutes.stripeCheckout,
+];
+
 bool _isProtectedRoute(String location) {
   for (final route in _protectedRoutes) {
+    final routePrefix = route.replaceAll(RegExp(r'/:[^/]+'), '');
+    if (location == route ||
+        (location.startsWith(routePrefix) && route.contains(':'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _requiresVerification(String location) {
+  for (final route in _verifiedRoutes) {
     final routePrefix = route.replaceAll(RegExp(r'/:[^/]+'), '');
     if (location == route ||
         (location.startsWith(routePrefix) && route.contains(':'))) {
@@ -62,6 +80,7 @@ GoRouter _createRouter(Ref ref) {
     refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
       final user = ref.read(currentUserProvider);
+      final isVerified = ref.read(isEmailVerifiedProvider);
       final location = state.matchedLocation;
 
       // Never redirect away from splash — it handles its own navigation
@@ -70,13 +89,22 @@ GoRouter _createRouter(Ref ref) {
       // Allow update-password even when authenticated (deep link from reset email)
       if (location == AppRoutes.updatePassword) return null;
 
+      // Allow email verification screen at all times when authenticated
+      if (location == AppRoutes.emailVerification) return null;
+
       // Redirect to sign-in if accessing a protected route without auth
       if (_isProtectedRoute(location) && user == null) {
         return '${AppRoutes.signIn}?from=${Uri.encodeComponent(location)}';
       }
 
-      // Redirect to home if accessing auth screens while authenticated
+      // Redirect to email verification if accessing a verified-only route without email confirmation
+      if (_requiresVerification(location) && user != null && !isVerified) {
+        return '${AppRoutes.emailVerification}?redirect=${Uri.encodeComponent(location)}';
+      }
+
+      // Redirect to home if accessing auth screens while authenticated and verified
       if (user != null &&
+          isVerified &&
           (location == AppRoutes.signIn ||
               location == AppRoutes.signUp ||
               location == AppRoutes.resetPassword)) {
@@ -113,6 +141,12 @@ GoRouter _createRouter(Ref ref) {
       GoRoute(
         path: AppRoutes.authCallback,
         builder: (context, state) => const AuthCallbackScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.emailVerification,
+        builder: (context, state) => EmailVerificationScreen(
+          redirectPath: state.uri.queryParameters['redirect'],
+        ),
       ),
       // Checkout flow
       GoRoute(

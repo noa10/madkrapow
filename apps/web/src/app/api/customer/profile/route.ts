@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 interface CustomerAddress {
@@ -152,7 +153,19 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
     }
 
     const body = await req.json()
-    const { name, phone } = body
+    const validation = z.object({
+      name: z.string().max(100).optional().nullable(),
+      phone: z.string().max(50).optional().nullable(),
+    }).safeParse(body)
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid input: ' + validation.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ') },
+        { status: 400 }
+      )
+    }
+
+    const { name, phone } = validation.data
 
     const { data: customer } = await supabase
       .from('customers')
@@ -213,9 +226,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
     )
   } catch (error) {
     console.error('[API] PATCH /api/customer/profile:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { success: false, error: errorMessage },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     )
   }

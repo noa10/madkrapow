@@ -63,7 +63,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<PasswordResul
     if (updateError) {
       console.error('[API] Failed to update password:', updateError)
       return NextResponse.json(
-        { success: false, error: updateError.message || 'Failed to change password' },
+        { success: false, error: 'Failed to change password' },
         { status: 500 }
       )
     }

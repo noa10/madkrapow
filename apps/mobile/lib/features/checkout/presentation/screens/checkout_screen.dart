@@ -326,9 +326,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       }
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
-      if (mounted && msg.contains('EMAIL_NOT_VERIFIED')) {
-        setState(() => _errorText = 'Please verify your email to continue with checkout.');
-      } else if (mounted) {
+      if (mounted) {
         setState(() => _errorText = msg);
       }
     } finally {

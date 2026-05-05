@@ -1,12 +1,17 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { useEffect, useState, useCallback, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 import { Menu, Package, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { getBrowserClient } from "@/lib/supabase/client"
+import { useCartStore, type SelectedModifier } from "@/stores/cart"
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
 import { DashboardPageContainer } from "@/components/dashboard/DashboardPageContainer"
+import { ActiveOrdersSection } from "@/components/dashboard/ActiveOrdersSection"
+import { RecentOrdersSection } from "@/components/dashboard/RecentOrdersSection"
 import { OrdersFilterBar } from "@/components/orders/OrdersFilterBar"
 import { OrdersCardView } from "@/components/orders/OrdersCardView"
 import { OrdersListView } from "@/components/orders/OrdersListView"
@@ -23,10 +28,24 @@ interface Order {
   delivery_address_json: Record<string, unknown> | null
   delivery_type: string
   fulfillment_type: string
+  include_cutlery: boolean
 }
+
+interface OrderItemModifier {
+  id: string
+  modifier_name: string
+  modifier_price_delta_cents: number
+}
+
+const ACTIVE_STATUSES = ["pending", "paid", "accepted", "preparing", "ready"]
 
 function OrdersContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const supabase = getBrowserClient()
+  const addItem = useCartStore((state) => state.addItem)
+  const clearCart = useCartStore((state) => state.clear)
+
   const initialStatus = searchParams.get("status") || "all"
 
   const [orders, setOrders] = useState<Order[]>([])
@@ -36,35 +55,111 @@ function OrdersContent() {
   const [viewMode, setViewMode] = useState<ViewMode>("cards")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
+
+  const activeOrders = orders.filter((o) => ACTIVE_STATUSES.includes(o.status))
+  const pastOrders = orders.filter((o) => !ACTIVE_STATUSES.includes(o.status))
+
+  const fetchOrders = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const params = new URLSearchParams()
+      if (activeFilter !== "all") {
+        params.set("status", activeFilter)
+      }
+
+      const response = await fetch(`/api/orders?${params.toString()}`)
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to fetch orders")
+      }
+
+      setOrders(data.orders)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [activeFilter])
 
   useEffect(() => {
-    async function fetchOrders() {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const params = new URLSearchParams()
-        if (activeFilter !== "all") {
-          params.set("status", activeFilter)
-        }
-
-        const response = await fetch(`/api/orders?${params.toString()}`)
-        const data = await response.json()
-
-        if (!data.success) {
-          throw new Error(data.error || "Failed to fetch orders")
-        }
-
-        setOrders(data.orders)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
     fetchOrders()
-  }, [activeFilter])
+  }, [fetchOrders])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("orders-page")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+        },
+        (payload: RealtimePostgresChangesPayload<Order>) => {
+          const updatedOrder = payload.new as Order
+          setOrders((prev) =>
+            prev.map((o) => (o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o))
+          )
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "orders",
+        },
+        () => {
+          fetchOrders()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, fetchOrders])
+
+  const handleReorder = async (orderId: string) => {
+    setReorderingId(orderId)
+    try {
+      const response = await fetch(`/api/orders/${orderId}/items`)
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to fetch order items")
+      }
+
+      clearCart()
+
+      for (const item of data.orderItems) {
+        const modifiers: SelectedModifier[] = item.modifiers.map((mod: OrderItemModifier) => ({
+          id: mod.id,
+          name: mod.modifier_name,
+          price_delta_cents: mod.modifier_price_delta_cents,
+        }))
+
+        addItem({
+          menu_item_id: item.menu_item_id,
+          quantity: item.quantity,
+          selected_modifiers: modifiers,
+          special_instructions: item.notes || "",
+          unit_price: item.menu_item_price_cents,
+        })
+      }
+
+      router.push("/cart")
+    } catch (err) {
+      console.error("Failed to reorder:", err)
+      setError("Failed to reorder items")
+    } finally {
+      setReorderingId(null)
+    }
+  }
 
   return (
     <>
@@ -93,54 +188,64 @@ function OrdersContent() {
           </div>
           <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-white/8">
             <Link href="/profile">
-              Back to Dashboard
+              Back to Profile
             </Link>
           </Button>
         </div>
 
-        {/* Filter Bar */}
-        <OrdersFilterBar
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          orderCount={orders.length}
-        />
+        <div className="space-y-6">
+          <ActiveOrdersSection orders={activeOrders} />
 
-        {/* Content */}
-        {isLoading && (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        )}
+          <RecentOrdersSection
+            orders={pastOrders}
+            onReorder={handleReorder}
+            reorderingId={reorderingId}
+            maxItems={6}
+          />
 
-        {error && (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
+          <OrdersFilterBar
+            activeFilter={activeFilter}
+            onFilterChange={setActiveFilter}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            orderCount={orders.length}
+          />
 
-        {!isLoading && !error && orders.length === 0 && (
-          <div className="rounded-xl border border-white/8 bg-card p-12 text-center backdrop-blur-sm">
-            <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground mb-4 text-sm">No orders found</p>
-            <Button asChild>
-              <Link href="/">Browse Menu</Link>
-            </Button>
-          </div>
-        )}
+          {/* Content */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-24">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          )}
 
-        {!isLoading && !error && orders.length > 0 && viewMode === "cards" && (
-          <OrdersCardView orders={orders} />
-        )}
+          {error && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
 
-        {!isLoading && !error && orders.length > 0 && viewMode === "list" && (
-          <OrdersListView orders={orders} />
-        )}
+          {!isLoading && !error && orders.length === 0 && (
+            <div className="rounded-xl border border-white/8 bg-card p-12 text-center backdrop-blur-sm">
+              <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-muted-foreground mb-4 text-sm">No orders found</p>
+              <Button asChild>
+                <Link href="/">Browse Menu</Link>
+              </Button>
+            </div>
+          )}
 
-        {!isLoading && !error && orders.length > 0 && viewMode === "table" && (
-          <OrdersTableView orders={orders} />
-        )}
+          {!isLoading && !error && orders.length > 0 && viewMode === "cards" && (
+            <OrdersCardView orders={orders} />
+          )}
+
+          {!isLoading && !error && orders.length > 0 && viewMode === "list" && (
+            <OrdersListView orders={orders} />
+          )}
+
+          {!isLoading && !error && orders.length > 0 && viewMode === "table" && (
+            <OrdersTableView orders={orders} />
+          )}
+        </div>
       </DashboardPageContainer>
     </>
   )

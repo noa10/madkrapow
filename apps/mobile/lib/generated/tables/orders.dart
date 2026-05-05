@@ -77,6 +77,7 @@ class OrdersRow extends SupabaseDataRow {
     String? hubboPosPaymentStatus,
     DateTime? hubboPosLastSyncedAt,
     bool? requiresManualReview,
+    bool? includeCutlery,
   }) : super({
          'total_cents': supaSerialize(totalCents),
          'order_number': supaSerialize(orderNumber),
@@ -166,9 +167,11 @@ class OrdersRow extends SupabaseDataRow {
            'hubbo_pos_payment_status': supaSerialize(hubboPosPaymentStatus),
          if (hubboPosLastSyncedAt != null)
            'hubbo_pos_last_synced_at': supaSerialize(hubboPosLastSyncedAt),
-         if (requiresManualReview != null)
-           'requires_manual_review': supaSerialize(requiresManualReview),
-       });
+          if (requiresManualReview != null)
+            'requires_manual_review': supaSerialize(requiresManualReview),
+          if (includeCutlery != null)
+            'include_cutlery': supaSerialize(includeCutlery),
+        });
 
   /// Orders Row
   const OrdersRow._(super.data);
@@ -462,6 +465,15 @@ class OrdersRow extends SupabaseDataRow {
   set requiresManualReview(bool value) =>
       setField<bool>(requiresManualReviewField, value);
 
+  /// Include Cutlery field name
+  static const String includeCutleryField = 'include_cutlery';
+
+  /// Include Cutlery
+  bool get includeCutlery =>
+      getField<bool>(includeCutleryField, defaultValue: true)!;
+  set includeCutlery(bool value) =>
+      setField<bool>(includeCutleryField, value);
+
   /// Approval Status field name
   static const String approvalStatusField = 'approval_status';
 
@@ -665,6 +677,7 @@ class OrdersRow extends SupabaseDataRow {
     String? hubboPosPaymentStatus,
     DateTime? hubboPosLastSyncedAt,
     bool? requiresManualReview,
+    bool? includeCutlery,
   }) => OrdersRow.fromJson({
     'total_cents': supaSerialize(totalCents) ?? data['total_cents'],
     'order_number': supaSerialize(orderNumber) ?? data['order_number'],
@@ -751,6 +764,8 @@ class OrdersRow extends SupabaseDataRow {
         supaSerialize(hubboPosLastSyncedAt) ?? data['hubbo_pos_last_synced_at'],
     'requires_manual_review':
         supaSerialize(requiresManualReview) ?? data['requires_manual_review'],
+    'include_cutlery':
+        supaSerialize(includeCutlery) ?? data['include_cutlery'],
   });
 }
 

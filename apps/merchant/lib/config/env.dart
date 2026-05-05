@@ -10,7 +10,7 @@ abstract class AppEnv {
   @EnviedField(varName: 'SUPABASE_ANON_KEY')
   static final String supabaseAnonKey = _AppEnv.supabaseAnonKey;
 
-  @EnviedField(varName: 'WEB_API_URL', defaultValue: 'http://10.0.2.2:3000')
+  @EnviedField(varName: 'WEB_API_URL', defaultValue: 'https://www.madkrapow.com')
   static final String webApiUrl = _AppEnv.webApiUrl;
 
   @EnviedField(varName: 'FCM_SENDER_ID')

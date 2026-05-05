@@ -138,6 +138,7 @@ export type Database = {
       customers: {
         Row: {
           auth_user_id: string
+          avatar_url: string | null
           created_at: string
           id: string
           name: string | null
@@ -146,6 +147,7 @@ export type Database = {
         }
         Insert: {
           auth_user_id: string
+          avatar_url?: string | null
           created_at?: string
           id?: string
           name?: string | null
@@ -154,6 +156,7 @@ export type Database = {
         }
         Update: {
           auth_user_id?: string
+          avatar_url?: string | null
           created_at?: string
           id?: string
           name?: string | null
@@ -816,6 +819,7 @@ export type Database = {
           hubbo_pos_sync_status: string | null
           hubbo_pos_trans_id: string | null
           id: string
+          include_cutlery: boolean
           kitchen_lead_minutes: number | null
           lalamove_order_id: string | null
           lalamove_quote_id: string | null
@@ -875,6 +879,7 @@ export type Database = {
           hubbo_pos_sync_status?: string | null
           hubbo_pos_trans_id?: string | null
           id?: string
+          include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null
           lalamove_quote_id?: string | null
@@ -933,6 +938,7 @@ export type Database = {
           hubbo_pos_sync_status?: string | null
           hubbo_pos_trans_id?: string | null
           id?: string
+          include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null
           lalamove_quote_id?: string | null
@@ -1172,6 +1178,8 @@ export type Database = {
           bulk_packaging_fee_cents: number | null
           bulk_threshold_cents: number | null
           created_at: string
+          cutlery_default: boolean
+          cutlery_enabled: boolean
           delivery_fee: number | null
           hubbo_pos_circuit_state: string | null
           hubbo_pos_enabled: boolean | null
@@ -1238,6 +1246,8 @@ export type Database = {
           bulk_packaging_fee_cents?: number | null
           bulk_threshold_cents?: number | null
           created_at?: string
+          cutlery_default?: boolean
+          cutlery_enabled?: boolean
           delivery_fee?: number | null
           hubbo_pos_circuit_state?: string | null
           hubbo_pos_enabled?: boolean | null

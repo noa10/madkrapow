@@ -56,6 +56,8 @@ class StoreSettingsRow extends SupabaseDataRow {
     String? hubboPosLastError,
     DateTime? hubboPosLastErrorAt,
     bool? hubboPosReadOnlyMode,
+    bool? cutleryEnabled,
+    bool? cutleryDefault,
   }) : super({
          if (id != null) 'id': supaSerialize(id),
          if (storeName != null) 'store_name': supaSerialize(storeName),
@@ -115,9 +117,13 @@ class StoreSettingsRow extends SupabaseDataRow {
            'hubbo_pos_last_error': supaSerialize(hubboPosLastError),
          if (hubboPosLastErrorAt != null)
            'hubbo_pos_last_error_at': supaSerialize(hubboPosLastErrorAt),
-         if (hubboPosReadOnlyMode != null)
-           'hubbo_pos_read_only_mode': supaSerialize(hubboPosReadOnlyMode),
-       });
+          if (hubboPosReadOnlyMode != null)
+            'hubbo_pos_read_only_mode': supaSerialize(hubboPosReadOnlyMode),
+          if (cutleryEnabled != null)
+            'cutlery_enabled': supaSerialize(cutleryEnabled),
+          if (cutleryDefault != null)
+            'cutlery_default': supaSerialize(cutleryDefault),
+        });
 
   /// Store Settings Row
   const StoreSettingsRow._(super.data);
@@ -407,6 +413,22 @@ class StoreSettingsRow extends SupabaseDataRow {
   set hubboPosReadOnlyMode(bool value) =>
       setField<bool>(hubboPosReadOnlyModeField, value);
 
+  /// Cutlery Enabled field name
+  static const String cutleryEnabledField = 'cutlery_enabled';
+
+  /// Cutlery Enabled
+  bool? get cutleryEnabled => getField<bool>(cutleryEnabledField);
+  set cutleryEnabled(bool? value) =>
+      setField<bool>(cutleryEnabledField, value);
+
+  /// Cutlery Default field name
+  static const String cutleryDefaultField = 'cutlery_default';
+
+  /// Cutlery Default
+  bool? get cutleryDefault => getField<bool>(cutleryDefaultField);
+  set cutleryDefault(bool? value) =>
+      setField<bool>(cutleryDefaultField, value);
+
   /// Make a copy of the current [StoreSettingsRow]
   /// overriding the provided fields
   StoreSettingsRow copyWith({
@@ -441,6 +463,8 @@ class StoreSettingsRow extends SupabaseDataRow {
     String? hubboPosLastError,
     DateTime? hubboPosLastErrorAt,
     bool? hubboPosReadOnlyMode,
+    bool? cutleryEnabled,
+    bool? cutleryDefault,
   }) => StoreSettingsRow.fromJson({
     'id': supaSerialize(id) ?? data['id'],
     'store_name': supaSerialize(storeName) ?? data['store_name'],
@@ -497,6 +521,10 @@ class StoreSettingsRow extends SupabaseDataRow {
         supaSerialize(hubboPosLastErrorAt) ?? data['hubbo_pos_last_error_at'],
     'hubbo_pos_read_only_mode':
         supaSerialize(hubboPosReadOnlyMode) ?? data['hubbo_pos_read_only_mode'],
+    'cutlery_enabled':
+        supaSerialize(cutleryEnabled) ?? data['cutlery_enabled'],
+    'cutlery_default':
+        supaSerialize(cutleryDefault) ?? data['cutlery_default'],
   });
 }
 

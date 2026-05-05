@@ -29,6 +29,7 @@ class CustomersRow extends SupabaseDataRow {
     String? id,
     String? phone,
     String? name,
+    String? avatarUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : super({
@@ -36,6 +37,7 @@ class CustomersRow extends SupabaseDataRow {
          if (id != null) 'id': supaSerialize(id),
          if (phone != null) 'phone': supaSerialize(phone),
          if (name != null) 'name': supaSerialize(name),
+         if (avatarUrl != null) 'avatar_url': supaSerialize(avatarUrl),
          if (createdAt != null) 'created_at': supaSerialize(createdAt),
          if (updatedAt != null) 'updated_at': supaSerialize(updatedAt),
        });
@@ -82,6 +84,13 @@ class CustomersRow extends SupabaseDataRow {
   String? get name => getField<String>(nameField);
   set name(String? value) => setField<String>(nameField, value);
 
+  /// Avatar Url field name
+  static const String avatarUrlField = 'avatar_url';
+
+  /// Avatar Url
+  String? get avatarUrl => getField<String>(avatarUrlField);
+  set avatarUrl(String? value) => setField<String>(avatarUrlField, value);
+
   /// Created At field name
   static const String createdAtField = 'created_at';
 
@@ -105,6 +114,7 @@ class CustomersRow extends SupabaseDataRow {
     String? id,
     String? phone,
     String? name,
+    String? avatarUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => CustomersRow.fromJson({
@@ -112,6 +122,7 @@ class CustomersRow extends SupabaseDataRow {
     'id': supaSerialize(id) ?? data['id'],
     'phone': supaSerialize(phone) ?? data['phone'],
     'name': supaSerialize(name) ?? data['name'],
+    'avatar_url': supaSerialize(avatarUrl) ?? data['avatar_url'],
     'created_at': supaSerialize(createdAt) ?? data['created_at'],
     'updated_at': supaSerialize(updatedAt) ?? data['updated_at'],
   });

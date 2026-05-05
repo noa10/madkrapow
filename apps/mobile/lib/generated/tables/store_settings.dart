@@ -43,6 +43,8 @@ class StoreSettingsRow extends SupabaseDataRow {
     int? bulkPackagingFeeCents,
     bool? bulkEnabled,
     bool? pickupEnabled,
+    bool? cutleryEnabled,
+    bool? cutleryDefault,
     int? kitchenLeadMinutes,
     bool? hubboPosEnabled,
     String? hubboPosMerchantId,
@@ -83,9 +85,13 @@ class StoreSettingsRow extends SupabaseDataRow {
          if (bulkPackagingFeeCents != null)
            'bulk_packaging_fee_cents': supaSerialize(bulkPackagingFeeCents),
          if (bulkEnabled != null) 'bulk_enabled': supaSerialize(bulkEnabled),
-         if (pickupEnabled != null)
-           'pickup_enabled': supaSerialize(pickupEnabled),
-         if (kitchenLeadMinutes != null)
+          if (pickupEnabled != null)
+            'pickup_enabled': supaSerialize(pickupEnabled),
+          if (cutleryEnabled != null)
+            'cutlery_enabled': supaSerialize(cutleryEnabled),
+          if (cutleryDefault != null)
+            'cutlery_default': supaSerialize(cutleryDefault),
+          if (kitchenLeadMinutes != null)
            'kitchen_lead_minutes': supaSerialize(kitchenLeadMinutes),
          if (hubboPosEnabled != null)
            'hubbo_pos_enabled': supaSerialize(hubboPosEnabled),
@@ -290,6 +296,22 @@ class StoreSettingsRow extends SupabaseDataRow {
       getField<bool>(pickupEnabledField, defaultValue: true)!;
   set pickupEnabled(bool value) => setField<bool>(pickupEnabledField, value);
 
+  /// Cutlery Enabled field name
+  static const String cutleryEnabledField = 'cutlery_enabled';
+
+  /// Cutlery Enabled
+  bool? get cutleryEnabled => getField<bool>(cutleryEnabledField);
+  set cutleryEnabled(bool? value) =>
+      setField<bool>(cutleryEnabledField, value);
+
+  /// Cutlery Default field name
+  static const String cutleryDefaultField = 'cutlery_default';
+
+  /// Cutlery Default
+  bool? get cutleryDefault => getField<bool>(cutleryDefaultField);
+  set cutleryDefault(bool? value) =>
+      setField<bool>(cutleryDefaultField, value);
+
   /// Kitchen Lead Minutes field name
   static const String kitchenLeadMinutesField = 'kitchen_lead_minutes';
 
@@ -428,6 +450,8 @@ class StoreSettingsRow extends SupabaseDataRow {
     int? bulkPackagingFeeCents,
     bool? bulkEnabled,
     bool? pickupEnabled,
+    bool? cutleryEnabled,
+    bool? cutleryDefault,
     int? kitchenLeadMinutes,
     bool? hubboPosEnabled,
     String? hubboPosMerchantId,
@@ -468,6 +492,10 @@ class StoreSettingsRow extends SupabaseDataRow {
         data['bulk_packaging_fee_cents'],
     'bulk_enabled': supaSerialize(bulkEnabled) ?? data['bulk_enabled'],
     'pickup_enabled': supaSerialize(pickupEnabled) ?? data['pickup_enabled'],
+    'cutlery_enabled':
+        supaSerialize(cutleryEnabled) ?? data['cutlery_enabled'],
+    'cutlery_default':
+        supaSerialize(cutleryDefault) ?? data['cutlery_default'],
     'kitchen_lead_minutes':
         supaSerialize(kitchenLeadMinutes) ?? data['kitchen_lead_minutes'],
     'hubbo_pos_enabled':

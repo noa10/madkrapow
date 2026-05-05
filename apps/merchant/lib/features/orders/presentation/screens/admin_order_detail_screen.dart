@@ -128,6 +128,25 @@ class _OrderDetailContent extends StatelessWidget {
                 ),
                 if (order.notes != null)
                   Text('Notes: ${order.notes}'),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.flatware,
+                      size: 16,
+                      color: order.includeCutlery ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      order.includeCutlery
+                          ? 'Cutlery: Yes'
+                          : 'Cutlery: No — customer requested no cutlery',
+                      style: TextStyle(
+                        color: order.includeCutlery ? Colors.green : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

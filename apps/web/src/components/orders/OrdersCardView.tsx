@@ -13,6 +13,7 @@ interface Order {
   created_at: string
   delivery_address_json: Record<string, unknown> | null
   delivery_type: string
+  include_cutlery: boolean
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string; icon: typeof Clock }> = {

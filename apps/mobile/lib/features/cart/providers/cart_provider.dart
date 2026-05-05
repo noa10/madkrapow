@@ -3,39 +3,47 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/cart_item.dart';
 import '../data/cart_local_storage.dart';
 
-/// Cart state notifier — mirrors web's useCartStore from stores/cart.ts.
-class CartNotifier extends Notifier<List<CartItem>> {
+class CartState {
+  final List<CartItem> items;
+  final bool includeCutlery;
+
+  const CartState({
+    this.items = const [],
+    this.includeCutlery = true,
+  });
+}
+
+class CartNotifier extends Notifier<CartState> {
   @override
-  List<CartItem> build() {
-    return CartLocalStorage.loadItems();
+  CartState build() {
+    return CartState(
+      items: CartLocalStorage.loadItems(),
+      includeCutlery: CartLocalStorage.loadIncludeCutlery(),
+    );
   }
 
-  /// Add an item to the cart. If the same item+modifiers exists, increment quantity.
-  /// Mirrors web's addItem from stores/cart.ts:57-76.
   void addItem(CartItem item) {
     final modifierIds = item.selectedModifiers.map((m) => m.id).toList();
     final existingIndex = _findItemIndex(item.menuItemId, modifierIds);
 
     if (existingIndex >= 0) {
-      state[existingIndex].quantity += item.quantity;
+      state.items[existingIndex].quantity += item.quantity;
+      state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
     } else {
-      state = [...state, item];
+      state = CartState(items: [...state.items, item], includeCutlery: state.includeCutlery);
     }
     _persist();
   }
 
-  /// Remove an item by menu item ID and modifier IDs.
-  /// Mirrors web's removeItem from stores/cart.ts:78-84.
   void removeItem(String menuItemId, List<String> modifierIds) {
     final index = _findItemIndex(menuItemId, modifierIds);
     if (index >= 0) {
-      state = [...state]..removeAt(index);
+      final items = [...state.items]..removeAt(index);
+      state = CartState(items: items, includeCutlery: state.includeCutlery);
       _persist();
     }
   }
 
-  /// Update the quantity of an item. If quantity is 0, removes it.
-  /// Mirrors web's updateQuantity from stores/cart.ts:86-102.
   void updateQuantity(
     String menuItemId,
     List<String> modifierIds,
@@ -47,82 +55,76 @@ class CartNotifier extends Notifier<List<CartItem>> {
     if (quantity <= 0) {
       removeItem(menuItemId, modifierIds);
     } else {
-      state[index].quantity = quantity;
-      state = [...state];
+      state.items[index].quantity = quantity;
+      state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
       _persist();
     }
   }
 
-  /// Clear all items from the cart.
+  void setIncludeCutlery(bool value) {
+    state = CartState(items: state.items, includeCutlery: value);
+    CartLocalStorage.saveIncludeCutlery(value);
+  }
+
   void clear() {
-    state = [];
+    state = const CartState();
     CartLocalStorage.clear();
   }
 
-  /// Total number of items (sum of quantities).
-  int get totalItems => state.fold(0, (sum, item) => sum + item.quantity);
+  int get totalItems => state.items.fold(0, (sum, item) => sum + item.quantity);
 
-  /// Subtotal in cents (sum of all line totals, after promo discounts applied).
   int get subtotalCents =>
-      state.fold(0, (sum, item) => sum + item.lineTotalCents);
+      state.items.fold(0, (sum, item) => sum + item.lineTotalCents);
 
-  /// Original subtotal before promo discounts.
   int get originalSubtotalCents =>
-      state.fold(0, (sum, item) => sum + item.originalLineTotalCents);
+      state.items.fold(0, (sum, item) => sum + item.originalLineTotalCents);
 
-  /// Total promo discount across all cart items.
   int get totalDiscountCents =>
-      state.fold(0, (sum, item) => sum + (item.discountPerUnitCents * item.quantity));
+      state.items.fold(0, (sum, item) => sum + (item.discountPerUnitCents * item.quantity));
 
-  /// Apply promo discounts to cart items based on previews.
   void applyPromoDiscounts(Map<String, int> itemDiscounts) {
-    for (int i = 0; i < state.length; i++) {
-      final discount = itemDiscounts[state[i].menuItemId] ?? 0;
-      state[i].discountPerUnitCents = discount;
+    for (int i = 0; i < state.items.length; i++) {
+      final discount = itemDiscounts[state.items[i].menuItemId] ?? 0;
+      state.items[i].discountPerUnitCents = discount;
     }
-    state = [...state];
+    state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
     _persist();
   }
 
-  /// Clear all promo discounts from cart items.
   void clearPromoDiscounts() {
-    for (int i = 0; i < state.length; i++) {
-      state[i].discountPerUnitCents = 0;
+    for (int i = 0; i < state.items.length; i++) {
+      state.items[i].discountPerUnitCents = 0;
     }
-    state = [...state];
+    state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
     _persist();
   }
 
-  /// Find item index by menu item ID and modifier IDs.
-  /// Mirrors web's findItemIndex from stores/cart.ts:37-45.
   int _findItemIndex(String menuItemId, List<String> modifierIds) {
     final key = _getModifierKey(modifierIds);
-    return state.indexWhere((item) {
+    return state.items.indexWhere((item) {
       return item.menuItemId == menuItemId &&
           _getModifierKey(item.selectedModifiers.map((m) => m.id).toList()) ==
               key;
     });
   }
 
-  /// Generate a modifier key for comparison.
-  /// Mirrors web's getModifierKey from stores/cart.ts:33-35.
   String _getModifierKey(List<String> modifierIds) {
     final sorted = [...modifierIds]..sort();
     return sorted.join(',');
   }
 
   void _persist() {
-    CartLocalStorage.saveItems(state);
+    CartLocalStorage.saveItems(state.items);
   }
 }
 
-final cartProvider = NotifierProvider<CartNotifier, List<CartItem>>(() {
+final cartProvider = NotifierProvider<CartNotifier, CartState>(() {
   return CartNotifier();
 });
 
-/// Derived provider: total item count (sum of quantities) for badges.
 final cartItemCountProvider = Provider<int>((ref) {
   return ref
       .watch(cartProvider)
+      .items
       .fold<int>(0, (sum, item) => sum + item.quantity);
 });

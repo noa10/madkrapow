@@ -143,13 +143,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         );
       }
     } catch (e) {
+      debugPrint('CheckoutScreen: delivery quote failed — $e');
       if (mounted) {
+        setState(() => _errorText = 'Could not calculate delivery fee: ${e.toString().replaceAll('Exception: ', '')}');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Could not calculate delivery fee: ${e.toString().replaceAll('Exception: ', '')}',
             ),
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -273,7 +275,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           : null;
 
       // Build checkout items from cart
-      final checkoutItems = cart.map(
+      final checkoutItems = cart.items.map(
         (item) => CheckoutItem(
           id: item.menuItemId,
           name: item.name,
@@ -305,6 +307,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         stopIds: checkout.stopIds,
         priceBreakdown: checkout.priceBreakdown,
         appliedPromos: checkout.appliedPromos,
+        includeCutlery: cart.includeCutlery,
       );
 
       final result = await repo.createCheckout(request);
@@ -607,6 +610,19 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               ),
               const SizedBox(height: 24),
 
+              SwitchListTile(
+                value: checkout.includeCutlery,
+                onChanged: (value) =>
+                    ref.read(checkoutProvider.notifier).setIncludeCutlery(value),
+                title: const Text('Include cutlery?'),
+                subtitle: const Text(
+                  'Help reduce waste. Uncheck if you don\'t need forks/spoons.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 24),
+
               // Promo code section
               _SectionTitle('Promo Code'),
               const SizedBox(height: 8),
@@ -622,7 +638,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               // Order summary
               _SectionTitle('Order Summary'),
               const SizedBox(height: 8),
-              ...cart.map(
+              ...cart.items.map(
                 (item) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
@@ -708,6 +724,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ),
               ],
               const Divider(height: 24),
+              Row(
+                children: [
+                  Text('Cutlery', style: Theme.of(context).textTheme.bodySmall),
+                  const Spacer(),
+                  Text(
+                    checkout.includeCutlery ? 'Yes' : 'No',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(

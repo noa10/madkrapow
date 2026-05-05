@@ -16,7 +16,7 @@ class CartScreen extends ConsumerWidget {
     final cart = ref.watch(cartProvider);
     final cartNotifier = ref.read(cartProvider.notifier);
 
-    if (cart.isEmpty) {
+    if (cart.items.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Your Cart')),
         body: Center(
@@ -57,22 +57,22 @@ class CartScreen extends ConsumerWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: cart.length,
+              itemCount: cart.items.length,
               itemBuilder: (context, index) => _CartItemTile(
-                item: cart[index],
+                item: cart.items[index],
                 onIncrement: () => cartNotifier.updateQuantity(
-                  cart[index].menuItemId,
-                  cart[index].selectedModifiers.map((m) => m.id).toList(),
-                  cart[index].quantity + 1,
+                  cart.items[index].menuItemId,
+                  cart.items[index].selectedModifiers.map((m) => m.id).toList(),
+                  cart.items[index].quantity + 1,
                 ),
                 onDecrement: () => cartNotifier.updateQuantity(
-                  cart[index].menuItemId,
-                  cart[index].selectedModifiers.map((m) => m.id).toList(),
-                  cart[index].quantity - 1,
+                  cart.items[index].menuItemId,
+                  cart.items[index].selectedModifiers.map((m) => m.id).toList(),
+                  cart.items[index].quantity - 1,
                 ),
                 onRemove: () => cartNotifier.removeItem(
-                  cart[index].menuItemId,
-                  cart[index].selectedModifiers.map((m) => m.id).toList(),
+                  cart.items[index].menuItemId,
+                  cart.items[index].selectedModifiers.map((m) => m.id).toList(),
                 ),
               ),
             ),

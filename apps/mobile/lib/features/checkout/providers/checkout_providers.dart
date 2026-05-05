@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
 
@@ -31,6 +32,7 @@ class CheckoutState {
     this.useManualContact = false,
     this.useManualAddress = false,
     this.appliedPromos = const [],
+    this.includeCutlery = true,
   });
 
   final DeliveryAddress? deliveryAddress;
@@ -50,6 +52,7 @@ class CheckoutState {
   final bool useManualContact;
   final bool useManualAddress;
   final List<AppliedPromo> appliedPromos;
+  final bool includeCutlery;
 
   int get discountTotalCents {
     return appliedPromos.fold(0, (sum, p) => sum + p.discountCents);
@@ -74,6 +77,7 @@ class CheckoutState {
     bool clearShippingQuote = false,
     bool clearScheduledFor = false,
     List<AppliedPromo>? appliedPromos,
+    bool? includeCutlery,
   }) {
     return CheckoutState(
       deliveryAddress: deliveryAddress ?? this.deliveryAddress,
@@ -92,6 +96,7 @@ class CheckoutState {
       useManualContact: useManualContact ?? this.useManualContact,
       useManualAddress: useManualAddress ?? this.useManualAddress,
       appliedPromos: appliedPromos ?? this.appliedPromos,
+      includeCutlery: includeCutlery ?? this.includeCutlery,
     );
   }
 
@@ -128,6 +133,10 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
       fulfillmentType: type,
       clearScheduledFor: type == FulfillmentType.asap,
     );
+  }
+
+  void setIncludeCutlery(bool value) {
+    state = state.copyWith(includeCutlery: value);
   }
 
   void setShippingQuote(DeliveryQuoteResult quote) {
@@ -274,7 +283,6 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
   Future<int> fetchDeliveryQuote(DeliveryAddress address) async {
     final repo = ref.read(checkoutRepositoryProvider);
 
-    // Geocode the dropoff address
     final addressString = [
       address.address ?? address.addressLine1 ?? '',
       address.city ?? '',
@@ -282,22 +290,44 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
       address.postalCode ?? '',
     ].where((s) => s.isNotEmpty).join(', ');
 
-    final locations = await locationFromAddress(addressString);
-    if (locations.isEmpty) {
-      throw Exception('Could not find coordinates for this address');
+    // Use stored coordinates if available; otherwise geocode the address.
+    double dropoffLat;
+    double dropoffLng;
+
+    if (address.latitude != null && address.longitude != null) {
+      dropoffLat = address.latitude!;
+      dropoffLng = address.longitude!;
+      debugPrint('DeliveryQuote: using stored coords $dropoffLat, $dropoffLng');
+    } else {
+      debugPrint('DeliveryQuote: geocoding "$addressString"');
+      List<Location> locations;
+      try {
+        locations = await locationFromAddress(addressString);
+      } catch (e) {
+        debugPrint('DeliveryQuote: geocoding failed — $e');
+        throw Exception('Could not geocode address: $e');
+      }
+      if (locations.isEmpty) {
+        debugPrint('DeliveryQuote: no results for "$addressString"');
+        throw Exception('Could not find coordinates for this address');
+      }
+      dropoffLat = locations.first.latitude;
+      dropoffLng = locations.first.longitude;
+      debugPrint('DeliveryQuote: resolved to $dropoffLat, $dropoffLng');
     }
-    final dropoff = locations.first;
 
     final request = DeliveryQuoteRequest(
       pickupLat: double.parse(AppEnv.storeLatitude),
       pickupLng: double.parse(AppEnv.storeLongitude),
       pickupAddress: AppEnv.storeAddress,
-      dropoffLat: dropoff.latitude,
-      dropoffLng: dropoff.longitude,
+      dropoffLat: dropoffLat,
+      dropoffLng: dropoffLng,
       dropoffAddress: addressString,
     );
 
+    debugPrint('DeliveryQuote: calling API with store=${AppEnv.storeLatitude},${AppEnv.storeLongitude}');
     final result = await repo.getDeliveryQuote(request);
+    debugPrint('DeliveryQuote: got fee=${result.feeCents} cents, quoteId=${result.quotationId}');
     setShippingQuote(result);
     return result.feeCents ?? 0;
   }

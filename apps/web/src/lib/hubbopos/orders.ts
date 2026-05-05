@@ -77,6 +77,7 @@ export async function buildOrderPayload(orderId: string): Promise<HubboPosOrderP
     scheduled_time: order.scheduled_for || undefined,
     items,
     notes: order.notes || undefined,
+    include_cutlery: order.include_cutlery,
   };
 
   return payload;

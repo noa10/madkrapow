@@ -55,6 +55,7 @@ const CheckoutRequestSchema = z.object({
   }).optional(),
   // Promo codes — array of { code, scope } for stacking
   promoCodes: z.array(PromoCodeEntrySchema).default([]),
+  includeCutlery: z.boolean().default(true),
 }).superRefine((data, ctx) => {
   if (data.deliveryType === 'delivery') {
     const addr = data.deliveryAddress;
@@ -156,10 +157,23 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
 
     // ── Validate all prices from database (never trust client) ─────
     const menuItemIds = items.map(i => i.id)
-    const { data: dbItems, error: dbError } = await supabase
-      .from('menu_items')
-      .select('id, name, price_cents, image_url')
-      .in('id', menuItemIds)
+    const modifierIds = items.flatMap(i => i.modifiers.map(m => m.id))
+
+    const [menuResult, modifiersResult] = await Promise.all([
+      supabase
+        .from('menu_items')
+        .select('id, name, price_cents, image_url')
+        .in('id', menuItemIds),
+      modifierIds.length > 0
+        ? supabase
+            .from('modifiers')
+            .select('id, name, price_delta_cents')
+            .in('id', modifierIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+
+    const { data: dbItems, error: dbError } = menuResult
+    const { data: dbModifiers } = modifiersResult
 
     if (dbError || !dbItems) {
       console.error('[API] Failed to fetch menu items:', dbError)
@@ -169,26 +183,52 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
-    // Calculate subtotal from DB prices (server-truth)
+    // Calculate subtotal from DB prices (server-truth) — includes modifier price deltas
     let subtotalCents = 0
     const validatedItems = items.map(item => {
       const dbItem = dbItems.find(d => d.id === item.id)
       if (!dbItem) {
         throw new Error(`Menu item not found: ${item.id}`)
       }
-      const lineTotal = dbItem.price_cents * item.quantity
+
+      // Validate each modifier against DB (security: use DB prices, not client prices)
+      let modifierTotalCents = 0
+      const validatedModifiers = item.modifiers.map(mod => {
+        const dbMod = dbModifiers?.find(d => d.id === mod.id)
+        if (!dbMod) {
+          throw new Error(`Modifier not found: ${mod.id}`)
+        }
+        modifierTotalCents += dbMod.price_delta_cents
+        return { id: dbMod.id, name: dbMod.name, price_delta_cents: dbMod.price_delta_cents }
+      })
+
+      const unitPriceCents = dbItem.price_cents + modifierTotalCents
+      const lineTotal = unitPriceCents * item.quantity
       subtotalCents += lineTotal
-      return { ...item, dbPriceCents: dbItem.price_cents, lineTotalCents: lineTotal, dbName: dbItem.name, dbImageUrl: dbItem.image_url }
+      return {
+        ...item,
+        dbPriceCents: dbItem.price_cents,
+        modifierTotalCents,
+        unitPriceCents,
+        lineTotalCents: lineTotal,
+        dbName: dbItem.name,
+        dbImageUrl: dbItem.image_url,
+        validatedModifiers,
+      }
     })
 
     // ── Fetch store settings for scheduling validation ─────────────
     const { data: storeSettings } = await supabase
       .from('store_settings')
-      .select('kitchen_lead_minutes, pickup_enabled, operating_hours')
+      .select('kitchen_lead_minutes, pickup_enabled, operating_hours, cutlery_enabled, cutlery_default')
       .limit(1)
       .single()
 
     const kitchenLeadMinutes = storeSettings?.kitchen_lead_minutes ?? 20
+
+    const effectiveIncludeCutlery = storeSettings?.cutlery_enabled
+      ? (parsed.data.includeCutlery ?? storeSettings?.cutlery_default ?? true)
+      : (storeSettings?.cutlery_default ?? true)
 
     // Validate self-pickup availability
     if (deliveryType === 'self_pickup' && !storeSettings?.pickup_enabled) {
@@ -378,6 +418,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         dispatch_after: dispatchAfter,
         dispatch_status: fulfillmentType === 'scheduled' ? 'queued' : 'not_ready',
         kitchen_lead_minutes: kitchenLeadMinutes,
+        include_cutlery: effectiveIncludeCutlery,
         stripe_session_id: null,
       })
       .select('id')
@@ -503,7 +544,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       menu_item_price_cents: item.dbPriceCents,
       quantity: item.quantity,
       line_total_cents: item.lineTotalCents,
-      notes: item.modifiers.length > 0 ? item.modifiers.map(m => m.name).join(', ') : null,
+      notes: item.validatedModifiers.length > 0 ? item.validatedModifiers.map(m => m.name).join(', ') : null,
       image_url: item.dbImageUrl || null,
     }))
 
@@ -531,7 +572,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }> = []
 
     validatedItems.forEach((item, itemIndex) => {
-      for (const mod of item.modifiers) {
+      for (const mod of item.validatedModifiers) {
         orderItemModifiers.push({
           order_item_id: insertedItems[itemIndex].id,
           modifier_id: mod.id,
@@ -553,20 +594,25 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }
 
     // Create Stripe Checkout Session
-    const lineItems: NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>['line_items'] = validatedItems.map((item) => ({
-      price_data: {
-        currency: 'myr',
-        product_data: {
-          name: item.dbName,
-          images: item.image ? [item.image] : undefined,
-          metadata: {
-            menu_item_id: item.id,
+    const lineItems: NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>['line_items'] = validatedItems.map((item) => {
+      const modifierSuffix = item.validatedModifiers.length > 0
+        ? ` (${item.validatedModifiers.map(m => m.name).join(', ')})`
+        : ''
+      return {
+        price_data: {
+          currency: 'myr',
+          product_data: {
+            name: `${item.dbName}${modifierSuffix}`,
+            images: item.image ? [item.image] : undefined,
+            metadata: {
+              menu_item_id: item.id,
+            },
           },
+          unit_amount: item.unitPriceCents,
         },
-        unit_amount: item.dbPriceCents,
-      },
-      quantity: item.quantity,
-    }))
+        quantity: item.quantity,
+      }
+    })
 
     if (effectiveDeliveryFee > 0) {
       lineItems.push({

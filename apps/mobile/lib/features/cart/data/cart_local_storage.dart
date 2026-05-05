@@ -4,6 +4,7 @@ import 'cart_item.dart';
 
 const _boxName = 'cart_box';
 const _itemsKey = 'items';
+const _includeCutleryKey = 'include_cutlery';
 
 /// Hive-based persistence for cart state.
 /// Mirrors the web's zustand/persist with localStorage.
@@ -41,5 +42,17 @@ class CartLocalStorage {
     final box = _box;
     if (box == null) return;
     await box.delete(_itemsKey);
+  }
+
+  static bool loadIncludeCutlery() {
+    final box = _box;
+    if (box == null) return true;
+    return box.get(_includeCutleryKey, defaultValue: true) as bool;
+  }
+
+  static Future<void> saveIncludeCutlery(bool value) async {
+    final box = _box;
+    if (box == null) return;
+    await box.put(_includeCutleryKey, value);
   }
 }

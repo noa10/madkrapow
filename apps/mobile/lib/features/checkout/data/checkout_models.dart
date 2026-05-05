@@ -162,6 +162,7 @@ class CheckoutRequest {
     this.stopIds,
     this.priceBreakdown,
     this.appliedPromos = const [],
+    this.includeCutlery = true,
   });
 
   final List<CheckoutItem> items;
@@ -175,6 +176,7 @@ class CheckoutRequest {
   final StopIds? stopIds;
   final PriceBreakdown? priceBreakdown;
   final List<AppliedPromo> appliedPromos;
+  final bool includeCutlery;
 
   Map<String, dynamic> toJson() => {
         'items': items.map((i) => i.toJson()).toList(),
@@ -191,6 +193,7 @@ class CheckoutRequest {
           'promoCodes': appliedPromos
               .map((p) => {'code': p.code, 'scope': p.scope})
               .toList(),
+        'includeCutlery': includeCutlery,
       };
 }
 

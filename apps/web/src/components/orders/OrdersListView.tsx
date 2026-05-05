@@ -11,6 +11,7 @@ interface Order {
   total_cents: number
   created_at: string
   delivery_type: string
+  include_cutlery: boolean
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string; icon: typeof Clock }> = {

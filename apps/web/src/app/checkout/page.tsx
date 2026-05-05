@@ -53,6 +53,8 @@ interface StoreSettings {
   operating_hours: Record<string, { open: string; close: string }> | null
   pickup_enabled: boolean
   kitchen_lead_minutes: number
+  cutlery_enabled: boolean
+  cutlery_default: boolean
 }
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -90,6 +92,8 @@ export default function CheckoutPage() {
   const getSubtotal = useCartStore((state) => state.getSubtotal)
   const getOriginalSubtotal = useCartStore((state) => state.getOriginalSubtotal)
   const clearCart = useCartStore((state) => state.clear)
+const includeCutlery = useCartStore((state) => state.includeCutlery)
+const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   // Auth & verification state
   const [authChecked, setAuthChecked] = useState(false)
@@ -365,6 +369,8 @@ export default function CheckoutPage() {
             operating_hours: data.operating_hours,
             pickup_enabled: data.pickup_enabled ?? true,
             kitchen_lead_minutes: data.kitchen_lead_minutes ?? 20,
+            cutlery_enabled: data.cutlery_enabled ?? true,
+            cutlery_default: data.cutlery_default ?? true,
           })
         }
       } catch (err) {
@@ -516,6 +522,7 @@ export default function CheckoutPage() {
         fulfillmentType,
         scheduledFor: scheduledWindow?.window_start,
         promoCodes: useCartStore.getState().appliedPromos.map(p => ({ code: p.code, scope: p.scope })),
+        includeCutlery: useCartStore.getState().includeCutlery,
         ...(quotationId && stopIds && priceBreakdown && {
           quotationId,
           serviceType,
@@ -804,11 +811,15 @@ export default function CheckoutPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{item.quantity}x</span>
-                          <span className="truncate">{item.name}</span>
+                          <span>{item.name}</span>
                         </div>
                         {item.modifiers && item.modifiers.length > 0 && (
-                          <div className="text-muted-foreground text-xs mt-0.5">
-                            {item.modifiers.map((mod) => mod.name).join(', ')}
+                          <div className="mt-0.5">
+                            {item.modifiers.map((mod) => (
+                              <p key={mod.id} className="text-muted-foreground text-xs leading-relaxed">
+                                {mod.name}{mod.price_delta_cents > 0 ? ` (+${formatPrice(mod.price_delta_cents)})` : ''}
+                              </p>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -957,6 +968,23 @@ export default function CheckoutPage() {
                     <FulfillmentSelector />
                   </section>
 
+                  {storeSettings?.cutlery_enabled !== false && (
+                    <section className="rounded-xl border bg-card p-5 shadow-sm">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <div>
+                          <span className="text-sm font-medium">Include cutlery?</span>
+                          <p className="text-xs text-muted-foreground">Help reduce waste. Uncheck if you don&apos;t need forks/spoons.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={includeCutlery}
+                          onChange={(e) => setIncludeCutlery(e.target.checked)}
+                          className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                      </label>
+                    </section>
+                  )}
+
                   {fulfillmentType === 'scheduled' && (
                     <section className="rounded-xl border bg-card p-5 shadow-sm">
                       <h2 className="text-lg font-semibold mb-4 font-display">Pick a Time Slot</h2>
@@ -998,6 +1026,12 @@ export default function CheckoutPage() {
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Service</span>
                         <span>{serviceType === 'CAR' ? 'Car' : 'Motorcycle'}</span>
+                      </div>
+                    )}
+                    {storeSettings?.cutlery_enabled !== false && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Cutlery</span>
+                        <span>{includeCutlery ? 'Yes' : 'No'}</span>
                       </div>
                     )}
                     {quoteExpired && (

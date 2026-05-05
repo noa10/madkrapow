@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../cart/providers/cart_provider.dart';
@@ -21,6 +22,7 @@ final promoPreviewProvider =
   }
 
   final preview = await repo.fetchPromoPreview(itemId);
+  debugPrint('PromoPreview: itemId=$itemId → ${preview != null ? 'discountedCents=${preview.discountedCents}, savingsCents=${preview.savingsCents}' : 'null'}');
 
   if (preview != null) {
     ref.read(_promoPreviewCacheProvider)[itemId] = (
@@ -66,12 +68,12 @@ final promoPreviewBatchProvider =
 /// handled separately at checkout to avoid double-counting.
 Future<void> refreshCartPromoDiscounts(WidgetRef ref) async {
   final cart = ref.read(cartProvider);
-  if (cart.isEmpty) {
+  if (cart.items.isEmpty) {
     ref.read(cartProvider.notifier).clearPromoDiscounts();
     return;
   }
 
-  final uniqueItemIds = cart.map((item) => item.menuItemId).toSet().toList();
+  final uniqueItemIds = cart.items.map((item) => item.menuItemId).toSet().toList();
   final previewMap = await ref.read(promoPreviewBatchProvider(uniqueItemIds).future);
 
   // Only apply per-item discounts for item-scoped promos.

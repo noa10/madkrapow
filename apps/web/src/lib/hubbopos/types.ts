@@ -111,6 +111,7 @@ export interface HubboPosOrderPayload {
   items: HubboPosOrderItem[];
   payment_method?: string;
   notes?: string;
+  include_cutlery?: boolean;
 }
 
 export interface HubboPosOrderResponse {

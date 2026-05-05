@@ -30,6 +30,7 @@ type CartState = {
   isDrawerOpen: boolean
   isHydrated: boolean
   appliedPromos: AppliedPromo[]
+  includeCutlery: boolean
   toggleDrawer: () => void
   openDrawer: () => void
   closeDrawer: () => void
@@ -46,6 +47,7 @@ type CartState = {
   applyPromo: (promo: AppliedPromo) => void
   removePromo: (code: string) => void
   clearPromos: () => void
+  setIncludeCutlery: (value: boolean) => void
 }
 
 const getModifierKey = (modifiers: SelectedModifier[]): string => {
@@ -69,6 +71,8 @@ export const useCartStore = create<CartState>()(
       isDrawerOpen: false,
       isHydrated: false,
       appliedPromos: [],
+      includeCutlery: true,
+      setIncludeCutlery: (value) => set({ includeCutlery: value }),
       toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
       openDrawer: () => set({ isDrawerOpen: true }),
       closeDrawer: () => set({ isDrawerOpen: false }),
@@ -185,7 +189,7 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'cart-storage',
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, includeCutlery: state.includeCutlery }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.isHydrated = true

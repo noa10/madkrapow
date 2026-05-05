@@ -70,6 +70,12 @@ class OrderListTile extends StatelessWidget {
                 const SizedBox(width: 4),
                 const Text('Bulk', style: TextStyle(fontSize: 12)),
               ],
+              const SizedBox(width: 8),
+              Icon(
+                Icons.flatware,
+                size: 16,
+                color: order.includeCutlery ? Colors.green : Colors.grey,
+              ),
             ],
           ),
           const SizedBox(height: 2),

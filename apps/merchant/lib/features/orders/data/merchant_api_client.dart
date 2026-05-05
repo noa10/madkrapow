@@ -19,8 +19,15 @@ class MerchantApiClient {
 
   String get _baseUrl => resolveApiUrl(AppEnv.webApiUrl);
 
-  /// Build headers with a valid auth token. Throws if session is missing.
-  Map<String, String> get _headers {
+  /// Build headers with a fresh auth token. Calls refreshSession() to ensure
+  /// the token is refreshed if it has expired. Raw HTTP calls bypass Supabase's
+  /// auto-refresh, so tokens can go stale without this. Throws if session is missing.
+  Future<Map<String, String>> _buildHeaders() async {
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {
+      // Refresh failed — fall through to check cached session
+    }
     final token = _supabase.auth.currentSession?.accessToken;
     if (token == null || token.isEmpty) {
       throw const AuthRequiredException(
@@ -41,7 +48,7 @@ class MerchantApiClient {
   ]) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api$path'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: body != null ? jsonEncode(body) : null,
     );
 
@@ -53,7 +60,7 @@ class MerchantApiClient {
   Future<void> testHubboPosConnection() async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/admin/hubbopos/test-connection'),
-      headers: _headers,
+      headers: await _buildHeaders(),
     );
 
     _handleResponse(response);
@@ -64,7 +71,7 @@ class MerchantApiClient {
   Future<void> syncHubboPos() async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/admin/hubbopos/sync'),
-      headers: _headers,
+      headers: await _buildHeaders(),
     );
 
     _handleResponse(response);
@@ -75,7 +82,7 @@ class MerchantApiClient {
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/status'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: jsonEncode({'status': newStatus}),
     );
 
@@ -100,7 +107,7 @@ class MerchantApiClient {
 
     final response = await http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/approve'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: jsonEncode(body),
     );
 
@@ -117,7 +124,7 @@ class MerchantApiClient {
   Future<void> cancelOrder(String orderId) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/status'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: jsonEncode({'status': 'cancelled'}),
     );
 
@@ -136,7 +143,7 @@ class MerchantApiClient {
 
     final response = await http.get(
       uri,
-      headers: _headers,
+      headers: await _buildHeaders(),
     );
 
     return _handleResponse(response) as Map<String, dynamic>;

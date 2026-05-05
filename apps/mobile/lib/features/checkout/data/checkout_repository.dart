@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -16,12 +17,22 @@ class CheckoutRepository {
   final SupabaseClient _supabase;
 
   String get _baseUrl => AppEnv.webApiUrl;
-  String get _authToken => _supabase.auth.currentSession?.accessToken ?? '';
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_authToken',
-      };
+  /// Build headers with a fresh auth token. Calls refreshSession() to ensure
+  /// the token is refreshed if it has expired. Raw HTTP calls bypass Supabase's
+  /// auto-refresh, so tokens can go stale without this.
+  Future<Map<String, String>> _buildHeaders() async {
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {
+      // Refresh failed — use cached token as last resort
+    }
+    final token = _supabase.auth.currentSession?.accessToken ?? '';
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
 
   /// Validate a promo code via /api/checkout/validate-promo.
   Future<AppliedPromo> validatePromo({
@@ -31,7 +42,7 @@ class CheckoutRepository {
   }) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/checkout/validate-promo'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: jsonEncode({
         'code': code,
         'subtotalCents': subtotalCents,
@@ -67,7 +78,7 @@ class CheckoutRepository {
   }) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/api/promos/auto'),
-      headers: _headers,
+      headers: await _buildHeaders(),
       body: jsonEncode({
         'subtotalCents': subtotalCents,
         'deliveryFeeCents': deliveryFeeCents,
@@ -99,7 +110,7 @@ class CheckoutRepository {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/checkout/create'),
-        headers: _headers,
+        headers: await _buildHeaders(),
         body: jsonEncode(request.toJson()),
       );
 
@@ -134,7 +145,7 @@ class CheckoutRepository {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/delivery/quote'),
-        headers: _headers,
+        headers: await _buildHeaders(),
         body: jsonEncode(request.toJson()),
       );
 
@@ -166,18 +177,25 @@ class CheckoutRepository {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/promos/preview'),
-        headers: _headers,
+        headers: await _buildHeaders(),
         body: jsonEncode({'itemId': itemId, 'cartSubtotalCents': 0}),
       );
 
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        debugPrint('fetchPromoPreview: itemId=$itemId status=${response.statusCode} body=${response.body}');
+        return null;
+      }
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final previews = body['previews'] as List?;
-      if (previews == null || previews.isEmpty) return null;
+      if (previews == null || previews.isEmpty) {
+        debugPrint('fetchPromoPreview: itemId=$itemId no previews (empty or null)');
+        return null;
+      }
 
       return PromoPreview.fromJson(previews[0] as Map<String, dynamic>);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('fetchPromoPreview failed for item $itemId: $e');
       return null;
     }
   }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -66,17 +67,23 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
       // Check valid staff role after successful login
       final user = response.user;
       if (user == null) {
+        debugPrint('AdminSignIn: sign-in returned no user');
         throw Exception('Sign-in failed — no user returned');
       }
 
       final role = user.appMetadata['role'] as String?;
+      debugPrint('AdminSignIn: user=${user.email}, role=$role');
       final staffRole = StaffRoleExtension.fromString(role);
       if (staffRole == null) {
         // Not a recognized staff role — sign them out immediately
+        debugPrint('AdminSignIn: unrecognized role "$role", signing out');
         await repo.signOut();
         throw const AuthRequiredException('Access denied — unrecognized role');
       }
     });
+    if (state.hasError) {
+      debugPrint('AdminSignIn: failed — ${state.error}');
+    }
   }
 
   Future<void> signOut() async {

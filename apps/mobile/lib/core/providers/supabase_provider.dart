@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,24 +32,18 @@ final isEmailVerifiedProvider = Provider<bool>((ref) {
 
 /// A Listenable that notifies when auth state changes.
 /// Used by GoRouter.refreshListenable to re-evaluate redirects.
+///
+/// Listens to Riverpod's [authStateProvider] instead of the raw Supabase stream
+/// so that GoRouter's redirect callback always reads up-to-date provider state.
 class AuthStateListenable extends ChangeNotifier {
-  AuthStateListenable(Stream<AuthState> authStateStream) {
-    _subscription = authStateStream.listen((_) {
-      notifyListeners();
-    });
-  }
-
-  late final StreamSubscription<AuthState> _subscription;
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
-  }
+  AuthStateListenable();
 }
 
 /// Provides the AuthStateListenable for GoRouter refreshListenable.
 final authStateListenableProvider = Provider<AuthStateListenable>((ref) {
-  final stream = Supabase.instance.client.auth.onAuthStateChange;
-  return AuthStateListenable(stream);
+  final listenable = AuthStateListenable();
+  ref.listen<AsyncValue<AuthState>>(authStateProvider, (_, __) {
+    listenable.notifyListeners();
+  });
+  return listenable;
 });

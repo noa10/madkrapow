@@ -297,14 +297,20 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
   void _setupTokenManagement() {
     ref.listenManual(authStateProvider, (_, _) {
       if (!mounted) return;
-      final user = ref.read(currentUserProvider);
-      final staffRole = ref.read(staffRoleProvider);
-      // Register FCM for all authenticated staff; server filters by role
-      if (user != null && staffRole != null) {
-        ref.read(fcmRepositoryProvider).registerToken();
-        ref.read(fcmRepositoryProvider).setupTokenRefresh();
-      } else {
-        ref.read(fcmRepositoryProvider).deleteToken();
+      try {
+        final user = ref.read(currentUserProvider);
+        final staffRole = ref.read(staffRoleProvider);
+        // Register FCM for all authenticated staff; server filters by role
+        if (user != null && staffRole != null) {
+          ref.read(fcmRepositoryProvider).registerToken();
+          ref.read(fcmRepositoryProvider).setupTokenRefresh();
+        } else {
+          ref.read(fcmRepositoryProvider).deleteToken();
+        }
+      } catch (e) {
+        // Guard: sign-out triggers GoRouter redirect which may dispose this
+        // widget before the listener callback finishes using ref.
+        debugPrint('NotificationHandler: token management skipped — $e');
       }
     });
   }

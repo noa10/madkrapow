@@ -7,11 +7,37 @@ import '../../../auth/providers/admin_auth_providers.dart';
 
 /// Screen for the More tab.
 /// Contains promotions, staff management, settings, and sign-out.
-class PlaceholderMoreScreen extends ConsumerWidget {
+class PlaceholderMoreScreen extends ConsumerStatefulWidget {
   const PlaceholderMoreScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaceholderMoreScreen> createState() =>
+      _PlaceholderMoreScreenState();
+}
+
+class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
+  bool _isSigningOut = false;
+
+  Future<void> _handleSignOut() async {
+    if (_isSigningOut) return;
+    setState(() => _isSigningOut = true);
+
+    try {
+      await ref.read(adminSignInProvider.notifier).signOut();
+      // Fallback: if GoRouter redirect hasn't navigated yet, do it explicitly.
+      // context.go to the same location is a no-op if already there.
+      if (mounted) context.go(AppRoutes.signin);
+    } catch (_) {
+      // signOut triggers GoRouter redirect which may dispose this widget;
+      // any "ref after dispose" errors are safe to ignore here.
+      if (mounted) context.go(AppRoutes.signin);
+    } finally {
+      if (mounted) setState(() => _isSigningOut = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final canManageStaff = ref.watch(canManageStaffProvider);
     final isAdmin = ref.watch(isAdminProvider);
 
@@ -75,11 +101,11 @@ class PlaceholderMoreScreen extends ConsumerWidget {
           const Divider(),
         ],
         ListTile(
-          leading: const Icon(Icons.logout),
+          leading: _isSigningOut
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.logout),
           title: const Text('Sign Out'),
-          onTap: () {
-            ref.read(adminSignInProvider.notifier).signOut();
-          },
+          onTap: _isSigningOut ? null : _handleSignOut,
         ),
       ],
     );

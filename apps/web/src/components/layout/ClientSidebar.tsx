@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   Home,
@@ -9,6 +10,7 @@ import {
   ShoppingBag,
   Store,
   LogOut,
+  User,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
@@ -162,16 +164,20 @@ export function ClientSidebar({
                 onClick={onMobileClose}
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
               >
-                <Home className="h-3.5 w-3.5 shrink-0" />
-                <span className={cn(collapsed && "lg:hidden")}>Dashboard</span>
-              </Link>
-              <Link
-                href="/orders"
-                onClick={onMobileClose}
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-              >
-                <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
-                <span className={cn(collapsed && "lg:hidden")}>Order History</span>
+                {user?.user_metadata?.avatar_url ? (
+                  <Image
+                    src={user.user_metadata.avatar_url as string}
+                    alt="Profile"
+                    width={14}
+                    height={14}
+                    className="rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <User className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className={cn(collapsed && "lg:hidden")}>
+                  {user?.email || "Profile"}
+                </span>
               </Link>
               <button
                 onClick={async () => {

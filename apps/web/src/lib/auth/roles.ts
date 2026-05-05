@@ -1,6 +1,7 @@
 export interface RoleAwareUser {
   email?: string | null
   app_metadata?: Record<string, unknown> | null
+  user_metadata?: Record<string, unknown> | null
 }
 
 export type StaffRole = 'admin' | 'manager' | 'cashier' | 'kitchen'

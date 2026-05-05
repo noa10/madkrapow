@@ -4,13 +4,12 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { LogOut, Menu, X } from "lucide-react";
+import { LogOut, Menu, X, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/stores/cart";
-import { ProfileDropdown } from "@/components/layout/ProfileDropdown";
 
 interface HeaderProps {
   className?: string;
@@ -76,9 +75,27 @@ export function Header({ className }: HeaderProps) {
       Admin
     </Link>
   ) : user ? (
-    <ProfileDropdown
-      userEmail={user.email}
-    />
+    <Link
+      href="/profile"
+      className="hidden items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold sm:flex"
+    >
+      {user?.user_metadata?.avatar_url ? (
+        <Image
+          src={user.user_metadata.avatar_url as string}
+          alt="Profile"
+          width={20}
+          height={20}
+          className="rounded-full object-cover"
+        />
+      ) : (
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-semibold">
+          {user?.email?.[0]?.toUpperCase() || "?"}
+        </span>
+      )}
+      <span className="max-w-[120px] truncate normal-case tracking-normal">
+        {user?.email}
+      </span>
+    </Link>
   ) : (
     <Link
       href="/auth"
@@ -100,17 +117,11 @@ export function Header({ className }: HeaderProps) {
     <div className="flex flex-col gap-2">
       <Link
         href="/profile"
-        className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
+        className="flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        Dashboard
-      </Link>
-      <Link
-        href="/orders"
-        className="rounded-full border border-white/10 px-4 py-2 text-left text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
-        onClick={() => setIsMobileMenuOpen(false)}
-      >
-        Order History
+        <User className="h-3.5 w-3.5" />
+        Profile
       </Link>
       <Button
         type="button"

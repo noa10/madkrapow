@@ -1,6 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../generated/tables/customers.dart';
@@ -26,21 +28,52 @@ class ProfileScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Profile header
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundColor: theme.colorScheme.primary.withValues(
-                          alpha: 0.1,
-                        ),
-                        child: Icon(
-                          Icons.person,
-                          size: 40,
-                          color: theme.colorScheme.primary,
+                      GestureDetector(
+                        onTap: () => _pickAndUploadAvatar(context, ref),
+                        child: Stack(
+                          children: [
+                            customer.avatarUrl != null &&
+                                    customer.avatarUrl!.isNotEmpty
+                                ? CircleAvatar(
+                                    radius: 40,
+                                    backgroundImage: CachedNetworkImageProvider(
+                                      customer.avatarUrl!,
+                                    ),
+                                  )
+                                : CircleAvatar(
+                                    radius: 40,
+                                    backgroundColor:
+                                        theme.colorScheme.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    child: Icon(
+                                      Icons.person,
+                                      size: 40,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.camera_alt,
+                                  size: 16,
+                                  color: theme.colorScheme.onPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -65,7 +98,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Edit profile
               Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,6 +109,15 @@ class ProfileScreen extends ConsumerWidget {
                       onTap: () => _showEditProfileDialog(context, ref, profile.customer),
                     ),
                     const Divider(height: 1),
+                    if (customer.avatarUrl != null && customer.avatarUrl!.isNotEmpty)
+                      ListTile(
+                        leading: const Icon(Icons.photo_outlined),
+                        title: const Text('Remove Photo'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _removeAvatar(context, ref),
+                      ),
+                    if (customer.avatarUrl != null && customer.avatarUrl!.isNotEmpty)
+                      const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.lock_outline),
                       title: const Text('Change Password'),
@@ -88,7 +129,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
 
-              // Saved contacts
               Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,7 +144,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
 
-              // Saved addresses
               Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,7 +159,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
 
-              // Order history
               Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,7 +174,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
 
-              // Sign out
               OutlinedButton.icon(
                 onPressed: () async {
                   final prefs = await SharedPreferences.getInstance();
@@ -156,6 +193,104 @@ class ProfileScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  Future<void> _pickAndUploadAvatar(BuildContext context, WidgetRef ref) async {
+    try {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (image == null) return;
+
+      if (!context.mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Uploading photo...'),
+            ],
+          ),
+        ),
+      );
+
+      final bytes = await image.readAsBytes();
+      final contentType = image.mimeType ?? 'image/jpeg';
+
+      final repo = ref.read(profileRepositoryProvider);
+      await repo.uploadAvatar(
+        filePath: image.name,
+        fileBytes: bytes,
+        contentType: contentType,
+      );
+
+      ref.invalidate(profileProvider);
+
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo updated')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeAvatar(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Photo'),
+        content: const Text('Are you sure you want to remove your profile photo?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final repo = ref.read(profileRepositoryProvider);
+      await repo.removeAvatar();
+      ref.invalidate(profileProvider);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo removed')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove photo: $e')),
+        );
+      }
+    }
   }
 
   void _showEditProfileDialog(BuildContext context, WidgetRef ref, CustomersRow customer) {

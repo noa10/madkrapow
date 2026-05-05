@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { User, Pencil, Mail, Phone } from "lucide-react"
+import { useState, useRef } from "react"
+import { User, Pencil, Mail, Phone, Camera, Loader2, X } from "lucide-react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +13,7 @@ interface Customer {
   name: string | null
   phone: string | null
   email: string | null
+  avatarUrl: string | null
 }
 
 interface PersonalInfoEditorProps {
@@ -23,6 +25,9 @@ export function PersonalInfoEditor({ customer, onChange }: PersonalInfoEditorPro
   const addToast = useToastStore((state) => state.addToast)
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(customer?.avatarUrl || '')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [formData, setFormData] = useState({
     name: customer?.name || '',
@@ -39,6 +44,102 @@ export function PersonalInfoEditor({ customer, onChange }: PersonalInfoEditorPro
 
   const cancelEdit = () => {
     setIsEditing(false)
+  }
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      addToast({ type: 'error', title: 'Invalid file type', description: 'Only JPEG, PNG, and WebP are allowed', duration: 4000 })
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      addToast({ type: 'error', title: 'File too large', description: 'Maximum size is 5MB', duration: 4000 })
+      return
+    }
+
+    setAvatarUploading(true)
+    try {
+      const { getBrowserClient } = await import('@/lib/supabase/client')
+      const supabase = getBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        addToast({ type: 'error', title: 'Not authenticated', duration: 4000 })
+        return
+      }
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/customer/avatar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to upload avatar')
+      }
+
+      setAvatarUrl(data.avatarUrl)
+      await supabase.auth.refreshSession()
+      onChange()
+      addToast({ type: 'success', title: 'Photo updated', duration: 3000 })
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to upload photo',
+        duration: 4000,
+      })
+    } finally {
+      setAvatarUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleAvatarRemove = async () => {
+    setAvatarUploading(true)
+    try {
+      const { getBrowserClient } = await import('@/lib/supabase/client')
+      const supabase = getBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        addToast({ type: 'error', title: 'Not authenticated', duration: 4000 })
+        return
+      }
+
+      const res = await fetch('/api/customer/avatar', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      const data = await res.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to remove photo')
+      }
+
+      setAvatarUrl('')
+      await supabase.auth.refreshSession()
+      onChange()
+      addToast({ type: 'success', title: 'Photo removed', duration: 3000 })
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to remove photo',
+        duration: 4000,
+      })
+    } finally {
+      setAvatarUploading(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -95,6 +196,59 @@ export function PersonalInfoEditor({ customer, onChange }: PersonalInfoEditorPro
         )}
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="relative group">
+            {avatarUrl ? (
+              <div className="relative h-16 w-16 rounded-full overflow-hidden">
+                <Image
+                  src={avatarUrl}
+                  alt="Profile photo"
+                  fill
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                <User className="h-8 w-8 text-primary/60" />
+              </div>
+            )}
+            {avatarUploading && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                <Loader2 className="h-5 w-5 animate-spin text-white" />
+              </div>
+            )}
+            {!avatarUploading && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/30"
+              >
+                <Camera className="h-4 w-4 text-white" />
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
+            {avatarUrl && (
+              <Button variant="ghost" size="sm" onClick={handleAvatarRemove} disabled={avatarUploading} className="h-7 text-xs text-muted-foreground">
+                <X className="h-3 w-3 mr-1" />
+                Remove
+              </Button>
+            )}
+            {!avatarUrl && (
+              <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} disabled={avatarUploading} className="h-7 text-xs text-muted-foreground">
+                <Camera className="h-3 w-3 mr-1" />
+                Add photo
+              </Button>
+            )}
+          </div>
+        </div>
+
         {isEditing ? (
           <div className="space-y-3">
             <div className="space-y-1.5">

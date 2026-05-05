@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -22,26 +24,32 @@ class ProfileRepository {
   ProfileRepository(this._supabase);
   final SupabaseClient _supabase;
 
+  static const _avatarBucket = 'profile-photos';
+  static const int _maxFileSize = 5 * 1024 * 1024;
+  static const _allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
   /// Get or create the customer profile for the current user.
   Future<CustomerProfile> fetchProfile() async {
     final user = _supabase.auth.currentUser!;
 
-    // Get or create customer
     var customerRes = await _supabase
         .from('customers')
         .select()
         .eq('auth_user_id', user.id)
         .maybeSingle();
 
+    final googleAvatarUrl =
+        user.userMetadata?['avatar_url'] ?? user.userMetadata?['picture'];
+
     customerRes ??= await _supabase.from('customers').insert({
       'auth_user_id': user.id,
       'name': user.userMetadata?['full_name'],
       'phone': user.phone,
+      'avatar_url': googleAvatarUrl,
     }).select().single();
 
     final customer = CustomersRow.fromJson(customerRes);
 
-    // Fetch addresses
     final addressesRes = await _supabase
         .from('customer_addresses')
         .select()
@@ -51,7 +59,6 @@ class ProfileRepository {
     final addresses =
         addressesRes.map((json) => CustomerAddressesRow.fromJson(json)).toList();
 
-    // Fetch contacts
     final contactsRes = await _supabase
         .from('customer_contacts')
         .select()
@@ -62,6 +69,73 @@ class ProfileRepository {
         contactsRes.map((json) => CustomerContactsRow.fromJson(json)).toList();
 
     return CustomerProfile(customer: customer, addresses: addresses, contacts: contacts);
+  }
+
+  // ── Avatar ──────────────────────────────────────────────────────
+
+  Future<String> uploadAvatar({
+    required String filePath,
+    required Uint8List fileBytes,
+    required String contentType,
+  }) async {
+    if (!_allowedTypes.contains(contentType)) {
+      throw Exception('Invalid file type. Only JPEG, PNG, and WebP are allowed.');
+    }
+    if (fileBytes.length > _maxFileSize) {
+      throw Exception('File too large. Maximum size is 5MB.');
+    }
+
+    final userId = _supabase.auth.currentUser!.id;
+    final fileExt = filePath.split('.').last;
+    final storagePath = '$userId/${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
+    await _supabase.storage.from(_avatarBucket).uploadBinary(
+          storagePath,
+          fileBytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    final publicUrl =
+        _supabase.storage.from(_avatarBucket).getPublicUrl(storagePath);
+
+    await _supabase.from('customers').update({
+      'avatar_url': publicUrl,
+    }).eq('auth_user_id', userId);
+
+    // Mirror avatar_url to user_metadata so web Header/Sidebar see the change
+    final currentMetadata = Map<String, dynamic>.from(
+      _supabase.auth.currentUser?.userMetadata ?? {},
+    );
+    await _supabase.auth.updateUser(
+      UserAttributes(data: {...currentMetadata, 'avatar_url': publicUrl}),
+    );
+
+    return publicUrl;
+  }
+
+  Future<void> removeAvatar() async {
+    final userId = _supabase.auth.currentUser!.id;
+
+    final files = await _supabase.storage.from(_avatarBucket).list(
+      path: userId,
+    );
+    if (files.isNotEmpty) {
+      final filePaths = files.map((f) => '$userId/${f.name}').toList();
+      await _supabase.storage.from(_avatarBucket).remove(filePaths);
+    }
+
+    await _supabase.from('customers').update({
+      'avatar_url': null,
+    }).eq('auth_user_id', userId);
+
+    // Mirror avatar removal to user_metadata for cross-platform sync
+    final currentMetadata = Map<String, dynamic>.from(
+      _supabase.auth.currentUser?.userMetadata ?? {},
+    );
+    currentMetadata.remove('avatar_url');
+    await _supabase.auth.updateUser(
+      UserAttributes(data: currentMetadata),
+    );
   }
 
   // ── Addresses ──────────────────────────────────────────────────

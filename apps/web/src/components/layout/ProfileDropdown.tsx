@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { User, LayoutDashboard, ShoppingBag, LogOut, ChevronDown } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
@@ -9,10 +10,11 @@ import { getBrowserClient } from '@/lib/supabase/client'
 interface ProfileDropdownProps {
   userName?: string | null
   userEmail?: string | null
+  userAvatarUrl?: string | null
   isAdmin?: boolean
 }
 
-export function ProfileDropdown({ userName, userEmail, isAdmin }: ProfileDropdownProps) {
+export function ProfileDropdown({ userName, userEmail, userAvatarUrl, isAdmin }: ProfileDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -42,20 +44,47 @@ export function ProfileDropdown({ userName, userEmail, isAdmin }: ProfileDropdow
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-gold"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-semibold normal-case tracking-normal">
-          {initial}
-        </span>
+        {userAvatarUrl ? (
+          <div className="relative h-6 w-6 rounded-full overflow-hidden">
+            <Image
+              src={userAvatarUrl}
+              alt="Profile"
+              fill
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-semibold normal-case tracking-normal">
+            {initial}
+          </span>
+        )}
         <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
         <div className="absolute right-0 bottom-full mb-2 w-56 rounded-lg border border-border bg-popover shadow-lg overflow-hidden z-50">
           {userName && (
-            <div className="px-4 py-3 border-b border-border">
-              <p className="text-sm font-medium truncate">{userName}</p>
-              {userEmail && (
-                <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+            <div className="px-4 py-3 border-b border-border flex items-center gap-3">
+              {userAvatarUrl ? (
+                <div className="relative h-8 w-8 rounded-full overflow-hidden shrink-0">
+                  <Image
+                    src={userAvatarUrl}
+                    alt="Profile"
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
+                  {initial}
+                </div>
               )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{userName}</p>
+                {userEmail && (
+                  <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+                )}
+              </div>
             </div>
           )}
           <div className="py-1">

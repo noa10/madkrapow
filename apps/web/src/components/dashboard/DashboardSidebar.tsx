@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { Home, ShoppingBag, LogOut, Store } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client"
@@ -18,7 +19,7 @@ interface DashboardSidebarProps {
 }
 
 const sidebarNavItems = [
-  { href: "/profile", label: "Dashboard", icon: Home },
+  { href: "/profile", label: "Profile", icon: Home },
   { href: "/orders", label: "Order History", icon: ShoppingBag },
 ]
 
@@ -27,6 +28,7 @@ export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false,
   const router = useRouter()
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userInitial, setUserInitial] = useState<string>("?")
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
   const supabase = getBrowserClient()
 
   useEffect(() => {
@@ -35,9 +37,16 @@ export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false,
       if (user) {
         setUserEmail(user.email ?? null)
         setUserInitial(user.email?.[0]?.toUpperCase() ?? "?")
+        setUserAvatarUrl(user.user_metadata?.avatar_url ?? null)
       }
     }
     loadUser()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      loadUser()
+    })
+
+    return () => subscription.unsubscribe()
   }, [supabase])
 
   const handleSignOut = async () => {
@@ -97,9 +106,20 @@ export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false,
         <div className="space-y-3 p-4 border-t border-white/8">
           {userEmail && !collapsed && (
             <div className="flex items-center gap-3 px-2 py-1">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-muted-foreground">
-                {userInitial}
-              </div>
+              {userAvatarUrl ? (
+                <div className="relative h-8 w-8 shrink-0 rounded-full overflow-hidden">
+                  <Image
+                    src={userAvatarUrl}
+                    alt="Profile"
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-xs font-medium text-muted-foreground">
+                  {userInitial}
+                </div>
+              )}
               <div className="min-w-0">
                 <div className="truncate text-xs text-foreground">{userEmail}</div>
               </div>

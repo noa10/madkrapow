@@ -27,6 +27,7 @@ interface Customer {
   name: string | null
   phone: string | null
   email: string | null
+  avatarUrl: string | null
 }
 
 interface ProfileResponse {
@@ -71,12 +72,15 @@ export async function GET(req: NextRequest): Promise<NextResponse<ProfileResult>
     let resolvedCustomer = customer
 
     if (!resolvedCustomer) {
+      const googleAvatarUrl = user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null
+
       const { data: createdCustomer, error: createCustomerError } = await supabase
         .from('customers')
         .insert({
           auth_user_id: user.id,
           name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
           phone: user.phone ?? null,
+          avatar_url: googleAvatarUrl,
         })
         .select('*')
         .single()
@@ -123,6 +127,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<ProfileResult>
           name: resolvedCustomer.name,
           phone: resolvedCustomer.phone,
           email: user.email || null,
+          avatarUrl: resolvedCustomer.avatar_url ?? null,
         },
         addresses: addressesRes.data || [],
         contacts: contactsRes.data || [],
@@ -156,6 +161,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
     const validation = z.object({
       name: z.string().max(100).optional().nullable(),
       phone: z.string().max(50).optional().nullable(),
+      avatarUrl: z.string().url().optional().nullable(),
     }).safeParse(body)
 
     if (!validation.success) {
@@ -165,7 +171,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
       )
     }
 
-    const { name, phone } = validation.data
+    const { name, phone, avatarUrl } = validation.data
 
     const { data: customer } = await supabase
       .from('customers')
@@ -183,6 +189,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
     const updates: Record<string, unknown> = {}
     if (name !== undefined) updates.name = name?.trim() || null
     if (phone !== undefined) updates.phone = phone?.trim() || null
+    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -218,6 +225,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse<ProfileResul
           name: name?.trim() || null,
           phone: phone?.trim() || null,
           email: user.email || null,
+          avatarUrl: avatarUrl ?? null,
         },
         addresses: [],
         contacts: [],

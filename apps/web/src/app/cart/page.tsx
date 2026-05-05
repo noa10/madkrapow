@@ -15,7 +15,7 @@ export default function CartPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  const subtotal = useMemo(() => getSubtotal(), [getSubtotal])
+  const subtotal = useMemo(() => getSubtotal(), [getSubtotal, items])
 
   useEffect(() => {
     async function fetchMenuItems() {

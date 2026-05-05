@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { Trash2, GripVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuantitySelector } from '@/components/menu/QuantitySelector'
-import { useCartStore, type CartItem, type SelectedModifier } from '@/stores/cart'
+import { useCartStore, type CartItem } from '@/stores/cart'
 
 interface CartItemProps {
   item: CartItem
@@ -50,10 +50,7 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
     return `RM${(cents / 100).toFixed(2)}`
   }
 
-  const getModifiersSummary = (modifiers: SelectedModifier[]) => {
-    if (modifiers.length === 0) return null
-    return modifiers.map((m) => m.name).join(', ')
-  }
+
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX)
@@ -94,18 +91,12 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
   return (
     <div
       className={`relative overflow-hidden rounded-xl border bg-card transition-all duration-300 ${
-        isDeleting ? 'opacity-0 -translate-x-4 max-h-0 border-0 py-0 my-0' : 'max-h-40 py-0 my-0'
+        isDeleting ? 'opacity-0 -translate-x-4 max-h-0 border-0 py-0 my-0' : 'py-0 my-0'
       }`}
     >
       <div
-        className={`absolute inset-y-0 right-0 flex items-center justify-center bg-destructive px-4 transition-opacity ${swipeProgress === 0 ? 'pointer-events-none' : ''}`}
-        style={{ opacity: swipeProgress }}
-      >
-        <Trash2 className="h-5 w-5 text-destructive-foreground" />
-      </div>
-      <div
         ref={itemRef}
-        className="flex items-center gap-3 p-3"
+        className="flex items-start gap-3 p-3"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -126,14 +117,18 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h4 className="font-medium text-sm truncate">{itemName}</h4>
-              {getModifiersSummary(item.selected_modifiers) && (
-                <p className="text-xs text-muted-foreground truncate">
-                  {getModifiersSummary(item.selected_modifiers)}
-                </p>
+              <h4 className="font-medium text-sm">{itemName}</h4>
+              {item.selected_modifiers.length > 0 && (
+                <div className="mt-0.5">
+                  {item.selected_modifiers.map((m) => (
+                    <p key={m.id} className="text-xs text-muted-foreground leading-relaxed">
+                      {m.name}{m.price_delta_cents > 0 ? ` (+${formatPrice(m.price_delta_cents)})` : ''}
+                    </p>
+                  ))}
+                </div>
               )}
               {item.special_instructions && (
-                <p className="text-xs text-muted-foreground italic truncate">
+                <p className="text-xs text-muted-foreground italic">
                   &ldquo;{item.special_instructions}&rdquo;
                 </p>
               )}

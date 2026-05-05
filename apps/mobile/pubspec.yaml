@@ -33,6 +33,7 @@ dependencies:
   supabase_codegen: ^1.0.0
   envied: ^1.0.0
   shared_preferences: ^2.3.0
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

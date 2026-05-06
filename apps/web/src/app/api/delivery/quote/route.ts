@@ -161,6 +161,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       ? ` | Lalamove: ${JSON.stringify((error as Error & { responseBody: unknown }).responseBody)}`
       : ''
 
+    const diag = {
+      hasApiKey: !!env.LALAMOVE_API_KEY,
+      hasApiSecret: !!env.LALAMOVE_API_SECRET,
+      lalamoveEnv: env.LALAMOVE_ENV,
+      storeAddr: env.STORE_ADDRESS ?? '(unset)',
+    }
+
     return NextResponse.json(
       {
         success: false,
@@ -168,6 +175,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
           ? 'Delivery address is outside our service area'
           : `Unable to get delivery quote: ${errorMessage}${lalamoveDetail}`,
         code: isOutOfZone ? 'OUT_OF_ZONE' : 'QUOTE_FAILED',
+        diag,
       },
       { status: isOutOfZone ? 422 : 500 }
     )

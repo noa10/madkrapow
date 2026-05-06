@@ -540,7 +540,7 @@ export default function OrderTrackingPage() {
                       <p className="text-sm text-green-400/80 mt-1">
                         Please complete payment to confirm your order.
                       </p>
-                      <Link href={`/checkout/success?order_id=${order.id}`} className="inline-block mt-3">
+                      <Link href={`/order/success?orderId=${order.id}`} className="inline-block mt-3">
                         <Button size="sm">Pay Now</Button>
                       </Link>
                     </div>

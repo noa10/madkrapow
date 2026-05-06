@@ -35,12 +35,15 @@ interface SavedAddressSelectorProps {
 export function SavedAddressSelector({ addresses, onAddNew }: SavedAddressSelectorProps) {
   const deliveryAddress = useCheckoutStore((state) => state.delivery_address)
   const setDeliveryAddress = useCheckoutStore((state) => state.setDeliveryAddress)
+  const clearShippingQuote = useCheckoutStore((state) => state.clearShippingQuote)
   const [selectedId, setSelectedId] = useState<string | null>(
     addresses.find((a) => a.is_default)?.id || addresses[0]?.id || null
   )
 
   const handleSelect = (address: CustomerAddress) => {
     setSelectedId(address.id)
+    // Clear old quote so checkout page fetches a fresh one for the new address
+    clearShippingQuote()
     const current = deliveryAddress || {} as DeliveryAddress
     setDeliveryAddress({
       ...current,

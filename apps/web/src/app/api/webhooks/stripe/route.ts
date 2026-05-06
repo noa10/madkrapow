@@ -91,12 +91,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 400 })
     }
 
-    if (event.type !== 'checkout.session.completed') {
+    if (
+      event.type !== 'checkout.session.completed' &&
+      event.type !== 'checkout.session.async_payment_succeeded'
+    ) {
       console.log(`[Webhook] Ignoring event type: ${event.type}`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    const session = event.data.object as { id: string; metadata?: Record<string, string> }
+    const session = event.data.object as {
+      id: string
+      metadata?: Record<string, string>
+      payment_intent?: string | { id: string }
+    }
     const orderId = session.metadata?.order_id
 
     if (!orderId) {
@@ -131,10 +138,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
+    // Extract Payment Intent ID (not Checkout Session ID)
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : (session.payment_intent as { id: string } | undefined)?.id ?? null
+
     // Mark order as paid
     const { error: updateError } = await supabase
       .from('orders')
-      .update({ status: 'paid', stripe_payment_intent_id: session.id })
+      .update({ status: 'paid', stripe_payment_intent_id: paymentIntentId })
       .eq('id', orderId)
 
     if (updateError) {

@@ -11,13 +11,14 @@ import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
 
-type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out'
+type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying'
 
 function SuccessContent() {
   const searchParams = useSearchParams()
   const clearCart = useCartStore((state) => state.clear)
 
   const orderId = searchParams.get('orderId') || searchParams.get('order_id')
+  const sessionId = searchParams.get('session_id')
   const estimatedDelivery = searchParams.get('delivery')
 
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('confirming')
@@ -67,6 +68,35 @@ function SuccessContent() {
     return !error && data && data.status !== 'pending'
   }, [])
 
+  // Fallback: verify payment directly with Stripe if webhook is delayed or failed
+  const verifyWithStripe = useCallback(async () => {
+    if (!orderId || !sessionId) return false
+
+    try {
+      const response = await fetch('/api/checkout/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, sessionId }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        console.warn('[SuccessPage] Verification failed:', data.error || response.status)
+        return false
+      }
+
+      const data = await response.json()
+      if (data.success) {
+        console.log('[SuccessPage] Payment verified via API fallback:', data.status)
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('[SuccessPage] Verification API error:', err)
+      return false
+    }
+  }, [orderId, sessionId])
+
   // Poll order status until payment is confirmed or timeout
   useEffect(() => {
     if (!orderId) return
@@ -74,9 +104,11 @@ function SuccessContent() {
     const supabase = getBrowserClient()
     let intervalId: ReturnType<typeof setInterval> | undefined
     let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let cancelled = false
 
     const poll = async () => {
       const isConfirmed = await checkStatus(supabase, orderId)
+      if (cancelled) return
       if (isConfirmed) {
         setPaymentStatus('confirmed')
         if (intervalId) clearInterval(intervalId)
@@ -88,31 +120,46 @@ function SuccessContent() {
     poll()
     intervalId = setInterval(poll, 3000)
 
-    // Timeout after 20 seconds — stop spinner, let user proceed
-    timeoutId = setTimeout(() => {
+    // Timeout after 20 seconds — attempt Stripe verification fallback
+    timeoutId = setTimeout(async () => {
       if (intervalId) clearInterval(intervalId)
-      setPaymentStatus('timed_out')
+      if (cancelled) return
+
+      if (sessionId) {
+        setPaymentStatus('verifying')
+        const verified = await verifyWithStripe()
+        if (!cancelled) {
+          setPaymentStatus(verified ? 'confirmed' : 'timed_out')
+        }
+      } else {
+        setPaymentStatus('timed_out')
+      }
     }, 20000)
 
     return () => {
+      cancelled = true
       if (intervalId) clearInterval(intervalId)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [orderId, checkStatus])
+  }, [orderId, checkStatus, verifyWithStripe, sessionId])
 
   return (
     <main className="min-h-screen bg-background">
       <PageContainer size="narrow">
         <div className="py-8 md:py-16">
           <div className="flex flex-col items-center justify-center py-8">
-            {paymentStatus === 'confirming' && (
+            {(paymentStatus === 'confirming' || paymentStatus === 'verifying') && (
               <>
                 <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
                   <Loader2 className="h-10 w-10 text-primary animate-spin" />
                 </div>
-                <h1 className="text-3xl font-semibold font-display mb-2">Confirming Payment</h1>
+                <h1 className="text-3xl font-semibold font-display mb-2">
+                  {paymentStatus === 'verifying' ? 'Verifying Payment' : 'Confirming Payment'}
+                </h1>
                 <p className="text-muted-foreground text-center max-w-md">
-                  Please wait while we confirm your payment. This usually takes a few seconds.
+                  {paymentStatus === 'verifying'
+                    ? 'Webhook was delayed. Checking directly with Stripe...'
+                    : 'Please wait while we confirm your payment. This usually takes a few seconds.'}
                 </p>
               </>
             )}

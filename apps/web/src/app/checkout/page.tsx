@@ -54,6 +54,7 @@ interface StoreSettings {
   kitchen_lead_minutes: number
   cutlery_enabled: boolean
   cutlery_default: boolean
+  delivery_fee: number | null
 }
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -223,12 +224,13 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   const subtotal = getSubtotal()
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
+  const lalamoveFeeCents = deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100)
   const deliveryFee = deliveryType === 'self_pickup'
     ? 0
-    : (deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100))
+    : (lalamoveFeeCents || (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0))
   const total = subtotal + deliveryFee - promoDiscount
 
-  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown
+  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown && !storeSettings
 
   const itemIdsKey = useMemo(
     () => [...new Set(items.map((i) => i.menu_item_id))].sort().join(','),
@@ -361,7 +363,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         const supabase = getBrowserClient()
         const { data } = await supabase
           .from('store_settings')
-          .select('operating_hours, pickup_enabled, kitchen_lead_minutes')
+          .select('operating_hours, pickup_enabled, kitchen_lead_minutes, delivery_fee, cutlery_enabled, cutlery_default')
           .limit(1)
           .single()
         if (data) {
@@ -371,6 +373,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
             kitchen_lead_minutes: data.kitchen_lead_minutes ?? 20,
             cutlery_enabled: data.cutlery_enabled ?? true,
             cutlery_default: data.cutlery_default ?? true,
+            delivery_fee: data.delivery_fee ?? null,
           })
         }
       } catch (err) {
@@ -423,28 +426,55 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         console.log('[Checkout] Quote stored, fee:', data.feeCents)
       } else {
         console.error('[Checkout] Quote failed:', data.error)
+        // Store a quote with the fallback fee from store_settings so the UI
+        // isn't stuck in a loading state and the checkout can proceed.
+        const fallbackCents = useCheckoutStore.getState().delivery_type === 'self_pickup'
+          ? 0
+          : (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0)
+        useCheckoutStore.getState().setDeliveryQuote({
+          quote_id: 'fallback',
+          fee_cents: fallbackCents,
+          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          fees: [],
+        })
+        console.log('[Checkout] Using fallback fee:', fallbackCents)
       }
     } catch (err) {
       console.error('[Checkout] Quote fetch error:', err)
+      const fallbackCents = useCheckoutStore.getState().delivery_type === 'self_pickup'
+        ? 0
+        : (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0)
+      useCheckoutStore.getState().setDeliveryQuote({
+        quote_id: 'fallback',
+        fee_cents: fallbackCents,
+        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        fees: [],
+      })
+      console.log('[Checkout] Using fallback fee after error:', fallbackCents)
     }
-  }, [deliveryAddress, clearShippingQuote])
+  }, [deliveryAddress, clearShippingQuote, storeSettings])
 
-  const hasAttemptedQuoteRefresh = useRef(false)
+  const lastQuotedCoords = useRef<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
-    if (hasAttemptedQuoteRefresh.current) return
     if (deliveryType !== 'delivery') return
     if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) return
 
-    hasAttemptedQuoteRefresh.current = true
+    const currentCoords = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
+    const sameCoords = lastQuotedCoords.current
+      && lastQuotedCoords.current.lat === currentCoords.lat
+      && lastQuotedCoords.current.lng === currentCoords.lng
 
-    console.log('[Checkout] Auto-refresh triggered after hydration')
+    if (sameCoords) return
 
-    if (!isQuoteExpired() && deliveryQuote) {
-      console.log('[Checkout] Quote is fresh, skipping refresh')
+    // New address: if a fresh quote was already stored (e.g., by DeliveryAddressInput), just track the coords
+    if (deliveryQuote && !isQuoteExpired()) {
+      lastQuotedCoords.current = currentCoords
       return
     }
 
+    console.log('[Checkout] Refreshing quote for address:', currentCoords)
+    lastQuotedCoords.current = currentCoords
     handleRefreshQuote()
   }, [deliveryAddress?.latitude, deliveryAddress?.longitude, deliveryType, deliveryQuote, handleRefreshQuote, isQuoteExpired])
 
@@ -1034,8 +1064,10 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                         <Skeleton className="h-4 w-20" />
                       ) : deliveryFee > 0 ? (
                         <span>{formatPrice(deliveryFee)}</span>
+                      ) : deliveryQuote?.quote_id === 'fallback' ? (
+                        <span className="text-muted-foreground">Standard rate</span>
                       ) : (
-                        <span className="text-muted-foreground">Calculated at checkout</span>
+                        <span className="text-muted-foreground">Free</span>
                       )}
                     </div>
                     {deliveryType === 'delivery' && serviceType && (

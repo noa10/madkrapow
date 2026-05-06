@@ -83,6 +83,10 @@ function SortableMenuItemRow({
   onDeleteStart,
   onDelete,
   onDeleteCancel,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   item: MenuItem;
   categoryName: string;
@@ -91,6 +95,10 @@ function SortableMenuItemRow({
   onDeleteStart: () => void;
   onDelete: () => void;
   onDeleteCancel: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -108,7 +116,7 @@ function SortableMenuItemRow({
       style={style}
       className="border-b last:border-0 hover:bg-muted/50"
     >
-      <td className="py-3 w-8">
+      <td className="py-3 w-8 hidden sm:table-cell">
         <button
           className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           {...attributes}
@@ -116,6 +124,28 @@ function SortableMenuItemRow({
         >
           <GripVertical className="h-4 w-4" />
         </button>
+      </td>
+      <td className="py-3 w-10">
+        <div className="flex flex-col items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onMoveUp}
+            disabled={!canMoveUp || isSaving}
+          >
+            <ArrowUp className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onMoveDown}
+            disabled={!canMoveDown || isSaving}
+          >
+            <ArrowDown className="h-3 w-3" />
+          </Button>
+        </div>
       </td>
       <td className="py-3 hidden sm:table-cell">
         {item.image_url ? (
@@ -190,6 +220,10 @@ function SortableModifierRow({
   onDeleteStart,
   onDeleteCancel,
   formatPrice,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   modifier: Modifier;
   isActive: boolean;
@@ -200,6 +234,10 @@ function SortableModifierRow({
   onDeleteStart: () => void;
   onDeleteCancel: () => void;
   formatPrice: (cents: number) => string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: modifier.id });
@@ -223,12 +261,32 @@ function SortableModifierRow({
     >
       <div className="flex items-center gap-2">
         <button
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground hidden sm:inline-flex"
           {...attributes}
           {...listeners}
         >
           <GripVertical className="h-4 w-4" />
         </button>
+        <div className="flex flex-col gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5"
+            onClick={onMoveUp}
+            disabled={!canMoveUp || isSaving}
+          >
+            <ArrowUp className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5"
+            onClick={onMoveDown}
+            disabled={!canMoveDown || isSaving}
+          >
+            <ArrowDown className="h-3 w-3" />
+          </Button>
+        </div>
         <span className="font-medium">{modifier.name}</span>
         {modifier.is_default && (
           <Badge variant="secondary" className="text-xs">
@@ -575,6 +633,68 @@ export default function AdminMenuPage() {
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "An error occurred";
       setError(errorMessage);
+    }
+  };
+
+  const moveMenuItem = async (item: MenuItem, direction: "up" | "down") => {
+    const categoryItems = menuItems
+      .filter((i) => i.category_id === item.category_id)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    const currentIndex = categoryItems.findIndex((i) => i.id === item.id);
+    if (direction === "up" && currentIndex === 0) return;
+    if (direction === "down" && currentIndex === categoryItems.length - 1) return;
+
+    const otherItem = direction === "up"
+      ? categoryItems[currentIndex - 1]
+      : categoryItems[currentIndex + 1];
+
+    const supabase = getBrowserClient();
+
+    try {
+      await supabase.from("menu_items").update({ sort_order: otherItem.sort_order }).eq("id", item.id);
+      await supabase.from("menu_items").update({ sort_order: item.sort_order }).eq("id", otherItem.id);
+
+      const res = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      setMenuItems(res.data || []);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const moveModifier = async (modifier: Modifier, direction: "up" | "down") => {
+    let targetGroup: ModifierGroup | undefined;
+    let modifierList: Modifier[] = [];
+
+    for (const g of modifierGroups) {
+      if (g.modifiers?.find((m) => m.id === modifier.id)) {
+        targetGroup = g;
+        modifierList = g.modifiers;
+        break;
+      }
+    }
+
+    if (!targetGroup || !modifierList) return;
+
+    const currentIndex = modifierList.findIndex((m) => m.id === modifier.id);
+    if (direction === "up" && currentIndex === 0) return;
+    if (direction === "down" && currentIndex === modifierList.length - 1) return;
+
+    const otherModifier = direction === "up"
+      ? modifierList[currentIndex - 1]
+      : modifierList[currentIndex + 1];
+
+    const supabase = getBrowserClient();
+
+    try {
+      await supabase.from("modifiers").update({ sort_order: otherModifier.sort_order }).eq("id", modifier.id);
+      await supabase.from("modifiers").update({ sort_order: modifier.sort_order }).eq("id", otherModifier.id);
+      await fetchModifierGroups();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -1079,7 +1199,8 @@ export default function AdminMenuPage() {
                             <table className="w-full">
                               <thead>
                                 <tr className="border-b text-left text-xs text-muted-foreground">
-                                  <th className="pb-2 w-8"></th>
+                                  <th className="pb-2 w-8 hidden sm:table-cell"></th>
+                                  <th className="pb-2 w-10"></th>
                                   <th className="pb-2 font-medium hidden sm:table-cell">Photo</th>
                                   <th className="pb-2 font-medium">Name</th>
                                   <th className="pb-2 font-medium hidden sm:table-cell">Category</th>
@@ -1089,7 +1210,7 @@ export default function AdminMenuPage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {catItems.map((item) => (
+                                {catItems.map((item, index) => (
                                   <SortableMenuItemRow
                                     key={item.id}
                                     item={item}
@@ -1101,6 +1222,10 @@ export default function AdminMenuPage() {
                                     }
                                     onDelete={handleDeleteMenuItem}
                                     onDeleteCancel={() => setDeletingMenuItem(null)}
+                                    canMoveUp={index > 0}
+                                    canMoveDown={index < catItems.length - 1}
+                                    onMoveUp={() => moveMenuItem(item, "up")}
+                                    onMoveDown={() => moveMenuItem(item, "down")}
                                   />
                                 ))}
                               </tbody>
@@ -1564,7 +1689,7 @@ export default function AdminMenuPage() {
                             strategy={verticalListSortingStrategy}
                           >
                             <div className="space-y-2">
-                              {group.modifiers.map((modifier) => {
+                              {group.modifiers.map((modifier, index) => {
                                 const isActive = activeDragId === modifier.id;
                                 return (
                                   <SortableModifierRow
@@ -1578,6 +1703,10 @@ export default function AdminMenuPage() {
                                     onDeleteStart={() => setDeletingModifier(modifier.id)}
                                     onDeleteCancel={() => setDeletingModifier(null)}
                                     formatPrice={formatPrice}
+                                    canMoveUp={index > 0}
+                                    canMoveDown={index < (group.modifiers?.length ?? 0) - 1}
+                                    onMoveUp={() => moveModifier(modifier, "up")}
+                                    onMoveDown={() => moveModifier(modifier, "down")}
                                   />
                                 );
                               })}

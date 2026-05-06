@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLalamoveClient } from '@/lib/lalamove/client'
+import { LalamoveApiError } from '@/lib/lalamove/types'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 import { env } from '@/lib/validators/env'
 
@@ -46,6 +47,7 @@ type DeliveryQuoteResult = DeliveryQuoteResponse | DeliveryQuoteError
 
 export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuoteResult>> {
   let resolvedPickup: { latitude: number; longitude: number; address: string } | undefined
+  let citiesCheck: string | undefined
   try {
     const { user } = await getAuthenticatedUser(req)
 
@@ -68,6 +70,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
 
     const { pickup: requestPickup, dropoff, service_type } = parsed.data
     const lalamove = createLalamoveClient()
+
+    // Pre-flight: verify Lalamove auth works by fetching cities
+    try {
+      const cities = await lalamove.getCityInfo()
+      const myCities = cities.filter(c => c.country === 'MY' || c.name?.toLowerCase().includes('shah'))
+      citiesCheck = `OK — ${cities.length} cities, ${myCities.length} MY cities`
+    } catch (e) {
+      const citiesErr = e instanceof LalamoveApiError
+        ? `${e.statusCode}: ${e.message} | ${JSON.stringify(e.responseBody)}`
+        : e instanceof Error ? e.message : String(e)
+      citiesCheck = `FAILED — ${citiesErr}`
+    }
 
     const serviceType = service_type || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE'
 
@@ -168,6 +182,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       hasApiSecret: !!env.LALAMOVE_API_SECRET,
       lalamoveEnv: env.LALAMOVE_ENV,
       pickupUsed: resolvedPickup ?? '(not resolved before error)',
+      citiesCheck,
     }
 
     return NextResponse.json(

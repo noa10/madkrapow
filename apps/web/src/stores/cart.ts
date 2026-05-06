@@ -189,7 +189,7 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'cart-storage',
-      partialize: (state) => ({ items: state.items, includeCutlery: state.includeCutlery }),
+      partialize: (state) => ({ items: state.items, includeCutlery: state.includeCutlery, appliedPromos: state.appliedPromos }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.isHydrated = true

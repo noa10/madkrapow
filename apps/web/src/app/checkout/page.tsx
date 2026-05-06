@@ -3,11 +3,10 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { MapPin, Loader2, Users, ArrowLeft, ShoppingBag, Mail, RefreshCw } from 'lucide-react'
+import { MapPin, Loader2, Users, ArrowLeft, Mail, RefreshCw } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
-import { env } from '@/lib/validators/env'
 import { Button } from '@/components/ui/button'
 import { DeliveryTypeSelector } from '@/components/checkout/DeliveryTypeSelector'
 import { FulfillmentSelector } from '@/components/checkout/FulfillmentSelector'
@@ -92,6 +91,7 @@ export default function CheckoutPage() {
   const getSubtotal = useCartStore((state) => state.getSubtotal)
   const getOriginalSubtotal = useCartStore((state) => state.getOriginalSubtotal)
   const clearCart = useCartStore((state) => state.clear)
+  const isHydrated = useCartStore((state) => state.isHydrated)
 const includeCutlery = useCartStore((state) => state.includeCutlery)
 const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
@@ -221,7 +221,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
 
-  const subtotal = useMemo(() => getSubtotal(), [items])
+  const subtotal = getSubtotal()
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
   const deliveryFee = deliveryType === 'self_pickup'
     ? 0
@@ -237,7 +237,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   useEffect(() => {
     async function fetchMenuPromos() {
-      const uniqueItemIds = [...new Set(items.map((item) => item.menu_item_id))]
+      const uniqueItemIds = itemIdsKey ? itemIdsKey.split(',') : []
       if (uniqueItemIds.length === 0) return
 
       try {
@@ -272,7 +272,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       }
     }
     fetchMenuPromos()
-  }, [itemIdsKey, getOriginalSubtotal])
+  }, [getOriginalSubtotal, itemIdsKey])
 
   useEffect(() => {
     async function fetchAutoPromos() {
@@ -301,7 +301,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       }
     }
     fetchAutoPromos()
-  }, [subtotal, deliveryFee])
+  }, [deliveryFee, getOriginalSubtotal, subtotal])
 
   const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
 
@@ -400,12 +400,6 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_id: crypto.randomUUID(),
-          pickup: {
-            latitude: env.STORE_LATITUDE,
-            longitude: env.STORE_LONGITUDE,
-            address: env.STORE_ADDRESS,
-          },
           dropoff: {
             latitude: deliveryAddress.latitude,
             longitude: deliveryAddress.longitude,
@@ -545,7 +539,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         throw new Error(data.error || 'Failed to create checkout session')
       }
 
-      clearCart()
+      // Don't clear cart before Stripe redirect — cart must survive if user cancels or goes back.
+      // Cart is cleared on /order/success page after payment is confirmed via webhook.
       window.location.href = data.checkoutUrl
     } catch (err) {
       console.error('Checkout error:', err)
@@ -739,6 +734,27 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                 <Button className="shadow-gold">View My Orders</Button>
               </Link>
             </div>
+          </div>
+        </PageContainer>
+      </main>
+    )
+  }
+
+  if (!isHydrated) {
+    return (
+      <main className="min-h-screen bg-background">
+        <PageContainer size="narrow">
+          <div className="py-8">
+            <div className="flex items-center gap-4 mb-8">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/cart">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Cart
+                </Link>
+              </Button>
+              <h1 className="text-xl font-semibold font-display">Checkout</h1>
+            </div>
+            <CheckoutSkeleton />
           </div>
         </PageContainer>
       </main>

@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
-import { env } from '@/lib/validators/env'
 import { useGoogleMaps } from '@/hooks/useGoogleMaps'
 
 interface DeliveryAddressInputProps {
@@ -18,7 +17,6 @@ interface DeliveryAddressInputProps {
     expires_at: string
   }) => void
   onQuoteError?: (error: string) => void
-  deliveryRadiusKm?: number
 }
 
 const MALAYSIAN_STATES = [
@@ -40,28 +38,17 @@ const MALAYSIAN_STATES = [
   'Labuan'
 ]
 
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLon = (lon2 - lon1) * Math.PI / 180
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
+function getAddressComponent(
+  components: google.maps.places.AddressComponent[] | undefined,
+  type: string
+) {
+  return components?.find((c) => c.types.includes(type))?.longText || ''
 }
 
 export function DeliveryAddressInput({
   onAddressSelect,
   onQuoteFetched,
   onQuoteError,
-  deliveryRadiusKm = 10
 }: DeliveryAddressInputProps) {
   const { delivery_address, setDeliveryAddress, setShippingQuote } = useCheckoutStore()
   
@@ -98,13 +85,6 @@ export function DeliveryAddressInput({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const getAddressComponent = (
-    components: google.maps.places.AddressComponent[] | undefined,
-    type: string
-  ) => {
-    return components?.find((c) => c.types.includes(type))?.longText || ''
-  }
 
   const handleSearchChange = useCallback(
     async (value: string) => {
@@ -155,23 +135,6 @@ export function DeliveryAddressInput({
           return
         }
 
-        const distance = calculateDistance(
-          env.STORE_LATITUDE,
-          env.STORE_LONGITUDE,
-          lat,
-          lng
-        )
-
-        const isOutside = distance > deliveryRadiusKm
-
-        if (isOutside) {
-          setError(
-            `Delivery is not available to this location. We only deliver within ${deliveryRadiusKm}km from our store.`
-          )
-          setIsSearching(false)
-          return
-        }
-
         setFormData((prev) => ({
           ...prev,
           address_line1:
@@ -201,7 +164,7 @@ export function DeliveryAddressInput({
         setIsSearching(false)
       }
     },
-    [deliveryRadiusKm]
+    []
   )
 
   const validate = (): boolean => {
@@ -238,12 +201,6 @@ export function DeliveryAddressInput({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            order_id: crypto.randomUUID(), // temporary ID for quote
-            pickup: {
-              latitude: env.STORE_LATITUDE,
-              longitude: env.STORE_LONGITUDE,
-              address: env.STORE_ADDRESS,
-            },
             dropoff: {
               latitude: formData.latitude,
               longitude: formData.longitude,
@@ -319,27 +276,11 @@ export function DeliveryAddressInput({
           const updatedFormData = { ...formData, latitude: lat, longitude: lng }
           setDeliveryAddress(updatedFormData)
 
-          // Check delivery radius
-          const distance = calculateDistance(env.STORE_LATITUDE, env.STORE_LONGITUDE, lat, lng)
-          if (distance > deliveryRadiusKm) {
-            setError(`Delivery is not available to this location. We only deliver within ${deliveryRadiusKm}km from our store.`)
-            onQuoteError?.('Out of delivery range')
-            onAddressSelect?.(updatedFormData)
-            setIsLoading(false)
-            return
-          }
-
           // Fetch delivery quote with geocoded coordinates
           const res = await fetch('/api/shipping/lalamove/quote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              order_id: crypto.randomUUID(),
-              pickup: {
-                latitude: env.STORE_LATITUDE,
-                longitude: env.STORE_LONGITUDE,
-                address: env.STORE_ADDRESS,
-              },
               dropoff: {
                 latitude: lat,
                 longitude: lng,

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { MapPin, Phone, User, ArrowLeft, Zap, Loader2 } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock } from "lucide-react";
 import Link from "next/link";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
@@ -296,6 +296,20 @@ export default function AdminOrderDetailPage() {
                   }} />
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {order.status === 'pending' && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="pt-4 flex items-start gap-3">
+            <Clock className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-yellow-800">Awaiting payment confirmation</p>
+              <p className="text-sm text-yellow-700">
+                This order is pending Stripe payment. It will appear in the merchant app once the payment webhook confirms the transaction. If the customer has already paid, check the Stripe webhook endpoint configuration or try refreshing this page.
+              </p>
             </div>
           </CardContent>
         </Card>

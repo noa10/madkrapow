@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { z } from 'zod';
 
-const VALID_TRANSITIONS: Record<string, string> = {
-  paid: 'preparing',
-  accepted: 'preparing',
-  preparing: 'ready',
-  ready: 'picked_up',
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  pending: ['cancelled'],
+  paid: ['preparing', 'cancelled'],
+  accepted: ['preparing', 'cancelled'],
+  preparing: ['ready', 'cancelled'],
+  ready: ['picked_up', 'cancelled'],
 };
 
 const requestSchema = z.object({
@@ -55,9 +56,9 @@ export async function POST(
     }
 
     const expectedNext = VALID_TRANSITIONS[order.status];
-    if (!expectedNext || newStatus !== expectedNext) {
+    if (!expectedNext || !expectedNext.includes(newStatus)) {
       return NextResponse.json(
-        { error: `Invalid transition from '${order.status}' to '${newStatus}'. Expected: '${expectedNext}'` },
+        { error: `Invalid transition from '${order.status}' to '${newStatus}'. Expected one of: ${expectedNext?.join(', ') ?? 'none'}` },
         { status: 400 }
       );
     }

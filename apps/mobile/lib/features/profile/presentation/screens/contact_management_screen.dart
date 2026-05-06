@@ -100,11 +100,11 @@ class ContactManagementScreen extends ConsumerWidget {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (!contact.isDefault)
                       IconButton(
                         icon: const Icon(Icons.edit_outlined, size: 20),
                         onPressed: () => _showEditContactDialog(context, ref, contact),
                       ),
+                      if (!contact.isDefault)
                       IconButton(
                           icon: const Icon(Icons.star_border, size: 20),
                           onPressed: () async {

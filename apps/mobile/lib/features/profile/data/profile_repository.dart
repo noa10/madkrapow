@@ -28,7 +28,6 @@ class ProfileRepository {
   static const int _maxFileSize = 5 * 1024 * 1024;
   static const _allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-  /// Get or create the customer profile for the current user.
   Future<CustomerProfile> fetchProfile() async {
     final user = _supabase.auth.currentUser!;
 
@@ -50,28 +49,30 @@ class ProfileRepository {
 
     final customer = CustomersRow.fromJson(customerRes);
 
-    final addressesRes = await _supabase
-        .from('customer_addresses')
-        .select()
-        .eq('customer_id', customer.id)
-        .order('is_default', ascending: false);
+    final results = await Future.wait([
+      _supabase
+          .from('customer_addresses')
+          .select()
+          .eq('customer_id', customer.id)
+          .order('is_default', ascending: false),
+      _supabase
+          .from('customer_contacts')
+          .select()
+          .eq('customer_id', customer.id)
+          .order('is_default', ascending: false),
+    ]);
 
-    final addresses =
-        addressesRes.map((json) => CustomerAddressesRow.fromJson(json)).toList();
-
-    final contactsRes = await _supabase
-        .from('customer_contacts')
-        .select()
-        .eq('customer_id', customer.id)
-        .order('is_default', ascending: false);
-
-    final contacts =
-        contactsRes.map((json) => CustomerContactsRow.fromJson(json)).toList();
+    final addresses = (results[0] as List)
+        .map((json) => CustomerAddressesRow.fromJson(json))
+        .toList();
+    final contacts = (results[1] as List)
+        .map((json) => CustomerContactsRow.fromJson(json))
+        .toList();
 
     return CustomerProfile(customer: customer, addresses: addresses, contacts: contacts);
   }
 
-  // ── Avatar ──────────────────────────────────────────────────────
+  // ── Avatar ─────────────────────────────────────────────────────
 
   Future<String> uploadAvatar({
     required String filePath,
@@ -102,7 +103,6 @@ class ProfileRepository {
       'avatar_url': publicUrl,
     }).eq('auth_user_id', userId);
 
-    // Mirror avatar_url to user_metadata so web Header/Sidebar see the change
     final currentMetadata = Map<String, dynamic>.from(
       _supabase.auth.currentUser?.userMetadata ?? {},
     );
@@ -128,7 +128,6 @@ class ProfileRepository {
       'avatar_url': null,
     }).eq('auth_user_id', userId);
 
-    // Mirror avatar removal to user_metadata for cross-platform sync
     final currentMetadata = Map<String, dynamic>.from(
       _supabase.auth.currentUser?.userMetadata ?? {},
     );
@@ -138,9 +137,8 @@ class ProfileRepository {
     );
   }
 
-  // ── Addresses ──────────────────────────────────────────────────
+  // ── Addresses ───────────────────────────────────────────────────
 
-  /// Add a new address.
   Future<CustomerAddressesRow> addAddress(Map<String, dynamic> data) async {
     final res = await _supabase
         .from('customer_addresses')
@@ -150,7 +148,6 @@ class ProfileRepository {
     return CustomerAddressesRow.fromJson(res);
   }
 
-  /// Update an existing address.
   Future<void> updateAddress(String addressId, Map<String, dynamic> data) async {
     await _supabase
         .from('customer_addresses')
@@ -158,7 +155,6 @@ class ProfileRepository {
         .eq('id', addressId);
   }
 
-  /// Delete an address.
   Future<void> deleteAddress(String addressId) async {
     await _supabase
         .from('customer_addresses')
@@ -166,21 +162,15 @@ class ProfileRepository {
         .eq('id', addressId);
   }
 
-  /// Set an address as the default for the customer.
   Future<void> setDefaultAddress(String customerId, String addressId) async {
-    await _supabase
-        .from('customer_addresses')
-        .update({'is_default': false})
-        .eq('customer_id', customerId);
-    await _supabase
-        .from('customer_addresses')
-        .update({'is_default': true})
-        .eq('id', addressId);
+    await _supabase.rpc('set_default_address', params: {
+      'p_customer_id': customerId,
+      'p_address_id': addressId,
+    });
   }
 
-  // ── Contacts ───────────────────────────────────────────────────
+  // ── Contacts ────────────────────────────────────────────────────
 
-  /// Add a new contact.
   Future<CustomerContactsRow> addContact(Map<String, dynamic> data) async {
     final res = await _supabase
         .from('customer_contacts')
@@ -190,7 +180,6 @@ class ProfileRepository {
     return CustomerContactsRow.fromJson(res);
   }
 
-  /// Update an existing contact.
   Future<void> updateContact(String contactId, Map<String, dynamic> data) async {
     await _supabase
         .from('customer_contacts')
@@ -198,7 +187,6 @@ class ProfileRepository {
         .eq('id', contactId);
   }
 
-  /// Delete a contact.
   Future<void> deleteContact(String contactId) async {
     await _supabase
         .from('customer_contacts')
@@ -206,23 +194,15 @@ class ProfileRepository {
         .eq('id', contactId);
   }
 
-  /// Set a contact as the default for the customer.
   Future<void> setDefaultContact(String customerId, String contactId) async {
-    // Unset current default
-    await _supabase
-        .from('customer_contacts')
-        .update({'is_default': false})
-        .eq('customer_id', customerId);
-    // Set new default
-    await _supabase
-        .from('customer_contacts')
-        .update({'is_default': true})
-        .eq('id', contactId);
+    await _supabase.rpc('set_default_contact', params: {
+      'p_customer_id': customerId,
+      'p_contact_id': contactId,
+    });
   }
 
-  // ── Customer Profile ───────────────────────────────────────────
+  // ── Customer Profile ────────────────────────────────────────────
 
-  /// Update customer profile.
   Future<void> updateCustomer(String customerId, Map<String, dynamic> data) async {
     await _supabase.from('customers').update(data).eq('id', customerId);
   }
@@ -235,4 +215,14 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
 final profileProvider = FutureProvider<CustomerProfile>((ref) async {
   final repo = ref.watch(profileRepositoryProvider);
   return repo.fetchProfile();
+});
+
+final addressesProvider = FutureProvider<List<CustomerAddressesRow>>((ref) async {
+  final profile = await ref.watch(profileProvider.future);
+  return profile.addresses;
+});
+
+final contactsProvider = FutureProvider<List<CustomerContactsRow>>((ref) async {
+  final profile = await ref.watch(profileProvider.future);
+  return profile.contacts;
 });

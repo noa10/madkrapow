@@ -143,10 +143,12 @@ class CheckoutRepository {
   /// Uses the /api/delivery/quote endpoint which doesn't require a pre-existing order.
   Future<DeliveryQuoteResult> getDeliveryQuote(DeliveryQuoteRequest request) async {
     try {
+      final requestBody = jsonEncode(request.toJson());
+      debugPrint('DeliveryQuote: POST $_baseUrl/api/delivery/quote body=$requestBody');
       final response = await http.post(
         Uri.parse('$_baseUrl/api/delivery/quote'),
         headers: await _buildHeaders(),
-        body: jsonEncode(request.toJson()),
+        body: requestBody,
       );
 
       if (response.statusCode == 401) {
@@ -156,6 +158,7 @@ class CheckoutRepository {
       }
 
       if (response.statusCode != 200) {
+        debugPrint('DeliveryQuote: API returned ${response.statusCode} — ${response.body}');
         final body = jsonDecode(response.body);
         throw Exception(body['error'] ?? 'Failed to get delivery quote');
       }

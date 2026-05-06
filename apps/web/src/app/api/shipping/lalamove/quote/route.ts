@@ -154,12 +154,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
       message.includes('ERR_OUT_OF_SERVICE_AREA') ||
       message.toLowerCase().includes('out of service area')
 
+    const lalamoveDetail = error instanceof Error && 'responseBody' in error
+      ? ` | Lalamove: ${JSON.stringify((error as Error & { responseBody: unknown }).responseBody)}`
+      : ''
+
     return NextResponse.json(
       {
         success: false,
         error: isOutOfZone
           ? 'Delivery address is outside our service area'
-          : 'Unable to get delivery quote. Please try again.',
+          : `Unable to get delivery quote: ${message}${lalamoveDetail}`,
         code: isOutOfZone ? 'OUT_OF_ZONE' : 'QUOTE_FAILED',
       },
       { status: isOutOfZone ? 422 : 500 }

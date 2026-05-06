@@ -7,7 +7,6 @@ import type {
   LalamoveOrderResponse,
   LalamoveDriverDetails,
   LalamoveCityInfo,
-  LalamoveApiResponse,
 } from './types'
 
 /**
@@ -48,6 +47,7 @@ export class LalamoveClient {
    * Returns quotation ID, stop IDs, price breakdown, and expiry time.
    */
   async getQuotation(request: LalamoveQuotationRequest): Promise<LalamoveQuotationResponse> {
+    // Lalamove v3 requires request bodies wrapped in {data: ...}
     return this.transport.post<LalamoveQuotationResponse>('/v3/quotations', {
       data: {
         serviceType: request.serviceType,
@@ -122,10 +122,10 @@ export class LalamoveClient {
    * Returns available cities, service types, and special requests.
    */
   async getCityInfo(): Promise<LalamoveCityInfo[]> {
-    const result = await this.transport.get<LalamoveApiResponse<LalamoveCityInfo[]>>(
+    const result = await this.transport.get<LalamoveCityInfo[]>(
       '/v3/cities?countryIso2=MY'
     )
-    return result.data
+    return result
   }
 
   /**

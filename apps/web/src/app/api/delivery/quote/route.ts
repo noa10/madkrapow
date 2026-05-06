@@ -5,6 +5,11 @@ import { getAuthenticatedUser } from '@/lib/supabase/server'
 import { env } from '@/lib/validators/env'
 
 const DeliveryQuoteRequestSchema = z.object({
+  pickup: z.object({
+    latitude: z.number(),
+    longitude: z.number(),
+    address: z.string().min(1),
+  }).optional(),
   dropoff: z.object({
     latitude: z.number(),
     longitude: z.number(),
@@ -60,10 +65,29 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       )
     }
 
-    const { dropoff, service_type } = parsed.data
+    const { pickup: requestPickup, dropoff, service_type } = parsed.data
     const lalamove = createLalamoveClient()
 
     const serviceType = service_type || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE'
+
+    // Use pickup from request body if provided, otherwise fall back to env vars
+    const pickup = requestPickup ?? {
+      latitude: env.STORE_LATITUDE,
+      longitude: env.STORE_LONGITUDE,
+      address: env.STORE_ADDRESS,
+    }
+
+    if (!pickup.latitude || !pickup.longitude || !pickup.address) {
+      console.error('[API] /api/delivery/quote: Missing pickup coordinates or address')
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Store location is not configured. Please contact support.',
+          code: 'STORE_NOT_CONFIGURED',
+        },
+        { status: 500 }
+      )
+    }
 
     // Lalamove's regex only allows up to 15 decimal places; geocoded values
     // often exceed this. 8 decimals gives sub-millimetre precision.
@@ -78,10 +102,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       stops: [
         {
           coordinates: {
-            lat: fmt(env.STORE_LATITUDE),
-            lng: fmt(env.STORE_LONGITUDE),
+            lat: fmt(pickup.latitude),
+            lng: fmt(pickup.longitude),
           },
-          address: env.STORE_ADDRESS,
+          address: pickup.address,
         },
         {
           coordinates: {
@@ -133,12 +157,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       errorMessage.toLowerCase().includes('coverage') ||
       errorMessage.includes('ERR_OUT_OF_SERVICE_AREA')
 
+    const lalamoveDetail = error instanceof Error && 'responseBody' in error
+      ? ` | Lalamove: ${JSON.stringify((error as Error & { responseBody: unknown }).responseBody)}`
+      : ''
+
     return NextResponse.json(
       {
         success: false,
         error: isOutOfZone
           ? 'Delivery address is outside our service area'
-          : 'Unable to get delivery quote. Please try again.',
+          : `Unable to get delivery quote: ${errorMessage}${lalamoveDetail}`,
         code: isOutOfZone ? 'OUT_OF_ZONE' : 'QUOTE_FAILED',
       },
       { status: isOutOfZone ? 422 : 500 }

@@ -49,16 +49,21 @@ export class LalamoveTransport {
   ): Promise<T> {
     const bodyString = body ? JSON.stringify(body) : undefined
 
+    // Lalamove v3 auth signature must use the path without query parameters
+    const authPath = path.split('?')[0]
+
     const headers = buildAuthHeaders(
       this.config.apiKey,
       this.config.apiSecret,
       this.config.market,
       method,
-      path,
+      authPath,
       bodyString
     )
 
     const url = `${this.config.baseUrl}${path}`
+
+    console.log(`[Lalamove] ${method} ${path}`, bodyString ? `body=${bodyString.slice(0, 200)}` : '(no body)')
 
     const response = await fetch(url, {
       method,
@@ -66,12 +71,16 @@ export class LalamoveTransport {
       body: bodyString,
     })
 
+    console.log(`[Lalamove] ${method} ${path} → ${response.status} ${response.statusText}`)
+
     if (response.ok) {
       const json = (await response.json()) as LalamoveApiResponse<T>
       return json.data
     }
 
     const errorBody = await response.json().catch(() => ({}))
+
+    console.error(`[Lalamove] Error response for ${method} ${path}:`, JSON.stringify(errorBody, null, 2))
 
     // Handle specific error codes
     switch (response.status) {

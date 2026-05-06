@@ -4,10 +4,6 @@ import { z } from 'zod'
 import { env } from '@/lib/validators/env'
 import { requireAdmin } from '@/lib/admin/require-admin'
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-04-22.dahlia' as const,
-})
-
 const ApproveRequestSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('approve'),
@@ -38,6 +34,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApproveResult>> {
   try {
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-04-22.dahlia' as const,
+    })
+
     const guard = await requireAdmin(req)
     if ("error" in guard) {
       return guard.error as NextResponse<ApproveResult>

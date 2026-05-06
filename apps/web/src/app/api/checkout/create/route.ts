@@ -95,10 +95,6 @@ interface CheckoutError {
 
 type CheckoutResult = CheckoutSessionResponse | CheckoutError
 
-const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-04-22.dahlia' as const,
-})
-
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase()
   const random = Math.random().toString(36).slice(2, 6).toUpperCase()
@@ -107,6 +103,10 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResult>> {
   try {
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-04-22.dahlia' as const,
+    })
+
     // Use dual auth (cookie for web, Bearer token for mobile)
     const { user, supabase } = await getAuthenticatedUser(req)
 

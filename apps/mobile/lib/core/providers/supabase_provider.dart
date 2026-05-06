@@ -37,13 +37,16 @@ final isEmailVerifiedProvider = Provider<bool>((ref) {
 /// so that GoRouter's redirect callback always reads up-to-date provider state.
 class AuthStateListenable extends ChangeNotifier {
   AuthStateListenable();
+
+  /// Public wrapper for [notifyListeners] so external code can trigger updates.
+  void refresh() => notifyListeners();
 }
 
 /// Provides the AuthStateListenable for GoRouter refreshListenable.
 final authStateListenableProvider = Provider<AuthStateListenable>((ref) {
   final listenable = AuthStateListenable();
-  ref.listen<AsyncValue<AuthState>>(authStateProvider, (_, __) {
-    listenable.notifyListeners();
+  ref.listen<AsyncValue<AuthState>>(authStateProvider, (_, _) {
+    listenable.refresh();
   });
   return listenable;
 });

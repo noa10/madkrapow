@@ -45,6 +45,7 @@ interface DeliveryQuoteError {
 type DeliveryQuoteResult = DeliveryQuoteResponse | DeliveryQuoteError
 
 export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuoteResult>> {
+  let resolvedPickup: { latitude: number; longitude: number; address: string } | undefined
   try {
     const { user } = await getAuthenticatedUser(req)
 
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       longitude: env.STORE_LONGITUDE,
       address: env.STORE_ADDRESS,
     }
+    resolvedPickup = pickup
 
     if (!pickup.latitude || !pickup.longitude || !pickup.address) {
       console.error('[API] /api/delivery/quote: Missing pickup coordinates or address')
@@ -165,7 +167,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       hasApiKey: !!env.LALAMOVE_API_KEY,
       hasApiSecret: !!env.LALAMOVE_API_SECRET,
       lalamoveEnv: env.LALAMOVE_ENV,
-      storeAddr: env.STORE_ADDRESS ?? '(unset)',
+      pickupUsed: resolvedPickup ?? '(not resolved before error)',
     }
 
     return NextResponse.json(

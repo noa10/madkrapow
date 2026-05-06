@@ -34,6 +34,7 @@ export async function GET() {
     keyLength: apiKey.length,
     secretFull: apiSecret,
     secretLength: apiSecret.length,
+    secretCharCodes: Array.from(apiSecret).map(c => c.charCodeAt(0)),
     secretHasPlus: apiSecret.includes('+'),
     secretHasSpace: apiSecret.includes(' '),
     lalamoveEnv,

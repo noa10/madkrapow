@@ -48,6 +48,7 @@ type DeliveryQuoteResult = DeliveryQuoteResponse | DeliveryQuoteError
 export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuoteResult>> {
   let resolvedPickup: { latitude: number; longitude: number; address: string } | undefined
   let citiesCheck: string | undefined
+  let rawTestDetail: string | undefined
   try {
     const { user } = await getAuthenticatedUser(req)
 
@@ -71,16 +72,48 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
     const { pickup: requestPickup, dropoff, service_type } = parsed.data
     const lalamove = createLalamoveClient()
 
-    // Pre-flight: verify Lalamove auth works by fetching cities
     try {
-      const cities = await lalamove.getCityInfo()
-      const myCities = cities.filter(c => c.country === 'MY' || c.name?.toLowerCase().includes('shah'))
-      citiesCheck = `OK — ${cities.length} cities, ${myCities.length} MY cities`
+      await lalamove.getCityInfo()
+      citiesCheck = 'OK'
     } catch (e) {
       const citiesErr = e instanceof LalamoveApiError
         ? `${e.statusCode}: ${e.message} | ${JSON.stringify(e.responseBody)}`
         : e instanceof Error ? e.message : String(e)
       citiesCheck = `FAILED — ${citiesErr}`
+
+      const testPath = '/v3/cities?countryIso2=MY'
+      const testAuthPath = testPath.split('?')[0]
+      const timestamp = Date.now().toString()
+      const apiKey = env.LALAMOVE_API_KEY ?? ''
+      const apiSecret = env.LALAMOVE_API_SECRET ?? ''
+      const sigRaw = `${timestamp}\r\nGET\r\n${testAuthPath}\r\n\r\n`
+      const crypto = await import('crypto')
+      const sig = crypto.createHmac('sha256', apiSecret).update(sigRaw).digest('hex')
+      const testUrl = `https://rest.sandbox.lalamove.com${testPath}`
+      rawTestDetail = [
+        `url=${testUrl}`,
+        `keyPrefix=${apiKey.slice(0, 8)}... keyLen=${apiKey.length}`,
+        `secretPrefix=${apiSecret.slice(0, 8)}... secretLen=${apiSecret.length}`,
+        `lalamoveEnv=${env.LALAMOVE_ENV}`,
+        `LALAMOVE_BASE_URL=${env.LALAMOVE_BASE_URL ?? '(unset)'}`,
+        `sigInput="${sigRaw.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`,
+        `authHeader=hmac ${apiKey.slice(0, 8)}...:${timestamp}:${sig.slice(0, 16)}...`,
+      ].join(' | ')
+
+      try {
+        const rawResp = await fetch(testUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `hmac ${apiKey}:${timestamp}:${sig}`,
+            'Market': 'MY',
+            'Request-ID': crypto.randomUUID(),
+          },
+        })
+        const rawBody = await rawResp.text()
+        rawTestDetail += ` | rawStatus=${rawResp.status} rawBody=${rawBody.slice(0, 300)}`
+      } catch (fetchErr) {
+        rawTestDetail += ` | rawFetchErr=${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`
+      }
     }
 
     const serviceType = service_type || env.LALAMOVE_DEFAULT_STANDARD_SERVICE_TYPE || 'MOTORCYCLE'
@@ -183,6 +216,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DeliveryQuote
       lalamoveEnv: env.LALAMOVE_ENV,
       pickupUsed: resolvedPickup ?? '(not resolved before error)',
       citiesCheck,
+      rawTestDetail,
     }
 
     return NextResponse.json(

@@ -2,17 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLalamoveClient } from '@/lib/lalamove/client'
 import { isServiceAvailable } from '@/lib/lalamove/city-resolver'
+import {
+  formatLalamoveCoordinate,
+  moneyStringToCents,
+  normalizePriceBreakdown,
+  resolvePickup,
+  type NormalizedPriceBreakdown,
+} from '@/lib/lalamove/quote'
 import { env } from '@/lib/validators/env'
 
 const QuoteRequestSchema = z.object({
-  order_id: z.string().uuid(),
+  order_id: z.string().uuid().optional(),
   pickup: z.object({
     latitude: z.number(),
     longitude: z.number(),
     address: z.string().min(1),
     name: z.string().optional(),
     phone: z.string().optional(),
-  }),
+  }).optional(),
   dropoff: z.object({
     latitude: z.number(),
     longitude: z.number(),
@@ -30,12 +37,7 @@ interface QuoteResponse {
   serviceType: string
   expiresAt: string
   stopIds: { pickup: string; dropoff: string }
-  priceBreakdown: {
-    base: string
-    total: string
-    currency: string
-    [key: string]: string
-  }
+  priceBreakdown: NormalizedPriceBreakdown
   feeCents: number
   distance: { value: string; unit: string }
   scheduleAt?: string
@@ -65,7 +67,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
       )
     }
 
-    const { pickup, dropoff, service_type, schedule_at } = parsed.data
+    const { pickup: requestPickup, dropoff, service_type, schedule_at } = parsed.data
+    const pickup = resolvePickup(requestPickup)
 
     const lalamove = createLalamoveClient()
 
@@ -100,15 +103,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
       stops: [
         {
           coordinates: {
-            lat: String(pickup.latitude),
-            lng: String(pickup.longitude),
+            lat: formatLalamoveCoordinate(pickup.latitude),
+            lng: formatLalamoveCoordinate(pickup.longitude),
           },
           address: pickup.address,
         },
         {
           coordinates: {
-            lat: String(dropoff.latitude),
-            lng: String(dropoff.longitude),
+            lat: formatLalamoveCoordinate(dropoff.latitude),
+            lng: formatLalamoveCoordinate(dropoff.longitude),
           },
           address: dropoff.address,
         },
@@ -120,8 +123,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
 
     const quotation = await lalamove.getQuotation(quotationRequest)
 
-    // Convert price to cents (MY uses 1 decimal: "50.5" → 505)
-    const feeCents = Math.round(parseFloat(quotation.priceBreakdown.total) * 100)
+    const priceBreakdown = normalizePriceBreakdown(quotation.priceBreakdown)
+    const feeCents = moneyStringToCents(priceBreakdown.total)
 
     return NextResponse.json(
       {
@@ -133,13 +136,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
           pickup: quotation.stops[0].stopId,
           dropoff: quotation.stops[1].stopId,
         },
-        priceBreakdown: {
-          base: quotation.priceBreakdown.base,
-          total: quotation.priceBreakdown.total,
-          currency: quotation.priceBreakdown.currency,
-          ...(quotation.priceBreakdown.extraMileage && { extraMileage: quotation.priceBreakdown.extraMileage }),
-          ...(quotation.priceBreakdown.surcharge && { surcharge: quotation.priceBreakdown.surcharge }),
-        },
+        priceBreakdown,
         feeCents,
         distance: quotation.distance,
         scheduleAt: schedule_at,
@@ -157,13 +154,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuoteResult>>
     const lalamoveDetail = error instanceof Error && 'responseBody' in error
       ? ` | Lalamove: ${JSON.stringify((error as Error & { responseBody: unknown }).responseBody)}`
       : ''
+    if (lalamoveDetail) {
+      console.error('[API] /api/shipping/lalamove/quote Lalamove detail:', lalamoveDetail)
+    }
 
     return NextResponse.json(
       {
         success: false,
         error: isOutOfZone
           ? 'Delivery address is outside our service area'
-          : `Unable to get delivery quote: ${message}${lalamoveDetail}`,
+          : `Unable to get delivery quote: ${message}`,
         code: isOutOfZone ? 'OUT_OF_ZONE' : 'QUOTE_FAILED',
       },
       { status: isOutOfZone ? 422 : 500 }

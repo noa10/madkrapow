@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
+import { moneyStringToCents } from '@/lib/lalamove/quote'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const CheckoutItemSchema = z.object({
@@ -152,8 +153,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
 
     const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown, promoCodes } = parsed.data
 
-    // Self-pickup cannot have delivery fee
-    const effectiveDeliveryFee = deliveryType === 'self_pickup' ? 0 : deliveryFee
+    // Self-pickup cannot have delivery fee. Delivery fee is re-derived from
+    // server-issued Lalamove quote metadata when available instead of trusting
+    // the client-submitted fee.
+    const effectiveDeliveryFee = deliveryType === 'self_pickup'
+      ? 0
+      : priceBreakdown
+        ? moneyStringToCents(priceBreakdown.total)
+        : deliveryFee
 
     // ── Validate all prices from database (never trust client) ─────
     const menuItemIds = items.map(i => i.id)
@@ -412,6 +419,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
           latitude: deliveryAddress.latitude,
           longitude: deliveryAddress.longitude,
         } : null,
+        order_kind: 'standard',
         delivery_type: deliveryType,
         fulfillment_type: fulfillmentType,
         scheduled_for: scheduledFor || null,

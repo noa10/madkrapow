@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
 
-import '../../../config/env.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../generated/tables/customer_addresses.dart';
 import '../../../generated/tables/customer_contacts.dart';
@@ -143,10 +142,11 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
     state = state.copyWith(
       deliveryQuote: quote,
       quotationId: quote.quotationId,
+      serviceType: quote.serviceType,
       stopIds: quote.stopIds,
       priceBreakdown: quote.priceBreakdown,
-      // Quotes typically expire in 1 hour
-      quoteExpiresAt: DateTime.now().add(const Duration(hours: 1)),
+      quoteExpiresAt:
+          quote.expiresAt ?? DateTime.now().add(const Duration(minutes: 5)),
     );
   }
 
@@ -317,15 +317,12 @@ class CheckoutNotifier extends Notifier<CheckoutState> {
     }
 
     final request = DeliveryQuoteRequest(
-      pickupLat: double.parse(AppEnv.storeLatitude),
-      pickupLng: double.parse(AppEnv.storeLongitude),
-      pickupAddress: AppEnv.storeAddress,
       dropoffLat: dropoffLat,
       dropoffLng: dropoffLng,
       dropoffAddress: addressString,
     );
 
-    debugPrint('DeliveryQuote: calling API with store=${AppEnv.storeLatitude},${AppEnv.storeLongitude}');
+    debugPrint('DeliveryQuote: calling API with server-side store pickup');
     final result = await repo.getDeliveryQuote(request);
     debugPrint('DeliveryQuote: got fee=${result.feeCents} cents, quoteId=${result.quotationId}');
     setShippingQuote(result);

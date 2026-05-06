@@ -243,9 +243,6 @@ class CheckoutResult {
 class DeliveryQuoteRequest {
   const DeliveryQuoteRequest({
     this.orderId,
-    required this.pickupLat,
-    required this.pickupLng,
-    required this.pickupAddress,
     required this.dropoffLat,
     required this.dropoffLng,
     required this.dropoffAddress,
@@ -253,9 +250,6 @@ class DeliveryQuoteRequest {
   });
 
   final String? orderId;
-  final double pickupLat;
-  final double pickupLng;
-  final String pickupAddress;
   final double dropoffLat;
   final double dropoffLng;
   final String dropoffAddress;
@@ -263,11 +257,6 @@ class DeliveryQuoteRequest {
 
   Map<String, dynamic> toJson() => {
         if (orderId != null) 'order_id': orderId,
-        'pickup': {
-          'latitude': pickupLat,
-          'longitude': pickupLng,
-          'address': pickupAddress,
-        },
         'dropoff': {
           'latitude': dropoffLat,
           'longitude': dropoffLng,
@@ -283,12 +272,16 @@ class DeliveryQuoteResult {
     this.stopIds,
     this.priceBreakdown,
     this.feeCents,
+    this.serviceType,
+    this.expiresAt,
   });
 
   final String? quotationId;
   final StopIds? stopIds;
   final PriceBreakdown? priceBreakdown;
   final int? feeCents;
+  final String? serviceType;
+  final DateTime? expiresAt;
 
   factory DeliveryQuoteResult.fromJson(Map<String, dynamic> json) {
     // /api/delivery/quote returns { fee: { total }, ... } while
@@ -302,6 +295,10 @@ class DeliveryQuoteResult {
     return DeliveryQuoteResult(
       quotationId: json['quotationId'] as String?,
       feeCents: feeCents,
+      serviceType: json['serviceType'] as String?,
+      expiresAt: json['expiresAt'] != null
+          ? DateTime.tryParse(json['expiresAt'] as String)
+          : null,
       stopIds: json['stopIds'] != null
           ? StopIds(
               pickup: json['stopIds']['pickup'] as String,
@@ -313,6 +310,8 @@ class DeliveryQuoteResult {
               base: json['priceBreakdown']['base'] as String,
               total: json['priceBreakdown']['total'] as String,
               currency: json['priceBreakdown']['currency'] as String,
+              extraMileage: json['priceBreakdown']['extraMileage'] as String?,
+              surcharge: json['priceBreakdown']['surcharge'] as String?,
             )
           : null,
     );

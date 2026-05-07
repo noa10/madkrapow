@@ -111,6 +111,7 @@ class OrderListTile extends ConsumerWidget {
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       await repo.updateOrderStatus(order.id, 'ready');
+      ref.invalidate(adminOrderDetailProvider(order.id));
       ref.invalidate(adminOrdersProvider(OrderTab.preparing));
       ref.invalidate(adminOrdersProvider(OrderTab.ready));
     } catch (e) {

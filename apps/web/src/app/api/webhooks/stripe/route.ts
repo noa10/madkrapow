@@ -170,16 +170,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? session.payment_intent
       : (session.payment_intent as { id: string } | undefined)?.id ?? null
 
-    // Atomic update: mark as paid and advance to preparing in one call
-    // so the order can never be stuck at 'paid' with no recovery path.
-    const { error: updateError } = await supabase
+    // Atomic conditional update: only advance if status hasn't changed since we read it.
+    // This prevents double-dispatch when webhook and checkout verify race each other.
+    const { data: updatedRows, error: updateError } = await supabase
       .from('orders')
       .update({ status: 'preparing', stripe_payment_intent_id: paymentIntentId })
       .eq('id', orderId)
+      .eq('status', order.status)
+      .select('id')
 
     if (updateError) {
       console.error('[Webhook] Failed to advance order to preparing:', orderId, updateError)
       return NextResponse.json({ success: false, error: 'Failed to advance order to preparing' }, { status: 500 })
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      console.log(`[Webhook] Order ${orderId} already advanced by another process, skipping fulfillment`)
+      return NextResponse.json({ success: true }, { status: 200 })
     }
 
     console.log(`[Webhook] Order ${orderId} marked as paid and advanced to preparing`)

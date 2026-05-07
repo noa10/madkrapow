@@ -24,9 +24,7 @@ class AdvanceStatusButton extends ConsumerWidget {
 
     switch (role) {
       case StaffRole.kitchen:
-        // Kitchen can only advance to ready
-        if (next == 'ready') return next;
-        return null;
+        return next; // Only possible transition is preparing → ready, which kitchen is allowed
       case StaffRole.cashier:
       case StaffRole.admin:
       case StaffRole.manager:

@@ -75,6 +75,9 @@ class CancelOrderButton extends ConsumerWidget {
       final repo = ref.read(merchantOrderRepositoryProvider);
       await repo.cancelOrder(orderId);
       ref.invalidate(adminOrderDetailProvider(orderId));
+      ref.invalidate(adminOrdersProvider(OrderTab.preparing));
+      ref.invalidate(adminOrdersProvider(OrderTab.ready));
+      ref.invalidate(adminOrdersProvider(OrderTab.history));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, MapPin, Loader2, ChefHat, Package, Truck, Check, ShieldAlert } from 'lucide-react';
+import { Clock, User, MapPin, Loader2, Package, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
@@ -188,9 +188,7 @@ interface KitchenStatusTransitionButtonsProps {
 }
 
 const KITCHEN_STATUS_FLOW = [
-  { status: "paid", label: "Start Preparing", icon: ChefHat, next: "preparing" },
   { status: "preparing", label: "Mark Ready", icon: Package, next: "ready" },
-  { status: "ready", label: "Mark Picked Up", icon: Package, next: "picked_up" },
 ];
 
 function KitchenStatusTransitionButtons({

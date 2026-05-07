@@ -10,6 +10,7 @@ import '../widgets/driver_info_card.dart';
 import '../widgets/driver_map.dart';
 import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
+import '../widgets/cancel_order_button.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 
@@ -255,6 +256,13 @@ class _OrderDetailContent extends StatelessWidget {
               ],
             ),
           ),
+        ),
+
+        const SizedBox(height: 16),
+
+        CancelOrderButton(
+          orderId: order.id,
+          currentStatus: order.status,
         ),
       ],
     );

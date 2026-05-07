@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, ChefHat, Package, X, Ban } from "lucide-react";
+import { Loader2, Package, X, Ban } from "lucide-react";
 
 interface StatusTransitionButtonsProps {
   orderId: string;
@@ -18,9 +18,7 @@ interface FlowStep {
 }
 
 const STATUS_FLOW: FlowStep[] = [
-  { status: "paid", label: "Start Preparing", icon: ChefHat, next: "preparing" },
   { status: "preparing", label: "Mark Ready", icon: Package, next: "ready" },
-  { status: "ready", label: "Mark Picked Up", icon: Package, next: "picked_up" },
 ];
 
 /** Statuses from which an admin can cancel an order. */

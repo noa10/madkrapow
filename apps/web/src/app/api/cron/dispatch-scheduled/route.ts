@@ -26,11 +26,12 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString()
 
-    // Find orders ready for dispatch
+    // Find scheduled orders ready for dispatch
+    // Status may be 'paid' (legacy) or 'preparing' (current flow)
     const { data: orders, error: fetchError } = await supabase
       .from('orders')
       .select('*')
-      .eq('status', 'paid')
+      .in('status', ['paid', 'preparing'])
       .eq('delivery_type', 'delivery')
       .eq('fulfillment_type', 'scheduled')
       .eq('dispatch_status', 'queued')

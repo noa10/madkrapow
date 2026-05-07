@@ -134,8 +134,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    // Idempotency: skip if already in a terminal or post-payment status
-    if (['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
+    // Idempotency: skip if already in a post-preparing or terminal status.
+    // 'paid' and 'accepted' are NOT skipped — the webhook must advance them to 'preparing'.
+    if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
       console.log(`[Webhook] Order ${orderId} already in status '${order.status}', skipping`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
@@ -169,34 +170,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? session.payment_intent
       : (session.payment_intent as { id: string } | undefined)?.id ?? null
 
-    // Mark order as paid
+    // Atomic update: mark as paid and advance to preparing in one call
+    // so the order can never be stuck at 'paid' with no recovery path.
     const { error: updateError } = await supabase
       .from('orders')
-      .update({ status: 'paid', stripe_payment_intent_id: paymentIntentId })
+      .update({ status: 'preparing', stripe_payment_intent_id: paymentIntentId })
       .eq('id', orderId)
 
     if (updateError) {
-      console.error('[Webhook] Failed to mark order as paid:', orderId, updateError)
-      return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 })
+      console.error('[Webhook] Failed to advance order to preparing:', orderId, updateError)
+      return NextResponse.json({ success: false, error: 'Failed to advance order to preparing' }, { status: 500 })
     }
 
-    console.log(`[Webhook] Order ${orderId} marked as paid`)
+    console.log(`[Webhook] Order ${orderId} marked as paid and advanced to preparing`)
 
     // Push to HubboPOS if enabled (best-effort, non-blocking)
     await attemptHubboPosPush(supabase, orderId);
 
-    // Branch by delivery type and fulfillment type
+    // Branch by delivery type and fulfillment type for dispatch setup
     const deliveryType = order.delivery_type || 'delivery'
     const fulfillmentType = order.fulfillment_type || 'asap'
 
     if (deliveryType === 'self_pickup') {
-      // Self-pickup: no delivery booking, move straight to preparing
+      // Self-pickup: no delivery booking
       await supabase
         .from('orders')
-        .update({ status: 'preparing', dispatch_status: 'not_ready' })
+        .update({ dispatch_status: 'not_ready' })
         .eq('id', orderId)
 
-      console.log('[Webhook] Self-pickup order preparing:', orderId)
+      console.log('[Webhook] Self-pickup dispatch not_ready:', orderId)
 
     } else if (fulfillmentType === 'scheduled') {
       // Scheduled delivery: queue for later dispatch by cron

@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../generated/tables/orders.dart';
 import '../../../../core/utils/price_formatter.dart';
+import '../../providers/admin_order_providers.dart';
 
-class OrderListTile extends StatelessWidget {
+class OrderListTile extends ConsumerWidget {
   const OrderListTile({super.key, required this.order});
 
   final OrdersRow order;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final statusColor = _statusColor(order.status);
+    final canMarkReady = order.status == 'preparing';
 
     return ListTile(
       onTap: () => context.push('/orders/${order.id}'),
@@ -83,10 +86,40 @@ class OrderListTile extends StatelessWidget {
             _formatTime(order.createdAt),
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (canMarkReady) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _markReady(context, ref),
+                icon: const Icon(Icons.arrow_forward, size: 16),
+                label: const Text('Mark as Ready'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       isThreeLine: true,
     );
+  }
+
+  Future<void> _markReady(BuildContext context, WidgetRef ref) async {
+    try {
+      final repo = ref.read(merchantOrderRepositoryProvider);
+      await repo.updateOrderStatus(order.id, 'ready');
+      ref.invalidate(adminOrdersProvider(OrderTab.preparing));
+      ref.invalidate(adminOrdersProvider(OrderTab.ready));
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Color _statusColor(String status) {

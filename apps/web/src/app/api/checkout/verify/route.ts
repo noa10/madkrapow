@@ -62,6 +62,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       )
     }
 
+    // Security: ensure the session belongs to the requested order
+    if (session.metadata?.order_id !== orderId) {
+      console.error('[Verify] Session metadata order_id mismatch:', session.metadata?.order_id, '!=', orderId)
+      return NextResponse.json(
+        { success: false, error: 'Session does not match order' },
+        { status: 400 }
+      )
+    }
+
     // For async methods (FPX, bank transfers) payment_status may be 'unpaid' at redirect time.
     // Check the PaymentIntent to distinguish between processing and truly failed payments.
     if (session.payment_status !== 'paid') {
@@ -117,15 +126,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       )
     }
 
-    // Idempotency: skip if already paid or cancelled
-    if (['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
+    // Idempotency: skip if already in post-preparing or terminal status.
+    // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
+    if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
       return NextResponse.json(
         { success: true, status: order.status, message: 'Order already processed' },
         { status: 200 }
       )
     }
 
-    // Mark order as paid
+    // Atomic update: mark as paid and advance to preparing in one call
     const paymentIntentId = typeof session.payment_intent === 'string'
       ? session.payment_intent
       : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
@@ -133,33 +143,33 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
     const { error: updateError } = await supabase
       .from('orders')
       .update({
-        status: 'paid',
+        status: 'preparing',
         stripe_payment_intent_id: paymentIntentId,
         stripe_session_id: session.id,
       })
       .eq('id', orderId)
 
     if (updateError) {
-      console.error('[Verify] Failed to mark order as paid:', orderId, updateError)
+      console.error('[Verify] Failed to advance order to preparing:', orderId, updateError)
       return NextResponse.json(
-        { success: false, error: 'Failed to update order' },
+        { success: false, error: 'Failed to advance order to preparing' },
         { status: 500 }
       )
     }
 
-    console.log(`[Verify] Order ${orderId} marked as paid via client verification`)
+    console.log(`[Verify] Order ${orderId} marked as paid and advanced to preparing`)
 
-    // Branch by delivery type and fulfillment type (same logic as webhook)
+    // Branch by delivery type and fulfillment type for dispatch setup
     const deliveryType = order.delivery_type || 'delivery'
     const fulfillmentType = order.fulfillment_type || 'asap'
 
     if (deliveryType === 'self_pickup') {
       await supabase
         .from('orders')
-        .update({ status: 'preparing', dispatch_status: 'not_ready' })
+        .update({ dispatch_status: 'not_ready' })
         .eq('id', orderId)
 
-      console.log('[Verify] Self-pickup order preparing:', orderId)
+      console.log('[Verify] Self-pickup dispatch not_ready:', orderId)
     } else if (fulfillmentType === 'scheduled') {
       await supabase
         .from('orders')
@@ -173,7 +183,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
     }
 
     return NextResponse.json(
-      { success: true, status: 'paid', message: 'Payment confirmed and order updated' },
+      { success: true, status: 'preparing', message: 'Payment confirmed and order updated' },
       { status: 200 }
     )
   } catch (error) {

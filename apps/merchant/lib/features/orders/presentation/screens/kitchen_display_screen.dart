@@ -30,17 +30,11 @@ const _statusLabels = {
 };
 
 const _kitchenTransitions = {
-  'paid': 'preparing',
   'preparing': 'ready',
-  'ready': 'delivering',
-  'delivering': 'completed',
 };
 
 const _transitionConfig = {
-  'paid': ('Start Preparing', Icons.restaurant),
   'preparing': ('Mark Ready', Icons.inventory_2_outlined),
-  'ready': ('Start Delivery', Icons.local_shipping),
-  'delivering': ('Complete Order', Icons.check_circle_outline),
 };
 
 String _getAddress(Map<String, dynamic>? json) {

@@ -4,10 +4,10 @@ import { z } from 'zod';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['cancelled'],
-  paid: ['preparing', 'cancelled'],
-  accepted: ['preparing', 'cancelled'],
+  paid: ['cancelled'],
+  accepted: ['cancelled'],
   preparing: ['ready', 'cancelled'],
-  ready: ['picked_up', 'cancelled'],
+  ready: ['cancelled'],
 };
 
 const requestSchema = z.object({

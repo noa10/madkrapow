@@ -93,7 +93,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (
       event.type !== 'checkout.session.completed' &&
-      event.type !== 'checkout.session.async_payment_succeeded'
+      event.type !== 'checkout.session.async_payment_succeeded' &&
+      event.type !== 'checkout.session.async_payment_failed'
     ) {
       console.log(`[Webhook] Ignoring event type: ${event.type}`)
       return NextResponse.json({ success: true }, { status: 200 })
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       id: string
       metadata?: Record<string, string>
       payment_intent?: string | { id: string }
+      payment_status?: string
     }
     const orderId = session.metadata?.order_id
 
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Missing order_id' }, { status: 400 })
     }
 
-    console.log(`[Webhook] Processing checkout.session.completed for order: ${orderId}`)
+    console.log(`[Webhook] Processing ${event.type} for order: ${orderId} (payment_status=${session.payment_status})`)
 
     // Use service_role key for webhook operations (bypasses RLS)
     const supabase = createServerClient(
@@ -132,9 +134,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    // Idempotency: skip if already paid or cancelled
+    // Idempotency: skip if already in a terminal or post-payment status
     if (['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
       console.log(`[Webhook] Order ${orderId} already in status '${order.status}', skipping`)
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    // Handle async payment failure
+    if (event.type === 'checkout.session.async_payment_failed') {
+      const { error: cancelError } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', orderId)
+
+      if (cancelError) {
+        console.error('[Webhook] Failed to cancel order after async payment failure:', orderId, cancelError)
+        return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 })
+      }
+
+      console.log(`[Webhook] Order ${orderId} cancelled due to async payment failure`)
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    // For checkout.session.completed, only mark as paid if payment_status is actually 'paid'.
+    // Async methods (FPX) fire this event before bank confirmation with payment_status='unpaid'.
+    // The definitive paid signal for async methods is checkout.session.async_payment_succeeded.
+    if (event.type === 'checkout.session.completed' && session.payment_status !== 'paid') {
+      console.log(`[Webhook] checkout.session.completed for ${orderId} but payment_status=${session.payment_status}, deferring to async_payment_succeeded`)
       return NextResponse.json({ success: true }, { status: 200 })
     }
 

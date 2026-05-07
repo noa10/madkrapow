@@ -62,7 +62,33 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       )
     }
 
+    // For async methods (FPX, bank transfers) payment_status may be 'unpaid' at redirect time.
+    // Check the PaymentIntent to distinguish between processing and truly failed payments.
     if (session.payment_status !== 'paid') {
+      const paymentIntentId = typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
+
+      if (paymentIntentId) {
+        try {
+          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
+          if (paymentIntent.status === 'processing' || paymentIntent.status === 'requires_action') {
+            return NextResponse.json(
+              { success: true, status: 'processing', message: 'Payment is being processed by the bank. Please wait.' },
+              { status: 200 }
+            )
+          }
+          if (['requires_payment_method', 'canceled'].includes(paymentIntent.status)) {
+            return NextResponse.json(
+              { success: false, error: 'Payment failed or was canceled' },
+              { status: 400 }
+            )
+          }
+        } catch (piError) {
+          console.error('[Verify] Failed to retrieve payment intent:', paymentIntentId, piError)
+        }
+      }
+
       return NextResponse.json(
         { success: false, error: 'Payment not completed' },
         { status: 400 }

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
 
-type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying'
+type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying' | 'processing'
 
 function SuccessContent() {
   const searchParams = useSearchParams()
@@ -69,8 +69,9 @@ function SuccessContent() {
   }, [])
 
   // Fallback: verify payment directly with Stripe if webhook is delayed or failed
-  const verifyWithStripe = useCallback(async () => {
-    if (!orderId || !sessionId) return false
+  // Returns the Stripe-side status string (e.g. 'paid', 'processing') or null on failure.
+  const verifyWithStripe = useCallback(async (): Promise<string | null> => {
+    if (!orderId || !sessionId) return null
 
     try {
       const response = await fetch('/api/checkout/verify', {
@@ -82,18 +83,18 @@ function SuccessContent() {
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         console.warn('[SuccessPage] Verification failed:', data.error || response.status)
-        return false
+        return null
       }
 
       const data = await response.json()
       if (data.success) {
         console.log('[SuccessPage] Payment verified via API fallback:', data.status)
-        return true
+        return data.status as string
       }
-      return false
+      return null
     } catch (err) {
       console.error('[SuccessPage] Verification API error:', err)
-      return false
+      return null
     }
   }, [orderId, sessionId])
 
@@ -127,9 +128,22 @@ function SuccessContent() {
 
       if (sessionId) {
         setPaymentStatus('verifying')
-        const verified = await verifyWithStripe()
-        if (!cancelled) {
-          setPaymentStatus(verified ? 'confirmed' : 'timed_out')
+        const status = await verifyWithStripe()
+        if (cancelled) return
+
+        if (status === 'paid') {
+          setPaymentStatus('confirmed')
+        } else if (status === 'processing') {
+          // Async payment (e.g. FPX) still pending bank confirmation.
+          // Restart polling and extend timeout instead of showing timed-out.
+          setPaymentStatus('processing')
+          intervalId = setInterval(poll, 3000)
+          timeoutId = setTimeout(async () => {
+            if (intervalId) clearInterval(intervalId)
+            if (!cancelled) setPaymentStatus('timed_out')
+          }, 45000)
+        } else {
+          setPaymentStatus('timed_out')
         }
       } else {
         setPaymentStatus('timed_out')
@@ -160,6 +174,18 @@ function SuccessContent() {
                   {paymentStatus === 'verifying'
                     ? 'Webhook was delayed. Checking directly with Stripe...'
                     : 'Please wait while we confirm your payment. This usually takes a few seconds.'}
+                </p>
+              </>
+            )}
+
+            {paymentStatus === 'processing' && (
+              <>
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+                  <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                </div>
+                <h1 className="text-3xl font-semibold font-display mb-2">Processing Payment</h1>
+                <p className="text-muted-foreground text-center max-w-md">
+                  Your bank is processing the payment. This may take a minute. Please do not close this page.
                 </p>
               </>
             )}

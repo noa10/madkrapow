@@ -21,6 +21,7 @@ import { getBrowserClient } from '@/lib/supabase/client'
 
 import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
 import { SavedAddressSelector, SavedContactSelector } from '@/components/checkout/SavedSelectors'
+import { useGoogleMaps } from '@/hooks/useGoogleMaps'
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
@@ -54,7 +55,6 @@ interface StoreSettings {
   kitchen_lead_minutes: number
   cutlery_enabled: boolean
   cutlery_default: boolean
-  delivery_fee: number | null
 }
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -189,6 +189,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const isQuoteExpired = useCheckoutStore((state) => state.isQuoteExpired)
   const clearShippingQuote = useCheckoutStore((state) => state.clearShippingQuote)
 
+  const { isLoaded: gmapsLoaded } = useGoogleMaps()
+
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null)
   const [isLoadingMenu, setIsLoadingMenu] = useState(true)
@@ -227,10 +229,10 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const lalamoveFeeCents = deliveryQuote?.fee_cents ?? Math.round(parseFloat(priceBreakdown?.total || '0') * 100)
   const deliveryFee = deliveryType === 'self_pickup'
     ? 0
-    : (lalamoveFeeCents || (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0))
+    : lalamoveFeeCents
   const total = subtotal + deliveryFee - promoDiscount
 
-  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown && !storeSettings
+  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown
 
   const itemIdsKey = useMemo(
     () => [...new Set(items.map((i) => i.menu_item_id))].sort().join(','),
@@ -363,7 +365,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         const supabase = getBrowserClient()
         const { data } = await supabase
           .from('store_settings')
-          .select('operating_hours, pickup_enabled, kitchen_lead_minutes, delivery_fee, cutlery_enabled, cutlery_default')
+          .select('operating_hours, pickup_enabled, kitchen_lead_minutes, cutlery_enabled, cutlery_default')
           .limit(1)
           .single()
         if (data) {
@@ -373,7 +375,6 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
             kitchen_lead_minutes: data.kitchen_lead_minutes ?? 20,
             cutlery_enabled: data.cutlery_enabled ?? true,
             cutlery_default: data.cutlery_default ?? true,
-            delivery_fee: data.delivery_fee ?? null,
           })
         }
       } catch (err) {
@@ -386,27 +387,82 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   }, [])
 
   const handleRefreshQuote = useCallback(async () => {
-    console.log('[Checkout] handleRefreshQuote called', {
-      lat: deliveryAddress?.latitude,
-      lng: deliveryAddress?.longitude,
-    })
-    if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) {
-      console.log('[Checkout] No coords, skipping refresh')
-      return
+    if (!deliveryAddress) return
+
+    let lat = deliveryAddress.latitude
+    let lng = deliveryAddress.longitude
+    const addressString = formatAddress(deliveryAddress)
+
+    if (!lat || !lng) {
+      if (!addressString.trim()) {
+        console.error('[Checkout] Address is empty, cannot geocode')
+        return
+      }
+      console.log('[Checkout] No coords, geocoding:', addressString, '| gmapsLoaded:', gmapsLoaded)
+      try {
+        // Use Google Maps Geocoder if SDK is loaded (same as mobile's native geocoder)
+        if (gmapsLoaded && window.google?.maps) {
+          const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
+          const geocoder = new Geocoder()
+          const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+            geocoder.geocode(
+              { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
+              (results, status) => {
+                if (status === 'OK' && results) resolve(results)
+                else reject(new Error(`Geocoder status: ${status}`))
+              }
+            )
+          })
+          if (result.length > 0) {
+            lat = result[0].geometry.location.lat()
+            lng = result[0].geometry.location.lng()
+            useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
+            console.log('[Checkout] Geocoded (Google) to:', lat, lng)
+          } else {
+            console.error('[Checkout] Google geocoder returned no results for:', addressString)
+            return
+          }
+        } else {
+          // Nominatim fallback when Google Maps SDK isn't loaded
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?` +
+            new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),
+            { headers: { 'User-Agent': 'MadKrapow/1.0' } }
+          )
+          const geoData = await geoRes.json()
+          if (geoData.length > 0) {
+            lat = parseFloat(geoData[0].lat)
+            lng = parseFloat(geoData[0].lon)
+            useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
+            console.log('[Checkout] Geocoded (Nominatim) to:', lat, lng)
+          } else {
+            console.error('[Checkout] Geocoding returned no results for:', addressString)
+            return
+          }
+        }
+      } catch (err) {
+        console.error('[Checkout] Geocoding failed:', err)
+        return
+      }
     }
 
     clearShippingQuote()
 
     try {
-      console.log('[Checkout] Fetching quote...')
-      const res = await fetch('/api/shipping/lalamove/quote', {
+      const supabase = getBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const res = await fetch('/api/delivery/quote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           dropoff: {
-            latitude: deliveryAddress.latitude,
-            longitude: deliveryAddress.longitude,
-            address: formatAddress(deliveryAddress),
+            latitude: lat,
+            longitude: lng,
+            address: addressString,
           },
         }),
       })
@@ -426,60 +482,44 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         console.log('[Checkout] Quote stored, fee:', data.feeCents)
       } else {
         console.error('[Checkout] Quote failed:', data.error)
-        // Store a quote with the fallback fee from store_settings so the UI
-        // isn't stuck in a loading state and the checkout can proceed.
-        const fallbackCents = useCheckoutStore.getState().delivery_type === 'self_pickup'
-          ? 0
-          : (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0)
-        useCheckoutStore.getState().setDeliveryQuote({
-          quote_id: 'fallback',
-          fee_cents: fallbackCents,
-          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-          fees: [],
-        })
-        console.log('[Checkout] Using fallback fee:', fallbackCents)
       }
     } catch (err) {
       console.error('[Checkout] Quote fetch error:', err)
-      const fallbackCents = useCheckoutStore.getState().delivery_type === 'self_pickup'
-        ? 0
-        : (storeSettings?.delivery_fee ? storeSettings.delivery_fee * 100 : 0)
-      useCheckoutStore.getState().setDeliveryQuote({
-        quote_id: 'fallback',
-        fee_cents: fallbackCents,
-        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        fees: [],
-      })
-      console.log('[Checkout] Using fallback fee after error:', fallbackCents)
     }
-  }, [deliveryAddress, clearShippingQuote, storeSettings])
+  }, [deliveryAddress, clearShippingQuote, gmapsLoaded])
 
   const lastQuotedCoords = useRef<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     if (deliveryType !== 'delivery') return
-    if (!deliveryAddress?.latitude || !deliveryAddress?.longitude) return
+    if (!deliveryAddress) return
+    if (!deliveryAddress.address_line1) return
 
-    const currentCoords = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
-    const sameCoords = lastQuotedCoords.current
-      && lastQuotedCoords.current.lat === currentCoords.lat
-      && lastQuotedCoords.current.lng === currentCoords.lng
+    // If coords exist, check for duplicate requests
+    if (deliveryAddress.latitude && deliveryAddress.longitude) {
+      const currentCoords = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
+      const sameCoords = lastQuotedCoords.current
+        && lastQuotedCoords.current.lat === currentCoords.lat
+        && lastQuotedCoords.current.lng === currentCoords.lng
 
-    if (sameCoords) return
+      if (sameCoords) return
 
-    // New address: if a fresh quote was already stored (e.g., by DeliveryAddressInput), just track the coords
-    if (deliveryQuote && !isQuoteExpired()) {
-      lastQuotedCoords.current = currentCoords
-      return
+      if (deliveryQuote && !isQuoteExpired()) {
+        lastQuotedCoords.current = currentCoords
+        return
+      }
     }
 
-    console.log('[Checkout] Refreshing quote for address:', currentCoords)
-    lastQuotedCoords.current = currentCoords
+    // No coords (will geocode) or new coords needing a quote
+    if (deliveryAddress.latitude && deliveryAddress.longitude) {
+      lastQuotedCoords.current = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
+    }
     handleRefreshQuote()
-  }, [deliveryAddress?.latitude, deliveryAddress?.longitude, deliveryType, deliveryQuote, handleRefreshQuote, isQuoteExpired])
+  }, [deliveryAddress?.latitude, deliveryAddress?.longitude, deliveryAddress?.address_line1, deliveryAddress?.city, deliveryType, deliveryQuote, handleRefreshQuote, isQuoteExpired, gmapsLoaded])
 
   const isCartEmpty = items.length === 0
   const hasDeliveryAddress = !!deliveryAddress
+  const quoteFailed = deliveryType === 'delivery' && hasDeliveryAddress && !deliveryQuote && !priceBreakdown && !isDeliveryFeeLoading
 
   const needsDeliveryAddress = deliveryType === 'delivery'
   const needsScheduledTime = fulfillmentType === 'scheduled'
@@ -490,7 +530,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     !isCartEmpty &&
     (!needsDeliveryAddress || hasDeliveryAddress) &&
     !needsScheduleSelection &&
-    !quoteExpired
+    !quoteExpired &&
+    !quoteFailed
 
   const currentStep = needsDeliveryAddress && !hasDeliveryAddress ? 1
     : needsScheduleSelection ? 1
@@ -1064,8 +1105,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                         <Skeleton className="h-4 w-20" />
                       ) : deliveryFee > 0 ? (
                         <span>{formatPrice(deliveryFee)}</span>
-                      ) : deliveryQuote?.quote_id === 'fallback' ? (
-                        <span className="text-muted-foreground">Standard rate</span>
+                      ) : quoteFailed ? (
+                        <span className="text-destructive text-xs">Quote failed</span>
                       ) : (
                         <span className="text-muted-foreground">Free</span>
                       )}
@@ -1090,6 +1131,17 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                           className="text-amber-600 hover:text-amber-700 font-medium underline"
                         >
                           Refresh
+                        </button>
+                      </div>
+                    )}
+                    {quoteFailed && (
+                      <div className="p-2 bg-destructive/10 rounded-lg text-sm flex items-center justify-between">
+                        <span className="text-destructive">Delivery quote failed — address may be outside service area</span>
+                        <button
+                          onClick={handleRefreshQuote}
+                          className="text-destructive hover:text-destructive/80 font-medium underline"
+                        >
+                          Retry
                         </button>
                       </div>
                     )}

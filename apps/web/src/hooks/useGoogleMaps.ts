@@ -34,7 +34,7 @@ function loadGoogleMapsApi(): Promise<void> {
     }
 
     const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&loading=async&libraries=places`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&loading=async&libraries=places,geocoding`
     script.async = true
 
     script.addEventListener('load', () => {

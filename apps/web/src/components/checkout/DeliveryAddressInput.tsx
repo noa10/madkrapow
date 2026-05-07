@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCheckoutStore, type DeliveryAddress } from '@/stores/checkout'
 import { useGoogleMaps } from '@/hooks/useGoogleMaps'
+import { createClient } from '@/lib/supabase/client'
 
 interface DeliveryAddressInputProps {
   onAddressSelect?: (address: DeliveryAddress) => void
@@ -197,9 +198,15 @@ export function DeliveryAddressInput({
     if (formData.latitude && formData.longitude) {
       try {
         console.log('[DeliveryAddressInput] Fetching quote...')
-        const res = await fetch('/api/shipping/lalamove/quote', {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+
+        const res = await fetch('/api/delivery/quote', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({
             dropoff: {
               latitude: formData.latitude,
@@ -236,20 +243,19 @@ export function DeliveryAddressInput({
             expires_at: data.expiresAt,
           })
         } else {
-          const errorMsg = data.error || 'Could not calculate delivery fee. You can still proceed with your order.'
+          const errorMsg = data.error || 'Could not calculate delivery fee.'
           setError(errorMsg)
           onQuoteError?.(errorMsg)
         }
       } catch (err) {
         console.error('Quote fetch error:', err)
-        const errorMsg = 'Could not calculate delivery fee. You can still proceed with your order.'
+        const errorMsg = 'Could not calculate delivery fee. Please try again.'
         setError(errorMsg)
         onQuoteError?.(errorMsg)
       }
     } else {
-      // Fallback: geocode the address using Nominatim (OpenStreetMap)
-      // This handles cases where Google Maps autocomplete was blocked by ad blockers
-      console.log('[DeliveryAddressInput] No coordinates, attempting geocoding fallback...')
+      // Geocode the address when Google Maps autocomplete was blocked or didn't provide coords
+      console.log('[DeliveryAddressInput] No coordinates, attempting geocoding...')
       try {
         const addressString = [
           formData.address_line1,
@@ -257,67 +263,97 @@ export function DeliveryAddressInput({
           formData.city,
           formData.state,
           formData.postal_code,
-          'Malaysia',
         ].filter(Boolean).join(', ')
 
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?` +
-          new URLSearchParams({ format: 'json', q: addressString, limit: '1', countrycodes: 'my' }),
-          { headers: { 'User-Agent': 'MadKrapow/1.0' } }
-        )
-        const geoData = await geoRes.json()
+        let lat: number | undefined
+        let lng: number | undefined
 
-        if (geoData.length > 0) {
-          const lat = parseFloat(geoData[0].lat)
-          const lng = parseFloat(geoData[0].lon)
-          console.log('[DeliveryAddressInput] Geocoded to:', lat, lng)
-
-          // Update form data with coordinates
-          const updatedFormData = { ...formData, latitude: lat, longitude: lng }
-          setDeliveryAddress(updatedFormData)
-
-          // Fetch delivery quote with geocoded coordinates
-          const res = await fetch('/api/shipping/lalamove/quote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              dropoff: {
-                latitude: lat,
-                longitude: lng,
-                address: addressString,
-              },
-            }),
+        // Use Google Maps Geocoder if SDK is loaded
+        if (isLoaded && window.google?.maps) {
+          const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
+          const geocoder = new Geocoder()
+          const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+            geocoder.geocode(
+              { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
+              (res, status) => {
+                if (status === 'OK' && res) resolve(res)
+                else reject(new Error(`Geocoder status: ${status}`))
+              }
+            )
           })
-
-          const data = await res.json()
-          console.log('[DeliveryAddressInput] Quote after geocoding:', data)
-
-          if (data.success) {
-            setError(null)
-            setShippingQuote({
-              quotation_id: data.quotationId,
-              service_type: data.serviceType,
-              stop_ids: data.stopIds,
-              quote_expires_at: data.expiresAt,
-              price_breakdown: data.priceBreakdown,
-              fee_cents: data.feeCents,
-            })
-          } else {
-            setError(data.error || 'Could not calculate delivery fee.')
-            onQuoteError?.(data.error)
+          if (results.length > 0) {
+            lat = results[0].geometry.location.lat()
+            lng = results[0].geometry.location.lng()
+            console.log('[DeliveryAddressInput] Geocoded (Google) to:', lat, lng)
           }
-
-          onAddressSelect?.(updatedFormData)
-          setIsLoading(false)
-          return
         } else {
+          // Nominatim fallback when Google Maps SDK isn't loaded (e.g. ad blockers)
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?` +
+            new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),
+            { headers: { 'User-Agent': 'MadKrapow/1.0' } }
+          )
+          const geoData = await geoRes.json()
+          if (geoData.length > 0) {
+            lat = parseFloat(geoData[0].lat)
+            lng = parseFloat(geoData[0].lon)
+            console.log('[DeliveryAddressInput] Geocoded (Nominatim) to:', lat, lng)
+          }
+        }
+
+        if (lat == null || lng == null) {
           console.warn('[DeliveryAddressInput] Geocoding returned no results')
           setError('Could not locate this address. Please try selecting from the search results.')
           onQuoteError?.('Address not found')
+          setIsLoading(false)
+          return
         }
+
+        const updatedFormData = { ...formData, latitude: lat, longitude: lng }
+        setDeliveryAddress(updatedFormData)
+
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+
+        const res = await fetch('/api/delivery/quote', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            dropoff: {
+              latitude: lat,
+              longitude: lng,
+              address: addressString,
+            },
+          }),
+        })
+
+        const data = await res.json()
+        console.log('[DeliveryAddressInput] Quote after geocoding:', data)
+
+        if (data.success) {
+          setError(null)
+          setShippingQuote({
+            quotation_id: data.quotationId,
+            service_type: data.serviceType,
+            stop_ids: data.stopIds,
+            quote_expires_at: data.expiresAt,
+            price_breakdown: data.priceBreakdown,
+            fee_cents: data.feeCents,
+          })
+        } else {
+          setError(data.error || 'Could not calculate delivery fee.')
+          onQuoteError?.(data.error)
+        }
+
+        onAddressSelect?.(updatedFormData)
+        setIsLoading(false)
+        return
       } catch (geoErr) {
         console.error('[DeliveryAddressInput] Geocoding failed:', geoErr)
-        setError('Could not calculate delivery fee. You can still proceed with your order.')
+        setError('Could not calculate delivery fee. Please try again.')
         onQuoteError?.('Geocoding failed')
       }
     }

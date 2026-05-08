@@ -2,25 +2,11 @@
 
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
-import { format } from "date-fns"
+import { format, parseISO } from "date-fns"
 import { ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-interface Order {
-  id: string
-  status: string
-  total_cents: number
-  delivery_fee_cents: number
-  created_at: string
-  customer_name: string | null
-  customer_phone: string | null
-  delivery_type: string
-  fulfillment_type: string
-  dispatch_status: string | null
-  order_kind: string
-  approval_status: string
-  bulk_company_name: string | null
-}
+import { CompactOrderActions } from "./CompactOrderActions"
+import type { Order } from "@/types/orders"
 
 export interface OrdersByDateGroup {
   dateLabel: string
@@ -43,27 +29,52 @@ function formatPrice(cents: number) {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-interface AdminOrdersCardViewProps {
-  groups: OrdersByDateGroup[]
+function groupOrdersByDate(orders: Order[]): OrdersByDateGroup[] {
+  const map = new Map<string, Order[]>()
+  for (const order of orders) {
+    const key = format(parseISO(order.created_at), "yyyy-MM-dd")
+    const existing = map.get(key)
+    if (existing) {
+      existing.push(order)
+    } else {
+      map.set(key, [order])
+    }
+  }
+  const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
+  return sortedKeys.map((key) => ({
+    dateKey: key,
+    dateLabel: format(parseISO(key), "MMMM d, yyyy"),
+    orders: map.get(key) || [],
+  }))
 }
 
-export function AdminOrdersCardView({ groups }: AdminOrdersCardViewProps) {
-  if (groups.length === 0) return null
+interface AdminOrdersCardViewProps {
+  orders: Order[]
+  grouped?: boolean
+  onStatusChange?: (newStatus: string) => void
+}
+
+export function AdminOrdersCardView({ orders, grouped = true, onStatusChange }: AdminOrdersCardViewProps) {
+  if (orders.length === 0) return null
+
+  const groups = grouped ? groupOrdersByDate(orders) : [{ dateKey: "all", dateLabel: "", orders }]
 
   return (
     <div className="space-y-8">
       {groups.map((group) => (
         <div key={group.dateKey}>
-          {/* Date header */}
-          <div className="sticky top-0 z-10 mb-3 flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-foreground">
-              {group.dateLabel}
-            </h3>
-            <div className="flex-1 h-px bg-white/5" />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {group.orders.length} {group.orders.length === 1 ? "order" : "orders"}
-            </span>
-          </div>
+          {/* Date header — hidden when not grouped */}
+          {grouped && (
+            <div className="sticky top-0 z-10 mb-3 flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                {group.dateLabel}
+              </h3>
+              <div className="flex-1 h-px bg-white/5" />
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {group.orders.length} {group.orders.length === 1 ? "order" : "orders"}
+              </span>
+            </div>
+          )}
 
           {/* Cards grid */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -130,6 +141,15 @@ export function AdminOrdersCardView({ groups }: AdminOrdersCardViewProps) {
                     <ExternalLink className="h-3 w-3" />
                   </Link>
                 </div>
+
+                {/* Actions */}
+                <CompactOrderActions
+                  orderId={order.id}
+                  currentStatus={order.status}
+                  createdAt={order.created_at}
+                  onStatusChange={onStatusChange}
+                  variant="card"
+                />
               </div>
             ))}
           </div>

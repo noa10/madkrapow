@@ -5,7 +5,7 @@ import { Calendar, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 
-export type DateFilterValue = "all" | "today" | "weekly" | "monthly" | "custom"
+export type DateFilterValue = "today" | "weekly" | "monthly" | "custom"
 
 export interface CustomDateRange {
   start: string
@@ -18,10 +18,11 @@ interface AdminOrdersDateFilterBarProps {
   customRange: CustomDateRange
   onCustomRangeChange: (range: CustomDateRange) => void
   onApplyCustomRange: () => void
+  visible?: boolean
+  fallbackFilter?: DateFilterValue
 }
 
 const DATE_FILTER_TABS: { value: DateFilterValue; label: string }[] = [
-  { value: "all", label: "All" },
   { value: "today", label: "Today" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
@@ -34,8 +35,12 @@ export function AdminOrdersDateFilterBar({
   customRange,
   onCustomRangeChange,
   onApplyCustomRange,
+  visible = true,
+  fallbackFilter = "today",
 }: AdminOrdersDateFilterBarProps) {
   const [showCustomPicker, setShowCustomPicker] = useState(false)
+
+  if (!visible) return null
 
   const handleFilterClick = (value: DateFilterValue) => {
     if (value === "custom") {
@@ -49,7 +54,7 @@ export function AdminOrdersDateFilterBar({
   const handleCloseCustom = () => {
     setShowCustomPicker(false)
     if (activeFilter === "custom") {
-      onFilterChange("all")
+      onFilterChange(fallbackFilter)
     }
   }
 

@@ -16,6 +16,7 @@ import {
 import { getBrowserClient } from "@/lib/supabase/client";
 import { type StaffRole } from "@/lib/auth/roles";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
+import { AdminBottomNav } from "@/components/layout/AdminBottomNav";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -141,9 +142,11 @@ export default function AdminLayout({
       />
 
       {/* Main content */}
-      <main className={cn("min-h-screen transition-all duration-300 ease-in-out", collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]")}>
+      <main className={cn("min-h-screen transition-all duration-300 ease-in-out pb-20 lg:pb-0", collapsed ? "lg:ml-[72px]" : "lg:ml-[260px]")}>
         <div className="p-4 md:p-6 lg:p-8">{children}</div>
       </main>
+
+      <AdminBottomNav navItems={navItems} />
     </div>
   );
 }

@@ -3,23 +3,9 @@
 import Link from "next/link"
 import { ExternalLink, Phone } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { format } from "date-fns"
-
-interface Order {
-  id: string
-  status: string
-  total_cents: number
-  delivery_fee_cents: number
-  created_at: string
-  customer_name: string | null
-  customer_phone: string | null
-  delivery_type: string
-  fulfillment_type: string
-  dispatch_status: string | null
-  order_kind: string
-  approval_status: string
-  bulk_company_name: string | null
-}
+import { format, parseISO } from "date-fns"
+import { CompactOrderActions } from "./CompactOrderActions"
+import type { Order } from "@/types/orders"
 
 export interface OrdersByDateGroup {
   dateLabel: string
@@ -31,11 +17,33 @@ function formatPrice(cents: number) {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-interface AdminOrdersTableProps {
-  groups: OrdersByDateGroup[]
+function groupOrdersByDate(orders: Order[]): OrdersByDateGroup[] {
+  const map = new Map<string, Order[]>()
+  for (const order of orders) {
+    const key = format(parseISO(order.created_at), "yyyy-MM-dd")
+    const existing = map.get(key)
+    if (existing) {
+      existing.push(order)
+    } else {
+      map.set(key, [order])
+    }
+  }
+  const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
+  return sortedKeys.map((key) => ({
+    dateKey: key,
+    dateLabel: format(parseISO(key), "MMMM d, yyyy"),
+    orders: map.get(key) || [],
+  }))
 }
 
-export function AdminOrdersTableView({ groups }: AdminOrdersTableProps) {
+interface AdminOrdersTableProps {
+  orders: Order[]
+  onStatusChange?: (newStatus: string) => void
+}
+
+export function AdminOrdersTableView({ orders, onStatusChange }: AdminOrdersTableProps) {
+  const groups = groupOrdersByDate(orders)
+
   if (groups.length === 0) return null
 
   return (
@@ -75,6 +83,9 @@ export function AdminOrdersTableView({ groups }: AdminOrdersTableProps) {
                   </th>
                   <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
                     Total
+                  </th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                    Actions
                   </th>
                   <th className="w-16 px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
                   </th>
@@ -134,6 +145,15 @@ export function AdminOrdersTableView({ groups }: AdminOrdersTableProps) {
                       <span className="text-sm text-foreground tabular-nums font-medium">
                         {formatPrice(order.total_cents + order.delivery_fee_cents)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <CompactOrderActions
+                        orderId={order.id}
+                        currentStatus={order.status}
+                        createdAt={order.created_at}
+                        onStatusChange={onStatusChange}
+                        variant="table"
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <Link

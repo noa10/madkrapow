@@ -1,221 +1,114 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
-import {
-  startOfDay,
-  endOfDay,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  isWithinInterval,
-  parseISO,
-  format,
-} from "date-fns"
-import { getBrowserClient } from "@/lib/supabase/client"
+import { useEffect, useMemo, useState } from "react"
+import { Loader2, ShieldAlert, ArrowUpDown } from "lucide-react"
 import { useRoleGuard } from "@/hooks/use-role-guard"
-import { Package, Loader2, ShieldAlert } from "lucide-react"
-import { NewOrderAlert, triggerNewOrderAlert } from "@/components/admin/NewOrderAlert"
+import { NewOrderAlert } from "@/components/admin/NewOrderAlert"
 import { AdminOrdersFilterBar } from "@/components/admin/orders/AdminOrdersFilterBar"
-import { AdminOrdersCardView, type OrdersByDateGroup } from "@/components/admin/orders/AdminOrdersCardView"
-import { AdminOrdersListView } from "@/components/admin/orders/AdminOrdersListView"
-import { AdminOrdersTableView } from "@/components/admin/orders/AdminOrdersTable"
-import { AdminOrdersDateFilterBar } from "@/components/admin/orders/AdminOrdersDateFilterBar"
+import { OrderRowCard } from "@/components/admin/orders/OrderRowCard"
+import { DateRangePicker, type DateRange as PickerDateRange } from "@/components/admin/orders/DateRangePicker"
 import { AdminOrdersSalesSummary } from "@/components/admin/orders/AdminOrdersSalesSummary"
-import type { DateFilterValue, CustomDateRange } from "@/components/admin/orders/AdminOrdersDateFilterBar"
+import { HistoryTabSummary } from "@/components/admin/orders/HistoryTabSummary"
+import { TabEmptyState } from "@/components/admin/orders/TabEmptyState"
+import { TabSkeleton } from "@/components/admin/orders/TabSkeleton"
+import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
+import { useOrderTabQuery } from "./hooks/useOrderTabQuery"
+import { useRealtimeOrderUpdates } from "./hooks/useRealtimeOrderUpdates"
+import { useTodayAsapOrdersQuery } from "./hooks/useTodayAsapOrdersQuery"
+import { toDateRange } from "./utils/toDateRange"
+import { cn } from "@/lib/utils"
+import type { OrderTab } from "@/types/orders"
+import type { Order } from "@/types/orders"
 
-type ViewMode = "cards" | "list" | "table"
-
-interface Order {
-  id: string
-  status: string
-  total_cents: number
-  delivery_fee_cents: number
-  created_at: string
-  delivery_address_json: string | Record<string, unknown> | null
-  customer_phone: string | null
-  customer_name: string | null
-  delivery_type: string
-  fulfillment_type: string
-  dispatch_status: string | null
-  scheduled_for: string | null
-  order_kind: string
-  approval_status: string
-  bulk_company_name: string | null
-}
-
-type FilterValue = "all" | "asap" | "scheduled" | "pickup" | "bulk" | "dispatch_failed"
-
-function getDateRangeBounds(filter: DateFilterValue, customRange: CustomDateRange) {
-  const now = new Date()
-  switch (filter) {
-    case "today":
-      return { start: startOfDay(now), end: endOfDay(now) }
-    case "weekly":
-      return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) }
-    case "monthly":
-      return { start: startOfMonth(now), end: endOfMonth(now) }
-    case "custom":
-      if (customRange.start && customRange.end) {
-        return {
-          start: startOfDay(parseISO(customRange.start)),
-          end: endOfDay(parseISO(customRange.end)),
-        }
-      }
-      return null
-    default:
-      return null
-  }
-}
-
-function groupOrdersByDate(orders: Order[]): OrdersByDateGroup[] {
-  const map = new Map<string, Order[]>()
-  for (const order of orders) {
-    const key = format(parseISO(order.created_at), "yyyy-MM-dd")
-    const existing = map.get(key)
-    if (existing) {
-      existing.push(order)
-    } else {
-      map.set(key, [order])
-    }
-  }
-  const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
-  return sortedKeys.map((key) => ({
-    dateKey: key,
-    dateLabel: format(parseISO(key), "MMMM d, yyyy"),
-    orders: map.get(key) || [],
-  }))
-}
-
-function calculateTotalCents(orders: Order[]) {
-  return orders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0)
-}
+type SortDirection = "desc" | "asc"
 
 export default function AdminOrdersPage() {
-  const { hasAccess, isLoading: isAccessLoading } = useRoleGuard(["admin", "manager", "cashier"]);
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState<FilterValue>("all")
-  const [viewMode, setViewMode] = useState<ViewMode>("cards")
-  const [realtimeConnected, setRealtimeConnected] = useState(false)
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>("all")
-  const [customDateRange, setCustomDateRange] = useState<CustomDateRange>({ start: "", end: "" })
+  const { hasAccess, isLoading: isAccessLoading } = useRoleGuard(["admin", "manager", "cashier"])
 
+  const activeTab = useAdminOrdersStore((s) => s.activeTab)
+  const caches = useAdminOrdersStore((s) => s.caches)
+  const activeDateFilter = useAdminOrdersStore((s) => s.activeDateFilter)
+  const customDateRange = useAdminOrdersStore((s) => s.customDateRange)
+  const setActiveTab = useAdminOrdersStore((s) => s.setActiveTab)
+  const setDateRange = useAdminOrdersStore((s) => s.setDateRange)
+  const setActiveDateFilter = useAdminOrdersStore((s) => s.setActiveDateFilter)
+  const setCustomDateRange = useAdminOrdersStore((s) => s.setCustomDateRange)
+  const invalidateAllTabs = useAdminOrdersStore((s) => s.invalidateAllTabs)
+
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [activePickerRange, setActivePickerRange] = useState<PickerDateRange | null>(null)
+
+  // Initialize date range to Today on mount
   useEffect(() => {
-    const supabase = getBrowserClient()
-
-    const fetchOrders = async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50)
-
-      if (error) {
-        setError(error.message)
-        return
-      }
-
-      setOrders(data || [])
-      setLoading(false)
+    const range = toDateRange("today", { start: "", end: "" })
+    if (range) {
+      setDateRange(range)
     }
+  }, [setDateRange])
 
-    fetchOrders()
+  // Tab data fetching
+  useOrderTabQuery(activeTab)
 
-    const channel = supabase
-      .channel("admin-orders-feed")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "orders" },
-        (payload: RealtimePostgresChangesPayload<Order>) => {
-          setOrders((prev) => [payload.new as Order, ...prev])
-          triggerNewOrderAlert()
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "orders" },
-        (payload: RealtimePostgresChangesPayload<Order>) => {
-          const nextOrder = payload.new as Order
-          setOrders((prev) =>
-            prev.map((order) =>
-              order.id === nextOrder.id ? nextOrder : order
-            )
-          )
-        }
-      )
-      .subscribe((status: string) => {
-        if (status === "SUBSCRIBED") {
-          setRealtimeConnected(true)
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setRealtimeConnected(false)
-        }
-      })
+  // Realtime subscriptions
+  const { realtimeConnected } = useRealtimeOrderUpdates()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [])
+  // Global "Today's Sales" summary (ASAP orders today)
+  const { orders: todayAsapOrders } = useTodayAsapOrdersQuery()
 
-  const filteredOrders = useMemo(() => {
-    let result = orders
-
-    // Type filter
-    if (activeFilter === "asap") result = result.filter((o) => o.fulfillment_type === "asap")
-    else if (activeFilter === "scheduled") result = result.filter((o) => o.fulfillment_type === "scheduled")
-    else if (activeFilter === "pickup") result = result.filter((o) => o.delivery_type === "self_pickup")
-    else if (activeFilter === "bulk") result = result.filter((o) => o.order_kind === "bulk")
-    else if (activeFilter === "dispatch_failed") result = result.filter((o) => o.dispatch_status === "failed")
-
-    // Date filter
-    const bounds = getDateRangeBounds(dateFilter, customDateRange)
-    if (bounds) {
-      result = result.filter((o) => {
-        const d = parseISO(o.created_at)
-        return isWithinInterval(d, { start: bounds.start, end: bounds.end })
-      })
-    }
-
-    return result
-  }, [orders, activeFilter, dateFilter, customDateRange])
-
-  const groupedOrders = useMemo(() => groupOrdersByDate(filteredOrders), [filteredOrders])
-
-  // Sales summary: default shows today only; filtered shows filtered period
   const { summaryLabel, summaryTotalCents } = useMemo(() => {
-    if (dateFilter === "all") {
-      const todayBounds = getDateRangeBounds("today", customDateRange)
-      const todayOrders = todayBounds
-        ? orders.filter((o) => {
-            const d = parseISO(o.created_at)
-            return isWithinInterval(d, { start: todayBounds.start, end: todayBounds.end })
-          })
-        : []
-      return { summaryLabel: "Total Sales Today", summaryTotalCents: calculateTotalCents(todayOrders) }
-    }
+    const totalCents = todayAsapOrders.reduce(
+      (sum, o) => sum + o.total_cents + o.delivery_fee_cents,
+      0
+    )
+    return { summaryLabel: "Total Sales Today", summaryTotalCents: totalCents }
+  }, [todayAsapOrders])
 
-    if (dateFilter === "today") {
-      return { summaryLabel: "Total Sales Today", summaryTotalCents: calculateTotalCents(filteredOrders) }
-    }
-    if (dateFilter === "weekly") {
-      return { summaryLabel: "Total Sales This Week", summaryTotalCents: calculateTotalCents(filteredOrders) }
-    }
-    if (dateFilter === "monthly") {
-      return { summaryLabel: "Total Sales This Month", summaryTotalCents: calculateTotalCents(filteredOrders) }
-    }
-    if (dateFilter === "custom") {
-      return {
-        summaryLabel: `Total Sales (${customDateRange.start || "..."} to ${customDateRange.end || "..."})`,
-        summaryTotalCents: calculateTotalCents(filteredOrders),
-      }
-    }
+  const activeCache = caches[activeTab]
+  const activeOrders = activeCache.orders
+  const isLoading = activeCache.isLoading
+  const error = activeCache.error
 
-    return { summaryLabel: "Total Sales", summaryTotalCents: 0 }
-  }, [dateFilter, filteredOrders, orders, customDateRange])
+  // Sort orders
+  const sortedOrders = useMemo(() => {
+    return [...activeOrders].sort((a, b) => {
+      const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      return sortDirection === "desc" ? -diff : diff
+    })
+  }, [activeOrders, sortDirection])
 
-  if (isAccessLoading || loading) {
+  const handleTabChange = (tab: OrderTab) => {
+    setActiveTab(tab)
+  }
+
+  const handleRefresh = () => {
+    invalidateAllTabs()
+  }
+
+  const handleDateFilterChange = (value: "today" | "weekly" | "monthly" | "custom") => {
+    setActiveDateFilter(value)
+    const range = toDateRange(value, customDateRange)
+    if (range) {
+      setDateRange(range)
+    }
+  }
+
+  const handleApplyCustomRange = () => {
+    const range = toDateRange("custom", customDateRange)
+    if (range) {
+      setDateRange(range)
+    }
+  }
+
+  const handlePickerRangeChange = (range: PickerDateRange) => {
+    setActivePickerRange(range)
+    setDateRange({ start: range.from, end: range.to })
+  }
+
+  const toggleSort = () => {
+    setSortDirection((d) => (d === "desc" ? "asc" : "desc"))
+  }
+
+  if (isAccessLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="flex flex-col items-center gap-3">
@@ -231,7 +124,9 @@ export default function AdminOrdersPage() {
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="flex flex-col items-center gap-3 text-center">
           <ShieldAlert className="h-8 w-8 text-destructive" />
-          <span className="text-sm text-muted-foreground">You don&apos;t have permission to view orders and revenue data.</span>
+          <span className="text-sm text-muted-foreground">
+            You don&apos;t have permission to view orders and revenue data.
+          </span>
         </div>
       </div>
     )
@@ -240,7 +135,7 @@ export default function AdminOrdersPage() {
   if (error) {
     return (
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center">
-        <p className="text-red-400 text-sm">{error}</p>
+        <p className="text-red-400 text-sm">{error.message}</p>
       </div>
     )
   }
@@ -248,47 +143,71 @@ export default function AdminOrdersPage() {
   return (
     <>
       <NewOrderAlert />
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <h1 className="text-xl font-bold font-display text-foreground">Orders</h1>
 
-        {/* Sales Summary */}
+        {/* Global Sales Summary */}
         <AdminOrdersSalesSummary label={summaryLabel} totalCents={summaryTotalCents} />
 
-        {/* Date Filter Bar */}
-        <AdminOrdersDateFilterBar
-          activeFilter={dateFilter}
-          onFilterChange={setDateFilter}
-          customRange={customDateRange}
-          onCustomRangeChange={setCustomDateRange}
-          onApplyCustomRange={() => {
-            if (customDateRange.start && customDateRange.end) {
-              setDateFilter("custom")
-            }
-          }}
-        />
+        {/* Date Range Picker — only visible on History */}
+        {activeTab === "history" && (
+          <DateRangePicker
+            activeRange={activePickerRange}
+            onRangeChange={handlePickerRangeChange}
+            visible
+          />
+        )}
 
-        {/* Type Filter Bar */}
+        {/* Status Filter Bar */}
         <AdminOrdersFilterBar
-          activeFilter={activeFilter}
-          onFilterChange={(v) => setActiveFilter(v as FilterValue)}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          orderCount={filteredOrders.length}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onRefresh={handleRefresh}
+          orderCount={sortedOrders.length}
           realtimeConnected={realtimeConnected}
         />
 
-        {/* Content */}
-        {filteredOrders.length === 0 ? (
-          <div className="rounded-xl border bg-card p-12 text-center">
-            <Package className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground text-sm mb-4">No orders match this filter</p>
-          </div>
+        {/* Sort header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between py-2 bg-background/80 backdrop-blur-sm">
+          <span className="text-xs text-muted-foreground">
+            Sorted: {sortDirection === "desc" ? "Newest first" : "Oldest first"}
+          </span>
+          <button
+            onClick={toggleSort}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all",
+              "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground border border-transparent"
+            )}
+            aria-label={`Sort ${sortDirection === "desc" ? "oldest first" : "newest first"}`}
+          >
+            <ArrowUpDown className="h-3 w-3" />
+            {sortDirection === "desc" ? "Newest" : "Oldest"}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {isLoading ? (
+          <TabSkeleton />
+        ) : sortedOrders.length === 0 ? (
+          <TabEmptyState tab={activeTab} />
         ) : (
           <>
-            {viewMode === "cards" && <AdminOrdersCardView groups={groupedOrders} />}
-            {viewMode === "list" && <AdminOrdersListView groups={groupedOrders} />}
-            {viewMode === "table" && <AdminOrdersTableView groups={groupedOrders} />}
+            {/* History tab: local summary */}
+            {activeTab === "history" && (
+              <HistoryTabSummary orders={sortedOrders} />
+            )}
+
+            {/* Unified row list for all tabs */}
+            <div className="space-y-2">
+              {sortedOrders.map((order) => (
+                <OrderRowCard
+                  key={order.id}
+                  order={order}
+                  onStatusChange={handleRefresh}
+                />
+              ))}
+            </div>
           </>
         )}
       </div>

@@ -205,14 +205,20 @@ class MerchantOrderRepository {
         .subscribe();
   }
 
-  /// Subscribe to realtime updates for new orders.
+  /// Subscribe to realtime updates for new orders and status changes.
   RealtimeChannel subscribeToNewOrders({
     required void Function() onNewOrder,
   }) {
     return _supabase
-        .channel('admin-new-orders')
+        .channel('admin-orders')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'orders',
+          callback: (_) => onNewOrder(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'orders',
           callback: (_) => onNewOrder(),

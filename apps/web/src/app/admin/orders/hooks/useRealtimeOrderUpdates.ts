@@ -81,6 +81,15 @@ export function useRealtimeOrderUpdates() {
           store.setOrderTabAssignments(nextAssignments)
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "lalamove_shipments" },
+        (payload: RealtimePostgresChangesPayload<{ order_id: string }>) => {
+          // Delivery fee or driver info changed — invalidate all tabs to refresh
+          const store = useAdminOrdersStore.getState()
+          store.invalidateAllTabs()
+        }
+      )
       .subscribe((status: string) => {
         if (status === "SUBSCRIBED") {
           setRealtimeConnected(true)

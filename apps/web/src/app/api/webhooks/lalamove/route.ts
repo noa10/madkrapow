@@ -73,14 +73,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return response
     }
 
-    // Log raw payload
-    await supabase.from('lalamove_webhook_events').insert({
-      lalamove_order_id: lalamoveOrderId,
-      event_type: eventType,
-      event_status: (eventData.status as string) || null,
-      raw_payload: payload,
-      signature,
-    })
+    // Log raw payload — use Lalamove's eventTimestamp so the idempotency check above
+    // will match on subsequent duplicate deliveries of the same event.
+    const { data: insertedEvent } = await supabase
+      .from('lalamove_webhook_events')
+      .insert({
+        lalamove_order_id: lalamoveOrderId,
+        event_type: eventType,
+        event_status: (eventData.status as string) || null,
+        raw_payload: payload,
+        signature,
+        created_at: eventTimestamp,
+      })
+      .select('id')
+      .single()
+
+    const eventId = insertedEvent?.id as string | undefined
 
     // Find shipment
     const { data: shipment } = await supabase
@@ -93,12 +101,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (!shipment) {
       console.warn('[Lalamove Webhook] No shipment found for order:', sanitizeForLog(lalamoveOrderId))
-      // Still mark event as processed
       await supabase
         .from('lalamove_webhook_events')
         .update({ processed: true, processing_error: 'Shipment not found' })
         .eq('lalamove_order_id', lalamoveOrderId)
         .eq('event_type', eventType)
+        .eq('created_at', eventTimestamp)
       return response
     }
 
@@ -131,6 +139,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .update({ processed: true })
         .eq('lalamove_order_id', lalamoveOrderId)
         .eq('event_type', eventType)
+        .eq('created_at', eventTimestamp)
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -141,6 +150,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .update({ processing_error: errorMessage })
         .eq('lalamove_order_id', lalamoveOrderId)
         .eq('event_type', eventType)
+        .eq('created_at', eventTimestamp)
     }
 
     return response

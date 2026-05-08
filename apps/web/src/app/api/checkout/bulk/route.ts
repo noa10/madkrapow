@@ -148,13 +148,22 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
     const menuItemIds = items.map(i => i.id)
     const { data: dbItems } = await supabase
       .from('menu_items')
-      .select('id, name, price_cents, image_url')
+      .select('id, name, price_cents, image_url, is_available')
       .in('id', menuItemIds)
 
     if (!dbItems) {
       return NextResponse.json(
         { success: false, error: 'Unable to validate prices', code: 'PRICE_VALIDATION_FAILED' },
         { status: 500 }
+      )
+    }
+
+    // Reject if any cart item is currently unavailable
+    const unavailableItems = dbItems.filter(d => !d.is_available)
+    if (unavailableItems.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `${unavailableItems[0].name} is no longer available`, code: 'ITEM_UNAVAILABLE' },
+        { status: 400 }
       )
     }
 

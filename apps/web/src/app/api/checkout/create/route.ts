@@ -169,12 +169,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     const [menuResult, modifiersResult] = await Promise.all([
       supabase
         .from('menu_items')
-        .select('id, name, price_cents, image_url')
+        .select('id, name, price_cents, image_url, is_available')
         .in('id', menuItemIds),
       modifierIds.length > 0
         ? supabase
             .from('modifiers')
-            .select('id, name, price_delta_cents')
+            .select('id, name, price_delta_cents, is_available')
             .in('id', modifierIds)
         : Promise.resolve({ data: [], error: null }),
     ])
@@ -187,6 +187,23 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       return NextResponse.json(
         { success: false, error: 'Unable to validate prices', code: 'PRICE_VALIDATION_FAILED' },
         { status: 500 }
+      )
+    }
+
+    // Reject if any cart item or modifier is currently unavailable
+    const unavailableItems = dbItems.filter(d => !d.is_available)
+    if (unavailableItems.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `${unavailableItems[0].name} is no longer available`, code: 'ITEM_UNAVAILABLE' },
+        { status: 400 }
+      )
+    }
+
+    const unavailableModifiers = (dbModifiers ?? []).filter(d => !d.is_available)
+    if (unavailableModifiers.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `${unavailableModifiers[0].name} is no longer available`, code: 'MODIFIER_UNAVAILABLE' },
+        { status: 400 }
       )
     }
 

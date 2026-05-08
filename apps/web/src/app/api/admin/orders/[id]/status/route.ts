@@ -3,8 +3,8 @@ import { requireAdmin } from '@/lib/admin/require-admin';
 import { z } from 'zod';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  pending: ['cancelled'],
-  paid: ['cancelled'],
+  pending: ['paid', 'cancelled'],
+  paid: ['preparing', 'cancelled'],
   accepted: ['cancelled'],
   preparing: ['ready', 'cancelled'],
   ready: ['cancelled'],

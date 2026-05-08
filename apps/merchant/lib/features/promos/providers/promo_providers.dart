@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/supabase_provider.dart';
 import '../data/promo_repository.dart';
@@ -160,3 +161,28 @@ class TogglePromoNotifier extends AsyncNotifier<void> {
 final togglePromoProvider = AsyncNotifierProvider<TogglePromoNotifier, void>(
   TogglePromoNotifier.new,
 );
+
+// ── Realtime subscription providers ────────────────────────────────
+
+/// Holds the active realtime channel subscription for promos, or null.
+final promoRealtimeSubscriptionProvider =
+    StateProvider<RealtimeChannel?>((ref) => null);
+
+/// Watcher provider that subscribes to promo realtime changes and
+/// invalidates the promosProvider when changes occur.
+final promoRealtimeWatcherProvider = Provider<void>((ref) {
+  final repo = ref.watch(promoRepositoryProvider);
+  RealtimeChannel? channel;
+
+  ref.onDispose(() {
+    if (channel != null) {
+      repo.unsubscribeFromPromoChanges(channel);
+    }
+  });
+
+  channel = repo.subscribeToPromoChanges(
+    onChange: () {
+      ref.invalidate(promosProvider);
+    },
+  );
+});

@@ -22,6 +22,8 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep real-time watcher alive while screen is visible
+    ref.watch(promoRealtimeWatcherProvider);
     final promosAsync = ref.watch(promosProvider);
     final canManage = ref.watch(canManageStaffProvider);
 

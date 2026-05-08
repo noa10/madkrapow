@@ -394,6 +394,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep promo real-time watcher alive so cart discounts update instantly
+    ref.watch(promoRealtimeWatcherProvider);
     final isVerified = ref.watch(isEmailVerifiedProvider);
     final user = ref.watch(currentUserProvider);
 

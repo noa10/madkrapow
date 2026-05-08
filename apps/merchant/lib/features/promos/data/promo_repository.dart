@@ -213,6 +213,30 @@ class PromoRepository {
     }
   }
 
+  /// Subscribe to real-time changes on promo_codes and promo_items.
+  RealtimeChannel subscribeToPromoChanges({required void Function() onChange}) {
+    return _client
+        .channel('promo-changes')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'promo_codes',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'promo_items',
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+  }
+
+  /// Unsubscribe from promo real-time changes.
+  void unsubscribeFromPromoChanges(RealtimeChannel channel) {
+    _client.removeChannel(channel);
+  }
+
   /// Fetch target menu item IDs for a promo.
   Future<List<String>> fetchPromoTargetItems(String promoId) async {
     final response = await _client

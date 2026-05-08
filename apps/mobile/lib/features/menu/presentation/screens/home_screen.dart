@@ -29,6 +29,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // Activate realtime watcher and periodic refresh
     ref.watch(menuRealtimeWatcherProvider);
     ref.watch(menuPeriodicRefreshProvider);
+    // Activate promo realtime watcher for instant cross-platform promo sync
+    ref.watch(promoRealtimeWatcherProvider);
   }
 
   @override
@@ -59,6 +61,7 @@ class _HomeScreenContent extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesWithItemsProvider);
     final storeOpen = ref.watch(storeOpenProvider);
     final menuUpdated = ref.watch(menuUpdatedProvider);
+    final promoUpdated = ref.watch(promoUpdatedProvider);
 
     return Scaffold(
       appBar: AppBar(),
@@ -89,6 +92,33 @@ class _HomeScreenContent extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          // Promos updated indicator
+          if (promoUpdated)
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.local_offer, size: 16, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text(
+                      'Promos updated',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -255,45 +285,65 @@ class _MenuItemTile extends ConsumerWidget {
     final item = itemWithModifiers.item;
     final theme = Theme.of(context);
     final promoAsync = ref.watch(promoPreviewProvider(item.id));
+    final isUnavailable = !item.isAvailable;
+
+    Widget imageWidget;
+    if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
+      imageWidget = ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: CachedNetworkImage(
+          imageUrl: item.imageUrl!,
+          width: 64,
+          height: 64,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => Container(
+            width: 64,
+            height: 64,
+            color: theme.colorScheme.surfaceContainerHighest,
+          ),
+          errorWidget: (context, url, error) => Container(
+            width: 64,
+            height: 64,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: const Icon(Icons.restaurant, size: 28),
+          ),
+        ),
+      );
+    } else {
+      imageWidget = Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.restaurant, size: 28),
+      );
+    }
+
+    if (isUnavailable) {
+      imageWidget = ColorFiltered(
+        colorFilter: const ColorFilter.matrix([
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0,      0,      0,      1, 0,
+        ]),
+        child: Opacity(
+          opacity: 0.5,
+          child: imageWidget,
+        ),
+      );
+    }
 
     return InkWell(
-      onTap: () => context.push('/item/${item.id}'),
+      onTap: isUnavailable ? null : () => context.push('/item/${item.id}'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
             // Item image
-            if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: item.imageUrl!,
-                  width: 64,
-                  height: 64,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    width: 64,
-                    height: 64,
-                    color: theme.colorScheme.surfaceContainerHighest,
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    width: 64,
-                    height: 64,
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: const Icon(Icons.restaurant, size: 28),
-                  ),
-                ),
-              )
-            else
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.restaurant, size: 28),
-              ),
+            imageWidget,
             const SizedBox(width: 12),
             // Item info
             Expanded(
@@ -304,6 +354,9 @@ class _MenuItemTile extends ConsumerWidget {
                     item.name,
                     style: theme.textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w600,
+                      color: isUnavailable
+                          ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
+                          : null,
                     ),
                   ),
                   if (item.description != null && item.description!.isNotEmpty)
@@ -312,20 +365,47 @@ class _MenuItemTile extends ConsumerWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.6,
-                        ),
+                        color: isUnavailable
+                            ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
                       ),
                     ),
                   const SizedBox(height: 4),
-                  _buildPrice(context, theme, item.priceCents, promoAsync),
+                  _buildPrice(
+                    context,
+                    theme,
+                    item.priceCents,
+                    promoAsync,
+                    isUnavailable,
+                  ),
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-            ),
+            if (isUnavailable)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'Unavailable',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+              ),
           ],
         ),
       ),
@@ -337,9 +417,10 @@ class _MenuItemTile extends ConsumerWidget {
     ThemeData theme,
     int originalPriceCents,
     AsyncValue<PromoPreview?> promoAsync,
+    bool isUnavailable,
   ) {
     final promo = promoAsync.valueOrNull;
-    final showDiscount = promo != null && promo.savingsCents > 0;
+    final showDiscount = !isUnavailable && promo != null && promo.savingsCents > 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -366,11 +447,13 @@ class _MenuItemTile extends ConsumerWidget {
               Text(
                 formatPrice(originalPriceCents),
                 style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
+                  color: isUnavailable
+                      ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
+                      : theme.colorScheme.primary,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (itemWithModifiers.hasModifiers) ...[
+              if (!isUnavailable && itemWithModifiers.hasModifiers) ...[
                 const SizedBox(width: 8),
                 Text(
                   'Customizable',

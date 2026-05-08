@@ -47,52 +47,72 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: M
     : `View details for ${item.name}`
 
   const showDiscount = promoPreview && promoPreview.savingsCents > 0
+  const isUnavailable = !item.is_available
 
-  return (
-    <Card className="overflow-hidden group transition-all duration-300 hover:shadow-gold hover:-translate-y-0.5 border-transparent hover:border-primary/30">
-      <Link
-        href={itemHref}
-        aria-label={detailActionLabel}
-        data-testid="menu-item-primary-link"
-        className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        <div className="relative h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-lg">
-          {item.image_url ? (
-            <Image
-              src={item.image_url}
-              alt={item.name}
-              fill
-              className="object-cover transition-transform duration-300 group-hover:scale-105"
-              sizes="96px"
-              draggable={false}
-            />
-          ) : (
-            <PlaceholderImage />
-          )}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h3 className="font-heading font-semibold text-base sm:text-lg line-clamp-1 group-hover:text-primary transition-colors">
-            {item.name}
-          </h3>
-          {descriptionSnippet && (
-            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
-              {descriptionSnippet}
-            </p>
-          )}
-          <div className="mt-1.5 flex items-baseline gap-2">
-            {showDiscount ? (
-              <>
-                <p className="font-medium text-primary">{formatPrice(promoPreview.discountedCents)}</p>
-                <p className="text-sm text-muted-foreground line-through">{formatPrice(promoPreview.originalCents)}</p>
-              </>
-            ) : (
-              <p className="font-medium text-primary">{formatPrice(item.price_cents)}</p>
+  const cardContent = (
+    <>
+      <div className={cn(
+        "relative h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-lg",
+        isUnavailable && "grayscale"
+      )}>
+        {item.image_url ? (
+          <Image
+            src={item.image_url}
+            alt={item.name}
+            fill
+            className={cn(
+              "object-cover transition-transform duration-300",
+              !isUnavailable && "group-hover:scale-105"
             )}
+            sizes="96px"
+            draggable={false}
+          />
+        ) : (
+          <PlaceholderImage />
+        )}
+        {isUnavailable && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <span className="text-white text-xs font-semibold uppercase tracking-wider">Unavailable</span>
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="hidden sm:flex flex-col items-end justify-center">
+      <div className="flex-1 min-w-0">
+        <h3 className={cn(
+          "font-heading font-semibold text-base sm:text-lg line-clamp-1",
+          !isUnavailable && "group-hover:text-primary transition-colors"
+        )}>
+          {item.name}
+        </h3>
+        {descriptionSnippet && (
+          <p className={cn(
+            "text-sm mt-0.5 line-clamp-2",
+            isUnavailable ? "text-muted-foreground/60" : "text-muted-foreground"
+          )}>
+            {descriptionSnippet}
+          </p>
+        )}
+        <div className="mt-1.5 flex items-baseline gap-2">
+          {showDiscount && !isUnavailable ? (
+            <>
+              <p className="font-medium text-primary">{formatPrice(promoPreview.discountedCents)}</p>
+              <p className="text-sm text-muted-foreground line-through">{formatPrice(promoPreview.originalCents)}</p>
+            </>
+          ) : (
+            <p className={cn(
+              "font-medium",
+              isUnavailable ? "text-muted-foreground/50" : "text-primary"
+            )}>{formatPrice(item.price_cents)}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="hidden sm:flex flex-col items-end justify-center">
+        {isUnavailable ? (
+          <span className="inline-flex items-center rounded-full border border-destructive/40 bg-destructive/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-destructive">
+            Unavailable
+          </span>
+        ) : (
           <span className={cn(
             "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider transition-colors",
             item.has_modifiers
@@ -101,8 +121,35 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: M
           )}>
             {item.has_modifiers ? 'Customize' : 'View'}
           </span>
+        )}
+      </div>
+    </>
+  )
+
+  return (
+    <Card className={cn(
+      "overflow-hidden group transition-all duration-300 border-transparent",
+      isUnavailable
+        ? "opacity-60 bg-muted/30 cursor-not-allowed"
+        : "hover:shadow-gold hover:-translate-y-0.5 hover:border-primary/30"
+    )}>
+      {isUnavailable ? (
+        <div
+          aria-label={`${item.name} is currently unavailable`}
+          className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4"
+        >
+          {cardContent}
         </div>
-      </Link>
+      ) : (
+        <Link
+          href={itemHref}
+          aria-label={detailActionLabel}
+          data-testid="menu-item-primary-link"
+          className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {cardContent}
+        </Link>
+      )}
     </Card>
   )
 })

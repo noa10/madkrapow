@@ -5,11 +5,12 @@ import { cn } from '@/lib/utils'
 interface SpecialInstructionsProps {
   value: string
   onChange: (value: string) => void
+  disabled?: boolean
 }
 
 const MAX_LENGTH = 200
 
-export function SpecialInstructions({ value, onChange }: SpecialInstructionsProps) {
+export function SpecialInstructions({ value, onChange, disabled }: SpecialInstructionsProps) {
   const remaining = MAX_LENGTH - value.length
 
   return (
@@ -24,14 +25,16 @@ export function SpecialInstructions({ value, onChange }: SpecialInstructionsProp
         id="special-instructions"
         value={value}
         onChange={(e) => onChange(e.target.value.slice(0, MAX_LENGTH))}
-        placeholder="E.g., No onions, extra spicy..."
+        placeholder={disabled ? "Unavailable" : "E.g., No onions, extra spicy..."}
         maxLength={MAX_LENGTH}
         rows={3}
+        disabled={disabled}
         className={cn(
           'w-full px-3 py-2 rounded-md border bg-background text-foreground',
           'placeholder:text-muted-foreground',
           'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
-          'resize-none'
+          'resize-none',
+          disabled && 'opacity-60 cursor-not-allowed'
         )}
         aria-describedby="char-counter"
       />

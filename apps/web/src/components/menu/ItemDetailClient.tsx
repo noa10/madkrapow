@@ -118,8 +118,10 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
     router.back()
   }
 
+  const isUnavailable = !item.is_available
+
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className={cn("min-h-screen bg-background pb-28", isUnavailable && "opacity-75")}>
       <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
         <BackButton />
         <div className="grid gap-6 lg:grid-cols-[minmax(300px,420px)_1fr] lg:items-start">
@@ -132,6 +134,12 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
               <p className="text-sm text-muted-foreground mb-1">{item.category.name}</p>
               <h1 className="text-3xl font-bold">{item.name}</h1>
             </div>
+
+            {isUnavailable && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-destructive text-sm font-medium">
+                This item is currently unavailable
+              </div>
+            )}
 
             {item.description && (
               <p className="text-muted-foreground mb-6">{item.description}</p>
@@ -154,13 +162,13 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
             <div className="flex items-center justify-between py-4 border-t">
               <div>
                 <p className="text-sm text-muted-foreground">Quantity</p>
-                <QuantitySelector quantity={quantity} onChange={setQuantity} />
+                <QuantitySelector quantity={quantity} onChange={setQuantity} disabled={isUnavailable} />
               </div>
             </div>
 
-            <SpecialInstructions value={specialInstructions} onChange={setSpecialInstructions} />
+            <SpecialInstructions value={specialInstructions} onChange={setSpecialInstructions} disabled={isUnavailable} />
 
-            {!allRequiredGroupsSatisfied && (
+            {!allRequiredGroupsSatisfied && !isUnavailable && (
               <p className="text-sm text-destructive text-center">
                 Please select all required options
               </p>
@@ -177,14 +185,24 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
         )}
       >
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <Button
-            size="lg"
-            onClick={handleAddToCart}
-            disabled={!allRequiredGroupsSatisfied}
-            className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
-          >
-            add to basket - {formatPrice(totalPriceCents)} (Incl. tax)
-          </Button>
+          {isUnavailable ? (
+            <Button
+              size="lg"
+              disabled
+              className="w-full bg-muted text-muted-foreground cursor-not-allowed"
+            >
+              Unavailable
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              onClick={handleAddToCart}
+              disabled={!allRequiredGroupsSatisfied}
+              className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+            >
+              add to basket - {formatPrice(totalPriceCents)} (Incl. tax)
+            </Button>
+          )}
         </div>
       </div>
     </div>

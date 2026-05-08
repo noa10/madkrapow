@@ -105,7 +105,6 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
   const { data: menuItems, error: menuItemsError } = await supabase
     .from('menu_items')
     .select('*')
-    .eq('is_available', true)
     .order('sort_order', { ascending: true })
 
   if (menuItemsError) throw menuItemsError
@@ -117,12 +116,12 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
   if (migError) throw migError
 
   const menuItemModifierGroupRefs: MenuItemModifierGroupRef[] = menuItemModifierGroups ?? []
-  const availableMenuItems: MenuItem[] = menuItems ?? []
+  const allMenuItems: MenuItem[] = menuItems ?? []
   const activeCategories: Category[] = categories ?? []
 
   const itemsWithModifiers = new Set(menuItemModifierGroupRefs.map((modifierGroup) => modifierGroup.menu_item_id))
 
-  const menuItemsByCategory = availableMenuItems.reduce((acc, item) => {
+  const menuItemsByCategory = allMenuItems.reduce((acc, item) => {
     if (!acc[item.category_id]) acc[item.category_id] = []
     acc[item.category_id].push({ ...item, has_modifiers: itemsWithModifiers.has(item.id) })
     return acc
@@ -146,7 +145,6 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const { data: menuItems, error } = await supabase
     .from('menu_items')
     .select('*')
-    .eq('is_available', true)
     .order('sort_order', { ascending: true })
 
   if (error) throw error
@@ -217,7 +215,6 @@ export async function getFullMenuTree(): Promise<(Category & { menu_items: FullM
   const { data: menuItems, error: menuItemsError } = await supabase
     .from('menu_items')
     .select('*')
-    .eq('is_available', true)
     .order('sort_order', { ascending: true })
 
   if (menuItemsError) throw menuItemsError

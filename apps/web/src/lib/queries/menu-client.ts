@@ -61,7 +61,6 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const { data: menuItems, error } = await supabase
     .from('menu_items')
     .select('*')
-    .eq('is_available', true)
     .order('sort_order', { ascending: true })
 
   if (error) throw error

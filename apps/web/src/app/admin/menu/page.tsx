@@ -24,6 +24,8 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -80,9 +82,11 @@ function SortableMenuItemRow({
   categoryName,
   isDeleting,
   isSaving,
+  isSnoozing,
   onDeleteStart,
   onDelete,
   onDeleteCancel,
+  onToggleAvailability,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -92,9 +96,11 @@ function SortableMenuItemRow({
   categoryName: string;
   isDeleting: boolean;
   isSaving: boolean;
+  isSnoozing: boolean;
   onDeleteStart: () => void;
   onDelete: () => void;
   onDeleteCancel: () => void;
+  onToggleAvailability: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMoveUp: () => void;
@@ -179,9 +185,29 @@ function SortableMenuItemRow({
       </td>
       <td className="py-3">RM {(item.price_cents / 100).toFixed(2)}</td>
       <td className="py-3">
-        <Badge variant={item.is_available ? "default" : "secondary"}>
+        <button
+          type="button"
+          onClick={onToggleAvailability}
+          disabled={isSnoozing || isSaving}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors min-h-[36px]",
+            item.is_available
+              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400",
+            (isSnoozing || isSaving) && "opacity-60 cursor-not-allowed"
+          )}
+          aria-label={item.is_available ? `Snooze ${item.name}` : `Un-snooze ${item.name}`}
+          title={item.is_available ? "Snooze (make unavailable)" : "Un-snooze (make available)"}
+        >
+          {isSnoozing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : item.is_available ? (
+            <Eye className="h-3.5 w-3.5" />
+          ) : (
+            <EyeOff className="h-3.5 w-3.5" />
+          )}
           {item.is_available ? "Available" : "Unavailable"}
-        </Badge>
+        </button>
       </td>
       <td className="py-3 text-right">
         <div className="flex items-center justify-end gap-2">
@@ -342,6 +368,7 @@ export default function AdminMenuPage() {
 
   // Menu item management state
   const [deletingMenuItem, setDeletingMenuItem] = useState<{ id: string; name: string } | null>(null);
+  const [snoozingItemId, setSnoozingItemId] = useState<string | null>(null);
 
   // Modifier groups state
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
@@ -566,6 +593,50 @@ export default function AdminMenuPage() {
       setError(errorMessage);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleAvailability = async (item: MenuItem) => {
+    if (snoozingItemId) return;
+
+    const previousValue = item.is_available;
+    const newValue = !previousValue;
+
+    // Optimistic update
+    setMenuItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, is_available: newValue } : i))
+    );
+    setSnoozingItemId(item.id);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/admin/menu/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_available: newValue }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to update: ${res.status}`);
+      }
+
+      // Re-fetch to guarantee server state
+      const supabase = getBrowserClient();
+      const menuItemsRes = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      setMenuItems(menuItemsRes.data || []);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to update availability";
+      setError(errorMessage);
+      // Revert optimistic update
+      setMenuItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, is_available: previousValue } : i))
+      );
+    } finally {
+      setSnoozingItemId(null);
     }
   };
 
@@ -1217,11 +1288,13 @@ export default function AdminMenuPage() {
                                     categoryName={getCategoryName(item.category_id)}
                                     isDeleting={deletingMenuItem?.id === item.id}
                                     isSaving={saving}
+                                    isSnoozing={snoozingItemId === item.id}
                                     onDeleteStart={() =>
                                       setDeletingMenuItem({ id: item.id, name: item.name })
                                     }
                                     onDelete={handleDeleteMenuItem}
                                     onDeleteCancel={() => setDeletingMenuItem(null)}
+                                    onToggleAvailability={() => handleToggleAvailability(item)}
                                     canMoveUp={index > 0}
                                     canMoveDown={index < catItems.length - 1}
                                     onMoveUp={() => moveMenuItem(item, "up")}

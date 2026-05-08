@@ -133,121 +133,163 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
           );
         }
 
+        final isUnavailable = !item.item.isAvailable;
+
         return Scaffold(
           appBar: AppBar(),
-          bottomNavigationBar: _BottomBar(
-            totalCents: _totalCents,
-            onAddToCart: () {
-              ref
-                  .read(cartProvider.notifier)
-                  .addItem(
-                    CartItem(
-                      menuItemId: item.item.id,
-                      name: item.item.name,
-                      unitPrice: item.item.priceCents,
-                      quantity: _quantity,
-                      selectedModifiers: _selectedModifiers.values
-                          .expand((mods) => mods)
-                          .map(
-                            (m) => SelectedModifier(
-                              id: m.id,
-                              name: m.name,
-                              priceDeltaCents: m.priceDeltaCents,
-                            ),
-                          )
-                          .toList(),
-                      specialInstructions: _specialInstructions,
-                      imageUrl: item.item.imageUrl,
-                    ),
-                  );
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '${_quantity}x ${item.item.name} added to cart',
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-              context.pop();
-            },
-          ),
-          body: CustomScrollView(
-            slivers: [
-              // Image
-              SliverToBoxAdapter(
-                child:
-                    item.item.imageUrl != null && item.item.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: item.item.imageUrl!,
-                        height: 260,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorWidget: (context, url, error) =>
-                            _ImagePlaceholder(),
-                      )
-                    : const _ImagePlaceholder(),
-              ),
-              // Item info
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.item.name,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.category.name,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.5),
+          bottomNavigationBar: isUnavailable
+              ? _UnavailableBottomBar()
+              : _BottomBar(
+                  totalCents: _totalCents,
+                  onAddToCart: () {
+                    ref
+                        .read(cartProvider.notifier)
+                        .addItem(
+                          CartItem(
+                            menuItemId: item.item.id,
+                            name: item.item.name,
+                            unitPrice: item.item.priceCents,
+                            quantity: _quantity,
+                            selectedModifiers: _selectedModifiers.values
+                                .expand((mods) => mods)
+                                .map(
+                                  (m) => SelectedModifier(
+                                    id: m.id,
+                                    name: m.name,
+                                    priceDeltaCents: m.priceDeltaCents,
+                                  ),
+                                )
+                                .toList(),
+                            specialInstructions: _specialInstructions,
+                            imageUrl: item.item.imageUrl,
+                          ),
+                        );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${_quantity}x ${item.item.name} added to cart',
                         ),
+                        behavior: SnackBarBehavior.floating,
                       ),
-                      if (item.item.description != null &&
-                          item.item.description!.isNotEmpty) ...[
-                        const SizedBox(height: 12),
+                    );
+                    context.pop();
+                  },
+                ),
+          body: Opacity(
+            opacity: isUnavailable ? 0.75 : 1.0,
+            child: CustomScrollView(
+              slivers: [
+                // Image
+                SliverToBoxAdapter(
+                  child:
+                      item.item.imageUrl != null && item.item.imageUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: item.item.imageUrl!,
+                          height: 260,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorWidget: (context, url, error) =>
+                              _ImagePlaceholder(),
+                        )
+                      : const _ImagePlaceholder(),
+                ),
+                // Item info
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          item.item.description!,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          item.item.name,
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item.category.name,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        if (isUnavailable) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.block,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'This item is currently unavailable',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (item.item.description != null &&
+                            item.item.description!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            item.item.description!,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        _buildItemPrice(context, item.item.id, item.item.priceCents),
                       ],
-                      const SizedBox(height: 16),
-                      _buildItemPrice(context, item.item.id, item.item.priceCents),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              // Modifier groups
-              ...item.modifierGroups.map(
-                (group) => SliverToBoxAdapter(
-                  child: _ModifierGroupSection(
-                    group: group,
-                    selectedModifiers: _selectedModifiers[group.group.id] ?? [],
-                    onToggle: (modifier) => _toggleModifier(group, modifier),
+                // Modifier groups
+                ...item.modifierGroups.map(
+                  (group) => SliverToBoxAdapter(
+                    child: _ModifierGroupSection(
+                      group: group,
+                      selectedModifiers: _selectedModifiers[group.group.id] ?? [],
+                      enabled: !isUnavailable,
+                      onToggle: isUnavailable
+                          ? (_) {}
+                          : (modifier) => _toggleModifier(group, modifier),
+                    ),
                   ),
                 ),
-              ),
-              // Quantity
-              SliverToBoxAdapter(
-                child: _QuantitySelector(
-                  quantity: _quantity,
-                  onChanged: (q) => setState(() => _quantity = q),
+                // Quantity
+                SliverToBoxAdapter(
+                  child: _QuantitySelector(
+                    quantity: _quantity,
+                    enabled: !isUnavailable,
+                    onChanged: (q) => setState(() => _quantity = q),
+                  ),
                 ),
-              ),
-              // Special instructions
-              SliverToBoxAdapter(
-                child: _SpecialInstructionsField(
-                  value: _specialInstructions,
-                  onChanged: (v) => _specialInstructions = v,
+                // Special instructions
+                SliverToBoxAdapter(
+                  child: _SpecialInstructionsField(
+                    value: _specialInstructions,
+                    enabled: !isUnavailable,
+                    onChanged: (v) => _specialInstructions = v,
+                  ),
                 ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 180)),
-            ],
+                const SliverToBoxAdapter(child: SizedBox(height: 180)),
+              ],
+            ),
           ),
         );
       },
@@ -273,11 +315,13 @@ class _ModifierGroupSection extends StatelessWidget {
     required this.group,
     required this.selectedModifiers,
     required this.onToggle,
+    this.enabled = true,
   });
 
   final ModifierGroupWithModifiers group;
   final List<ModifiersRow> selectedModifiers;
   final ValueChanged<ModifiersRow> onToggle;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +339,7 @@ class _ModifierGroupSection extends StatelessWidget {
                 group.group.name,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
+                  color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
               if (group.isRequired) ...[
@@ -302,7 +347,7 @@ class _ModifierGroupSection extends StatelessWidget {
                 Text(
                   '*Required',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.error,
+                    color: enabled ? theme.colorScheme.error : theme.colorScheme.error.withValues(alpha: 0.4),
                   ),
                 ),
               ],
@@ -313,7 +358,9 @@ class _ModifierGroupSection extends StatelessWidget {
             Text(
               group.group.description!,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                color: enabled
+                    ? theme.colorScheme.onSurface.withValues(alpha: 0.6)
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.3),
               ),
             ),
           const SizedBox(height: 8),
@@ -325,6 +372,7 @@ class _ModifierGroupSection extends StatelessWidget {
               modifier: modifier,
               isSelected: isSelected,
               isSingleSelect: isSingleSelect,
+              enabled: enabled,
               onTap: () => onToggle(modifier),
             );
           }),
@@ -340,17 +388,19 @@ class _ModifierTile extends StatelessWidget {
     required this.isSelected,
     required this.isSingleSelect,
     required this.onTap,
+    this.enabled = true,
   });
 
   final ModifiersRow modifier;
   final bool isSelected;
   final bool isSingleSelect;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
@@ -358,16 +408,27 @@ class _ModifierTile extends StatelessWidget {
             if (isSingleSelect)
               RadioGroup<bool>(
                 groupValue: isSelected,
-                onChanged: (_) => onTap(),
-                child: Radio<bool>(value: true),
+                onChanged: enabled ? (_) => onTap() : (_) {},
+                child: Radio<bool>(
+                  value: true,
+                  enabled: enabled,
+                ),
               )
             else
-              Checkbox(value: isSelected, onChanged: (_) => onTap()),
+              IgnorePointer(
+                ignoring: !enabled,
+                child: Checkbox(
+                  value: isSelected,
+                  onChanged: enabled ? (_) => onTap() : null,
+                ),
+              ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 modifier.name,
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: enabled ? null : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
               ),
             ),
             if (modifier.priceDeltaCents != 0)
@@ -376,7 +437,9 @@ class _ModifierTile extends StatelessWidget {
                     ? '+${formatPrice(modifier.priceDeltaCents)}'
                     : '-${formatPrice(modifier.priceDeltaCents.abs())}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: enabled
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                 ),
               ),
           ],
@@ -387,10 +450,15 @@ class _ModifierTile extends StatelessWidget {
 }
 
 class _QuantitySelector extends StatelessWidget {
-  const _QuantitySelector({required this.quantity, required this.onChanged});
+  const _QuantitySelector({
+    required this.quantity,
+    required this.onChanged,
+    this.enabled = true,
+  });
 
   final int quantity;
   final ValueChanged<int> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -403,11 +471,12 @@ class _QuantitySelector extends StatelessWidget {
             'Quantity',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
+              color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
             ),
           ),
           const Spacer(),
           IconButton.outlined(
-            onPressed: quantity > 1 ? () => onChanged(quantity - 1) : null,
+            onPressed: enabled && quantity > 1 ? () => onChanged(quantity - 1) : null,
             icon: const Icon(Icons.remove),
           ),
           Padding(
@@ -416,11 +485,12 @@ class _QuantitySelector extends StatelessWidget {
               '$quantity',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
+                color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
               ),
             ),
           ),
           IconButton.outlined(
-            onPressed: () => onChanged(quantity + 1),
+            onPressed: enabled ? () => onChanged(quantity + 1) : null,
             icon: const Icon(Icons.add),
           ),
         ],
@@ -433,22 +503,25 @@ class _SpecialInstructionsField extends StatelessWidget {
   const _SpecialInstructionsField({
     required this.value,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final String value;
   final ValueChanged<String> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: TextField(
-        onChanged: onChanged,
+        onChanged: enabled ? onChanged : null,
         maxLines: 3,
+        enabled: enabled,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: 'Special Instructions',
-          hintText: 'E.g. Extra spicy, no onions...',
+          hintText: enabled ? 'E.g. Extra spicy, no onions...' : 'Unavailable',
           alignLabelWithHint: true,
         ),
       ),
@@ -480,6 +553,42 @@ class _BottomBar extends StatelessWidget {
               Text(
                 formatPrice(totalCents),
                 style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnavailableBottomBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FilledButton(
+          onPressed: null,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(double.infinity, 52),
+            disabledBackgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.block,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Unavailable',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
             ],
           ),

@@ -27,6 +27,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
+    // Lalamove sends a signature-less POST probe (empty body `{}`) during webhook
+    // URL validation in their portal. Return 200 so the URL is accepted.
+    const trimmedBody = body.trim()
+    if (!signature && (trimmedBody === '' || trimmedBody === '{}')) {
+      console.log('[Lalamove Webhook] Received validation ping — returning 200')
+      return response
+    }
+
     if (!signature) {
       console.error('[Lalamove Webhook] Missing x-lalamove-signature header')
       return NextResponse.json({ success: false, error: 'Missing signature header' }, { status: 401 })

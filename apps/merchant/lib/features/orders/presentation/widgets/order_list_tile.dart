@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../generated/tables/orders.dart';
 import '../../../../core/utils/price_formatter.dart';
+import '../../../../core/utils/order_code.dart';
 import '../../providers/admin_order_providers.dart';
 
 class OrderListTile extends ConsumerWidget {
@@ -22,7 +23,7 @@ class OrderListTile extends ConsumerWidget {
         children: [
           Expanded(
             child: Text(
-              '#${order.orderNumber}',
+              generateOrderDisplayCode(order.id),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),

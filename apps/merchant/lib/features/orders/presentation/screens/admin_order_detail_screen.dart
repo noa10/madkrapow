@@ -12,6 +12,7 @@ import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
 import '../../../../core/utils/price_formatter.dart';
+import '../../../../core/utils/order_code.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 
 class AdminOrderDetailScreen extends ConsumerStatefulWidget {
@@ -60,7 +61,7 @@ class _AdminOrderDetailScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Order Detail'),
+        title: Text(generateOrderDisplayCode(widget.orderId)),
       ),
       body: AsyncValueWidget<OrderDetail>(
         value: detailAsync,
@@ -91,11 +92,23 @@ class _OrderDetailContent extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      '#${order.orderNumber}',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          generateOrderDisplayCode(order.id),
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          'System ID: ${order.id}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                        ),
+                      ],
                     ),
                     const Spacer(),
                     if (order.orderKind == 'bulk')

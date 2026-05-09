@@ -300,7 +300,54 @@ async function handleStatusChange(
     // Email notification failure is non-fatal
   }
 
+  // If driver is assigned via ON_GOING status change, fetch driver details
+  // (Lalamove v3 bundles driver assignment into ORDER_STATUS_CHANGED rather than
+  // sending a separate DRIVER_ASSIGNED event)
+  if (newV3Status === 'ON_GOING') {
+    const driverId = orderData?.driverId as string
+    if (driverId) {
+      await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
+    }
+  }
+
   console.log(`[Lalamove Webhook] Status: ${currentStatus} -> ${newDispatchStatus} for order ${shipment.order_id}`)
+}
+
+async function updateDriverDetails(
+  supabase: ReturnType<typeof createServerClient>,
+  shipment: Record<string, unknown>,
+  lalamoveOrderId: string,
+  driverId: string
+) {
+  const lalamove = createLalamoveClient()
+  const driver = await lalamove.getDriverDetails(lalamoveOrderId, driverId)
+
+  await supabase
+    .from('lalamove_shipments')
+    .update({
+      dispatch_status: 'driver_assigned',
+      driver_name: driver.name,
+      driver_phone: driver.phone,
+      driver_plate: driver.plateNumber,
+      driver_photo_url: driver.photo || null,
+      driver_latitude: driver.coordinates ? parseFloat(driver.coordinates.lat) : null,
+      driver_longitude: driver.coordinates ? parseFloat(driver.coordinates.lng) : null,
+      driver_location_updated_at: driver.coordinates?.updatedAt || null,
+    })
+    .eq('id', shipment.id)
+
+  await supabase
+    .from('orders')
+    .update({
+      lalamove_status: 'ON_GOING',
+      dispatch_status: 'driver_assigned',
+      driver_name: driver.name,
+      driver_phone: driver.phone,
+      driver_plate_number: driver.plateNumber,
+    })
+    .eq('id', shipment.order_id)
+
+  return driver
 }
 
 async function handleDriverAssigned(
@@ -309,8 +356,9 @@ async function handleDriverAssigned(
   lalamoveOrderId: string,
   data: Record<string, unknown>
 ) {
-  // Fetch driver details from Lalamove
-  const driverId = data.driverId as string || (data.driver as Record<string, unknown>)?.id as string
+  // Lalamove v3 nests driverId under data.order.driverId, not data.driverId
+  const orderPayload = (data as any)?.order as Record<string, unknown> | undefined
+  const driverId = (orderPayload?.driverId as string) || data.driverId as string || (data.driver as Record<string, unknown>)?.id as string
 
   if (!driverId) {
     console.warn('[Lalamove Webhook] DRIVER_ASSIGNED without driverId')
@@ -318,33 +366,7 @@ async function handleDriverAssigned(
   }
 
   try {
-    const lalamove = createLalamoveClient()
-    const driver = await lalamove.getDriverDetails(lalamoveOrderId, driverId)
-
-    await supabase
-      .from('lalamove_shipments')
-      .update({
-        dispatch_status: 'driver_assigned',
-        driver_name: driver.name,
-        driver_phone: driver.phone,
-        driver_plate: driver.plateNumber,
-        driver_photo_url: driver.photo || null,
-        driver_latitude: driver.coordinates ? parseFloat(driver.coordinates.lat) : null,
-        driver_longitude: driver.coordinates ? parseFloat(driver.coordinates.lng) : null,
-        driver_location_updated_at: driver.coordinates?.updatedAt || null,
-      })
-      .eq('id', shipment.id)
-
-    await supabase
-      .from('orders')
-      .update({
-        lalamove_status: 'ON_GOING',
-        dispatch_status: 'driver_assigned',
-        driver_name: driver.name,
-        driver_phone: driver.phone,
-        driver_plate_number: driver.plateNumber,
-      })
-      .eq('id', shipment.order_id)
+    const driver = await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
 
     await supabase.from('order_events').insert({
       order_id: shipment.order_id,
@@ -421,7 +443,8 @@ async function handleOrderReplaced(
   data: Record<string, unknown>
 ) {
   // Update with new driver info from replacement
-  const newDriverId = data.driverId as string
+  const orderPayload = (data as any)?.order as Record<string, unknown> | undefined
+  const newDriverId = (orderPayload?.driverId as string) || data.driverId as string
 
   if (newDriverId) {
     try {

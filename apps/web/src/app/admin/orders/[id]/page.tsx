@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
+import { generateOrderDisplayCode } from "@/lib/utils/order-code";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 
@@ -26,6 +28,7 @@ interface OrderItem {
   quantity: number;
   line_total_cents: number;
   notes: string | null;
+  image_url: string | null;
   order_item_modifiers: OrderItemModifier[];
 }
 
@@ -35,6 +38,7 @@ interface Order {
   total_cents: number;
   delivery_fee_cents: number;
   created_at: string;
+  updated_at: string | null;
   delivery_address_json: Record<string, unknown> | null;
   customer_phone: string | null;
   customer_name: string | null;
@@ -64,12 +68,38 @@ interface Order {
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
   paid: { color: "bg-blue-100 text-blue-800", label: "Paid" },
+  accepted: { color: "bg-sky-100 text-sky-800", label: "Accepted" },
   preparing: { color: "bg-orange-100 text-orange-800", label: "Preparing" },
   ready: { color: "bg-green-100 text-green-800", label: "Ready" },
-  delivering: { color: "bg-indigo-100 text-indigo-800", label: "Delivering" },
+  picked_up: { color: "bg-indigo-100 text-indigo-800", label: "Picked Up" },
+  delivered: { color: "bg-teal-100 text-teal-800", label: "Delivered" },
   completed: { color: "bg-teal-100 text-teal-800", label: "Completed" },
   cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
 };
+
+const ORDER_FLOW_STEPS: { key: string; label: string }[] = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'preparing', label: 'Preparing' },
+  { key: 'ready', label: 'Ready' },
+  { key: 'picked_up', label: 'Picked Up' },
+  { key: 'delivered', label: 'Delivered' },
+];
+
+const TERMINAL_STATUSES = ['delivered', 'completed', 'cancelled'];
+
+function getFlowStepIndex(status: string): number {
+  return ORDER_FLOW_STEPS.findIndex((s) => s.key === status);
+}
+
+interface OrderEvent {
+  id: string;
+  order_id: string;
+  event_type: string;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  created_at: string;
+}
 
 function getAddressString(address: Record<string, unknown> | null): string {
   if (!address) return 'No address'
@@ -87,37 +117,72 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-function ReleaseNowButton({ orderId, onSuccess }: { orderId: string; onSuccess: () => void }) {
+function ReleaseNowButton({
+  orderId,
+  shipment,
+  onSuccess,
+}: {
+  orderId: string
+  shipment: {
+    quotation_id: string | null
+    stop_ids?: { pickup: string; dropoff: string } | null
+  } | null
+  onSuccess: () => void
+}) {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleRelease = async () => {
-    setLoading(true)
-    try {
-      const supabase = getBrowserClient()
-      const { error } = await supabase
-        .from('orders')
-        .update({ dispatch_status: 'submitted' })
-        .eq('id', orderId)
+    if (!shipment?.quotation_id) {
+      setError('No quotation available. Please refresh the quote first.')
+      return
+    }
+    if (!shipment.stop_ids?.pickup || !shipment.stop_ids?.dropoff) {
+      setError('Missing delivery route information. Please refresh the quote.')
+      return
+    }
 
-      if (error) {
-        console.error('Failed to release order:', error)
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/shipping/lalamove/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: orderId,
+          quotation_id: shipment.quotation_id,
+          sender_stop_id: shipment.stop_ids.pickup,
+          recipient_stop_id: shipment.stop_ids.dropoff,
+        }),
+      })
+
+      const result = await res.json()
+
+      if (!result.success) {
+        setError(result.error || 'Failed to dispatch order')
         return
       }
+
       onSuccess()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <Button size="sm" onClick={handleRelease} disabled={loading} className="gap-1">
-      {loading ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
-      ) : (
-        <Zap className="h-3 w-3" />
-      )}
-      Release Now
-    </Button>
+    <div className="flex flex-col items-end gap-1">
+      <Button size="sm" onClick={handleRelease} disabled={loading} className="gap-1">
+        {loading ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Zap className="h-3 w-3" />
+        )}
+        Release Now
+      </Button>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
   )
 }
 
@@ -141,9 +206,12 @@ export default function AdminOrderDetailPage() {
     created_at: string
     completed_at: string | null
     cancelled_at: string | null
+    quotation_id: string | null
+    stop_ids?: { pickup: string; dropoff: string } | null
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [orderEvents, setOrderEvents] = useState<OrderEvent[]>([]);
 
   useEffect(() => {
     const supabase = getBrowserClient();
@@ -179,6 +247,18 @@ export default function AdminOrderDetailPage() {
 
       if (shipmentData) {
         setShipment(shipmentData);
+      }
+
+      // Fetch status history from order_events
+      const { data: eventsData } = await supabase
+        .from('order_events')
+        .select('*')
+        .eq('order_id', orderId)
+        .eq('event_type', 'status_changed')
+        .order('created_at', { ascending: true });
+
+      if (eventsData) {
+        setOrderEvents(eventsData as unknown as OrderEvent[]);
       }
 
       setLoading(false);
@@ -254,9 +334,9 @@ export default function AdminOrderDetailPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Order #{order.id.slice(0, 8)}</h1>
-          <p className="text-muted-foreground">
-            {format(new Date(order.created_at), "MMMM d, yyyy 'at' h:mm a")}
+          <h1 className="text-2xl font-bold">{generateOrderDisplayCode(order.id)}</h1>
+          <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
+            System ID: {order.id}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -271,6 +351,107 @@ export default function AdminOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Order Status Flow */}
+      {order.status !== 'cancelled' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Order Status Flow</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              // Build map of status -> reached timestamp from real events
+              const statusReachedAt = new Map<string, string>();
+              for (const event of orderEvents) {
+                const newStatus = (event.new_value as Record<string, string> | null)?.status;
+                if (newStatus && event.created_at) {
+                  statusReachedAt.set(newStatus, event.created_at);
+                }
+              }
+              // Infer pending from order creation time if there are later events
+              if (orderEvents.length > 0 && !statusReachedAt.has('pending')) {
+                const earliestEvent = orderEvents[0];
+                if (earliestEvent.created_at) {
+                  statusReachedAt.set('pending', order.created_at);
+                }
+              }
+              // Current status is always reached (even if no event yet)
+              if (!statusReachedAt.has(order.status)) {
+                statusReachedAt.set(order.status, order.updated_at ?? order.created_at);
+              }
+
+              const currentStepIndex = getFlowStepIndex(order.status);
+
+              return (
+                <div className="flex items-start justify-between gap-2">
+                  {ORDER_FLOW_STEPS.map((step, index) => {
+                    const isReached = statusReachedAt.has(step.key);
+                    const isCurrent = currentStepIndex === index;
+                    const isLast = index === ORDER_FLOW_STEPS.length - 1;
+                    const reachedAt = statusReachedAt.get(step.key);
+                    return (
+                      <div key={step.key} className="flex items-center flex-1 min-w-0">
+                        <div className="flex flex-col items-center flex-1 min-w-0">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-colors ${
+                            isReached
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : isCurrent
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-border bg-muted text-muted-foreground'
+                          }`}>
+                            {isReached ? (
+                              <CheckCircle className="h-4 w-4" />
+                            ) : (
+                              <span className="text-xs font-medium">{index + 1}</span>
+                            )}
+                          </div>
+                          <p className={`text-xs font-medium mt-1.5 text-center ${
+                            isCurrent ? 'text-primary' : isReached ? 'text-foreground' : 'text-muted-foreground'
+                          }`}>
+                            {step.label}
+                          </p>
+                          {reachedAt && (
+                            <p className="text-[10px] text-muted-foreground text-center mt-0.5">
+                              {format(new Date(reachedAt), 'MMM d, h:mm a')}
+                            </p>
+                          )}
+                        </div>
+                        {!isLast && (
+                          <div className={`h-0.5 flex-1 min-w-[16px] mx-1 mt-[-18px] ${
+                            currentStepIndex > index ? 'bg-primary' : 'bg-border'
+                          }`} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+      {order.status === 'cancelled' && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-4">
+            <p className="font-medium text-red-700">This order has been cancelled.</p>
+            {orderEvents.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {orderEvents.map((event) => {
+                  const oldStatus = (event.old_value as Record<string, string> | null)?.status;
+                  const newStatus = (event.new_value as Record<string, string> | null)?.status;
+                  return (
+                    <p key={event.id} className="text-xs text-muted-foreground">
+                      {oldStatus ? `${STATUS_CONFIG[oldStatus]?.label ?? oldStatus} → ` : ''}
+                      {newStatus ? STATUS_CONFIG[newStatus]?.label ?? newStatus : ''}
+                      {' '}at {format(new Date(event.created_at), 'MMM d, h:mm a')}
+                    </p>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {order.fulfillment_type === 'scheduled' && order.scheduled_for && (
         <Card>
@@ -291,9 +472,13 @@ export default function AdminOrderDetailPage() {
                   </Badge>
                 )}
                 {order.dispatch_status === 'queued' && order.delivery_type === 'delivery' && (
-                  <ReleaseNowButton orderId={order.id} onSuccess={() => {
-                    setOrder(prev => prev ? { ...prev, dispatch_status: 'submitted' } : null)
-                  }} />
+                  <ReleaseNowButton
+                    orderId={order.id}
+                    shipment={shipment}
+                    onSuccess={() => {
+                      setOrder(prev => prev ? { ...prev, dispatch_status: 'submitted' } : null)
+                    }}
+                  />
                 )}
               </div>
             </div>
@@ -357,34 +542,50 @@ export default function AdminOrderDetailPage() {
             <div className="space-y-4">
               {order.order_items?.map((item) => (
                 <div key={item.id} className="border-b pb-4 last:border-0">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="font-medium">
-                        {item.quantity}x {item.menu_item_name}
-                      </p>
-                      {item.order_item_modifiers?.length > 0 && (
-                        <div className="mt-1 space-y-0.5">
-                          {item.order_item_modifiers.map((m) => (
-                            <p key={m.id} className="text-sm text-muted-foreground flex items-center gap-1">
-                              <span className="text-xs">+</span>
-                              {m.modifier_name}
-                              {m.modifier_price_delta_cents > 0 && (
-                                <span className="text-xs ml-1">+ {formatPrice(m.modifier_price_delta_cents)}</span>
-                              )}
-                            </p>
-                          ))}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {item.image_url ? (
+                        <Image
+                          src={item.image_url}
+                          alt={item.menu_item_name}
+                          width={48}
+                          height={48}
+                          sizes="48px"
+                          className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0">
+                          {item.quantity}x
                         </div>
                       )}
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {item.quantity}x {item.menu_item_name}
+                        </p>
+                        {item.order_item_modifiers?.length > 0 && (
+                          <div className="mt-1 space-y-0.5">
+                            {item.order_item_modifiers.map((m) => (
+                              <p key={m.id} className="text-sm text-muted-foreground flex items-center gap-1">
+                                <span className="text-xs">+</span>
+                                {m.modifier_name}
+                                {m.modifier_price_delta_cents > 0 && (
+                                  <span className="text-xs ml-1">+ {formatPrice(m.modifier_price_delta_cents)}</span>
+                                )}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {item.notes && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            <strong>Note:</strong> {item.notes}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <p className="font-medium">
+                    <p className="font-medium flex-shrink-0">
                       {formatPrice(item.line_total_cents)}
                     </p>
                   </div>
-                  {item.notes && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      <strong>Note:</strong> {item.notes}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>

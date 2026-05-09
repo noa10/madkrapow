@@ -8,6 +8,7 @@ import { Clock, User, MapPin, Loader2, Package, ShieldAlert } from 'lucide-react
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
+import { generateOrderDisplayCode } from '@/lib/utils/order-code';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
@@ -113,7 +114,7 @@ function OrderCard({ order }: OrderCardProps) {
       <CardHeader className="pb-4 border-b border-border bg-secondary/30">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl md:text-2xl font-bold font-display text-foreground">
-            #{order.id.slice(0, 8)}
+            {generateOrderDisplayCode(order.id)}
           </CardTitle>
           <Badge className={`${statusConfig.color} text-base md:text-lg px-3 py-1 font-bold border-none`}>
             {statusConfig.label}

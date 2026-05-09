@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { generateOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
 import type { Order } from "@/types/orders"
 
@@ -15,6 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
   ready: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   picked_up: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
   delivered: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+  completed: "bg-teal-500/15 text-teal-400 border-teal-500/30",
   cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
 }
 
@@ -86,7 +88,7 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
   }
 
   const itemCount = order.item_count
-  const shortId = order.id.slice(0, 8).toUpperCase()
+  const displayCode = generateOrderDisplayCode(order.id)
   const timeInfo = compactRelativeTime(order.created_at)
 
   return (
@@ -95,7 +97,7 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleKeyDown}
-      aria-label={`View order #${shortId}`}
+      aria-label={`View order ${displayCode}`}
       className={cn(
         "group relative grid items-stretch w-full",
         "grid-cols-[56px_2px_1fr_auto] md:grid-cols-[72px_2px_1fr_auto]",
@@ -132,8 +134,8 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
 
       {/* Row 1: order number + status + items */}
       <div className="col-start-3 flex items-center gap-2 min-w-0 py-3">
-        <span className="text-sm font-semibold text-gold tabular-nums truncate">
-          #{shortId}
+        <span className="text-lg font-bold text-gold tabular-nums tracking-wide">
+          {displayCode}
         </span>
         <span
           className={cn(

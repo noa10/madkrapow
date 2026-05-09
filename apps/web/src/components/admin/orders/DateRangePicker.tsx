@@ -150,7 +150,7 @@ export function DateRangePicker({ activeRange, onRangeChange, visible = true }: 
           <div
             className={cn(
               "z-[60] bg-card border border-white/10 rounded-xl shadow-2xl shadow-black/40",
-              "lg:absolute lg:left-0 lg:top-full lg:mt-2 lg:w-80",
+              "lg:absolute lg:left-0 lg:top-full lg:bottom-auto lg:right-auto lg:mt-2 lg:w-80 lg:rounded-xl",
               "fixed inset-x-0 bottom-0 rounded-b-none max-h-[80vh] overflow-y-auto p-4 lg:p-0"
             )}
             role="dialog"

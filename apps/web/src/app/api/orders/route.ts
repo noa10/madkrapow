@@ -11,6 +11,7 @@ interface Order {
   delivery_type: string
   fulfillment_type: string
   include_cutlery: boolean
+  item_count: number
 }
 
 interface OrdersResponse {
@@ -73,8 +74,31 @@ export async function GET(req: NextRequest): Promise<NextResponse<OrdersResult>>
       )
     }
 
+    const orderList = orders || []
+
+    // Fetch item counts
+    const counts: Record<string, number> = {}
+    if (orderList.length > 0) {
+      const orderIds = orderList.map((o) => o.id)
+      const { data: items } = await supabase
+        .from('order_items')
+        .select('order_id, quantity')
+        .in('order_id', orderIds)
+
+      for (const row of items || []) {
+        const oid = row.order_id as string
+        const qty = (row.quantity as number) || 1
+        counts[oid] = (counts[oid] || 0) + qty
+      }
+    }
+
+    const ordersWithCounts = orderList.map((order) => ({
+      ...order,
+      item_count: counts[order.id] || 0,
+    }))
+
     return NextResponse.json(
-      { success: true, orders: orders || [] },
+      { success: true, orders: ordersWithCounts },
       { status: 200 }
     )
   } catch (error) {

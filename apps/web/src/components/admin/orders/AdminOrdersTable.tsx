@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { format, parseISO } from "date-fns"
 import { CompactOrderActions } from "./CompactOrderActions"
 import type { Order } from "@/types/orders"
+import { generateOrderDisplayCode } from "@/lib/utils/order-code"
 
 export interface OrdersByDateGroup {
   dateLabel: string
@@ -97,9 +98,9 @@ export function AdminOrdersTableView({ orders, onStatusChange }: AdminOrdersTabl
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/orders/${order.id}`}
-                        className="text-sm font-medium text-gold hover:text-gold/80 tabular-nums"
+                        className="text-base font-bold text-gold hover:text-gold/80 tabular-nums tracking-wide"
                       >
-                        #{order.id.slice(0, 8).toUpperCase()}
+                        {generateOrderDisplayCode(order.id)}
                       </Link>
                     </td>
                     <td className="px-4 py-3">
@@ -183,6 +184,7 @@ function getStatusColor(status: string): string {
     ready: "text-emerald-400",
     picked_up: "text-indigo-400",
     delivered: "text-teal-400",
+    completed: "text-teal-400",
     cancelled: "text-red-400",
   }
   return colors[status] || "text-muted-foreground"

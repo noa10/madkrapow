@@ -91,7 +91,7 @@ export function useOrderTabQuery(tab: OrderTab) {
             const { data, error } = await supabase
               .from("orders")
               .select(ORDER_SELECT)
-              .in("status", ["picked_up", "delivered", "cancelled"])
+              .in("status", ["picked_up", "delivered", "cancelled", "completed"])
               .gte("created_at", start)
               .lte("created_at", end)
               .order("created_at", { ascending: false })

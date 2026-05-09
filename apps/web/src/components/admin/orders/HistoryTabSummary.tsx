@@ -15,7 +15,7 @@ export function HistoryTabSummary({ orders }: HistoryTabSummaryProps) {
   const totalCents = orders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0)
   const orderCount = orders.length
   const completedCount = orders.filter(
-    (o) => o.status === "picked_up" || o.status === "delivered"
+    (o) => o.status === "picked_up" || o.status === "delivered" || o.status === "completed"
   ).length
   const cancelledCount = orders.filter((o) => o.status === "cancelled").length
 

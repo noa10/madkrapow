@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { format, parseISO } from "date-fns"
 import { ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { generateOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
 import type { Order } from "@/types/orders"
 
@@ -22,6 +23,7 @@ const STATUS_COLORS: Record<string, string> = {
   ready: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   picked_up: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
   delivered: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+  completed: "bg-teal-500/15 text-teal-400 border-teal-500/30",
   cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
 }
 
@@ -91,9 +93,9 @@ export function AdminOrdersCardView({ orders, grouped = true, onStatusChange }: 
                 <div className="flex items-start justify-between mb-3">
                   <Link
                     href={`/admin/orders/${order.id}`}
-                    className="text-sm font-semibold text-gold hover:text-gold/80 tabular-nums"
+                    className="text-lg font-bold text-gold hover:text-gold/80 tabular-nums tracking-wide"
                   >
-                    #{order.id.slice(0, 8).toUpperCase()}
+                    {generateOrderDisplayCode(order.id)}
                   </Link>
                   <div className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium border", STATUS_COLORS[order.status] || STATUS_COLORS.pending)}>
                     {order.status.charAt(0).toUpperCase() + order.status.slice(1)}

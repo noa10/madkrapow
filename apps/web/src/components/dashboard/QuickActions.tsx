@@ -17,8 +17,8 @@ const quickActions = [
   },
   {
     href: "/orders",
-    label: "Order History",
-    description: "Track past orders",
+    label: "Food Orders",
+    description: "Browse and track all your food orders",
     icon: ShoppingBag,
     gradient: "from-sky-500/10 to-cyan-500/5",
     hoverBorder: "hover:border-sky-500/30",

@@ -102,7 +102,7 @@ export function ProfileDropdown({ userName, userEmail, userAvatarUrl, isAdmin }:
               className="flex items-center gap-3 px-4 py-2.5 text-sm text-popover-foreground hover:bg-accent transition-colors"
             >
               <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-              Order History
+              Food Orders
             </Link>
             {isAdmin && (
               <Link

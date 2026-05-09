@@ -1,9 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { Clock, Truck, CheckCircle, Package, ArrowRight, Calendar, DollarSign } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useCallback, useState } from "react"
+import { Clock, Truck, CheckCircle, Package, ArrowRight, Calendar, DollarSign, ShoppingCart, Loader2 } from "lucide-react"
+import { generateOrderDisplayCode } from "@/lib/utils/order-code"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useCartStore } from "@/stores/cart"
 
 interface Order {
   id: string
@@ -12,6 +16,7 @@ interface Order {
   created_at: string
   delivery_type: string
   include_cutlery: boolean
+  item_count: number
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string; icon: typeof Clock }> = {
@@ -43,6 +48,38 @@ interface OrdersListViewProps {
 }
 
 export function OrdersListView({ orders }: OrdersListViewProps) {
+  const router = useRouter()
+  const addItem = useCartStore((s) => s.addItem)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
+
+  const handleReorder = useCallback(async (orderId: string) => {
+    setReorderingId(orderId)
+    try {
+      const res = await fetch(`/api/orders/${orderId}/items`)
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error)
+
+      for (const item of data.orderItems) {
+        addItem({
+          menu_item_id: item.menu_item_id,
+          quantity: item.quantity,
+          unit_price: item.menu_item_price_cents,
+          selected_modifiers: (item.modifiers || []).map((m: { id: string; modifier_name: string; modifier_price_delta_cents: number }) => ({
+            id: m.id,
+            name: m.modifier_name,
+            price_delta_cents: m.modifier_price_delta_cents,
+          })),
+          special_instructions: item.notes || "",
+        })
+      }
+      router.push("/cart")
+    } catch (e) {
+      console.error("Reorder failed:", e)
+    } finally {
+      setReorderingId(null)
+    }
+  }, [addItem, router])
+
   if (orders.length === 0) return null
 
   return (
@@ -50,6 +87,7 @@ export function OrdersListView({ orders }: OrdersListViewProps) {
       {orders.map((order, i) => {
         const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending
         const StatusIcon = statusConfig.icon
+        const isReordering = reorderingId === order.id
 
         return (
           <div
@@ -61,8 +99,8 @@ export function OrdersListView({ orders }: OrdersListViewProps) {
             )}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <span className="text-sm font-medium text-foreground tabular-nums shrink-0">
-                #{order.id.slice(0, 8).toUpperCase()}
+              <span className="text-base font-bold text-foreground tabular-nums shrink-0 tracking-wide">
+                {generateOrderDisplayCode(order.id)}
               </span>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
                 <Calendar className="h-3.5 w-3.5" />
@@ -72,6 +110,9 @@ export function OrdersListView({ orders }: OrdersListViewProps) {
                 <StatusIcon className="h-3 w-3" />
                 {statusConfig.label}
               </div>
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {order.item_count} {order.item_count === 1 ? "item" : "items"}
+              </span>
               {order.delivery_type === "self_pickup" && (
                 <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400 hidden sm:inline">
                   Pickup
@@ -93,6 +134,19 @@ export function OrdersListView({ orders }: OrdersListViewProps) {
                 <Link href={`/order/${order.id}`}>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                onClick={() => handleReorder(order.id)}
+                disabled={isReordering}
+              >
+                {isReordering ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShoppingCart className="h-3.5 w-3.5" />
+                )}
               </Button>
             </div>
           </div>

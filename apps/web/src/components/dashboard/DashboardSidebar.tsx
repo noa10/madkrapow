@@ -20,7 +20,7 @@ interface DashboardSidebarProps {
 
 const sidebarNavItems = [
   { href: "/profile", label: "Profile", icon: Home },
-  { href: "/orders", label: "Order History", icon: ShoppingBag },
+  { href: "/orders", label: "Food Orders", icon: ShoppingBag },
 ]
 
 export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false, onToggleCollapsed }: DashboardSidebarProps) {

@@ -20,6 +20,7 @@ import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { DriverInfo } from '@/components/order/DriverInfo'
 import dynamic from 'next/dynamic'
+import { generateOrderDisplayCode } from '@/lib/utils/order-code'
 import { PageContainer } from '@/components/layout/PageContainer'
 
 const DeliveryMap = dynamic(
@@ -413,9 +414,9 @@ export default function OrderTrackingPage() {
                   <Menu className="h-5 w-5" />
                 </button>
                 <div>
-                  <h1 className="text-2xl font-semibold font-display">Order Tracking</h1>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Order #{order.id.slice(0, 8).toUpperCase()}
+                  <h1 className="text-2xl font-semibold font-display">{generateOrderDisplayCode(order.id)}</h1>
+                  <p className="text-xs text-muted-foreground/60 mt-0.5 font-mono">
+                    System ID: {order.id}
                   </p>
                 </div>
               </div>

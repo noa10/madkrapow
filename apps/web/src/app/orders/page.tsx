@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useCallback, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 import { Menu, Package, Loader2 } from "lucide-react"
@@ -9,12 +8,7 @@ import { Button } from "@/components/ui/button"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
 import { DashboardPageContainer } from "@/components/dashboard/DashboardPageContainer"
-import { OrdersFilterBar } from "@/components/orders/OrdersFilterBar"
 import { OrdersCardView } from "@/components/orders/OrdersCardView"
-import { OrdersListView } from "@/components/orders/OrdersListView"
-import { OrdersTableView } from "@/components/orders/OrdersTableView"
-
-type ViewMode = "cards" | "list" | "table"
 
 interface Order {
   id: string
@@ -26,19 +20,15 @@ interface Order {
   delivery_type: string
   fulfillment_type: string
   include_cutlery: boolean
+  item_count: number
 }
 
 function OrdersContent() {
-  const searchParams = useSearchParams()
   const supabase = getBrowserClient()
-
-  const initialStatus = searchParams.get("status") || "all"
 
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState(initialStatus)
-  const [viewMode, setViewMode] = useState<ViewMode>("cards")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
@@ -47,12 +37,7 @@ function OrdersContent() {
     setError(null)
 
     try {
-      const params = new URLSearchParams()
-      if (activeFilter !== "all") {
-        params.set("status", activeFilter)
-      }
-
-      const response = await fetch(`/api/orders?${params.toString()}`)
+      const response = await fetch(`/api/orders`)
       const data = await response.json()
 
       if (!data.success) {
@@ -65,7 +50,7 @@ function OrdersContent() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeFilter])
+  }, [])
 
   useEffect(() => {
     fetchOrders()
@@ -125,11 +110,11 @@ function OrdersContent() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <h1 className="text-xl font-bold font-display">Order History</h1>
+            <h1 className="text-xl font-bold font-display">Food Orders</h1>
           </div>
           <div className="hidden lg:block">
-            <h1 className="text-xl font-bold font-display">Order History</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Browse and track all your orders</p>
+            <h1 className="text-xl font-bold font-display">Food Orders</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Browse and track all your food orders</p>
           </div>
           <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-white/8">
             <Link href="/profile">
@@ -139,14 +124,6 @@ function OrdersContent() {
         </div>
 
         <div className="space-y-6">
-          <OrdersFilterBar
-            activeFilter={activeFilter}
-            onFilterChange={setActiveFilter}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            orderCount={orders.length}
-          />
-
           {/* Content */}
           {isLoading && (
             <div className="flex items-center justify-center py-24">
@@ -170,16 +147,8 @@ function OrdersContent() {
             </div>
           )}
 
-          {!isLoading && !error && orders.length > 0 && viewMode === "cards" && (
+          {!isLoading && !error && orders.length > 0 && (
             <OrdersCardView orders={orders} />
-          )}
-
-          {!isLoading && !error && orders.length > 0 && viewMode === "list" && (
-            <OrdersListView orders={orders} />
-          )}
-
-          {!isLoading && !error && orders.length > 0 && viewMode === "table" && (
-            <OrdersTableView orders={orders} />
           )}
         </div>
       </DashboardPageContainer>

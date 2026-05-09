@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { CheckCircle, Clock, Package, ArrowRight, Loader2, CreditCard, ExternalLink } from 'lucide-react'
 import confetti from 'canvas-confetti'
@@ -10,8 +11,31 @@ import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
+import { generateOrderDisplayCode } from '@/lib/utils/order-code'
 
 type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying' | 'processing'
+
+interface OrderItemModifier {
+  id: string
+  order_item_id: string
+  modifier_name: string
+  modifier_price_delta_cents: number
+}
+
+interface OrderItem {
+  id: string
+  menu_item_name: string
+  menu_item_price_cents: number
+  quantity: number
+  line_total_cents: number
+  notes: string | null
+  image_url: string | null
+  order_item_modifiers: OrderItemModifier[]
+}
+
+function formatPrice(cents: number): string {
+  return `RM ${(cents / 100).toFixed(2)}`
+}
 
 function SuccessContent() {
   const searchParams = useSearchParams()
@@ -22,10 +46,66 @@ function SuccessContent() {
   const estimatedDelivery = searchParams.get('delivery')
 
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('confirming')
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([])
+  const [orderTotalCents, setOrderTotalCents] = useState(0)
+  const [deliveryFeeCents, setDeliveryFeeCents] = useState(0)
 
   useEffect(() => {
     clearCart()
   }, [clearCart])
+
+  // Fetch order details (items, totals) once we have an orderId
+  useEffect(() => {
+    if (!orderId) return
+
+    const fetchOrderDetails = async () => {
+      const supabase = getBrowserClient()
+
+      const { data: orderData } = await supabase
+        .from('orders')
+        .select('total_cents, delivery_fee_cents')
+        .eq('id', orderId)
+        .single()
+
+      if (orderData) {
+        setOrderTotalCents(orderData.total_cents ?? 0)
+        setDeliveryFeeCents(orderData.delivery_fee_cents ?? 0)
+      }
+
+      const { data: itemsData } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', orderId)
+
+      if (itemsData) {
+        const items = itemsData as OrderItem[]
+        const itemIds = items.map((i) => i.id)
+
+        if (itemIds.length > 0) {
+          const { data: modifiersData } = await supabase
+            .from('order_item_modifiers')
+            .select('*')
+            .in('order_item_id', itemIds)
+
+          if (modifiersData) {
+            const modifiersByItemId = new Map<string, OrderItemModifier[]>()
+            for (const mod of modifiersData as OrderItemModifier[]) {
+              const list = modifiersByItemId.get(mod.order_item_id) ?? []
+              list.push(mod)
+              modifiersByItemId.set(mod.order_item_id, list)
+            }
+            for (const item of items) {
+              item.order_item_modifiers = modifiersByItemId.get(item.id) ?? []
+            }
+          }
+        }
+
+        setOrderItems(items)
+      }
+    }
+
+    fetchOrderDetails()
+  }, [orderId])
 
   useEffect(() => {
     if (paymentStatus === 'confirmed') {
@@ -218,6 +298,7 @@ function SuccessContent() {
           </div>
 
           <div className="max-w-md mx-auto space-y-4 mt-4 animate-fade-in-up">
+            {/* Order Code Card */}
             <div className="rounded-xl border bg-card p-6 space-y-4 shadow-sm">
               <h2 className="text-lg font-semibold font-display">Order Details</h2>
 
@@ -227,8 +308,13 @@ function SuccessContent() {
                     <Package className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Order ID</p>
-                    <p className="font-medium font-mono text-sm">{orderId}</p>
+                    <p className="text-sm text-muted-foreground">Order Code</p>
+                    <p className="font-semibold text-lg tracking-tight">
+                      {generateOrderDisplayCode(orderId)}
+                    </p>
+                    <p className="font-mono text-[11px] text-muted-foreground/60">
+                      System ID: {orderId}
+                    </p>
                   </div>
                 </div>
               )}
@@ -265,6 +351,88 @@ function SuccessContent() {
                 </div>
               </div>
             </div>
+
+            {/* Order Items Summary */}
+            {orderItems.length > 0 && (
+              <div className="rounded-xl border bg-card p-6 space-y-4 shadow-sm">
+                <h2 className="text-lg font-semibold font-display">Order Summary</h2>
+                <div className="space-y-4">
+                  {orderItems.map((item) => (
+                    <div key={item.id} className="text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          {item.image_url ? (
+                            <Image
+                              src={item.image_url}
+                              alt={item.menu_item_name}
+                              width={48}
+                              height={48}
+                              sizes="48px"
+                              className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0">
+                              {item.quantity}x
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{item.menu_item_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatPrice(item.menu_item_price_cents)} each
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-medium flex-shrink-0">
+                          {formatPrice(item.line_total_cents)}
+                        </span>
+                      </div>
+                      {/* Modifiers */}
+                      {item.order_item_modifiers.length > 0 && (
+                        <div className="ml-[60px] mt-1 space-y-0.5">
+                          {item.order_item_modifiers.map((mod) => (
+                            <div
+                              key={mod.id}
+                              className="flex items-center justify-between text-xs text-muted-foreground"
+                            >
+                              <span className="flex items-center gap-1">
+                                <span>+</span>
+                                {mod.modifier_name}
+                              </span>
+                              {mod.modifier_price_delta_cents > 0 && (
+                                <span>+ {formatPrice(mod.modifier_price_delta_cents)}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Notes */}
+                      {item.notes && (
+                        <p className="ml-[60px] mt-1 text-xs text-muted-foreground italic">
+                          Note: {item.notes}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-border mt-4 pt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>{formatPrice(orderTotalCents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Delivery Fee</span>
+                    <span>{formatPrice(deliveryFeeCents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between font-semibold border-t border-border pt-2">
+                    <span>Total</span>
+                    <span className="text-primary">
+                      {formatPrice(orderTotalCents + deliveryFeeCents)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3 pt-2">
               <Button asChild className="w-full shadow-gold" size="lg">

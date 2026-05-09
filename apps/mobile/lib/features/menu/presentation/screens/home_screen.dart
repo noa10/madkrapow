@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../../checkout/data/checkout_models.dart' show PromoPreview;
+import '../../../profile/data/store_settings_repository.dart';
 import '../widgets/store_closed_banner.dart';
 import '../../providers/menu_providers.dart';
 import '../../providers/promo_preview_provider.dart';
@@ -31,6 +32,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.watch(menuPeriodicRefreshProvider);
     // Activate promo realtime watcher for instant cross-platform promo sync
     ref.watch(promoRealtimeWatcherProvider);
+    // Activate branding realtime watcher for instant cross-platform branding sync
+    ref.watch(brandingRealtimeWatcherProvider);
   }
 
   @override
@@ -42,8 +45,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Refetch menu data when the app returns to foreground
+      // Refetch menu and branding data when the app returns to foreground
       ref.invalidate(categoriesWithItemsProvider);
+      ref.invalidate(storeBrandingProvider);
     }
   }
 
@@ -142,79 +146,160 @@ class _HomeScreenContent extends ConsumerWidget {
   }
 }
 
-class _HeroBanner extends StatelessWidget {
+class _HeroBanner extends ConsumerWidget {
   const _HeroBanner({required this.isStoreOpen});
 
   final bool? isStoreOpen;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            theme.colorScheme.primary.withValues(alpha: 0.3),
-            theme.colorScheme.surface,
-          ],
-        ),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.local_fire_department,
-            size: 56,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Mad Krapow',
-            style: theme.textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Hot, fiery Phad Kra Phao\ndelivered to your door.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-            ),
-          ),
-          if (isStoreOpen != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: (isStoreOpen! ? Colors.green : Colors.red).withValues(
-                  alpha: 0.2,
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isStoreOpen! ? Icons.circle : Icons.cancel_outlined,
-                    size: 12,
-                    color: isStoreOpen! ? Colors.green : Colors.red,
+    final brandingAsync = ref.watch(storeBrandingProvider);
+
+    return brandingAsync.when(
+      data: (branding) {
+        final logoUrl = branding.logoUrl;
+        final heroUrl = branding.heroImageUrl;
+        final showHeroImage = heroUrl != null && heroUrl.isNotEmpty;
+        final showLogo = logoUrl != null && logoUrl.isNotEmpty;
+
+        return Stack(
+          children: [
+            if (showHeroImage)
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  imageUrl: heroUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
                   ),
-                  const SizedBox(width: 6),
+                  errorWidget: (context, url, err) => const SizedBox.shrink(),
+                ),
+              ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
+              decoration: BoxDecoration(
+                gradient: showHeroImage
+                    ? LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          theme.colorScheme.surface.withValues(alpha: 0.4),
+                          theme.colorScheme.surface,
+                        ],
+                      )
+                    : LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          theme.colorScheme.primary.withValues(alpha: 0.3),
+                          theme.colorScheme.surface,
+                        ],
+                      ),
+              ),
+              child: Column(
+                children: [
+                  if (showLogo)
+                    CachedNetworkImage(
+                      imageUrl: logoUrl,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Icon(
+                        Icons.local_fire_department,
+                        size: 56,
+                        color: theme.colorScheme.primary,
+                      ),
+                    )
+                  else
+                    Icon(
+                      Icons.local_fire_department,
+                      size: 56,
+                      color: theme.colorScheme.primary,
+                    ),
+                  const SizedBox(height: 12),
                   Text(
-                    isStoreOpen! ? 'Open Now' : 'Currently Closed',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: isStoreOpen! ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.w600,
+                    branding.storeName,
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Hot, fiery Phad Kra Phao\ndelivered to your door.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  if (isStoreOpen != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: (isStoreOpen! ? Colors.green : Colors.red).withValues(
+                          alpha: 0.2,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isStoreOpen! ? Icons.circle : Icons.cancel_outlined,
+                            size: 12,
+                            color: isStoreOpen! ? Colors.green : Colors.red,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isStoreOpen! ? 'Open Now' : 'Currently Closed',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: isStoreOpen! ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
-        ],
+        );
+      },
+      loading: () => Container(
+        padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
+        child: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (err, stack) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
+        child: Column(
+          children: [
+            Icon(
+              Icons.local_fire_department,
+              size: 56,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Mad Krapow',
+              style: theme.textTheme.headlineLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

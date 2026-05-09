@@ -7,6 +7,7 @@ import { Menu } from "lucide-react"
 import { useCartStore } from "@/stores/cart"
 import { cn } from "@/lib/utils"
 import { ClientSidebar } from "@/components/layout/ClientSidebar"
+import { useRealtimeBranding } from "@/hooks/use-realtime-branding"
 
 interface ClientPageShellProps {
   children: React.ReactNode
@@ -17,6 +18,7 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
   const items = useCartStore((state) => state.items)
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
   const openDrawer = useCartStore((state) => state.openDrawer)
+  const { logoUrl } = useRealtimeBranding()
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -56,13 +58,14 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
             </button>
             <Link href="/">
               <Image
-                src="/madkrapow-logo.png"
+                src={logoUrl ?? "/madkrapow-logo.png"}
                 alt="Mad Krapow"
                 width={0}
                 height={0}
                 className="h-10 w-auto"
                 sizes="160px"
                 priority
+                unoptimized={!!logoUrl}
               />
             </Link>
           </div>

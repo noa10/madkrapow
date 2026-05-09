@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRealtimeBranding } from "@/hooks/use-realtime-branding";
 
 const proofChips = [
   "Freshly cooked to order",
@@ -13,18 +14,21 @@ interface HeroViewProps {
 }
 
 export function HeroView({ onNavigateToMenu }: HeroViewProps) {
+  const { heroImageUrl, storeName } = useRealtimeBranding();
+  const fallbackHero = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80";
   return (
     <section className="relative min-h-screen overflow-hidden px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pb-20 lg:pt-8">
       <div className="container mx-auto">
         <div className="relative overflow-hidden rounded-[2rem] border border-white/8 bg-black/30 shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
           <div className="absolute inset-0">
             <Image
-              src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80"
-              alt="Mad Krapow kitchen with warm ambience"
+              src={heroImageUrl ?? fallbackHero}
+              alt={`${storeName} kitchen with warm ambience`}
               fill
               className="object-cover opacity-40"
               priority
               sizes="100vw"
+              unoptimized={!!heroImageUrl}
             />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(90deg,rgba(8,8,8,0.92)_10%,rgba(8,8,8,0.68)_48%,rgba(8,8,8,0.9)_100%)]" />
           </div>
@@ -42,7 +46,7 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
-                Craving bold Thai flavors? Mad Krapow serves fiery, flavorful plates of this iconic dish within Kampung Subang Baru, Shah Alam — cooked hot and delivered fast.
+                Craving bold Thai flavors? {storeName} serves fiery, flavorful plates of this iconic dish within Kampung Subang Baru, Shah Alam — cooked hot and delivered fast.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center gap-4">

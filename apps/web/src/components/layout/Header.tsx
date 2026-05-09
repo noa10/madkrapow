@@ -10,6 +10,7 @@ import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/stores/cart";
+import { useRealtimeBranding } from "@/hooks/use-realtime-branding";
 
 interface HeaderProps {
   className?: string;
@@ -23,6 +24,7 @@ export function Header({ className }: HeaderProps) {
   const supabase = getBrowserClient();
 
   const openDrawer = useCartStore((state) => state.openDrawer);
+  const { logoUrl } = useRealtimeBranding();
 
   const getNavHref = (link: string) => {
     if (link === "Menu") return "/";
@@ -154,13 +156,14 @@ export function Header({ className }: HeaderProps) {
       <div className="container mx-auto flex items-center justify-between gap-6 px-4 py-4">
         <Link href="/" className="flex-shrink-0">
           <Image
-            src="/madkrapow-logo.png"
+            src={logoUrl ?? "/madkrapow-logo.png"}
             alt="Mad Krapow"
             width={0}
             height={0}
             className="h-14 w-auto"
             sizes="224px"
             priority
+            unoptimized={!!logoUrl}
           />
         </Link>
 

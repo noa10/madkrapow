@@ -14,6 +14,8 @@ export type StoreSettings = {
   lalamove_market: string | null
   min_order_amount: number
   delivery_fee: number
+  logo_url: string | null
+  hero_image_url: string | null
 }
 
 async function fetchStoreSettings(): Promise<StoreSettings | null> {

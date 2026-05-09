@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { getServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { RefreshCw, Activity, AlertTriangle, CheckCircle, XCircle, Clock, ListTodo } from "lucide-react";
+import { BrandingSettings } from "@/components/admin/BrandingSettings";
 
 async function getHubboPosStatus() {
   const supabase = await getServerClient();
@@ -31,6 +32,19 @@ async function getHubboPosStatus() {
   };
 }
 
+async function getBrandingSettings() {
+  const supabase = await getServerClient();
+  const { data } = await supabase
+    .from("store_branding")
+    .select("logo_url, hero_image_url")
+    .limit(1)
+    .single();
+  return {
+    logoUrl: data?.logo_url as string | null,
+    heroImageUrl: data?.hero_image_url as string | null,
+  };
+}
+
 export default async function AdminSettingsPage() {
   const supabase = await getServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -40,6 +54,7 @@ export default async function AdminSettingsPage() {
   }
 
   const { settings, queuePending, recentSync } = await getHubboPosStatus();
+  const { logoUrl, heroImageUrl } = await getBrandingSettings();
 
   const isEnabled = settings?.hubbo_pos_enabled;
   const healthStatus = settings?.hubbo_pos_health_status || "unknown";
@@ -68,16 +83,7 @@ export default async function AdminSettingsPage() {
         <p className="text-muted-foreground">Manage your store settings</p>
       </div>
 
-      <Card className="bg-card border-border shadow-sm rounded-xl">
-        <CardHeader>
-          <CardTitle className="font-display">General Settings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">
-            Settings configuration coming soon.
-          </p>
-        </CardContent>
-      </Card>
+      <BrandingSettings logoUrl={logoUrl} heroImageUrl={heroImageUrl} />
 
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>

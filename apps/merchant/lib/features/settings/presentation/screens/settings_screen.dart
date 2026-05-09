@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../../generated/tables/store_settings.dart';
 import '../../../../generated/tables/hubbopos_sync_runs.dart';
@@ -13,18 +17,21 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusAsync = ref.watch(hubboPosStatusProvider);
+    // Activate realtime watcher for instant cross-session branding sync
+    ref.watch(brandingRealtimeWatcherProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(hubboPosStatusProvider);
+          ref.invalidate(storeBrandingProvider);
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── General Settings ──
-            _GeneralSettingsCard(),
+            // ── Store Branding ──
+            const _StoreBrandingCard(),
             const SizedBox(height: 16),
 
             // ── HubboPOS Integration ──
@@ -65,10 +72,15 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// General Settings placeholder card.
-class _GeneralSettingsCard extends StatelessWidget {
+/// Store Branding card: upload/remove logo and hero image.
+class _StoreBrandingCard extends ConsumerWidget {
+  const _StoreBrandingCard();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final brandingAsync = ref.watch(storeBrandingProvider);
+    final actionAsync = ref.watch(brandingActionProvider);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -76,20 +88,324 @@ class _GeneralSettingsCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'General Settings',
+              'Store Branding',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
-              'Settings configuration coming soon.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              'Upload your logo and hero image. Changes appear instantly on customer apps.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
+            const SizedBox(height: 16),
+            brandingAsync.when(
+              data: (branding) => Column(
+                children: [
+                  _BrandingUploadCard(
+                    title: 'Store Logo',
+                    type: 'logo',
+                    currentUrl: branding.logoUrl,
+                    isBusy: actionAsync.isLoading,
+                    onPick: (file) => ref
+                        .read(brandingActionProvider.notifier)
+                        .uploadImage(file, 'logo'),
+                    onRemove: () => ref
+                        .read(brandingActionProvider.notifier)
+                        .removeImage('logo'),
+                  ),
+                  const SizedBox(height: 16),
+                  _BrandingUploadCard(
+                    title: 'Hero Image',
+                    type: 'hero',
+                    currentUrl: branding.heroImageUrl,
+                    isBusy: actionAsync.isLoading,
+                    onPick: (file) => ref
+                        .read(brandingActionProvider.notifier)
+                        .uploadImage(file, 'hero'),
+                    onRemove: () => ref
+                        .read(brandingActionProvider.notifier)
+                        .removeImage('hero'),
+                  ),
+                  const SizedBox(height: 16),
+                  _BrandingPreviewCard(branding: branding),
+                ],
+              ),
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (err, _) => Text(
+                'Failed to load branding: $err',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+            if (actionAsync.hasError) ...[
+              const SizedBox(height: 12),
+              Text(
+                actionAsync.error.toString(),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BrandingUploadCard extends StatelessWidget {
+  const _BrandingUploadCard({
+    required this.title,
+    required this.type,
+    required this.currentUrl,
+    required this.isBusy,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  final String title;
+  final String type;
+  final String? currentUrl;
+  final bool isBusy;
+  final void Function(File file) onPick;
+  final void Function() onRemove;
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      onPick(File(picked.path));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasImage = currentUrl != null && currentUrl!.isNotEmpty;
+    final isLogo = type == 'logo';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
+              style: BorderStyle.solid,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: hasImage
+              ? Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: isLogo
+                          ? CachedNetworkImage(
+                              imageUrl: currentUrl!,
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.contain,
+                              placeholder: (context, url) => Container(
+                                width: 120,
+                                height: 120,
+                                color: theme.colorScheme.surfaceContainerHighest,
+                              ),
+                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, size: 48),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: currentUrl!,
+                              height: 140,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                height: 140,
+                                color: theme.colorScheme.surfaceContainerHighest,
+                              ),
+                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, size: 48),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: isBusy ? null : _pickImage,
+                          icon: const Icon(Icons.upload, size: 18),
+                          label: const Text('Change'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: isBusy ? null : onRemove,
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Remove'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        isLogo ? Icons.store : Icons.image,
+                        size: 40,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: isBusy ? null : _pickImage,
+                        icon: const Icon(Icons.upload),
+                        label: const Text('Click to upload'),
+                      ),
+                      Text(
+                        'JPEG, PNG, WebP up to 5MB',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        if (isBusy)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Uploading...',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _BrandingPreviewCard extends StatelessWidget {
+  const _BrandingPreviewCard({required this.branding});
+
+  final StoreBranding branding;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final showHero = branding.heroImageUrl != null && branding.heroImageUrl!.isNotEmpty;
+    final showLogo = branding.logoUrl != null && branding.logoUrl!.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            theme.colorScheme.primary.withValues(alpha: 0.3),
+            theme.colorScheme.surface,
+          ],
+        ),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Stack(
+        children: [
+          if (showHero)
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.5,
+                child: CachedNetworkImage(
+                  imageUrl: branding.heroImageUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                  ),
+                  errorWidget: (context, url, error) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+            child: Column(
+              children: [
+                if (showLogo)
+                  CachedNetworkImage(
+                    imageUrl: branding.logoUrl!,
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.contain,
+                    placeholder: (context, url) => const SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Icon(
+                      Icons.local_fire_department,
+                      size: 48,
+                      color: theme.colorScheme.primary,
+                    ),
+                  )
+                else
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.store,
+                      size: 32,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Text(
+                  branding.storeName,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Hot, fiery Phad Kra Phao delivered to your door.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -168,35 +484,39 @@ class _HubboPosSection extends ConsumerWidget {
             // ── Action Buttons ──
             Row(
               children: [
-                OutlinedButton.icon(
-                  onPressed: actionAsync.isLoading
-                      ? null
-                      : () => ref.read(hubboPosActionProvider.notifier).testConnection(),
-                  icon: actionAsync.isLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh, size: 18),
-                  label: const Text('Test Connection'),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: actionAsync.isLoading
+                        ? null
+                        : () => ref.read(hubboPosActionProvider.notifier).testConnection(),
+                    icon: actionAsync.isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh, size: 18),
+                    label: const Text('Test Connection'),
+                  ),
                 ),
                 const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: actionAsync.isLoading
-                      ? null
-                      : () => ref.read(hubboPosActionProvider.notifier).syncNow(),
-                  icon: actionAsync.isLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.sync, size: 18),
-                  label: const Text('Full Sync Now'),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: actionAsync.isLoading
+                        ? null
+                        : () => ref.read(hubboPosActionProvider.notifier).syncNow(),
+                    icon: actionAsync.isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.sync, size: 18),
+                    label: const Text('Full Sync Now'),
+                  ),
                 ),
               ],
             ),

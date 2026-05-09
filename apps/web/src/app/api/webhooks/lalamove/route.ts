@@ -9,6 +9,10 @@ function sanitizeForLog(value: string): string {
   return value.replace(/\n|\r/g, '');
 }
 
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({ success: true }, { status: 200 })
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.text()

@@ -31,6 +31,17 @@ class OrderWithDetails {
   final LalamoveShipmentsRow? shipment;
 }
 
+/// An order row augmented with its item count for list views.
+class OrderWithItemCount {
+  const OrderWithItemCount({
+    required this.order,
+    required this.itemCount,
+  });
+
+  final OrdersRow order;
+  final int itemCount;
+}
+
 class OrderRepository {
   OrderRepository(this._supabase);
   final SupabaseClient _supabase;
@@ -97,7 +108,8 @@ class OrderRepository {
   }
 
   /// Fetch order history for the current user, optionally filtered by date range.
-  Future<List<OrdersRow>> fetchOrderHistory(
+  /// Returns orders augmented with their item counts.
+  Future<List<OrderWithItemCount>> fetchOrderHistory(
     String userId, {
     DateTime? startDate,
     DateTime? endDate,
@@ -129,7 +141,29 @@ class OrderRepository {
         .order('created_at', ascending: false)
         .limit(200);
 
-    return ordersRes.map((json) => OrdersRow.fromJson(json)).toList();
+    final orders = ordersRes.map((json) => OrdersRow.fromJson(json)).toList();
+    if (orders.isEmpty) return [];
+
+    // Fetch item counts in one query
+    final orderIds = orders.map((o) => o.id).toList();
+    final itemsRes = await _supabase
+        .from('order_items')
+        .select('order_id, quantity')
+        .inFilter('order_id', orderIds);
+
+    final counts = <String, int>{};
+    for (final row in itemsRes) {
+      final oid = row['order_id'] as String;
+      final qty = (row['quantity'] as int?) ?? 1;
+      counts[oid] = (counts[oid] ?? 0) + qty;
+    }
+
+    return orders
+        .map((o) => OrderWithItemCount(
+              order: o,
+              itemCount: counts[o.id] ?? 0,
+            ))
+        .toList();
   }
 
   /// Fetch order items for reorder functionality.
@@ -140,6 +174,44 @@ class OrderRepository {
         .eq('order_id', orderId);
 
     return res.map((json) => OrderItemsRow.fromJson(json)).toList();
+  }
+
+  /// Fetch order items with modifiers for a reorder.
+  Future<List<OrderItemWithModifiers>> fetchOrderItemsWithModifiers(
+      String orderId) async {
+    final itemsRes = await _supabase
+        .from('order_items')
+        .select()
+        .eq('order_id', orderId)
+        .order('created_at');
+
+    final items = itemsRes.map((json) => OrderItemsRow.fromJson(json)).toList();
+
+    final itemIds = items.map((i) => i.id).toList();
+    List<OrderItemModifiersRow> modifiers = [];
+    if (itemIds.isNotEmpty) {
+      final modifiersRes = await _supabase
+          .from('order_item_modifiers')
+          .select()
+          .inFilter('order_item_id', itemIds)
+          .order('created_at');
+
+      modifiers = modifiersRes
+          .map((json) => OrderItemModifiersRow.fromJson(json))
+          .toList();
+    }
+
+    final modifiersByItemId = <String, List<OrderItemModifiersRow>>{};
+    for (final m in modifiers) {
+      modifiersByItemId.putIfAbsent(m.orderItemId, () => []).add(m);
+    }
+
+    return items
+        .map((item) => OrderItemWithModifiers(
+              item: item,
+              modifiers: modifiersByItemId[item.id] ?? [],
+            ))
+        .toList();
   }
 
   /// Subscribe to realtime updates for an order.
@@ -191,7 +263,7 @@ final orderDetailProvider =
 final orderDateFilterProvider = StateProvider<DateFilter>((ref) => DateFilter());
 
 /// Order history for the current user, filtered by the selected date.
-final orderHistoryProvider = FutureProvider<List<OrdersRow>>((ref) async {
+final orderHistoryProvider = FutureProvider<List<OrderWithItemCount>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
   final repo = ref.watch(orderRepositoryProvider);
@@ -206,12 +278,12 @@ final orderHistoryProvider = FutureProvider<List<OrdersRow>>((ref) async {
 /// Aggregated summary of completed and cancelled orders for the selected date.
 final orderSummaryProvider = Provider<OrderSummary>((ref) {
   final ordersAsync = ref.watch(orderHistoryProvider);
-  final orders = ordersAsync.valueOrNull ?? <OrdersRow>[];
+  final orders = ordersAsync.valueOrNull ?? <OrderWithItemCount>[];
 
   final completedCount = orders
-      .where((o) => o.status == 'picked_up' || o.status == 'delivered')
+      .where((o) => o.order.status == 'picked_up' || o.order.status == 'delivered')
       .length;
-  final cancelledCount = orders.where((o) => o.status == 'cancelled').length;
+  final cancelledCount = orders.where((o) => o.order.status == 'cancelled').length;
 
   return OrderSummary(
     totalOrders: orders.length,

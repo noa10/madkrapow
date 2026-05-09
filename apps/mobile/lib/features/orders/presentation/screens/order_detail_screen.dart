@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/price_formatter.dart';
+import '../../../../core/utils/order_code.dart';
 import '../../data/order_repository.dart';
 import '../widgets/driver_info_card.dart';
 import '../widgets/driver_map.dart';
@@ -63,7 +64,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Order Details')),
+      appBar: AppBar(
+        title: Text(generateOrderDisplayCode(widget.orderId)),
+        actions: [
+          Text(
+            widget.orderId,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
       body: orderAsync.when(
         data: (details) {
           final order = details.order;
@@ -94,7 +107,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Order #${order.orderNumber}',
+                              generateOrderDisplayCode(widget.orderId),
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -103,6 +116,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 4),
+                        Text(
+                          'System ID: ${widget.orderId}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            fontSize: 12,
+                          ),
+                        ),
                         Text(
                           _formatDate(order.createdAt),
                           style: theme.textTheme.bodySmall?.copyWith(

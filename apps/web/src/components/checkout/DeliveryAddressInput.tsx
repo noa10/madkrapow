@@ -268,26 +268,32 @@ export function DeliveryAddressInput({
         let lat: number | undefined
         let lng: number | undefined
 
-        // Use Google Maps Geocoder if SDK is loaded
+        // Try Google Maps Geocoder first, fall through to Nominatim on failure
         if (isLoaded && window.google?.maps) {
-          const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
-          const geocoder = new Geocoder()
-          const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-            geocoder.geocode(
-              { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
-              (res, status) => {
-                if (status === 'OK' && res) resolve(res)
-                else reject(new Error(`Geocoder status: ${status}`))
-              }
-            )
-          })
-          if (results.length > 0) {
-            lat = results[0].geometry.location.lat()
-            lng = results[0].geometry.location.lng()
-            console.log('[DeliveryAddressInput] Geocoded (Google) to:', lat, lng)
+          try {
+            const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
+            const geocoder = new Geocoder()
+            const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+              geocoder.geocode(
+                { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
+                (res, status) => {
+                  if (status === 'OK' && res) resolve(res)
+                  else reject(new Error(`Geocoder status: ${status}`))
+                }
+              )
+            })
+            if (results.length > 0) {
+              lat = results[0].geometry.location.lat()
+              lng = results[0].geometry.location.lng()
+              console.log('[DeliveryAddressInput] Geocoded (Google) to:', lat, lng)
+            }
+          } catch (gmapsErr) {
+            console.warn('[DeliveryAddressInput] Google geocoder failed, trying Nominatim:', gmapsErr)
           }
-        } else {
-          // Nominatim fallback when Google Maps SDK isn't loaded (e.g. ad blockers)
+        }
+
+        // Nominatim fallback when Google Maps failed or wasn't loaded
+        if (lat == null || lng == null) {
           const geoRes = await fetch(
             `https://nominatim.openstreetmap.org/search?` +
             new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),

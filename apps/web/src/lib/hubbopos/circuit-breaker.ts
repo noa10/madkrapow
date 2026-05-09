@@ -22,6 +22,7 @@ async function loadState(): Promise<HubboPosCircuitBreakerState> {
   const { data } = await supabase
     .from('store_settings')
     .select('hubbo_pos_circuit_state, hubbo_pos_last_error_at, hubbo_pos_last_sync_at')
+    .limit(1)
     .single();
 
   if (!data) return defaultState();
@@ -61,7 +62,7 @@ async function saveState(state: HubboPosCircuitBreakerState): Promise<void> {
       hubbo_pos_last_error_at: state.last_failure_at,
       hubbo_pos_last_sync_at: state.last_success_at,
     })
-    .eq('id', (await supabase.from('store_settings').select('id').single()).data?.id);
+    .eq('id', (await supabase.from('store_settings').select('id').limit(1).single()).data?.id);
 }
 
 export function checkCircuit(): void {

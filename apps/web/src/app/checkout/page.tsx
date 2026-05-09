@@ -400,30 +400,33 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       }
       console.log('[Checkout] No coords, geocoding:', addressString, '| gmapsLoaded:', gmapsLoaded)
       try {
-        // Use Google Maps Geocoder if SDK is loaded (same as mobile's native geocoder)
+        // Try Google Maps Geocoder first, fall through to Nominatim on failure
         if (gmapsLoaded && window.google?.maps) {
-          const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
-          const geocoder = new Geocoder()
-          const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-            geocoder.geocode(
-              { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
-              (results, status) => {
-                if (status === 'OK' && results) resolve(results)
-                else reject(new Error(`Geocoder status: ${status}`))
-              }
-            )
-          })
-          if (result.length > 0) {
-            lat = result[0].geometry.location.lat()
-            lng = result[0].geometry.location.lng()
-            useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
-            console.log('[Checkout] Geocoded (Google) to:', lat, lng)
-          } else {
-            console.error('[Checkout] Google geocoder returned no results for:', addressString)
-            return
+          try {
+            const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
+            const geocoder = new Geocoder()
+            const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+              geocoder.geocode(
+                { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
+                (results, status) => {
+                  if (status === 'OK' && results) resolve(results)
+                  else reject(new Error(`Geocoder status: ${status}`))
+                }
+              )
+            })
+            if (result.length > 0) {
+              lat = result[0].geometry.location.lat()
+              lng = result[0].geometry.location.lng()
+              useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
+              console.log('[Checkout] Geocoded (Google) to:', lat, lng)
+            }
+          } catch (gmapsErr) {
+            console.warn('[Checkout] Google geocoder failed, trying Nominatim:', gmapsErr)
           }
-        } else {
-          // Nominatim fallback when Google Maps SDK isn't loaded
+        }
+
+        // Nominatim fallback when Google Maps failed or wasn't loaded
+        if (!lat || !lng) {
           const geoRes = await fetch(
             `https://nominatim.openstreetmap.org/search?` +
             new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),

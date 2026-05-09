@@ -45,6 +45,7 @@ export function DeliveryMap({
   driverLocationUpdatedAt,
 }: DeliveryMapProps) {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
+  const [directionsError, setDirectionsError] = useState<string | null>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
 
   const { isLoaded, loadError } = useGoogleMaps()
@@ -63,7 +64,20 @@ export function DeliveryMap({
         (result, status) => {
           if (status === 'OK' && result) {
             setDirections(result)
+            setDirectionsError(null)
+            return
           }
+
+          const statusMessages: Record<string, string> = {
+            NOT_FOUND: 'Could not geocode one of the locations.',
+            ZERO_RESULTS: 'No driving route found between driver and delivery.',
+            MAX_WAYPOINTS_EXCEEDED: 'Too many waypoints in the route request.',
+            INVALID_REQUEST: 'Invalid route request.',
+            OVER_QUERY_LIMIT: 'Route quota exceeded. Please try again later.',
+            REQUEST_DENIED: 'Route request denied — check API key permissions.',
+            UNKNOWN_ERROR: 'An unexpected error occurred while calculating the route.',
+          }
+          setDirectionsError(statusMessages[status] || `Route unavailable (${status}).`)
         }
       )
     }
@@ -116,7 +130,7 @@ export function DeliveryMap({
   }
 
   // Loading state
-  if (!isLoaded) {
+  if (!isLoaded || typeof google === 'undefined' || !google.maps?.Map) {
     return (
       <section className="rounded-lg border bg-card p-5">
         <h2 className="text-lg font-semibold mb-4 font-display flex items-center gap-2">
@@ -170,8 +184,8 @@ export function DeliveryMap({
               url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23d4b896" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>'
               ),
-              scaledSize: new google.maps.Size(32, 32),
-              anchor: new google.maps.Point(16, 16),
+              scaledSize: { width: 32, height: 32 } as any,
+              anchor: { x: 16, y: 16 } as any,
             }}
           />
           {deliveryPosition && (
@@ -182,8 +196,8 @@ export function DeliveryMap({
                 url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
                   '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="%23d4b896" stroke="%23d4b896" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3" fill="%230a0a14"/></svg>'
                 ),
-                scaledSize: new google.maps.Size(32, 32),
-                anchor: new google.maps.Point(16, 32),
+                scaledSize: { width: 32, height: 32 } as any,
+                anchor: { x: 16, y: 32 } as any,
               }}
             />
           )}
@@ -207,6 +221,11 @@ export function DeliveryMap({
           </div>
         )}
       </div>
+      {directionsError && (
+        <p className="text-xs text-amber-600 text-center mt-3">
+          {directionsError} Map markers may still show approximate locations.
+        </p>
+      )}
       {mapLoaded && (
         <p className="text-xs text-muted-foreground text-center mt-3">
           {driverName ? `${driverName} is on the way` : 'Driver is en route to your location'}

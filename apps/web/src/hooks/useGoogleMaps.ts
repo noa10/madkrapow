@@ -13,6 +13,10 @@ function notifyListeners(status: LoadStatus) {
   listeners.forEach((listener) => listener(status))
 }
 
+function isReady(): boolean {
+  return typeof window !== 'undefined' && window.google?.maps?.Map != null
+}
+
 function loadGoogleMapsApi(): Promise<void> {
   if (loadStatus === 'loaded') return Promise.resolve()
   if (loadStatus === 'error') return Promise.reject(new Error('Google Maps failed to load'))
@@ -22,14 +26,27 @@ function loadGoogleMapsApi(): Promise<void> {
   notifyListeners('loading')
 
   loadPromise = new Promise<void>((resolve, reject) => {
+    if (isReady()) {
+      loadStatus = 'loaded'
+      notifyListeners('loaded')
+      resolve()
+      return
+    }
+
     const existingScript = document.querySelector(
       'script[src*="maps.googleapis.com/maps/api/js"]'
     )
 
-    if (existingScript || window.google?.maps) {
-      loadStatus = 'loaded'
-      notifyListeners('loaded')
-      resolve()
+    if (existingScript) {
+      // Script tag already exists — poll until the async API is ready
+      const interval = setInterval(() => {
+        if (isReady()) {
+          clearInterval(interval)
+          loadStatus = 'loaded'
+          notifyListeners('loaded')
+          resolve()
+        }
+      }, 100)
       return
     }
 
@@ -38,9 +55,16 @@ function loadGoogleMapsApi(): Promise<void> {
     script.async = true
 
     script.addEventListener('load', () => {
-      loadStatus = 'loaded'
-      notifyListeners('loaded')
-      resolve()
+      // With loading=async, the API initializes after the script loads.
+      // Poll until the Map constructor is actually available.
+      const interval = setInterval(() => {
+        if (isReady()) {
+          clearInterval(interval)
+          loadStatus = 'loaded'
+          notifyListeners('loaded')
+          resolve()
+        }
+      }, 100)
     })
 
     script.addEventListener('error', () => {

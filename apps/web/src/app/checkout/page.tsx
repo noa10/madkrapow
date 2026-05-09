@@ -108,7 +108,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         // Middleware should have redirected, but as a safety net
-        window.location.href = '/auth?redirect=/checkout'
+        window.location.href = '/auth/signup?redirect=/checkout'
         return
       }
       setUserEmail(user.email ?? null)

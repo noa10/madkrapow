@@ -86,6 +86,37 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
     }
   }
 
+  /// Returns true when sign-in succeeded, false when the user cancelled
+  /// the Google picker. On failure the notifier's state carries the error.
+  Future<bool> signInWithGoogle() async {
+    state = const AsyncLoading();
+    bool cancelled = false;
+    state = await AsyncValue.guard(() async {
+      final repo = ref.read(adminAuthRepositoryProvider);
+      final response = await repo.signInWithGoogle();
+      if (response == null) {
+        cancelled = true;
+        return;
+      }
+      final user = response.user;
+      if (user == null) {
+        throw Exception('Sign-in failed — no user returned');
+      }
+
+      final role = user.appMetadata['role'] as String?;
+      debugPrint('AdminSignIn(google): user=${user.email}, role=$role');
+      final staffRole = StaffRoleExtension.fromString(role);
+      if (staffRole == null) {
+        await repo.signOut();
+        throw const AuthRequiredException('Access denied — unrecognized role');
+      }
+    });
+    if (state.hasError) {
+      debugPrint('AdminSignIn(google): failed — ${state.error}');
+    }
+    return !cancelled && !state.hasError;
+  }
+
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('remembered_email');

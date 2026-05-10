@@ -74,6 +74,20 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    await ref.read(adminSignInProvider.notifier).signInWithGoogle();
+    if (!mounted) return;
+    final state = ref.read(adminSignInProvider);
+    if (state.hasError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(state.error.toString()),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final signInState = ref.watch(adminSignInProvider);
@@ -181,6 +195,32 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text('Sign In'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'OR',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: isLoading ? null : _signInWithGoogle,
+                      icon: const Icon(Icons.g_mobiledata, size: 28),
+                      label: const Text('Continue with Google'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                      ),
                     ),
                   ),
                 ],

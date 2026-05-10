@@ -15,4 +15,10 @@ abstract class AppEnv {
 
   @EnviedField(varName: 'FCM_SENDER_ID')
   static final String fcmSenderId = _AppEnv.fcmSenderId;
+
+  @EnviedField(varName: 'GOOGLE_WEB_CLIENT_ID', defaultValue: '')
+  static final String googleWebClientId = _AppEnv.googleWebClientId;
+
+  @EnviedField(varName: 'GOOGLE_IOS_CLIENT_ID', defaultValue: '')
+  static final String googleIosClientId = _AppEnv.googleIosClientId;
 }

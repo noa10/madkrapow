@@ -51,11 +51,13 @@ jobs:
             echo "::error::Invalid tag: expected mobile-v<major>.<minor>.<patch>[-pre] or merchant-v<major>.<minor>.<patch>[-pre], got '$TAG'"
             exit 1
           fi
-          echo "app=$APP"                       >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION"               >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE"     >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG"                       >> "$GITHUB_OUTPUT"
-          echo "release_name=$APP v$VERSION"    >> "$GITHUB_OUTPUT"
+          {
+            echo "app=$APP"
+            echo "version=$VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "tag=$TAG"
+            echo "release_name=$APP v$VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK
         uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
@@ -169,8 +171,8 @@ jobs:
             while IFS='|' read -r SHA SUBJECT; do
               [[ -z "$SHA" ]] && continue
               case "$SUBJECT" in
-                feat*:*|feat\(*\):*)  FEATURES+="- ${SHA} ${SUBJECT}"$'\n' ;;
-                fix*:*|fix\(*\):*)    FIXES+="- ${SHA} ${SUBJECT}"$'\n' ;;
+                feat\(*\):*|feat:*)  FEATURES+="- ${SHA} ${SUBJECT}"$'\n' ;;
+                fix\(*\):*|fix:*)    FIXES+="- ${SHA} ${SUBJECT}"$'\n' ;;
                 *) ;;
               esac
             done <<< "$LOG"

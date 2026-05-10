@@ -24,4 +24,10 @@ abstract class AppEnv {
     defaultValue: '123 Thai Food Street, Kuala Lumpur, Malaysia',
   )
   static final String storeAddress = _AppEnv.storeAddress;
+
+  @EnviedField(varName: 'GOOGLE_WEB_CLIENT_ID', defaultValue: '')
+  static final String googleWebClientId = _AppEnv.googleWebClientId;
+
+  @EnviedField(varName: 'GOOGLE_IOS_CLIENT_ID', defaultValue: '')
+  static final String googleIosClientId = _AppEnv.googleIosClientId;
 }

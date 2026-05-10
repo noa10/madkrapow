@@ -78,6 +78,16 @@
 				<string>madkrapow</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.googleusercontent.apps.madkrapow.mobile</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.256417012253-hgu48ab3kl9rsg06ijpfkho6sa91e7gb</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

@@ -83,17 +83,19 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
 
     try {
-      // Store the intended destination before leaving the app for OAuth
-      final from = GoRouterState.of(context).uri.queryParameters['from'];
-      if (from != null) {
-        ref.read(oauthRedirectProvider.notifier).state = from;
+      final response =
+          await ref.read(authRepositoryProvider).signInWithGoogle();
+      if (!mounted) return;
+      if (response?.session == null) {
+        // User cancelled the picker — leave the sign-in screen as-is.
+        return;
       }
-      await ref.read(authRepositoryProvider).signInWithGoogle();
-      // The OAuth flow redirects away from the app, so we don't need to navigate here.
-      // The auth_callback_screen handles the return.
+      final from = GoRouterState.of(context).uri.queryParameters['from'];
+      context.go(from ?? AppRoutes.home);
     } catch (_) {
-      ref.read(oauthRedirectProvider.notifier).state = null;
-      setState(() => _errorText = 'Google sign-in failed. Please try again.');
+      if (mounted) {
+        setState(() => _errorText = 'Google sign-in failed. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

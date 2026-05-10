@@ -2,6 +2,11 @@ import type { LalamoveApiResponse } from './types'
 import { LalamoveApiError, LalamoveRateLimitError, LalamoveAuthError } from './types'
 import { buildAuthHeaders, type HttpMethod } from './auth'
 
+function sanitizeForLog(value: unknown): string {
+  const str = typeof value === 'string' ? value : String(value ?? '')
+  return str.replace(/[\r\n]+/g, ' ')
+}
+
 export interface LalamoveTransportConfig {
   apiKey: string
   apiSecret: string
@@ -63,7 +68,9 @@ export class LalamoveTransport {
 
     const url = `${this.config.baseUrl}${path}`
 
-    console.log(`[Lalamove] ${method} ${path}`, bodyString ? `body=${bodyString.slice(0, 200)}` : '(no body)')
+    const safePath = sanitizeForLog(path)
+    const bodyPreview = bodyString ? `body=${sanitizeForLog(bodyString.slice(0, 200))}` : '(no body)'
+    console.log('[Lalamove]', method, safePath, bodyPreview)
 
     const response = await fetch(url, {
       method,
@@ -71,7 +78,7 @@ export class LalamoveTransport {
       body: bodyString,
     })
 
-    console.log(`[Lalamove] ${method} ${path} → ${response.status} ${response.statusText}`)
+    console.log('[Lalamove]', method, safePath, '→', response.status, sanitizeForLog(response.statusText))
 
     if (response.ok) {
       const json = (await response.json()) as LalamoveApiResponse<T>
@@ -80,7 +87,7 @@ export class LalamoveTransport {
 
     const errorBody = await response.json().catch(() => ({}))
 
-    console.error(`[Lalamove] Error response for ${method} ${path}:`, JSON.stringify(errorBody, null, 2))
+    console.error('[Lalamove] Error response for', method, safePath, sanitizeForLog(JSON.stringify(errorBody)))
 
     // Handle specific error codes
     switch (response.status) {
@@ -101,7 +108,7 @@ export class LalamoveTransport {
         const message =
           (errorBody as { message?: string }).message ||
           `Lalamove API error: ${response.status}`
-        console.error('[Lalamove] Full error body:', JSON.stringify(errorBody, null, 2))
+        console.error('[Lalamove] Full error body:', sanitizeForLog(JSON.stringify(errorBody)))
         throw new LalamoveApiError(message, response.status, errorBody)
       }
     }

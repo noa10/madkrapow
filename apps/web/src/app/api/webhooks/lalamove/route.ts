@@ -5,8 +5,9 @@ import { createLalamoveClient } from '@/lib/lalamove/client'
 import { mapV3StatusToDispatch, mapDispatchToOrderStatus, isValidStatusTransition } from '@/lib/lalamove/status-mapper'
 import type { ShipmentDispatchStatus } from '@/lib/lalamove/types'
 
-function sanitizeForLog(value: string): string {
-  return value.replace(/\n|\r/g, '');
+function sanitizeForLog(value: unknown): string {
+  const str = typeof value === 'string' ? value : String(value ?? '')
+  return str.replace(/[\r\n]+/g, ' ')
 }
 
 export async function GET(): Promise<NextResponse> {
@@ -47,15 +48,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
-    // Verify signature if present (Lalamove v3 sends it in the body, not as a header)
+    // Verify signature if present (Lalamove v3 sends it in the body, not as a header).
+    // Reject on failure so an attacker cannot bypass auth by submitting a bogus signature.
     if (signature) {
       try {
         verifyWebhookSignature(body, signature, secret)
       } catch {
         console.warn('[Lalamove Webhook] Signature verification failed')
+        return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })
       }
     } else {
-      console.warn('[Lalamove Webhook] No signature present')
+      console.warn('[Lalamove Webhook] No signature present — rejecting')
+      return NextResponse.json({ success: false, error: 'Missing signature' }, { status: 401 })
     }
 
     if (!eventType) {
@@ -110,7 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (eventType === 'WALLET_BALANCE_CHANGED') {
         console.log('[Lalamove Webhook] Ignoring WALLET_BALANCE_CHANGED')
       } else {
-        console.log('[Lalamove Webhook] Event without order ID:', eventType)
+        console.log('[Lalamove Webhook] Event without order ID:', sanitizeForLog(eventType))
       }
       if (eventId) {
         await supabase

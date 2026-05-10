@@ -39,5 +39,11 @@
       "eslint --fix",
       "bash -c 'tsc --project apps/web/tsconfig.json --noEmit'"
     ]
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "next": {
+      "postcss": "^8.5.10"
+    }
   }
 }

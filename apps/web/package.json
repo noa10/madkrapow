@@ -28,7 +28,7 @@
     "@madkrapow/shared-types": "1.0.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@react-google-maps/api": "^2.20.8",
-    "@sentry/nextjs": "^10.51.0",
+    "@sentry/nextjs": "^10.52.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
     "@types/node": "^25.6.0",

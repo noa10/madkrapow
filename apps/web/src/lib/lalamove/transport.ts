@@ -2,9 +2,8 @@ import type { LalamoveApiResponse } from './types'
 import { LalamoveApiError, LalamoveRateLimitError, LalamoveAuthError } from './types'
 import { buildAuthHeaders, type HttpMethod } from './auth'
 
-function sanitizeForLog(value: unknown): string {
-  const str = typeof value === 'string' ? value : String(value ?? '')
-  return str.replace(/[\r\n]+/g, ' ')
+function sanitizeForLog(value: string): string {
+  return value.replace(/\n|\r/g, '')
 }
 
 export interface LalamoveTransportConfig {

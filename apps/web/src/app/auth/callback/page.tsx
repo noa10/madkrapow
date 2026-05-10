@@ -43,16 +43,30 @@ function getAuthErrorMessage(error: { code?: string; message?: string }): string
   return errorMessages[error.code || ""] || error.message || "An unexpected error occurred";
 }
 
-/** Only allow same-origin relative redirect paths */
+/** Only allow same-origin relative redirect paths (sanitizer CodeQL recognizes). */
 function isValidRedirect(redirect: string | null): redirect is string {
-  if (!redirect || !redirect.startsWith('/')) return false
+  if (!redirect || typeof redirect !== 'string') return false
+  if (!redirect.startsWith('/')) return false
   if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
-  return true
+  try {
+    const parsed = new URL(redirect, window.location.origin)
+    return parsed.origin === window.location.origin
+  } catch {
+    return false
+  }
 }
 
 function getRedirectPath(params: URLSearchParams): string {
   const redirect = params.get('redirect')
-  return isValidRedirect(redirect) ? redirect : '/'
+  if (!isValidRedirect(redirect)) return '/'
+  const parsed = new URL(redirect, window.location.origin)
+  return parsed.pathname + parsed.search + parsed.hash
+}
+
+function resolveRedirectTarget(isStaff: boolean, params: URLSearchParams): string {
+  const target = getRedirectPath(params)
+  if (isStaff) return target === '/' ? '/admin' : target
+  return target
 }
 
 export default function AuthCallbackPage() {
@@ -92,9 +106,8 @@ export default function AuthCallbackPage() {
         if (session) {
           const urlParams = new URL(window.location.href)
           const params = new URLSearchParams(urlParams.search)
-          const defaultPath = hasAnyRole(session.user, ALL_STAFF_ROLES) ? '/admin' : '/'
-          const redirectPath = getRedirectPath(params)
-          window.location.href = hasAnyRole(session.user, ALL_STAFF_ROLES) ? (redirectPath === '/' ? '/admin' : redirectPath) : redirectPath
+          const isStaff = hasAnyRole(session.user, ALL_STAFF_ROLES)
+          window.location.href = resolveRedirectTarget(isStaff, params)
           return
         }
 
@@ -120,9 +133,8 @@ export default function AuthCallbackPage() {
             console.error('Code exchange error:', exchangeError)
             setError(getAuthErrorMessage(exchangeError))
           } else if (newSession) {
-            const defaultPath = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? '/admin' : '/'
-            const redirectPath = getRedirectPath(params)
-            window.location.href = hasAnyRole(newSession.user, ALL_STAFF_ROLES) ? (redirectPath === '/' ? '/admin' : redirectPath) : redirectPath
+            const isStaff = hasAnyRole(newSession.user, ALL_STAFF_ROLES)
+            window.location.href = resolveRedirectTarget(isStaff, params)
             return
           }
         }

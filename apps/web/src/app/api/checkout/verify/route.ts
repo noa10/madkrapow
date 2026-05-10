@@ -4,6 +4,11 @@ import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
 import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 
+function sanitizeForLog(value: unknown): string {
+  const str = typeof value === 'string' ? value : String(value ?? '')
+  return str.replace(/[\r\n]+/g, ' ')
+}
+
 interface VerifyResponse {
   success: true
   status: string
@@ -94,7 +99,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
             )
           }
         } catch (piError) {
-          console.error('[Verify] Failed to retrieve payment intent:', paymentIntentId, piError)
+          console.error('[Verify] Failed to retrieve payment intent:', sanitizeForLog(paymentIntentId), piError)
         }
       }
 

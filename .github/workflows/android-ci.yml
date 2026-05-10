@@ -1,0 +1,141 @@
+name: Android CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/mobile/**'
+      - 'apps/merchant/**'
+      - 'packages/**'
+      - '.github/workflows/android-ci.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'apps/mobile/**'
+      - 'apps/merchant/**'
+      - 'packages/**'
+      - '.github/workflows/android-ci.yml'
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.24.5
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: temurin
+
+jobs:
+  actionlint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: actionlint
+        uses: raven-actions/actionlint@01fce4f43a270a612932cb1c64d40505a029f821 # v2.0.0
+
+  gitignore-guard:
+    name: Verify keystore gitignore coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify patterns present
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in mobile merchant; do
+            gi="apps/${app}/android/.gitignore"
+            for pat in 'key.properties' '**/*.keystore' '**/*.jks'; do
+              if ! grep -qxF "$pat" "$gi"; then
+                echo "::error file=${gi}::missing required gitignore line: ${pat}"
+                exit 1
+              fi
+            done
+          done
+
+  changes:
+    name: Detect changed apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            mobile:
+              - 'apps/mobile/**'
+              - 'packages/**'
+              - '.github/workflows/android-ci.yml'
+            merchant:
+              - 'apps/merchant/**'
+              - 'packages/**'
+              - '.github/workflows/android-ci.yml'
+
+  build:
+    name: build (${{ matrix.app }})
+    needs: [changes, actionlint, gitignore-guard]
+    if: needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.18.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ matrix.app }}-${{ hashFiles(format('apps/{0}/pubspec.lock', matrix.app)) }}
+          restore-keys: |
+            pub-${{ runner.os }}-${{ matrix.app }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ matrix.app }}-${{ hashFiles(format('apps/{0}/android/**/*.gradle*', matrix.app), format('apps/{0}/android/**/gradle-wrapper.properties', matrix.app)) }}
+          restore-keys: |
+            gradle-${{ runner.os }}-${{ matrix.app }}-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Create .env for code generation
+        run: cp .env.example .env
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build Android debug APK (smoke)
+        run: flutter build apk --debug

@@ -1,0 +1,257 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - 'mobile-v*'
+      - 'merchant-v*'
+
+concurrency:
+  group: android-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.24.5
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: temurin
+
+jobs:
+  release:
+    name: Build & draft release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Parse tag (app + version + versionCode)
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" =~ ^(mobile|merchant)-v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            APP="${BASH_REMATCH[1]}"
+            MAJOR="${BASH_REMATCH[2]}"
+            MINOR="${BASH_REMATCH[3]}"
+            PATCH="${BASH_REMATCH[4]}"
+            PRE="${BASH_REMATCH[5]:-}"
+            VERSION="${MAJOR}.${MINOR}.${PATCH}${PRE}"
+            VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+            if (( VERSION_CODE < 1 )); then
+              echo "::error::versionCode must be >= 1 (Play Store rule); got $VERSION_CODE from tag '$TAG'. Use at least <app>-v0.0.1."
+              exit 1
+            fi
+          else
+            echo "::error::Invalid tag: expected mobile-v<major>.<minor>.<patch>[-pre] or merchant-v<major>.<minor>.<patch>[-pre], got '$TAG'"
+            exit 1
+          fi
+          echo "app=$APP"                       >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"               >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE"     >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"                       >> "$GITHUB_OUTPUT"
+          echo "release_name=$APP v$VERSION"    >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.18.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ steps.tag.outputs.app }}-${{ hashFiles(format('apps/{0}/pubspec.lock', steps.tag.outputs.app)) }}
+
+      - name: Cache Gradle
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ steps.tag.outputs.app }}-${{ hashFiles(format('apps/{0}/android/**/*.gradle*', steps.tag.outputs.app), format('apps/{0}/android/**/gradle-wrapper.properties', steps.tag.outputs.app)) }}
+
+      - name: Materialize signing config
+        id: signing
+        shell: bash
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+          KEYSTORE_B64_MOBILE: ${{ secrets.ANDROID_KEYSTORE_MOBILE_BASE64 }}
+          KEYSTORE_B64_MERCHANT: ${{ secrets.ANDROID_KEYSTORE_MERCHANT_BASE64 }}
+          KEY_ALIAS_MOBILE: ${{ secrets.ANDROID_KEY_ALIAS_MOBILE }}
+          KEY_ALIAS_MERCHANT: ${{ secrets.ANDROID_KEY_ALIAS_MERCHANT }}
+          KEYSTORE_PW_MOBILE: ${{ secrets.ANDROID_KEYSTORE_PASSWORD_MOBILE }}
+          KEYSTORE_PW_MERCHANT: ${{ secrets.ANDROID_KEYSTORE_PASSWORD_MERCHANT }}
+          KEY_PW_MOBILE: ${{ secrets.ANDROID_KEY_PASSWORD_MOBILE }}
+          KEY_PW_MERCHANT: ${{ secrets.ANDROID_KEY_PASSWORD_MERCHANT }}
+        run: |
+          set +x
+          set -euo pipefail
+          APP_DIR="apps/${APP}/android/app"
+          if [[ "$APP" == "mobile" ]]; then
+            B64="$KEYSTORE_B64_MOBILE"; ALIAS="$KEY_ALIAS_MOBILE"
+            STORE_PW="$KEYSTORE_PW_MOBILE"; KEY_PW="$KEY_PW_MOBILE"
+          else
+            B64="$KEYSTORE_B64_MERCHANT"; ALIAS="$KEY_ALIAS_MERCHANT"
+            STORE_PW="$KEYSTORE_PW_MERCHANT"; KEY_PW="$KEY_PW_MERCHANT"
+          fi
+          if [[ -z "$B64" || -z "$ALIAS" || -z "$STORE_PW" || -z "$KEY_PW" ]]; then
+            echo "::error::Missing required signing secrets for app=$APP"
+            exit 1
+          fi
+          echo "::add-mask::$ALIAS"
+          printf '%s' "$B64" | base64 -d > "$APP_DIR/release.keystore"
+          chmod 600 "$APP_DIR/release.keystore"
+          {
+            printf 'storeFile=release.keystore\n'
+            printf 'storePassword=%s\n' "$STORE_PW"
+            printf 'keyAlias=%s\n'       "$ALIAS"
+            printf 'keyPassword=%s\n'    "$KEY_PW"
+          } > "$APP_DIR/key.properties"
+          chmod 600 "$APP_DIR/key.properties"
+
+      - name: Install dependencies
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        run: flutter pub get
+
+      - name: Create .env for code generation
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        run: cp .env.example .env
+
+      - name: Generate code
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Compute previous app-scoped tag
+        id: prev_tag
+        shell: bash
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          PREV=$(git tag --list "${APP}-v*" --sort=-v:refname | grep -vx "$TAG" | head -n 1 || true)
+          if [[ -z "$PREV" ]]; then
+            PREV=$(git rev-list --max-parents=0 HEAD | head -n 1)
+            echo "floor=root" >> "$GITHUB_OUTPUT"
+          else
+            echo "floor=tag" >> "$GITHUB_OUTPUT"
+          fi
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+          PREV: ${{ steps.prev_tag.outputs.prev }}
+          FLOOR: ${{ steps.prev_tag.outputs.floor }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          RANGE="${PREV}..${GITHUB_SHA}"
+          LOG=$(git log --format='%h|%s' "$RANGE" -- "apps/${APP}/" "packages/")
+          FEATURES=""; FIXES=""
+          if [[ -n "$LOG" ]]; then
+            while IFS='|' read -r SHA SUBJECT; do
+              [[ -z "$SHA" ]] && continue
+              case "$SUBJECT" in
+                feat*:*|feat\(*\):*)  FEATURES+="- ${SHA} ${SUBJECT}"$'\n' ;;
+                fix*:*|fix\(*\):*)    FIXES+="- ${SHA} ${SUBJECT}"$'\n' ;;
+                *) ;;
+              esac
+            done <<< "$LOG"
+          fi
+          {
+            echo "## What's changed"
+            echo ""
+            if [[ -n "$FEATURES" ]]; then echo "### Features"; echo ""; echo "$FEATURES"; fi
+            if [[ -n "$FIXES" ]];    then echo "### Fixes";    echo ""; echo "$FIXES"; fi
+            if [[ -z "$FEATURES" && -z "$FIXES" ]]; then
+              echo "_No user-facing changes since ${PREV}._"
+            fi
+            echo ""
+            echo "---"
+            echo "Floor: $FLOOR · Previous: $PREV · Range: $RANGE"
+          } > "$RUNNER_TEMP/changelog.md"
+          echo "path=$RUNNER_TEMP/changelog.md" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed AAB
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.tag.outputs.version }}" \
+            --build-number="${{ steps.tag.outputs.version_code }}"
+
+      - name: Build signed APK
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.tag.outputs.version }}" \
+            --build-number="${{ steps.tag.outputs.version_code }}"
+
+      - name: Stage & rename artifacts
+        id: artifacts
+        shell: bash
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/release-artifacts"
+          mkdir -p "$OUT"
+          cp "apps/${APP}/build/app/outputs/bundle/release/app-release.aab" "$OUT/${TAG}.aab"
+          cp "apps/${APP}/build/app/outputs/flutter-apk/app-release.apk"    "$OUT/${TAG}.apk"
+          echo "aab=$OUT/${TAG}.aab" >> "$GITHUB_OUTPUT"
+          echo "apk=$OUT/${TAG}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Verify signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFY_LOG="$RUNNER_TEMP/verify.log"
+          jarsigner -verify -verbose -certs "${{ steps.artifacts.outputs.aab }}" | tee "$VERIFY_LOG"
+          grep -q 'jar verified' "$VERIFY_LOG"
+          jarsigner -verify -verbose -certs "${{ steps.artifacts.outputs.apk }}" | tee "$VERIFY_LOG"
+          grep -q 'jar verified' "$VERIFY_LOG"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          NAME: ${{ steps.tag.outputs.release_name }}
+          CHANGELOG: ${{ steps.changelog.outputs.path }}
+          AAB: ${{ steps.artifacts.outputs.aab }}
+          APK: ${{ steps.artifacts.outputs.apk }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --draft \
+            --title "$NAME" \
+            --notes-file "$CHANGELOG" \
+            --target "$GITHUB_SHA" \
+            "$AAB" "$APK"
+
+      - name: Cleanup signing artifacts
+        if: always()
+        shell: bash
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+        run: |
+          rm -f "apps/${APP}/android/app/release.keystore" \
+                "apps/${APP}/android/app/key.properties" || true
+          test ! -f "apps/${APP}/android/app/release.keystore"
+          test ! -f "apps/${APP}/android/app/key.properties"

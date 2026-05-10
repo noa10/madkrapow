@@ -48,7 +48,7 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.3",
     "zod": "^4.4.2",
-    "zustand": "^5.0.12"
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",

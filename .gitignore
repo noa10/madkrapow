@@ -94,3 +94,6 @@ mempalace.yaml
 
 # Backup files
 *.backup
+
+# Memory
+memory/*

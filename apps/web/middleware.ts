@@ -36,7 +36,7 @@ export async function middleware(request: NextRequest) {
       isAdminRoute
     if (isProtectedRoute) {
       const url = request.nextUrl.clone()
-      url.pathname = '/auth'
+      url.pathname = pathname.startsWith('/checkout') ? '/auth/signup' : '/auth'
       url.searchParams.set('redirect', pathname)
       return Response.redirect(url)
     }

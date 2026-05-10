@@ -6,6 +6,10 @@ A food delivery web application built with Next.js, Supabase, and Stripe.
 
 See the project documentation in `docs/` for setup and architecture details.
 
+## Android Releases
+
+Mobile (`apps/mobile`) and merchant (`apps/merchant`) Android apps are released via `.github/workflows/android-release.yml`, triggered by app-scoped tags (`mobile-v*`, `merchant-v*`). See [`docs/android-release.md`](docs/android-release.md) for the secrets setup, keystore rotation, and release procedure.
+
 ## Dependency Management
 
 Dependencies are managed automatically via [Dependabot](https://docs.github.com/en/code-security/dependabot).

@@ -225,10 +225,20 @@ jobs:
         run: |
           set -euo pipefail
           VERIFY_LOG="$RUNNER_TEMP/verify.log"
+
+          # AAB: still uses legacy JAR signing (v1). Use jarsigner.
           jarsigner -verify -verbose -certs "${{ steps.artifacts.outputs.aab }}" | tee "$VERIFY_LOG"
           grep -q 'jar verified' "$VERIFY_LOG"
-          jarsigner -verify -verbose -certs "${{ steps.artifacts.outputs.apk }}" | tee "$VERIFY_LOG"
-          grep -q 'jar verified' "$VERIFY_LOG"
+
+          # APK: uses APK Signature Scheme v2/v3 (not JAR). Use apksigner from Android build-tools.
+          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$APKSIGNER" ]]; then
+            echo "::error::apksigner not found under $ANDROID_SDK_ROOT/build-tools"
+            exit 1
+          fi
+          echo "Using apksigner: $APKSIGNER"
+          "$APKSIGNER" verify --verbose "${{ steps.artifacts.outputs.apk }}" | tee "$VERIFY_LOG"
+          grep -q 'Verifies' "$VERIFY_LOG"
 
       - name: Create draft release
         env:

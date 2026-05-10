@@ -138,6 +138,23 @@ You should see:
 - `Assets:` `mobile-v0.0.1.aab`, `mobile-v0.0.1.apk`
 - Release notes body with `## Features` / `## Fixes` sections (or `_No user-facing changes_` on a first release)
 
+### Verifying signatures locally
+
+Android uses two different signature schemes, so each artifact needs a different tool:
+
+```bash
+# AAB: uses legacy JAR signing (v1)
+jarsigner -verify -verbose -certs mobile-v0.0.1.aab
+# expect: jar verified
+
+# APK: uses APK Signature Scheme v2/v3 (not JAR)
+# apksigner ships with Android build-tools (part of the Android SDK)
+apksigner verify --verbose mobile-v0.0.1.apk
+# expect: Verifies
+```
+
+The release workflow runs both verifications automatically before creating the draft — a release will fail if either check doesn't pass.
+
 To publish, visit the GitHub UI and click **Publish release**, or from the CLI:
 
 ```bash

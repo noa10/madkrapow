@@ -56,6 +56,12 @@ const envSchema = z.object({
   STORE_CITY: z.string().min(1).default('Kuala Lumpur'),
   STORE_PHONE: z.string().regex(/^\+60/),
   SENTRY_DSN: z.string().url().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().startsWith('bot').optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().min(1).optional(),
+  TELEGRAM_KITCHEN_GROUP_CHAT_ID: z.string().min(1).optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
+  WHATSAPP_VERIFY_TOKEN: z.string().min(1).optional(),
 })
 
 type Env = z.infer<typeof envSchema>
@@ -104,6 +110,12 @@ const envData = {
   STORE_CITY: process.env.STORE_CITY || 'Kuala Lumpur',
   STORE_PHONE: process.env.STORE_PHONE || '+60123456789',
   SENTRY_DSN: process.env.SENTRY_DSN,
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
+  TELEGRAM_KITCHEN_GROUP_CHAT_ID: process.env.TELEGRAM_KITCHEN_GROUP_CHAT_ID,
+  WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN,
+  WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID,
+  WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN,
 }
 
 if (process.env.SKIP_ENV_VALIDATION === 'true') {

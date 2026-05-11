@@ -1,7 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:madkrapow_mobile/app.dart';
+import 'package:madkrapow_mobile/core/services/update/update_providers.dart';
+import 'package:madkrapow_mobile/core/services/update/update_settings_service.dart';
+import 'package:madkrapow_mobile/core/services/update/updater_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// In-memory GotrueAsyncStorage to avoid shared_preferences platform channel
 /// in the test environment.
@@ -33,8 +38,31 @@ void main() {
   });
 
   testWidgets('App renders without errors', (WidgetTester tester) async {
+    // Stub SharedPreferences so UpdateSettingsService can be created in tests.
+    SharedPreferences.setMockInitialValues({});
+    final updateSettings = await UpdateSettingsService.create();
+    final packageInfo = PackageInfo(
+      appName: 'test',
+      packageName: 'com.test',
+      version: '1.0.0',
+      buildNumber: '1',
+    );
+    const updaterConfig = UpdaterConfig(
+      appType: 'mobile',
+      tagPrefix: 'mobile-v',
+      repoOwner: 'noa10',
+      repoName: 'madkrapow',
+    );
+
     await tester.pumpWidget(
-      const ProviderScope(child: MadKrapowApp()),
+      ProviderScope(
+        overrides: [
+          updaterConfigProvider.overrideWithValue(updaterConfig),
+          updateSettingsProvider.overrideWithValue(updateSettings),
+          packageInfoProvider.overrideWithValue(packageInfo),
+        ],
+        child: const MadKrapowApp(),
+      ),
     );
 
     // Allow the splash screen to render
@@ -42,5 +70,10 @@ void main() {
 
     // The app should render without throwing
     expect(find.byType(MadKrapowApp), findsOneWidget);
+
+    // Drain the 3-second deferred updater check timer so it doesn't leak
+    // past widget disposal and trigger a pending-timer assertion.
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
   });
 }

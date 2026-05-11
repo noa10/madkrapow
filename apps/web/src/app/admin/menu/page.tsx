@@ -51,6 +51,9 @@ interface MenuItem {
   image_url: string | null;
   is_available: boolean;
   sort_order: number;
+  spice_level: number;
+  ingredients: string[];
+  is_signature: boolean;
 }
 
 interface ModifierGroup {

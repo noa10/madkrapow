@@ -7,8 +7,9 @@ import { MenuSection } from "@/components/menu/MenuSection";
 import type { CategoryWithMenuItems } from "@/lib/queries/menu";
 import type { PromoPreview } from "@/components/menu/MenuItemCard";
 
-interface MenuViewProps {
+interface MenuListViewProps {
   categories: CategoryWithMenuItems[];
+  quickAddEnabled?: boolean;
 }
 
 function slugifyCategoryName(name: string): string {
@@ -19,7 +20,7 @@ function slugifyCategoryName(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export function MenuView({ categories }: MenuViewProps) {
+export function MenuListView({ categories, quickAddEnabled = false }: MenuListViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -158,7 +159,12 @@ export function MenuView({ categories }: MenuViewProps) {
       <div className="py-8 md:py-12">
         {categories.length > 0 ? (
           categories.map((category) => (
-            <MenuSection key={category.id} category={category} promoPreviews={promoPreviews} />
+            <MenuSection
+              key={category.id}
+              category={category}
+              promoPreviews={promoPreviews}
+              quickAddEnabled={quickAddEnabled}
+            />
           ))
         ) : (
           <div className="max-w-7xl mx-auto px-4 py-12 text-center">

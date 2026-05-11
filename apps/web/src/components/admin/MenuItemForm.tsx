@@ -29,6 +29,9 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
   const [categoryId, setCategoryId] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [isAvailable, setIsAvailable] = useState(true)
+  const [spiceLevel, setSpiceLevel] = useState(0)
+  const [ingredients, setIngredients] = useState('')
+  const [isSignature, setIsSignature] = useState(false)
   
   const [imageUploading, setImageUploading] = useState(false)
 
@@ -62,6 +65,9 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
       setCategoryId(menuItem.category_id)
       setImageUrl(menuItem.image_url || '')
       setIsAvailable(menuItem.is_available)
+      setSpiceLevel(menuItem.spice_level ?? 0)
+      setIngredients((menuItem.ingredients ?? []).join(', '))
+      setIsSignature(menuItem.is_signature ?? false)
     }
   }, [menuItem])
 
@@ -144,6 +150,9 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
             image_url: imageUrl || null,
             is_available: isAvailable,
             sort_order: newSortOrder,
+            spice_level: spiceLevel,
+            ingredients: ingredients.split(',').map(s => s.trim()).filter(Boolean),
+            is_signature: isSignature,
           })
         
         if (insertError) throw insertError
@@ -158,6 +167,9 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
             image_url: imageUrl || null,
             is_available: isAvailable,
             updated_at: new Date().toISOString(),
+            spice_level: spiceLevel,
+            ingredients: ingredients.split(',').map(s => s.trim()).filter(Boolean),
+            is_signature: isSignature,
           })
           .eq('id', menuItem.id)
         
@@ -313,6 +325,50 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         />
         <label htmlFor="isAvailable" className="text-sm font-medium">
           Available for ordering
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Spice Level</label>
+        <div className="flex gap-4">
+          {(['Mild', 'Medium', 'Hot', 'Thai-hot'] as const).map((label, i) => (
+            <label key={i} className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="spiceLevel"
+                value={i}
+                checked={spiceLevel === i}
+                onChange={() => setSpiceLevel(i)}
+                className="h-4 w-4"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="ingredients" className="text-sm font-medium">
+          Ingredients (comma-separated)
+        </label>
+        <Input
+          id="ingredients"
+          value={ingredients}
+          onChange={(e) => setIngredients(e.target.value)}
+          placeholder="e.g., rice noodles, shrimp, egg, bean sprouts"
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="isSignature"
+          checked={isSignature}
+          onChange={(e) => setIsSignature(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300"
+        />
+        <label htmlFor="isSignature" className="text-sm font-medium">
+          Featured on /menu hero (max 2 items)
         </label>
       </div>
       

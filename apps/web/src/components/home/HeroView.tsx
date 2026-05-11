@@ -41,12 +41,12 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
               </div>
 
               <h1 className="max-w-4xl font-display text-5xl tracking-tight leading-[1.1] text-white sm:text-6xl lg:text-7xl xl:text-[5.8rem] animate-fade-in-up">
-                Hot, fiery Phad Kra Phao
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#f1d7aa] to-[#c59661]"> delivered to your door.</span>
+                Hot, Fiery Phad Kra Phao.
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#f1d7aa] to-[#c59661]"> 100% Halal Ingredients.</span>
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
-                Craving bold Thai flavors? {storeName} serves fiery, flavorful plates of this iconic dish within Kampung Subang Baru, Shah Alam — cooked hot and delivered fast.
+                Craving bold Thai flavors? Mad Krapow serves fiery, flavorful plates of this iconic dish in Kampung Subang Baru, Shah Alam — wok-fired fresh to order and delivered fast.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center gap-4">
@@ -62,6 +62,17 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
                 >
                   Explore Menu
                 </button>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-2">
+                {["No Pork, No Lard", "Halal-Sourced Chicken, Beef & Seafood", "Muslim-Friendly Kitchen"].map((badge) => (
+                  <span
+                    key={badge}
+                    className="rounded-full border border-[var(--line-strong)] bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-[var(--gold-strong)]"
+                  >
+                    {badge}
+                  </span>
+                ))}
               </div>
             </div>
 

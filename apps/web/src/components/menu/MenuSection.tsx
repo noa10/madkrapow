@@ -5,9 +5,10 @@ import type { PromoPreview } from './MenuItemCard'
 interface MenuSectionProps {
   category: CategoryWithMenuItems
   promoPreviews?: Map<string, PromoPreview | null>
+  quickAddEnabled?: boolean
 }
 
-export function MenuSection({ category, promoPreviews }: MenuSectionProps) {
+export function MenuSection({ category, promoPreviews, quickAddEnabled = false }: MenuSectionProps) {
   if (category.menu_items.length === 0) return null
 
   return (
@@ -22,7 +23,7 @@ export function MenuSection({ category, promoPreviews }: MenuSectionProps) {
         )}
         <div className="flex flex-col gap-3 w-full">
           {category.menu_items.map((item) => (
-            <MenuItemCard key={item.id} item={item} promoPreview={promoPreviews?.get(item.id) ?? null} />
+            <MenuItemCard key={item.id} item={item} promoPreview={promoPreviews?.get(item.id) ?? null} quickAddEnabled={quickAddEnabled} />
           ))}
         </div>
       </div>

@@ -1,6 +1,9 @@
 import { getCategories, type CategoryWithMenuItems } from '@/lib/queries/menu'
-import { MenuView } from '@/components/home/MenuView'
 import { ClientPageShell } from '@/components/layout/ClientPageShell'
+import { MenuCatalogView } from '@/components/menu/MenuCatalogView'
+import { MenuListView } from '@/components/menu/MenuListView'
+
+const RICH_MENU_ENABLED = process.env.NEXT_PUBLIC_RICH_MENU_V2 !== '0'
 
 async function getMenuData(): Promise<CategoryWithMenuItems[]> {
   try {
@@ -16,7 +19,9 @@ export default async function MenuPage() {
 
   return (
     <ClientPageShell activeHref="/menu">
-      <MenuView categories={categories} />
+      {RICH_MENU_ENABLED
+        ? <MenuCatalogView categories={categories} />
+        : <MenuListView categories={categories} />}
     </ClientPageShell>
   )
 }

@@ -4,13 +4,27 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, MapPin, Loader2, Package, ShieldAlert } from 'lucide-react';
+import { Clock, User, MapPin, Loader2, Package, ShieldAlert, Globe, MessageCircle, MessageSquare, Smartphone } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
 import { generateOrderDisplayCode } from '@/lib/utils/order-code';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
+
+const SOURCE_ICONS: Record<string, React.ReactNode> = {
+  web: <Globe className="h-4 w-4" />,
+  telegram: <MessageCircle className="h-4 w-4" />,
+  whatsapp: <MessageSquare className="h-4 w-4" />,
+  mobile: <Smartphone className="h-4 w-4" />,
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  web: "Web",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  mobile: "Mobile",
+};
 
 function getAddressString(address: Record<string, unknown>): string {
   const parts = [
@@ -116,9 +130,17 @@ function OrderCard({ order }: OrderCardProps) {
           <CardTitle className="text-xl md:text-2xl font-bold font-display text-foreground">
             {generateOrderDisplayCode(order.id)}
           </CardTitle>
-          <Badge className={`${statusConfig.color} text-base md:text-lg px-3 py-1 font-bold border-none`}>
-            {statusConfig.label}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {order.source && SOURCE_ICONS[order.source] && (
+              <Badge variant="outline" className="text-sm px-2 py-0.5 flex items-center gap-1">
+                {SOURCE_ICONS[order.source]}
+                <span className="hidden sm:inline">{SOURCE_LABELS[order.source]}</span>
+              </Badge>
+            )}
+            <Badge className={`${statusConfig.color} text-base md:text-lg px-3 py-1 font-bold border-none`}>
+              {statusConfig.label}
+            </Badge>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-base md:text-lg text-muted-foreground mt-1">
           <Clock className="h-5 w-5" />

@@ -6,7 +6,29 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { generateOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
-import type { Order } from "@/types/orders"
+import { Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
+import type { Order, OrderSource } from "@/types/orders"
+
+const SOURCE_ICONS: Record<OrderSource, React.ReactNode> = {
+  web: <Globe className="h-3.5 w-3.5" />,
+  telegram: <MessageCircle className="h-3.5 w-3.5" />,
+  whatsapp: <MessageSquare className="h-3.5 w-3.5" />,
+  mobile: <Smartphone className="h-3.5 w-3.5" />,
+}
+
+const SOURCE_LABELS: Record<OrderSource, string> = {
+  web: "Web",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  mobile: "Mobile",
+}
+
+const SOURCE_COLORS: Record<OrderSource, string> = {
+  web: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  telegram: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  whatsapp: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  mobile: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+}
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-500/15 text-amber-400 border-amber-500/30",
@@ -100,7 +122,7 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
       aria-label={`View order ${displayCode}`}
       className={cn(
         "group relative grid items-stretch w-full",
-        "grid-cols-[56px_2px_1fr_auto] md:grid-cols-[72px_2px_1fr_auto]",
+        "grid-cols-[56px_2px_1fr_auto] md:grid-cols-[72px_2px_28px_1fr_auto]",
         "rounded-xl border border-white/8 bg-card/60 backdrop-blur-sm",
         "transition-all duration-200 cursor-pointer",
         "hover:border-gold/20 hover:bg-card",
@@ -132,8 +154,20 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
         <div className="w-0.5 flex-1 rounded-full bg-gradient-to-b from-transparent via-gold/10 to-gold/40" />
       </div>
 
+      <div className="hidden md:flex row-span-3 col-start-3 items-center justify-center">
+        <div
+          className={cn(
+            "flex items-center justify-center w-6 h-6 rounded-full border",
+            SOURCE_COLORS[order.source] || SOURCE_COLORS.web
+          )}
+          title={SOURCE_LABELS[order.source] || order.source}
+        >
+          {SOURCE_ICONS[order.source] || SOURCE_ICONS.web}
+        </div>
+      </div>
+
       {/* Row 1: order number + status + items */}
-      <div className="col-start-3 flex items-center gap-2 min-w-0 py-3">
+      <div className="col-start-3 md:col-start-4 flex items-center gap-2 min-w-0 py-3">
         <span className="text-lg font-bold text-gold tabular-nums tracking-wide">
           {displayCode}
         </span>
@@ -153,14 +187,14 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
       </div>
 
       {/* Row 1: total */}
-      <div className="col-start-4 flex items-center justify-end py-3 pr-3">
+      <div className="col-start-4 md:col-start-5 flex items-center justify-end py-3 pr-3">
         <span className="text-sm font-semibold text-foreground tabular-nums">
           {formatPrice(order.total_cents + order.delivery_fee_cents)}
         </span>
       </div>
 
       {/* Row 2: customer + badges */}
-      <div className="col-start-3 flex items-center gap-2 min-w-0">
+      <div className="col-start-3 md:col-start-4 flex items-center gap-2 min-w-0">
         <span className="text-xs text-muted-foreground truncate">
           {order.customer_name || "Guest"}
         </span>
@@ -183,14 +217,14 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
       </div>
 
       {/* Row 2: secondary time */}
-      <div className="col-start-4 flex items-center justify-end pr-3">
+      <div className="col-start-4 md:col-start-5 flex items-center justify-end pr-3">
         <span className="text-[11px] text-muted-foreground/60 tabular-nums">
           {timeInfo.fullTimestamp}
         </span>
       </div>
 
       {/* Row 3: status actions — stopPropagation prevents card navigation */}
-      <div className="col-start-3 col-span-2 pb-3 pr-3">
+      <div className="col-start-3 md:col-start-4 col-span-2 pb-3 pr-3">
         <CompactOrderActions
           orderId={order.id}
           currentStatus={order.status}

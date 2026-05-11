@@ -8,6 +8,8 @@ export interface CustomDateRange {
   end: string
 }
 
+export type SourceFilterValue = "all" | import("@/types/orders").OrderSource
+
 interface TabCache {
   orders: Order[]
   isLoading: boolean
@@ -25,6 +27,7 @@ interface AdminOrdersState {
   activeDateFilter: DateFilterValue
   customDateRange: CustomDateRange
   orderTabAssignments: Map<string, OrderTab[]>
+  sourceFilter: SourceFilterValue
 }
 
 interface AdminOrdersActions {
@@ -38,6 +41,7 @@ interface AdminOrdersActions {
   setActiveDateFilter: (filter: DateFilterValue) => void
   setCustomDateRange: (range: CustomDateRange) => void
   setOrderTabAssignments: (assignments: Map<string, OrderTab[]>) => void
+  setSourceFilter: (source: SourceFilterValue) => void
 }
 
 const initialTabCache = (): TabCache => ({
@@ -62,6 +66,7 @@ export const useAdminOrdersStore = create<AdminOrdersState & AdminOrdersActions>
   activeDateFilter: "today",
   customDateRange: { start: "", end: "" },
   orderTabAssignments: new Map(),
+  sourceFilter: "all",
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -145,4 +150,5 @@ export const useAdminOrdersStore = create<AdminOrdersState & AdminOrdersActions>
   setCustomDateRange: (range) => set({ customDateRange: range }),
 
   setOrderTabAssignments: (assignments) => set({ orderTabAssignments: assignments }),
+  setSourceFilter: (sourceFilter) => set({ sourceFilter }),
 }))

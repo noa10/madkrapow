@@ -32,6 +32,7 @@ interface AnalyticsOrder {
   created_at: string;
   customer_id: string | null;
   total_cents: number | null;
+  source: string;
 }
 
 interface AnalyticsOrderItem {
@@ -43,6 +44,7 @@ interface AnalyticsOrderItem {
 type DateRange = "7d" | "30d" | "90d" | "custom";
 
 const COLORS = ["hsl(38 60% 55%)", "hsl(192 80% 50%)"];
+const SOURCE_COLORS = ["hsl(200 80% 55%)", "hsl(220 80% 60%)", "hsl(150 70% 45%)", "hsl(270 70% 60%)"];
 
 export default function AnalyticsPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin"]);
@@ -60,6 +62,7 @@ export default function AnalyticsPage() {
   const [salesData, setSalesData] = useState<{ date: string; revenue: number; orders: number }[]>([]);
   const [topSellingItems, setTopSellingItems] = useState<TopSellingItem[]>([]);
   const [customerData, setCustomerData] = useState({ new: 0, returning: 0 });
+  const [sourceData, setSourceData] = useState<{ name: string; value: number }[]>([]);
 
   const getDateRangeParams = useCallback(() => {
     const now = new Date();
@@ -161,6 +164,16 @@ export default function AnalyticsPage() {
       new: newCount || 1,
       returning: returningCount || 1,
     });
+
+    const sourceMap = new Map<string, number>();
+    ordersData.forEach((o) => {
+      const s = o.source || "web";
+      sourceMap.set(s, (sourceMap.get(s) || 0) + 1);
+    });
+    const sourcePie = Array.from(sourceMap.entries())
+      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }))
+      .sort((a, b) => b.value - a.value);
+    setSourceData(sourcePie);
 
     setLoading(false);
   }, [getDateRangeParams]);
@@ -370,13 +383,13 @@ export default function AnalyticsPage() {
 
         <Card className="bg-card border-border shadow-sm rounded-xl">
           <CardHeader>
-            <CardTitle className="font-display">Customer Insights</CardTitle>
+            <CardTitle className="font-display">Orders by Source</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie
-                  data={customerPieData}
+                  data={sourceData}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -385,22 +398,20 @@ export default function AnalyticsPage() {
                   dataKey="value"
                   label={({ name, value }) => `${name}: ${value}`}
                 >
-                  {customerPieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  {sourceData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-            <div className="flex justify-center gap-4 mt-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[0] }} />
-                <span className="text-sm">New: {customerData.new}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[1] }} />
-                <span className="text-sm">Returning: {customerData.returning}</span>
-              </div>
+            <div className="flex justify-center gap-4 mt-4 flex-wrap">
+              {sourceData.map((entry, index) => (
+                <div key={entry.name} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SOURCE_COLORS[index % SOURCE_COLORS.length] }} />
+                  <span className="text-sm">{entry.name}: {entry.value}</span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

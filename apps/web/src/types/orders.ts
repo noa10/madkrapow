@@ -1,5 +1,7 @@
 export type OrderTab = "preparing" | "ready" | "upcoming" | "history"
 
+export type OrderSource = "web" | "telegram" | "whatsapp" | "mobile"
+
 export interface Order {
   id: string
   status: string
@@ -17,6 +19,8 @@ export interface Order {
   approval_status: string
   bulk_company_name: string | null
   item_count?: number
+  source: OrderSource
+  customer_id: string | null
 }
 
 export interface DateRange {

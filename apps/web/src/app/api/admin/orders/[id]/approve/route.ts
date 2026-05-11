@@ -113,6 +113,14 @@ export async function POST(
         new_value: { reason: review_notes || 'Order rejected' },
       })
 
+      // Notify bot customers of cancellation (best-effort, non-blocking)
+      try {
+        const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
+        await sendOrderStatusNotification(orderId, 'cancelled')
+      } catch {
+        // Notification failure must not break the order update
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Order rejected',

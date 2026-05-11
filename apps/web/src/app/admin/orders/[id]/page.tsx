@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { generateOrderDisplayCode } from "@/lib/utils/order-code";
@@ -42,6 +42,7 @@ interface Order {
   delivery_address_json: Record<string, unknown> | null;
   customer_phone: string | null;
   customer_name: string | null;
+  customer_id: string | null;
   driver_name: string | null;
   driver_phone: string | null;
   driver_plate_number: string | null;
@@ -63,6 +64,14 @@ interface Order {
   bulk_special_notes: string | null;
   bulk_dropoff_instructions: string | null;
   order_items: OrderItem[];
+  source: import("@/types/orders").OrderSource;
+}
+
+interface CustomerInfo {
+  id: string;
+  telegram_id: string | null;
+  whatsapp_id: string | null;
+  auth_user_id: string | null;
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
@@ -75,6 +84,13 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   delivered: { color: "bg-teal-100 text-teal-800", label: "Delivered" },
   completed: { color: "bg-teal-100 text-teal-800", label: "Completed" },
   cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
+};
+
+const SOURCE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  web: { icon: <Globe className="h-3 w-3" />, label: "Web", color: "bg-sky-100 text-sky-800" },
+  telegram: { icon: <MessageCircle className="h-3 w-3" />, label: "Telegram", color: "bg-blue-100 text-blue-800" },
+  whatsapp: { icon: <MessageSquare className="h-3 w-3" />, label: "WhatsApp", color: "bg-emerald-100 text-emerald-800" },
+  mobile: { icon: <Smartphone className="h-3 w-3" />, label: "Mobile", color: "bg-violet-100 text-violet-800" },
 };
 
 const ORDER_FLOW_STEPS: { key: string; label: string }[] = [
@@ -212,6 +228,7 @@ export default function AdminOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orderEvents, setOrderEvents] = useState<OrderEvent[]>([]);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
 
   useEffect(() => {
     const supabase = getBrowserClient();
@@ -235,6 +252,18 @@ export default function AdminOrderDetailPage() {
       }
 
       setOrder(data as unknown as Order);
+
+      const orderData = data as unknown as Order;
+      if (orderData.customer_id) {
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('id, telegram_id, whatsapp_id, auth_user_id')
+          .eq('id', orderData.customer_id)
+          .single();
+        if (customerData) {
+          setCustomerInfo(customerData as CustomerInfo);
+        }
+      }
 
       // Fetch shipment data
       const { data: shipmentData } = await supabase
@@ -339,10 +368,18 @@ export default function AdminOrderDetailPage() {
             System ID: {order.id}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           <Badge className={statusConfig.color}>
             {statusConfig.label}
           </Badge>
+          {SOURCE_CONFIG[order.source] && (
+            <Badge className={SOURCE_CONFIG[order.source].color}>
+              <span className="flex items-center gap-1">
+                {SOURCE_CONFIG[order.source].icon}
+                {SOURCE_CONFIG[order.source].label}
+              </span>
+            </Badge>
+          )}
           {order.delivery_type === 'self_pickup' && (
             <Badge variant="outline">Pickup</Badge>
           )}
@@ -624,6 +661,18 @@ export default function AdminOrderDetailPage() {
                   >
                     {order.customer_phone}
                   </a>
+                </div>
+              )}
+              {customerInfo?.telegram_id && (
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Telegram ID: {customerInfo.telegram_id}</span>
+                </div>
+              )}
+              {customerInfo?.whatsapp_id && (
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">WhatsApp ID: {customerInfo.whatsapp_id}</span>
                 </div>
               )}
             </CardContent>

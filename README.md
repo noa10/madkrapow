@@ -6,6 +6,29 @@ A food delivery web application built with Next.js, Supabase, and Stripe.
 
 See the project documentation in `docs/` for setup and architecture details.
 
+## Bot Ordering
+
+Customers can now order via Telegram and WhatsApp chat interfaces.
+
+- **Telegram Bot**: `/start` → browse menu → add items → enter address → pay via Stripe
+- **WhatsApp Bot**: Send any message → interactive list → select items → enter address → pay via Stripe
+
+See the documentation for details:
+- [Conversation Flows](docs/bot-conversation-flows.md)
+- [API Reference](docs/bot-api-reference.md)
+- [Deployment Guide](docs/bot-deployment.md)
+
+### Environment Variables
+
+```bash
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_WEBHOOK_SECRET=random_secret
+WHATSAPP_ACCESS_TOKEN=your_meta_access_token
+WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
+WHATSAPP_VERIFY_TOKEN=random_verify_token
+TELEGRAM_KITCHEN_GROUP_CHAT_ID=your_group_chat_id
+```
+
 ## Android Releases
 
 Mobile (`apps/mobile`) and merchant (`apps/merchant`) Android apps are released via `.github/workflows/android-release.yml`, triggered by app-scoped tags (`mobile-v*`, `merchant-v*`). See [`docs/android-release.md`](docs/android-release.md) for the secrets setup, keystore rotation, and release procedure.

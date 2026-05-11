@@ -80,6 +80,14 @@ export async function POST(
       actor_id: user.id,
     });
 
+    // Notify bot customers of status changes (best-effort, non-blocking)
+    try {
+      const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
+      await sendOrderStatusNotification(id, newStatus)
+    } catch {
+      // Notification failure must not break the order update
+    }
+
     return NextResponse.json({ success: true, status: newStatus });
   } catch (error) {
     console.error('[Status API] Unexpected error:', error);

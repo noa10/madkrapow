@@ -29,10 +29,12 @@ export default function AdminOrdersPage() {
   const caches = useAdminOrdersStore((s) => s.caches)
   const activeDateFilter = useAdminOrdersStore((s) => s.activeDateFilter)
   const customDateRange = useAdminOrdersStore((s) => s.customDateRange)
+  const sourceFilter = useAdminOrdersStore((s) => s.sourceFilter)
   const setActiveTab = useAdminOrdersStore((s) => s.setActiveTab)
   const setDateRange = useAdminOrdersStore((s) => s.setDateRange)
   const setActiveDateFilter = useAdminOrdersStore((s) => s.setActiveDateFilter)
   const setCustomDateRange = useAdminOrdersStore((s) => s.setCustomDateRange)
+  const setSourceFilter = useAdminOrdersStore((s) => s.setSourceFilter)
   const invalidateAllTabs = useAdminOrdersStore((s) => s.invalidateAllTabs)
 
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
@@ -82,6 +84,10 @@ export default function AdminOrdersPage() {
 
   const handleRefresh = () => {
     invalidateAllTabs()
+  }
+
+  const handleSourceFilterChange = (source: "all" | import("@/types/orders").OrderSource) => {
+    setSourceFilter(source)
   }
 
   const handleDateFilterChange = (value: "today" | "weekly" | "monthly" | "custom") => {
@@ -166,6 +172,8 @@ export default function AdminOrdersPage() {
           onRefresh={handleRefresh}
           orderCount={sortedOrders.length}
           realtimeConnected={realtimeConnected}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={handleSourceFilterChange}
         />
 
         {/* Sort header */}

@@ -304,6 +304,16 @@ async function handleStatusChange(
     // Email notification failure is non-fatal
   }
 
+  // Notify bot customers of delivery status changes (best-effort, non-blocking)
+  if (orderStatus) {
+    try {
+      const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
+      await sendOrderStatusNotification(shipment.order_id as string, orderStatus)
+    } catch {
+      // Notification failure must not break the webhook
+    }
+  }
+
   // If driver is assigned via ON_GOING status change, fetch driver details
   // (Lalamove v3 bundles driver assignment into ORDER_STATUS_CHANGED rather than
   // sending a separate DRIVER_ASSIGNED event)

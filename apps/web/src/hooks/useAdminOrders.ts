@@ -16,6 +16,7 @@ export interface AdminOrder {
   delivery_type: string;
   fulfillment_type: string;
   scheduled_for: string | null;
+  source: import("@/types/orders").OrderSource;
 }
 
 export function useAdminOrders() {

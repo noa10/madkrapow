@@ -1,8 +1,9 @@
 "use client"
 
-import { RefreshCw, Wifi, WifiOff } from "lucide-react"
+import { RefreshCw, Wifi, WifiOff, Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { OrderTab } from "@/types/orders"
+import type { OrderTab, OrderSource } from "@/types/orders"
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 
 interface AdminOrdersFilterBarProps {
   activeTab: OrderTab
@@ -10,6 +11,8 @@ interface AdminOrdersFilterBarProps {
   onRefresh: () => void
   orderCount: number
   realtimeConnected?: boolean
+  sourceFilter?: "all" | OrderSource
+  onSourceFilterChange?: (source: "all" | OrderSource) => void
 }
 
 const TABS: { value: OrderTab; label: string }[] = [
@@ -19,12 +22,22 @@ const TABS: { value: OrderTab; label: string }[] = [
   { value: "history", label: "History" },
 ]
 
+const SOURCE_OPTIONS: { value: "all" | OrderSource; label: string; icon: React.ReactNode }[] = [
+  { value: "all", label: "All Sources", icon: null },
+  { value: "web", label: "Web", icon: <Globe className="h-3.5 w-3.5" /> },
+  { value: "telegram", label: "Telegram", icon: <MessageCircle className="h-3.5 w-3.5" /> },
+  { value: "whatsapp", label: "WhatsApp", icon: <MessageSquare className="h-3.5 w-3.5" /> },
+  { value: "mobile", label: "Mobile", icon: <Smartphone className="h-3.5 w-3.5" /> },
+]
+
 export function AdminOrdersFilterBar({
   activeTab,
   onTabChange,
   onRefresh,
   orderCount,
   realtimeConnected = true,
+  sourceFilter = "all",
+  onSourceFilterChange,
 }: AdminOrdersFilterBarProps) {
   return (
     <div className="space-y-4">
@@ -47,6 +60,23 @@ export function AdminOrdersFilterBar({
           ))}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {onSourceFilterChange && (
+            <Select value={sourceFilter} onValueChange={(v) => onSourceFilterChange(v as "all" | OrderSource)}>
+              <SelectTrigger className="w-[140px] h-8 text-xs">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                {SOURCE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    <span className="flex items-center gap-2">
+                      {opt.icon}
+                      {opt.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <button
             onClick={onRefresh}
             className="rounded-lg p-2 text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"

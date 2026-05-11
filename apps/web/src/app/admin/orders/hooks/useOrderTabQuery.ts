@@ -5,11 +5,12 @@ import { getBrowserClient } from "@/lib/supabase/client"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import type { Order, OrderTab } from "@/types/orders"
 
-const ORDER_SELECT = "*, order_items(quantity)"
+const ORDER_SELECT = "*, order_items(quantity), source, customer_id"
 
 export function useOrderTabQuery(tab: OrderTab) {
   const dateRange = useAdminOrdersStore((s) => s.dateRange)
   const refetchTrigger = useAdminOrdersStore((s) => s.caches[tab].refetchTrigger)
+  const sourceFilter = useAdminOrdersStore((s) => s.sourceFilter)
   const setTabLoading = useAdminOrdersStore((s) => s.setTabLoading)
   const setTabOrders = useAdminOrdersStore((s) => s.setTabOrders)
   const setTabError = useAdminOrdersStore((s) => s.setTabError)
@@ -21,7 +22,6 @@ export function useOrderTabQuery(tab: OrderTab) {
     const fetchTabOrders = async () => {
       function withItemCount(orders: Order[]): Order[] {
         return orders.map((o: Order) => {
-           
           const any = o as any
           const items = (any.order_items as { quantity: number }[] | undefined) ?? []
           const { order_items, ...rest } = any
@@ -33,42 +33,57 @@ export function useOrderTabQuery(tab: OrderTab) {
       try {
         let orders: Order[] = []
 
+        const applySourceFilter = (query: any) => {
+          if (sourceFilter !== "all") {
+            return query.eq("source", sourceFilter)
+          }
+          return query
+        }
+
         if (tab === "preparing") {
-          const { data, error } = await supabase
+          let query = supabase
             .from("orders")
             .select(ORDER_SELECT)
             .in("status", ["pending", "paid", "preparing"])
             .eq("fulfillment_type", "asap")
             .order("created_at", { ascending: false })
             .limit(200)
+          query = applySourceFilter(query)
+          const { data, error } = await query
 
           if (error) throw error
           orders = withItemCount((data ?? []) as Order[])
         } else if (tab === "ready") {
-          const { data, error } = await supabase
+          let query = supabase
             .from("orders")
             .select(ORDER_SELECT)
             .eq("status", "ready")
             .eq("fulfillment_type", "asap")
             .order("created_at", { ascending: false })
             .limit(200)
+          query = applySourceFilter(query)
+          const { data, error } = await query
 
           if (error) throw error
           orders = withItemCount((data ?? []) as Order[])
         } else if (tab === "upcoming") {
           const [bulkRes, scheduledRes] = await Promise.all([
-            supabase
-              .from("orders")
-              .select(ORDER_SELECT)
-              .eq("order_kind", "bulk")
-              .order("created_at", { ascending: false })
-              .limit(200),
-            supabase
-              .from("orders")
-              .select(ORDER_SELECT)
-              .eq("fulfillment_type", "schedule")
-              .order("created_at", { ascending: false })
-              .limit(200),
+            applySourceFilter(
+              supabase
+                .from("orders")
+                .select(ORDER_SELECT)
+                .eq("order_kind", "bulk")
+                .order("created_at", { ascending: false })
+                .limit(200)
+            ),
+            applySourceFilter(
+              supabase
+                .from("orders")
+                .select(ORDER_SELECT)
+                .eq("fulfillment_type", "schedule")
+                .order("created_at", { ascending: false })
+                .limit(200)
+            ),
           ])
 
           if (bulkRes.error) throw bulkRes.error
@@ -88,7 +103,7 @@ export function useOrderTabQuery(tab: OrderTab) {
           if (!start || !end) {
             orders = []
           } else {
-            const { data, error } = await supabase
+            let query = supabase
               .from("orders")
               .select(ORDER_SELECT)
               .in("status", ["picked_up", "delivered", "cancelled", "completed"])
@@ -96,6 +111,8 @@ export function useOrderTabQuery(tab: OrderTab) {
               .lte("created_at", end)
               .order("created_at", { ascending: false })
               .limit(200)
+            query = applySourceFilter(query)
+            const { data, error } = await query
 
             if (error) throw error
             orders = withItemCount((data ?? []) as Order[])
@@ -119,5 +136,5 @@ export function useOrderTabQuery(tab: OrderTab) {
     }
     // Zustand setters are stable references; including them causes unnecessary re-subscriptions
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, dateRange.start, dateRange.end, refetchTrigger])
+  }, [tab, dateRange.start, dateRange.end, refetchTrigger, sourceFilter])
 }

@@ -44,7 +44,7 @@ void main() {
       expect(find.text('Select Date'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
       expect(find.text('Done'), findsOneWidget);
-      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      expect(find.byType(CupertinoPicker), findsOneWidget);
     });
 
     testWidgets('selecting new date updates provider', (tester) async {
@@ -76,7 +76,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // After Done, the sheet should close and provider still has a value
-      expect(find.byType(CupertinoDatePicker), findsNothing);
+      expect(find.byType(CupertinoPicker), findsNothing);
     });
   });
 }

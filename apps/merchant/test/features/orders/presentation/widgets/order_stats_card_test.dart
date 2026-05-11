@@ -62,11 +62,11 @@ void main() {
       expect(cancelledFinder, findsNWidgets(2));
     });
 
-    testWidgets('completed includes both completed and delivering',
+    testWidgets('completed includes both picked_up and delivered',
         (tester) async {
       final orders = [
-        _makeOrder(status: 'completed'),
-        _makeOrder(status: 'delivering'),
+        _makeOrder(status: 'picked_up'),
+        _makeOrder(status: 'delivered'),
         _makeOrder(status: 'cancelled'),
       ];
 

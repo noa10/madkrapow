@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { MenuSection } from "@/components/menu/MenuSection";
 import type { CategoryWithMenuItems } from "@/lib/queries/menu";
@@ -10,10 +11,25 @@ interface MenuViewProps {
   categories: CategoryWithMenuItems[];
 }
 
+function slugifyCategoryName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function MenuView({ categories }: MenuViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [promoPreviews, setPromoPreviews] = useState<Map<string, PromoPreview | null>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const didInitialScrollRef = useRef(false);
+
+  const categorySlugMap = new Map<string, CategoryWithMenuItems>();
+  categories.forEach((c) => categorySlugMap.set(slugifyCategoryName(c.name), c));
 
   useEffect(() => {
     let cancelled = false;
@@ -48,18 +64,27 @@ export function MenuView({ categories }: MenuViewProps) {
     return () => { cancelled = true; };
   }, [categories]);
 
-  // Scroll to #categories on mount if hash is present
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.location.hash === "#categories") {
-      const el = document.getElementById("categories");
-      if (el) {
-        setTimeout(() => {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 150);
-      }
-    }
-  }, []);
+    if (didInitialScrollRef.current) return;
+
+    const categorySlug = searchParams.get("category");
+    if (!categorySlug) return;
+
+    const category = categorySlugMap.get(categorySlug);
+    if (!category) return;
+
+    const element = document.getElementById(`category-${category.id}`);
+    if (!element) return;
+
+    didInitialScrollRef.current = true;
+    setTimeout(() => {
+      const offset = 80;
+      const top = element.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top, behavior: "smooth" });
+    }, 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, categories]);
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
@@ -90,26 +115,30 @@ export function MenuView({ categories }: MenuViewProps) {
     };
   }, [categories]);
 
-  const handleClick = (categoryId: string) => {
-    const element = document.getElementById(`category-${categoryId}`);
+  const handleClick = (category: CategoryWithMenuItems) => {
+    const element = document.getElementById(`category-${category.id}`);
     if (element) {
       const offset = 80;
       const top = element.getBoundingClientRect().top + window.scrollY - offset;
       window.scrollTo({ top, behavior: "smooth" });
     }
+    const slug = slugifyCategoryName(category.name);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("category", slug);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   return (
     <div className="min-h-screen bg-background">
       {categories.length > 0 && (
-        <div id="categories">
+        <div>
           <nav className="sticky top-16 z-40 backdrop-blur-md bg-background/80 border-b border-white/10 lg:top-0">
             <div className="max-w-7xl mx-auto px-4 w-full">
               <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
                 {categories.map((category) => (
                   <button
                     key={category.id}
-                    onClick={() => handleClick(category.id)}
+                    onClick={() => handleClick(category)}
                     className={cn(
                       "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
                       activeId === `category-${category.id}`

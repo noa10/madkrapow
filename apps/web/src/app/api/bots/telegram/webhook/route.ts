@@ -1,29 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
-import * as Sentry from '@sentry/nextjs'
 import {
   getOrCreateSession,
   updateState,
   addToCart,
-  clearSession,
+  removeFromCart,
   getCart,
+  clearSession,
   type BotSession,
   type CartItem,
   type CartModifier,
 } from '@/lib/bots/conversation'
 import {
   findOrCreateBotCustomer,
-  updateBotCustomerContact,
-  type BotContactInfo,
 } from '@/lib/bots/customer'
 import {
   getBotMenu,
   getBotItemWithModifiers,
-  formatBotMenuText,
   formatBotItemDetails,
-  type BotMenuCategory,
-  type BotMenuItem,
+  type BotItemWithAllModifiers,
 } from '@/lib/bots/menu'
 import {
   parseAddressInput,
@@ -37,7 +33,6 @@ import {
   getFreshBotSettings,
   isBotEnabled,
   getOperatingHoursForBot,
-  type BotSettings,
 } from '@/lib/bots/settings'
 import {
   sendTelegramMessage,
@@ -52,6 +47,7 @@ interface TelegramUser {
   first_name: string
   last_name?: string
   username?: string
+  language_code?: string
 }
 
 interface TelegramChat {
@@ -65,12 +61,16 @@ interface TelegramMessage {
   chat: TelegramChat
   date: number
   text?: string
+  entities?: Array<{ type: string; offset: number; length: number }>
 }
 
 interface TelegramCallbackQuery {
   id: string
   from: TelegramUser
-  message?: TelegramMessage
+  message?: {
+    message_id: number
+    chat: TelegramChat
+  }
   data?: string
 }
 
@@ -80,334 +80,750 @@ interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery
 }
 
-function getSupabase() {
+function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    throw new Error('Supabase not configured')
-  }
-  return createServerClient(url, key, {
-    cookies: { getAll() { return [] }, setAll() {} },
-  })
-}
 
-function escapeMarkdown(text: string): string {
-  return text
-    .replace(/_/g, '\\_')
-    .replace(/\*/g, '\\*')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/~/g, '\\~')
-    .replace(/`/g, '\\`')
-    .replace(/>/g, '\\>')
-    .replace(/#/g, '\\#')
-    .replace(/\+/g, '\\+')
-    .replace(/-/g, '\\-')
-    .replace(/=/g, '\\=')
-    .replace(/\|/g, '\\|')
-    .replace(/{/g, '\\{')
-    .replace(/}/g, '\\}')
-    .replace(/\./g, '\\.')
-    .replace(/!/g, '\\!')
+  if (!url || !key) {
+    throw new Error('[TelegramWebhook] Missing Supabase env vars')
+  }
+
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return []
+      },
+      setAll() {},
+    },
+  })
 }
 
 async function sendErrorMessage(chatId: number): Promise<void> {
-  await sendTelegramMessage(chatId, 'Sorry, something went wrong\. Please try /start again\.', {
-    parse_mode: 'MarkdownV2',
-  })
-}
-
-async function checkBotEnabled(settings: BotSettings | null, chatId: number): Promise<boolean> {
-  if (!isBotEnabled(settings, 'telegram')) {
-    await sendTelegramMessage(chatId, 'The bot is currently disabled\. Please try again later\.', {
-      parse_mode: 'MarkdownV2',
-    })
-    return false
+  try {
+    await sendTelegramMessage(
+      chatId,
+      'Sorry, something went wrong. Please try /start again.'
+    )
+  } catch (e) {
+    console.error('[TelegramWebhook] Failed to send error message:', e)
   }
-  return true
 }
 
-async function checkOperatingHours(settings: BotSettings | null, chatId: number): Promise<boolean> {
+function extractCommand(text: string): string | null {
+  const match = text.match(/^\/([a-zA-Z0-9_]+)(?:@\w+)?/)
+  return match ? match[1].toLowerCase() : null
+}
+
+function parseCallbackData(data: string): { action: string; args: string[] } {
+  const parts = data.split(':')
+  return { action: parts[0], args: parts.slice(1) }
+}
+
+function getUserDisplayName(user: TelegramUser): string {
+  return user.first_name + (user.last_name ? ` ${user.last_name}` : '')
+}
+
+async function checkBotAvailable(): Promise<{ ok: boolean; message?: string }> {
+  const settings = await getFreshBotSettings()
+
+  if (!isBotEnabled(settings, 'telegram')) {
+    return { ok: false, message: 'Bot is currently unavailable' }
+  }
+
   const hours = getOperatingHoursForBot(settings)
   if (!hours.isOpen) {
-    const openText = hours.open && hours.close
-      ? `We are closed\. Our hours are ${hours.open} \- ${hours.close}\.`
-      : 'Sorry, we are currently closed\.'
-    await sendTelegramMessage(chatId, openText, { parse_mode: 'MarkdownV2' })
-    return false
+    const msg = hours.open
+      ? `Sorry, we're closed. We open at ${hours.open}.`
+      : "Sorry, we're closed. Please check our operating hours."
+    return { ok: false, message: msg }
   }
-  return true
+
+  return { ok: true }
 }
 
-async function handleStart(chatId: number, user: TelegramUser, session: BotSession): Promise<void> {
-  await clearSession(session.id)
-  const name = escapeMarkdown(user.first_name)
-  const welcomeText = `Welcome to *Mad Krapow*, ${name}\! 👋\n\nOrder delicious Thai food directly from this chat\. Tap the button below to browse our menu\.`
+function formatCartText(cart: CartItem[]): string {
+  if (cart.length === 0) {
+    return 'Your cart is empty. Use /menu to browse items.'
+  }
+
+  const lines: string[] = ['*Your Cart*', '']
+  let total = 0
+
+  for (const item of cart) {
+    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
+    const unitPrice = item.priceCents + modifierTotal
+    const lineTotal = unitPrice * item.quantity
+    total += lineTotal
+
+    const modText = item.modifiers.length > 0
+      ? ` (${item.modifiers.map((m) => m.name).join(', ')})`
+      : ''
+
+    lines.push(`${item.name}${modText} x${item.quantity} — ${formatPriceCents(lineTotal)}`)
+  }
+
+  lines.push('')
+  lines.push(`*Total: ${formatPriceCents(total)}*`)
+
+  return lines.join('\n')
+}
+
+function formatOrderSummary(
+  cart: CartItem[],
+  address: Record<string, unknown> | null,
+  contact: Record<string, unknown> | null,
+  deliveryFeeCents: number
+): string {
+  const lines: string[] = ['*Order Summary*', '']
+
+  lines.push('*Items:*')
+  let subtotal = 0
+  for (const item of cart) {
+    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
+    const unitPrice = item.priceCents + modifierTotal
+    const lineTotal = unitPrice * item.quantity
+    subtotal += lineTotal
+
+    const modText = item.modifiers.length > 0
+      ? ` (${item.modifiers.map((m) => m.name).join(', ')})`
+      : ''
+
+    lines.push(`${item.name}${modText} x${item.quantity} — ${formatPriceCents(lineTotal)}`)
+  }
+
+  lines.push('')
+  lines.push(`*Subtotal:* ${formatPriceCents(subtotal)}`)
+  lines.push(`*Delivery:* ${formatPriceCents(deliveryFeeCents)}`)
+  lines.push(`*Total:* ${formatPriceCents(subtotal + deliveryFeeCents)}`)
+  lines.push('')
+
+  if (address) {
+    lines.push(`*Address:* ${formatAddressForBot(address as ParsedAddress)}`)
+  }
+
+  if (contact) {
+    const name = contact.name as string | undefined
+    const phone = contact.phone as string | undefined
+    if (name || phone) {
+      lines.push(`*Contact:* ${name || ''} ${phone || ''}`.trim())
+    }
+  }
+
+  return lines.join('\n')
+}
+
+async function handleStart(
+  chatId: number,
+  session: BotSession,
+  user: TelegramUser
+): Promise<void> {
+  const name = getUserDisplayName(user)
+  const welcomeText = `Welcome to Mad Krapow, ${name}! 🍽️\n\nOrder delicious food directly from this chat. Use the buttons below or type /menu to browse.`
+
+  const keyboard = buildInlineKeyboard([
+    [{ text: '📋 Browse Menu', callback_data: 'menu' }],
+    [{ text: '🛒 View Cart', callback_data: 'cart' }],
+    [{ text: '❓ Help', callback_data: 'help' }],
+  ])
 
   await sendTelegramMessage(chatId, welcomeText, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: buildInlineKeyboard([[{ text: '📋 Browse Menu', callback_data: 'menu' }]]),
+    parse_mode: 'Markdown',
+    reply_markup: keyboard,
   })
+
+  if (session.current_state !== 'browsing_menu') {
+    await updateState(session.id, 'browsing_menu')
+  }
 }
 
-async function handleMenu(chatId: number, session: BotSession): Promise<void> {
-  const supabase = getSupabase()
+async function handleMenu(chatId: number, _session: BotSession): Promise<void> {
+  const supabase = getServiceClient()
   const menu = await getBotMenu(supabase)
 
   if (menu.length === 0) {
-    await sendTelegramMessage(chatId, 'Our menu is currently empty\. Please check back later\.', {
-      parse_mode: 'MarkdownV2',
-    })
+    await sendTelegramMessage(chatId, 'Our menu is currently empty. Please check back later!')
     return
   }
-
-  await updateState(session.id, 'browsing_menu')
 
   const buttons: InlineKeyboardButton[][] = menu.map((category) => [
     { text: category.name, callback_data: `cat:${category.id}` },
   ])
+
   buttons.push([{ text: '🛒 View Cart', callback_data: 'cart' }])
 
-  const text = `*What would you like to order?*\n\n${escapeMarkdown(formatBotMenuText(menu))}`
-
-  await sendTelegramMessage(chatId, text, {
-    parse_mode: 'MarkdownV2',
+  await sendTelegramMessage(chatId, '*Our Menu*\n\nSelect a category:', {
+    parse_mode: 'Markdown',
     reply_markup: buildInlineKeyboard(buttons, { columns: 2 }),
   })
 }
 
-async function handleCategory(chatId: number, categoryId: string, session: BotSession): Promise<void> {
-  const supabase = getSupabase()
+async function handleCart(chatId: number, session: BotSession): Promise<void> {
+  const cart = await getCart(session.id)
+  const text = formatCartText(cart)
+
+  const buttons: InlineKeyboardButton[][] = []
+
+  for (let i = 0; i < cart.length; i++) {
+    buttons.push([
+      { text: `➖`, callback_data: `dec:${i}` },
+      { text: `${cart[i].quantity}`, callback_data: '_' },
+      { text: `➕`, callback_data: `inc:${i}` },
+    ])
+    buttons.push([
+      { text: `🗑️ Remove ${cart[i].name}`, callback_data: `rem:${i}` },
+    ])
+  }
+
+  buttons.push([
+    { text: '📋 Add More Items', callback_data: 'menu' },
+    { text: '💳 Proceed to Checkout', callback_data: 'checkout' },
+  ])
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: buildInlineKeyboard(buttons),
+  })
+
+  if (session.current_state !== 'viewing_cart') {
+    await updateState(session.id, 'viewing_cart')
+  }
+}
+
+async function handleStatus(chatId: number, user: TelegramUser): Promise<void> {
+  try {
+    const supabase = getServiceClient()
+    const customer = await findOrCreateBotCustomer('telegram', String(chatId), {
+      name: getUserDisplayName(user),
+    })
+
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('order_number, status, total_cents, created_at')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .limit(3)
+
+    if (error || !orders || orders.length === 0) {
+      await sendTelegramMessage(chatId, 'You have no recent orders. Use /menu to place your first order!')
+      return
+    }
+
+    const lines: string[] = ['*Recent Orders*', '']
+    for (const order of orders) {
+      lines.push(`#${order.order_number} — ${order.status.toUpperCase()}`)
+      lines.push(`Total: ${formatPriceCents(order.total_cents)}`)
+      lines.push('')
+    }
+
+    await sendTelegramMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' })
+  } catch (e) {
+    console.error('[TelegramWebhook] Status error:', e)
+    await sendTelegramMessage(chatId, 'Unable to fetch order status. Please try again later.')
+  }
+}
+
+async function handleHelp(chatId: number): Promise<void> {
+  const text = [
+    '*Mad Krapow Bot Commands*',
+    '',
+    '/start — Start ordering',
+    '/menu — Browse menu categories',
+    '/cart — View and manage your cart',
+    '/status — Check recent order status',
+    '/help — Show this help message',
+    '/cancel — Clear your current session',
+    '',
+    'Simply follow the prompts to place your order!',
+  ].join('\n')
+
+  await sendTelegramMessage(chatId, text, { parse_mode: 'Markdown' })
+}
+
+async function handleCancel(chatId: number, session: BotSession): Promise<void> {
+  await clearSession(session.id)
+  await sendTelegramMessage(
+    chatId,
+    'Your session has been cleared. Use /start or /menu to begin again.'
+  )
+}
+
+async function handleAddressInput(
+  chatId: number,
+  session: BotSession,
+  text: string
+): Promise<void> {
+  const parsed = parseAddressInput(text)
+  const supabase = getServiceClient()
+
+  const validation = await validateAddress(supabase, parsed)
+  if (!validation.valid) {
+    const errorText = [
+      '❌ Address validation failed:',
+      ...validation.errors,
+      '',
+      'Please send a valid delivery address including:',
+      '• Street address',
+      '• City (Shah Alam)',
+      '• State (Selangor)',
+      '• Postal code',
+    ].join('\n')
+
+    await sendTelegramMessage(chatId, errorText)
+    return
+  }
+
+  let lat: number | undefined
+  let lng: number | undefined
+  try {
+    const geocodeResult = await geocodeAddress(parsed)
+    if (geocodeResult) {
+      lat = geocodeResult.latitude
+      lng = geocodeResult.longitude
+    }
+  } catch (e) {
+    console.error('[TelegramWebhook] Geocoding failed:', e)
+  }
+
+  if (lat !== undefined && lng !== undefined) {
+    const inZone = await isWithinDeliveryZone(supabase, lat, lng)
+    if (!inZone) {
+      await sendTelegramMessage(
+        chatId,
+        'Sorry, your address is outside our delivery zone. We currently only deliver within Shah Alam. Please enter a different address or type /cancel to start over.'
+      )
+      return
+    }
+  }
+
+  const addressWithCoords = {
+    ...parsed,
+    latitude: lat,
+    longitude: lng,
+  }
+
+  await updateState(session.id, 'entering_contact', {
+    address: addressWithCoords,
+  })
+
+  await sendTelegramMessage(
+    chatId,
+    '✅ Address confirmed!\n\nPlease send your name and phone number (e.g., *John Doe +60123456789*).',
+    { parse_mode: 'Markdown' }
+  )
+}
+
+function extractPhoneFromText(text: string): { phone?: string; remainder: string } {
+  const phoneMatch = text.match(/(?:\+?60|0)[\d\s-]{8,12}/)
+  if (phoneMatch) {
+    const phone = phoneMatch[0].replace(/[\s-]/g, '')
+    const remainder = text.replace(phoneMatch[0], '').trim().replace(/^[,-]\s*/, '')
+    return { phone, remainder }
+  }
+  return { remainder: text }
+}
+
+async function handleContactInput(
+  chatId: number,
+  session: BotSession,
+  text: string,
+  user: TelegramUser
+): Promise<void> {
+  const { phone, remainder } = extractPhoneFromText(text)
+  const name = remainder.trim() || getUserDisplayName(user)
+
+  const contact = {
+    name,
+    phone: phone || undefined,
+  }
+
+  try {
+    await findOrCreateBotCustomer('telegram', String(chatId), contact)
+  } catch (e) {
+    console.error('[TelegramWebhook] Failed to update customer:', e)
+  }
+
+  await updateState(session.id, 'confirming_order', {
+    contact: { name, phone: phone || null },
+  })
+
+  const cart = await getCart(session.id)
+  const supabase = getServiceClient()
+
+  const { data: storeSettings } = await supabase
+    .from('store_settings')
+    .select('delivery_fee')
+    .limit(1)
+    .single()
+
+  const deliveryFeeCents = storeSettings?.delivery_fee ?? 0
+  const summary = formatOrderSummary(cart, session.address_json, { name, phone: phone || null }, deliveryFeeCents)
+
+  const keyboard = buildInlineKeyboard([
+    [{ text: '🔒 Confirm & Pay', callback_data: 'confirm' }],
+    [{ text: '🛒 Back to Cart', callback_data: 'cart' }],
+    [{ text: '📋 Add More Items', callback_data: 'menu' }],
+  ])
+
+  await sendTelegramMessage(chatId, summary, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard,
+  })
+}
+
+async function handleCategoryCallback(
+  chatId: number,
+  _session: BotSession,
+  categoryId: string
+): Promise<void> {
+  const supabase = getServiceClient()
   const menu = await getBotMenu(supabase)
   const category = menu.find((c) => c.id === categoryId)
 
   if (!category || category.items.length === 0) {
-    await sendTelegramMessage(chatId, 'This category is empty\. Please choose another\.', {
-      parse_mode: 'MarkdownV2',
-    })
+    await sendTelegramMessage(chatId, 'This category is empty. Please try another.')
     return
   }
 
   const buttons: InlineKeyboardButton[][] = category.items.map((item) => [
     { text: `${item.name} — ${formatPriceCents(item.price_cents)}`, callback_data: `item:${item.id}` },
   ])
+
   buttons.push([{ text: '⬅️ Back to Categories', callback_data: 'menu' }])
 
-  const text = `*${escapeMarkdown(category.name)}*\n\nTap an item to add it to your cart\.`
-
-  await sendTelegramMessage(chatId, text, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: buildInlineKeyboard(buttons),
-  })
+  await sendTelegramMessage(
+    chatId,
+    `*${category.name}*\n\nTap an item to view details:`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: buildInlineKeyboard(buttons),
+    }
+  )
 }
 
-async function handleItem(chatId: number, itemId: string, session: BotSession): Promise<void> {
-  const supabase = getSupabase()
+async function handleItemCallback(
+  chatId: number,
+  session: BotSession,
+  itemId: string
+): Promise<void> {
+  const supabase = getServiceClient()
   const item = await getBotItemWithModifiers(supabase, itemId)
 
   if (!item) {
-    await sendTelegramMessage(chatId, 'Item not found\. Please try again\.', {
-      parse_mode: 'MarkdownV2',
-    })
+    await sendTelegramMessage(chatId, 'Sorry, that item is no longer available.')
     return
   }
 
   if (!item.is_available) {
-    await sendTelegramMessage(chatId, `*${escapeMarkdown(item.name)}* is currently unavailable\.`, {
-      parse_mode: 'MarkdownV2',
+    await sendTelegramMessage(chatId, `*${item.name}* is currently unavailable.`, {
+      parse_mode: 'Markdown',
     })
     return
   }
 
-  if (item.modifier_groups.length > 0) {
+  const details = formatBotItemDetails(item)
+
+  if (item.modifier_groups.length === 0) {
+    const keyboard = buildInlineKeyboard([
+      [{ text: '🛒 Add to Cart', callback_data: `add:${item.id}` }],
+      [{ text: '📋 Back to Menu', callback_data: 'menu' }],
+    ])
+
+    await sendTelegramMessage(chatId, details, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    })
+  } else {
     await updateState(session.id, 'selecting_modifiers', {
-      selectedItemId: itemId,
+      selectedItemId: item.id,
       selectedModifierGroupIndex: 0,
     })
 
-    const group = item.modifier_groups[0]
-    const buttons: InlineKeyboardButton[][] = group.modifiers
-      .filter((m) => m.is_available)
-      .map((mod) => [
-        {
-          text: `${mod.name}${mod.price_delta_cents > 0 ? ` (+${formatPriceCents(mod.price_delta_cents)})` : ''}`,
-          callback_data: `mod:${mod.id}`,
-        },
-      ])
-    buttons.push([{ text: '❌ Cancel', callback_data: 'menu' }])
-
-    const text = `*${escapeMarkdown(item.name)}*\n${formatPriceCents(item.price_cents)}\n\n*Select ${escapeMarkdown(group.name)}:*`
-
-    await sendTelegramMessage(chatId, text, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: buildInlineKeyboard(buttons),
-    })
-  } else {
-    const cartItem: CartItem = {
-      menuItemId: item.id,
-      name: item.name,
-      priceCents: item.price_cents,
-      quantity: 1,
-      modifiers: [],
-    }
-
-    await addToCart(session.id, cartItem)
-    await updateState(session.id, 'viewing_cart')
-
-    const text = `Added *${escapeMarkdown(item.name)}* to your cart\!`
-    const buttons: InlineKeyboardButton[][] = [
-      [{ text: '🛒 View Cart', callback_data: 'cart' }],
-      [{ text: '➕ Add More', callback_data: 'menu' }],
-    ]
-
-    await sendTelegramMessage(chatId, text, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: buildInlineKeyboard(buttons),
-    })
+    await showModifierGroup(chatId, item, 0, [])
   }
 }
 
-async function handleModifier(
+async function showModifierGroup(
   chatId: number,
-  modifierId: string,
-  session: BotSession
+  item: BotItemWithAllModifiers,
+  groupIndex: number,
+  selectedModifierIds: string[]
 ): Promise<void> {
-  const supabase = getSupabase()
-  const item = await getBotItemWithModifiers(supabase, session.selected_item_id || '')
-
-  if (!item || !session.selected_item_id) {
-    await sendTelegramMessage(chatId, 'Session expired\. Please start over with /start\.', {
-      parse_mode: 'MarkdownV2',
-    })
+  const group = item.modifier_groups[groupIndex]
+  if (!group) {
+    await addItemToCartWithModifiers(chatId, item, selectedModifierIds)
     return
   }
 
-  const selectedGroupIndex = session.selected_modifier_group_index ?? 0
-  const group = item.modifier_groups[selectedGroupIndex]
-  const modifier = group?.modifiers.find((m) => m.id === modifierId)
-
-  if (!modifier) {
-    await sendTelegramMessage(chatId, 'Modifier not found\. Please try again\.', {
-      parse_mode: 'MarkdownV2',
-    })
-    return
-  }
-
-  const existingCart = await getCart(session.id)
-  const existingItemIndex = existingCart.findIndex(
-    (ci) =>
-      ci.menuItemId === session.selected_item_id &&
-      ci.modifiers.some((m) => m.modifierId === modifierId)
-  )
-
-  const cartModifiers: CartModifier[] =
-    existingItemIndex >= 0
-      ? existingCart[existingItemIndex].modifiers
-      : []
-
-  const newModifiers = [...cartModifiers, { modifierId: modifier.id, name: modifier.name, priceDeltaCents: modifier.price_delta_cents }]
-
-  const nextGroupIndex = selectedGroupIndex + 1
-  if (nextGroupIndex < item.modifier_groups.length) {
-    await updateState(session.id, 'selecting_modifiers', {
-      selectedModifierGroupIndex: nextGroupIndex,
-    })
-
-    const nextGroup = item.modifier_groups[nextGroupIndex]
-    const buttons: InlineKeyboardButton[][] = nextGroup.modifiers
-      .filter((m) => m.is_available)
-      .map((mod) => [
-        {
-          text: `${mod.name}${mod.price_delta_cents > 0 ? ` (+${formatPriceCents(mod.price_delta_cents)})` : ''}`,
-          callback_data: `mod:${mod.id}`,
-        },
-      ])
-    buttons.push([{ text: '❌ Cancel', callback_data: 'menu' }])
-
-    const text = `*${escapeMarkdown(item.name)}*\n*Select ${escapeMarkdown(nextGroup.name)}:*`
-
-    await sendTelegramMessage(chatId, text, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: buildInlineKeyboard(buttons),
-    })
-  } else {
-    const cartItem: CartItem = {
-      menuItemId: item.id,
-      name: item.name,
-      priceCents: item.price_cents,
-      quantity: 1,
-      modifiers: newModifiers,
-    }
-
-    await addToCart(session.id, cartItem)
-    await updateState(session.id, 'viewing_cart')
-
-    const text = `Added *${escapeMarkdown(item.name)}* to your cart\!`
-    const buttons: InlineKeyboardButton[][] = [
-      [{ text: '🛒 View Cart', callback_data: 'cart' }],
-      [{ text: '➕ Add More', callback_data: 'menu' }],
-    ]
-
-    await sendTelegramMessage(chatId, text, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: buildInlineKeyboard(buttons),
-    })
-  }
-}
-
-async function handleCart(chatId: number, session: BotSession): Promise<void> {
-  const cart = await getCart(session.id)
-
-  if (cart.length === 0) {
-    await sendTelegramMessage(chatId, 'Your cart is empty\. Tap below to browse the menu\.', {
-      parse_mode: 'MarkdownV2',
-      reply_markup: buildInlineKeyboard([[{ text: '📋 Browse Menu', callback_data: 'menu' }]]),
-    })
-    return
-  }
-
-  await updateState(session.id, 'viewing_cart')
-
-  let totalCents = 0
-  const lines: string[] = ['*Your Cart*']
-
-  cart.forEach((item, index) => {
-    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
-    const unitPrice = item.priceCents + modifierTotal
-    const lineTotal = unitPrice * item.quantity
-    totalCents += lineTotal
-
-    const modifierText = item.modifiers.length > 0
-      ? ` (${item.modifiers.map((m) => m.name).join(', ')})`
-      : ''
-
-    lines.push(`${index + 1}\. ${escapeMarkdown(item.name)}${escapeMarkdown(modifierText)} x${item.quantity}`)
-    lines.push(`   ${formatPriceCents(lineTotal)}`)
-  })
-
-  lines.push('')
-  lines.push(`*Total: ${formatPriceCents(totalCents)}*`)
-
-  const buttons: InlineKeyboardButton[][] = [
-    [{ text: '✅ Proceed to Checkout', callback_data: 'checkout' }],
-    [{ text: '➕ Add More Items', callback_data: 'menu' }],
-    [{ text: '🗑️ Clear Cart', callback_data: 'cancel' }],
+  const lines: string[] = [
+    `*${item.name}*`,
+    '',
+    `*${group.name}*${group.is_required ? ' (Required)' : ''}`,
+    `Pick ${group.min_selections}${group.max_selections > group.min_selections ? `-${group.max_selections}` : ''}`,
+    '',
   ]
 
+  const buttons: InlineKeyboardButton[][] = []
+
+  for (const mod of group.modifiers) {
+    if (!mod.is_available) continue
+
+    const priceTag = mod.price_delta_cents > 0 ? ` (+${formatPriceCents(mod.price_delta_cents)})` : ''
+    const prevMods = selectedModifierIds.join(',')
+
+    buttons.push([
+      {
+        text: `${mod.name}${priceTag}`,
+        callback_data: `modsel:${item.id}:${groupIndex}:${prevMods}:${mod.id}`,
+      },
+    ])
+  }
+
+  if (!group.is_required) {
+    const prevMods = selectedModifierIds.join(',')
+    buttons.push([
+      {
+        text: '⏭️ Skip',
+        callback_data: `modskip:${item.id}:${groupIndex}:${prevMods}`,
+      },
+    ])
+  }
+
+  buttons.push([{ text: '❌ Cancel', callback_data: 'menu' }])
+
   await sendTelegramMessage(chatId, lines.join('\n'), {
-    parse_mode: 'MarkdownV2',
+    parse_mode: 'Markdown',
     reply_markup: buildInlineKeyboard(buttons),
   })
 }
 
-async function handleCheckout(chatId: number, session: BotSession): Promise<void> {
-  const cart = await getCart(session.id)
-  if (cart.length === 0) {
-    await sendTelegramMessage(chatId, 'Your cart is empty\. Please add items first\.', {
-      parse_mode: 'MarkdownV2',
+async function handleModifierSelection(
+  chatId: number,
+  session: BotSession,
+  itemId: string,
+  groupIndex: number,
+  prevSelectedModsCsv: string,
+  modifierId: string
+): Promise<void> {
+  const supabase = getServiceClient()
+  const item = await getBotItemWithModifiers(supabase, itemId)
+
+  if (!item) {
+    await sendTelegramMessage(chatId, 'Sorry, that item is no longer available.')
+    return
+  }
+
+  const selectedModifierIds = prevSelectedModsCsv ? prevSelectedModsCsv.split(',') : []
+  selectedModifierIds.push(modifierId)
+
+  const nextGroupIndex = groupIndex + 1
+
+  if (nextGroupIndex < item.modifier_groups.length) {
+    await updateState(session.id, 'selecting_modifiers', {
+      selectedItemId: itemId,
+      selectedModifierGroupIndex: nextGroupIndex,
     })
+    await showModifierGroup(chatId, item, nextGroupIndex, selectedModifierIds)
+  } else {
+    await addItemToCartWithModifiers(chatId, item, selectedModifierIds)
+    await updateState(session.id, 'browsing_menu')
+  }
+}
+
+async function handleModifierSkip(
+  chatId: number,
+  session: BotSession,
+  itemId: string,
+  groupIndex: number,
+  prevSelectedModsCsv: string
+): Promise<void> {
+  const supabase = getServiceClient()
+  const item = await getBotItemWithModifiers(supabase, itemId)
+
+  if (!item) {
+    await sendTelegramMessage(chatId, 'Sorry, that item is no longer available.')
+    return
+  }
+
+  const selectedModifierIds = prevSelectedModsCsv ? prevSelectedModsCsv.split(',') : []
+  const nextGroupIndex = groupIndex + 1
+
+  if (nextGroupIndex < item.modifier_groups.length) {
+    await updateState(session.id, 'selecting_modifiers', {
+      selectedItemId: itemId,
+      selectedModifierGroupIndex: nextGroupIndex,
+    })
+    await showModifierGroup(chatId, item, nextGroupIndex, selectedModifierIds)
+  } else {
+    await addItemToCartWithModifiers(chatId, item, selectedModifierIds)
+    await updateState(session.id, 'browsing_menu')
+  }
+}
+
+async function addItemToCartWithModifiers(
+  chatId: number,
+  item: BotItemWithAllModifiers,
+  selectedModifierIds: string[]
+): Promise<void> {
+  const modifiers: CartModifier[] = []
+  for (const modId of selectedModifierIds) {
+    for (const group of item.modifier_groups) {
+      const mod = group.modifiers.find((m) => m.id === modId)
+      if (mod) {
+        modifiers.push({
+          modifierId: mod.id,
+          name: mod.name,
+          priceDeltaCents: mod.price_delta_cents,
+        })
+        break
+      }
+    }
+  }
+
+  const modifierTotal = modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
+  const totalPrice = formatPriceCents(item.price_cents + modifierTotal)
+
+  const keyboard = buildInlineKeyboard([
+    [{ text: '📋 Continue Shopping', callback_data: 'menu' }],
+    [{ text: '🛒 View Cart', callback_data: 'cart' }],
+  ])
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ *${item.name}* added to cart (${totalPrice})`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    }
+  )
+}
+
+async function handleAddToCart(
+  chatId: number,
+  session: BotSession,
+  itemId: string,
+  modifierIds: string[] = []
+): Promise<void> {
+  const supabase = getServiceClient()
+  const item = await getBotItemWithModifiers(supabase, itemId)
+
+  if (!item || !item.is_available) {
+    await sendTelegramMessage(chatId, 'Sorry, that item is no longer available.')
+    return
+  }
+
+  const modifiers: CartModifier[] = []
+  for (const modId of modifierIds) {
+    for (const group of item.modifier_groups) {
+      const mod = group.modifiers.find((m) => m.id === modId)
+      if (mod) {
+        modifiers.push({
+          modifierId: mod.id,
+          name: mod.name,
+          priceDeltaCents: mod.price_delta_cents,
+        })
+        break
+      }
+    }
+  }
+
+  const cartItem: CartItem = {
+    menuItemId: item.id,
+    name: item.name,
+    priceCents: item.price_cents,
+    quantity: 1,
+    modifiers,
+  }
+
+  await addToCart(session.id, cartItem)
+
+  const modifierTotal = modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
+  const totalPrice = formatPriceCents(item.price_cents + modifierTotal)
+
+  const keyboard = buildInlineKeyboard([
+    [{ text: '📋 Continue Shopping', callback_data: 'menu' }],
+    [{ text: '🛒 View Cart', callback_data: 'cart' }],
+  ])
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ *${item.name}* added to cart (${totalPrice})`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    }
+  )
+
+  await updateState(session.id, 'browsing_menu')
+}
+
+async function handleCartIncrement(
+  chatId: number,
+  session: BotSession,
+  index: number
+): Promise<void> {
+  const cart = await getCart(session.id)
+
+  if (index < 0 || index >= cart.length) {
+    await sendTelegramMessage(chatId, 'Item not found in cart.')
+    return
+  }
+
+  const item = cart[index]
+  const newItem: CartItem = { ...item, quantity: item.quantity + 1 }
+
+  await removeFromCart(session.id, index)
+  await addToCart(session.id, newItem)
+
+  await handleCart(chatId, session)
+}
+
+async function handleCartDecrement(
+  chatId: number,
+  session: BotSession,
+  index: number
+): Promise<void> {
+  const cart = await getCart(session.id)
+
+  if (index < 0 || index >= cart.length) {
+    await sendTelegramMessage(chatId, 'Item not found in cart.')
+    return
+  }
+
+  const item = cart[index]
+
+  if (item.quantity <= 1) {
+    await removeFromCart(session.id, index)
+  } else {
+    const newItem: CartItem = { ...item, quantity: item.quantity - 1 }
+    await removeFromCart(session.id, index)
+    await addToCart(session.id, newItem)
+  }
+
+  await handleCart(chatId, session)
+}
+
+async function handleCartRemove(
+  chatId: number,
+  session: BotSession,
+  index: number
+): Promise<void> {
+  try {
+    await removeFromCart(session.id, index)
+  } catch (e) {
+    console.error('[TelegramWebhook] Remove from cart failed:', e)
+  }
+
+  await handleCart(chatId, session)
+}
+
+async function handleCheckoutCallback(
+  chatId: number,
+  session: BotSession
+): Promise<void> {
+  const cart = await getCart(session.id)
+
+  if (cart.length === 0) {
+    await sendTelegramMessage(chatId, 'Your cart is empty. Use /menu to add items.')
     return
   }
 
@@ -415,438 +831,291 @@ async function handleCheckout(chatId: number, session: BotSession): Promise<void
 
   await sendTelegramMessage(
     chatId,
-    'Please enter your delivery address\n\n*Format:*\nHouse/Unit, Street, City, State, Postal Code\n\n_Example: 12A, Jalan Universiti, Shah Alam, Selangor, 40150_',
-    { parse_mode: 'MarkdownV2' }
+    'Please send your delivery address. Include:\n• Street address\n• City (Shah Alam)\n• State (Selangor)\n• Postal code'
   )
 }
 
-async function handleAddressInput(chatId: number, text: string, session: BotSession): Promise<void> {
-  const supabase = getSupabase()
-  const parsed = parseAddressInput(text)
-  const validation = await validateAddress(supabase, parsed)
-
-  if (!validation.valid) {
-    const errorText = validation.errors.map((e) => `• ${e}`).join('\n')
-    await sendTelegramMessage(
-      chatId,
-      `*Address validation failed:*\n${escapeMarkdown(errorText)}\n\nPlease try again with a complete address\n\n_Example: 12A, Jalan Universiti, Shah Alam, Selangor, 40150_`,
-      { parse_mode: 'MarkdownV2' }
-    )
-    return
-  }
-
-  try {
-    const geocode = await geocodeAddress(parsed)
-    if (geocode) {
-      const inZone = await isWithinDeliveryZone(supabase, geocode.latitude, geocode.longitude)
-      if (!inZone) {
-        await sendTelegramMessage(
-          chatId,
-          'Sorry, your address is outside our delivery zone\. We currently only deliver within Shah Alam, Selangor\.', {
-            parse_mode: 'MarkdownV2',
-          }
-        )
-        return
-      }
-    }
-  } catch {
-    // Geocoding failed, continue with address validation only
-  }
-
-  await updateState(session.id, 'entering_contact', {
-    address: parsed as unknown as Record<string, unknown>,
-  })
-
-  await sendTelegramMessage(
-    chatId,
-    'Great\! Now please provide your name and phone number\n\n*Format:*\nName \| Phone\n\n_Example: Ahmad \| +60123456789_',
-    { parse_mode: 'MarkdownV2' }
-  )
-}
-
-async function handleContactInput(chatId: number, text: string, session: BotSession): Promise<void> {
-  const parts = text.split('|').map((p) => p.trim())
-  const name = parts[0]
-  const phone = parts[1] || ''
-
-  if (!name || !phone) {
-    await sendTelegramMessage(
-      chatId,
-      'Please provide both name and phone number\n\n*Format:*\nName \| Phone\n\n_Example: Ahmad \| +60123456789_',
-      { parse_mode: 'MarkdownV2' }
-    )
-    return
-  }
-
-  const phoneRegex = /^\+?\d{10,15}$/
-  if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
-    await sendTelegramMessage(
-      chatId,
-      'Please enter a valid phone number\n\n_Example: +60123456789_',
-      { parse_mode: 'MarkdownV2' }
-    )
-    return
-  }
-
-  await updateState(session.id, 'confirming_order', {
-    contact: { name, phone },
-  })
-
+async function handleConfirmCallback(
+  chatId: number,
+  session: BotSession
+): Promise<void> {
   const cart = await getCart(session.id)
-  let subtotalCents = 0
-  const lines: string[] = ['*Order Summary*']
 
-  cart.forEach((item) => {
-    const modifierTotal = item.modifiers.reduce((sum, m) => sum + m.priceDeltaCents, 0)
-    const unitPrice = item.priceCents + modifierTotal
-    const lineTotal = unitPrice * item.quantity
-    subtotalCents += lineTotal
-
-    const modifierText = item.modifiers.length > 0
-      ? ` (${item.modifiers.map((m) => m.name).join(', ')})`
-      : ''
-
-    lines.push(`${escapeMarkdown(item.name)}${escapeMarkdown(modifierText)} x${item.quantity} — ${formatPriceCents(lineTotal)}`)
-  })
-
-  const deliveryFeeCents = 0
-  const totalCents = subtotalCents + deliveryFeeCents
-
-  lines.push('')
-  lines.push(`Subtotal: ${formatPriceCents(subtotalCents)}`)
-  lines.push(`Delivery: ${formatPriceCents(deliveryFeeCents)}`)
-  lines.push(`*Total: ${formatPriceCents(totalCents)}*`)
-
-  const address = session.address_json as ParsedAddress | null
-  if (address) {
-    lines.push('')
-    lines.push(`*Delivery to:*\n${escapeMarkdown(formatAddressForBot(address))}`)
-  }
-
-  const buttons: InlineKeyboardButton[][] = [
-    [{ text: '💳 Confirm & Pay', callback_data: 'confirm_pay' }],
-    [{ text: '❌ Cancel', callback_data: 'cancel' }],
-  ]
-
-  await sendTelegramMessage(chatId, lines.join('\n'), {
-    parse_mode: 'MarkdownV2',
-    reply_markup: buildInlineKeyboard(buttons),
-  })
-}
-
-async function handleConfirmPay(chatId: number, user: TelegramUser, session: BotSession): Promise<void> {
-  const cart = await getCart(session.id)
   if (cart.length === 0) {
-    await sendTelegramMessage(chatId, 'Your cart is empty\. Please add items first\.', {
-      parse_mode: 'MarkdownV2',
-    })
+    await sendTelegramMessage(chatId, 'Your cart is empty. Use /menu to add items.')
     return
   }
 
-  const address = session.address_json as ParsedAddress | null
-  const contact = session.contact_json as { name?: string; phone?: string } | null
-
-  if (!address || !contact?.name || !contact?.phone) {
-    await sendTelegramMessage(chatId, 'Missing address or contact info\. Please start over with /start\.', {
-      parse_mode: 'MarkdownV2',
-    })
+  if (!session.address_json) {
+    await sendTelegramMessage(chatId, 'Please provide a delivery address first.')
+    await updateState(session.id, 'entering_address')
     return
   }
 
-  const customer = await findOrCreateBotCustomer('telegram', String(user.id), {
-    name: contact.name,
-    phone: contact.phone,
-  })
+  if (!session.contact_json) {
+    await sendTelegramMessage(chatId, 'Please provide your contact details first.')
+    await updateState(session.id, 'entering_contact')
+    return
+  }
 
-  await updateBotCustomerContact(customer.id, {
-    name: contact.name,
-    phone: contact.phone,
-  })
+  const contactName = (session.contact_json.name as string) || 'Customer'
+  const contactPhone = (session.contact_json.phone as string) || ''
 
-  const checkoutPayload = {
-    customerId: customer.id,
-    items: cart.map((item) => ({
-      id: item.menuItemId,
-      name: item.name,
-      quantity: item.quantity,
-      price_cents: item.priceCents,
-      modifiers: item.modifiers.map((m) => ({
-        id: m.modifierId,
-        name: m.name,
-        price_delta_cents: m.priceDeltaCents,
-      })),
-    })),
-    deliveryAddress: {
-      fullName: contact.name,
-      phone: contact.phone,
-      address: formatAddressForBot(address),
-      city: address.city || 'Shah Alam',
-      state: address.state || 'Selangor',
-      postalCode: address.postal_code || '',
-      latitude: 0,
-      longitude: 0,
-    },
-    deliveryFee: 0,
+  const items = cart.map((item) => ({
+    menuItemId: item.menuItemId,
+    quantity: item.quantity,
+    modifiers: item.modifiers.map((m) => ({ modifierId: m.modifierId })),
+  }))
+
+  const deliveryAddress = {
+    address_line1: String(session.address_json.address_line1 || ''),
+    address_line2: session.address_json.address_line2
+      ? String(session.address_json.address_line2)
+      : undefined,
+    city: String(session.address_json.city || ''),
+    state: String(session.address_json.state || ''),
+    postal_code: String(session.address_json.postal_code || ''),
+    latitude: session.address_json.latitude as number | undefined,
+    longitude: session.address_json.longitude as number | undefined,
   }
 
   try {
     const response = await fetch(`${env.NEXT_PUBLIC_URL}/api/bots/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(checkoutPayload),
+      body: JSON.stringify({
+        platform: 'telegram',
+        platformUserId: String(chatId),
+        items,
+        deliveryAddress,
+        contactName,
+        contactPhone,
+        deliveryType: 'delivery',
+      }),
     })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Checkout failed' }))
-      await sendTelegramMessage(
-        chatId,
-        `Payment setup failed: ${escapeMarkdown(errorData.error || 'Unknown error')}\. Please try again\.`
-        , { parse_mode: 'MarkdownV2' }
-      )
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+      const errorMsg = result.error || 'Unable to process checkout. Please try again.'
+      await sendTelegramMessage(chatId, `❌ ${errorMsg}`)
       return
     }
 
-    const data = await response.json()
-    if (!data.success || !data.checkoutUrl) {
-      await sendTelegramMessage(chatId, 'Payment setup failed\. Please try again\.', {
-        parse_mode: 'MarkdownV2',
-      })
-      return
-    }
+    const { checkoutUrl, orderNumber } = result
 
     await updateState(session.id, 'awaiting_payment')
 
+    const keyboard = buildInlineKeyboard([
+      [{ text: `🔒 Pay Now`, url: checkoutUrl }],
+    ])
+
     await sendTelegramMessage(
       chatId,
-      `Click the link below to complete your payment:\n\n[💳 Pay ${formatPriceCents(data.totalCents || 0)}](${data.checkoutUrl})\n\n_Your order will be prepared once payment is confirmed\._`,
-      { parse_mode: 'MarkdownV2' }
+      `✅ Order *#${orderNumber}* created!\n\nClick the button below to complete payment:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      }
     )
-  } catch (error) {
-    console.error('[TelegramWebhook] Checkout error:', error)
-    await sendTelegramMessage(chatId, 'Payment setup failed\. Please try again\.', {
-      parse_mode: 'MarkdownV2',
-    })
-  }
-}
-
-async function handleStatus(chatId: number, user: TelegramUser): Promise<void> {
-  const supabase = getSupabase()
-
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('telegram_id', String(user.id))
-    .maybeSingle()
-
-  if (!customer) {
-    await sendTelegramMessage(chatId, 'You have no orders yet\. Start ordering with /start\!', {
-      parse_mode: 'MarkdownV2',
-    })
-    return
-  }
-
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('order_number, status, total_cents, created_at')
-    .eq('customer_id', customer.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  if (!orders || orders.length === 0) {
-    await sendTelegramMessage(chatId, 'You have no orders yet\. Start ordering with /start\!', {
-      parse_mode: 'MarkdownV2',
-    })
-    return
-  }
-
-  const lines: string[] = ['*Your Recent Orders*']
-  orders.forEach((order) => {
-    const statusEmoji =
-      order.status === 'delivered'
-        ? '✅'
-        : order.status === 'cancelled'
-          ? '❌'
-          : order.status === 'preparing' || order.status === 'ready'
-            ? '👨‍🍳'
-            : '📦'
-    lines.push(`${statusEmoji} *${escapeMarkdown(order.order_number)}* — ${escapeMarkdown(order.status)} — ${formatPriceCents(order.total_cents)}`)
-  })
-
-  await sendTelegramMessage(chatId, lines.join('\n'), { parse_mode: 'MarkdownV2' })
-}
-
-async function handleHelp(chatId: number): Promise<void> {
-  const text = `*Available Commands*\n\n/start \- Start ordering\n/menu \- Browse menu\n/cart \- View your cart\n/status \- Check recent orders\n/help \- Show this help\n/cancel \- Cancel current order\n\n*FAQ*\n• We deliver within Shah Alam, Selangor\n• Payment is via Stripe \(card/FPX\)\n• You'll receive updates as your order progresses`
-
-  await sendTelegramMessage(chatId, text, { parse_mode: 'MarkdownV2' })
-}
-
-async function handleCancel(chatId: number, session: BotSession): Promise<void> {
-  await clearSession(session.id)
-  await sendTelegramMessage(
-    chatId,
-    'Your order has been cancelled\. Start a new order anytime with /start\!',
-    { parse_mode: 'MarkdownV2' }
-  )
-}
-
-async function handleCallbackQuery(
-  update: TelegramUpdate,
-  session: BotSession,
-  settings: BotSettings | null
-): Promise<void> {
-  const callbackQuery = update.callback_query!
-  const chatId = callbackQuery.message?.chat.id ?? callbackQuery.from.id
-  const data = callbackQuery.data || ''
-  const user = callbackQuery.from
-
-  await answerCallbackQuery(callbackQuery.id)
-
-  if (!(await checkBotEnabled(settings, chatId))) return
-  if (!(await checkOperatingHours(settings, chatId))) return
-
-  if (data === 'menu') {
-    await handleMenu(chatId, session)
-  } else if (data === 'cart') {
-    await handleCart(chatId, session)
-  } else if (data === 'checkout') {
-    await handleCheckout(chatId, session)
-  } else if (data === 'confirm_pay') {
-    await handleConfirmPay(chatId, user, session)
-  } else if (data === 'cancel') {
-    await handleCancel(chatId, session)
-  } else if (data.startsWith('cat:')) {
-    await handleCategory(chatId, data.replace('cat:', ''), session)
-  } else if (data.startsWith('item:')) {
-    await handleItem(chatId, data.replace('item:', ''), session)
-  } else if (data.startsWith('mod:')) {
-    await handleModifier(chatId, data.replace('mod:', ''), session)
-  } else {
-    await sendTelegramMessage(chatId, 'Unknown action\. Please try /start\.', {
-      parse_mode: 'MarkdownV2',
-    })
-  }
-}
-
-async function handleMessage(
-  update: TelegramUpdate,
-  session: BotSession,
-  settings: BotSettings | null
-): Promise<void> {
-  const message = update.message!
-  const chatId = message.chat.id
-  const text = message.text || ''
-  const user = message.from!
-
-  if (!(await checkBotEnabled(settings, chatId))) return
-
-  const command = text.trim().toLowerCase()
-
-  if (command === '/start') {
-    await handleStart(chatId, user, session)
-    return
-  }
-
-  if (command === '/help') {
-    await handleHelp(chatId)
-    return
-  }
-
-  if (command === '/cancel') {
-    await handleCancel(chatId, session)
-    return
-  }
-
-  if (command === '/menu') {
-    if (!(await checkOperatingHours(settings, chatId))) return
-    await handleMenu(chatId, session)
-    return
-  }
-
-  if (command === '/cart') {
-    if (!(await checkOperatingHours(settings, chatId))) return
-    await handleCart(chatId, session)
-    return
-  }
-
-  if (command === '/status') {
-    await handleStatus(chatId, user)
-    return
-  }
-
-  if (!(await checkOperatingHours(settings, chatId))) return
-
-  switch (session.current_state) {
-    case 'entering_address':
-      await handleAddressInput(chatId, text, session)
-      break
-    case 'entering_contact':
-      await handleContactInput(chatId, text, session)
-      break
-    case 'browsing_menu':
-    case 'selecting_modifiers':
-    case 'viewing_cart':
-    case 'confirming_order':
-    case 'awaiting_payment':
-    case 'idle':
-    default:
-      await sendTelegramMessage(
-        chatId,
-        'I did not understand that\. Use /menu to browse items or /help for commands\.'
-        , { parse_mode: 'MarkdownV2' }
-      )
-      break
+  } catch (e) {
+    console.error('[TelegramWebhook] Checkout failed:', e)
+    await sendTelegramMessage(
+      chatId,
+      'Sorry, we were unable to process your checkout. Please try again later.'
+    )
   }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const secretToken = req.headers.get('x-telegram-bot-api-secret-token')
-    if (env.TELEGRAM_WEBHOOK_SECRET && secretToken !== env.TELEGRAM_WEBHOOK_SECRET) {
-      console.warn('[TelegramWebhook] Invalid secret token')
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    const secretToken = env.TELEGRAM_WEBHOOK_SECRET
+    if (secretToken) {
+      const headerToken = req.headers.get('x-telegram-bot-api-secret-token')
+      if (headerToken !== secretToken) {
+        console.error('[TelegramWebhook] Invalid secret token')
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     let update: TelegramUpdate
     try {
       update = await req.json()
-    } catch {
+    } catch (e) {
+      console.error('[TelegramWebhook] Invalid JSON:', e)
       return NextResponse.json({ success: false, error: 'Invalid JSON' }, { status: 400 })
     }
 
-    const user = update.message?.from ?? update.callback_query?.from
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'No user' }, { status: 400 })
+    const message = update.message
+    const callbackQuery = update.callback_query
+
+    if (!message && !callbackQuery) {
+      return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    const chatId = update.message?.chat.id ?? update.callback_query?.message?.chat.id ?? user.id
-    const session = await getOrCreateSession('telegram', String(user.id))
-    const settings = await getFreshBotSettings()
+    const chatId = message?.chat.id ?? callbackQuery?.message?.chat.id
+    const user = message?.from ?? callbackQuery?.from
 
-    if (update.callback_query) {
-      await handleCallbackQuery(update, session, settings)
-    } else if (update.message) {
-      await handleMessage(update, session, settings)
+    if (!chatId || !user) {
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    const availability = await checkBotAvailable()
+    if (!availability.ok) {
+      await sendTelegramMessage(chatId, availability.message!)
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    const session = await getOrCreateSession('telegram', String(chatId))
+
+    if (callbackQuery) {
+      const data = callbackQuery.data || ''
+      const { action, args } = parseCallbackData(data)
+
+      try {
+        await answerCallbackQuery(callbackQuery.id)
+      } catch (e) {
+        console.error('[TelegramWebhook] answerCallbackQuery failed:', e)
+      }
+
+      switch (action) {
+        case 'menu':
+          await handleMenu(chatId, session)
+          break
+        case 'cat':
+          await handleCategoryCallback(chatId, session, args[0])
+          break
+        case 'item':
+          await handleItemCallback(chatId, session, args[0])
+          break
+        case 'modsel':
+          await handleModifierSelection(
+            chatId,
+            session,
+            args[0],
+            parseInt(args[1], 10),
+            args[2] || '',
+            args[3]
+          )
+          break
+        case 'modskip':
+          await handleModifierSkip(
+            chatId,
+            session,
+            args[0],
+            parseInt(args[1], 10),
+            args[2] || ''
+          )
+          break
+        case 'add':
+          await handleAddToCart(chatId, session, args[0], args[1] ? args[1].split(',') : [])
+          break
+        case 'cart':
+          await handleCart(chatId, session)
+          break
+        case 'inc':
+          await handleCartIncrement(chatId, session, parseInt(args[0], 10))
+          break
+        case 'dec':
+          await handleCartDecrement(chatId, session, parseInt(args[0], 10))
+          break
+        case 'rem':
+          await handleCartRemove(chatId, session, parseInt(args[0], 10))
+          break
+        case 'checkout':
+          await handleCheckoutCallback(chatId, session)
+          break
+        case 'confirm':
+          await handleConfirmCallback(chatId, session)
+          break
+        case 'help':
+          await handleHelp(chatId)
+          break
+        case 'cancel':
+          await handleCancel(chatId, session)
+          break
+        case 'status':
+          await handleStatus(chatId, user)
+          break
+        default:
+          break
+      }
+
+      return NextResponse.json({ success: true }, { status: 200 })
+    }
+
+    if (message && message.text) {
+      const text = message.text.trim()
+      const command = extractCommand(text)
+
+      if (command) {
+        switch (command) {
+          case 'start':
+            await handleStart(chatId, session, user)
+            break
+          case 'menu':
+            await handleMenu(chatId, session)
+            break
+          case 'cart':
+            await handleCart(chatId, session)
+            break
+          case 'status':
+            await handleStatus(chatId, user)
+            break
+          case 'help':
+            await handleHelp(chatId)
+            break
+          case 'cancel':
+            await handleCancel(chatId, session)
+            break
+          default:
+            await sendTelegramMessage(
+              chatId,
+              "I didn't understand that command. Type /help for available commands."
+            )
+            break
+        }
+
+        return NextResponse.json({ success: true }, { status: 200 })
+      }
+
+      switch (session.current_state) {
+        case 'entering_address':
+          await handleAddressInput(chatId, session, text)
+          break
+        case 'entering_contact':
+          await handleContactInput(chatId, session, text, user)
+          break
+        case 'browsing_menu':
+        case 'selecting_modifiers':
+        case 'viewing_cart':
+        case 'confirming_order':
+        case 'awaiting_payment':
+        case 'complete':
+        case 'idle':
+        default:
+          await sendTelegramMessage(
+            chatId,
+            "I didn't understand that. Use /menu to browse items or /help for commands."
+          )
+          break
+      }
     }
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
     console.error('[TelegramWebhook] Unhandled error:', error)
-    Sentry.captureException(error)
 
     try {
-      const body = await req.json().catch(() => ({}))
+      const body = await req.json().catch(() => null)
       const chatId =
-        body.message?.chat?.id ??
-        body.callback_query?.message?.chat?.id ??
-        body.callback_query?.from?.id
+        body?.message?.chat?.id ?? body?.callback_query?.message?.chat?.id
       if (chatId) {
         await sendErrorMessage(chatId)
       }
     } catch {
-      // Ignore secondary errors
     }
 
-    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 200 })
   }
 }

@@ -5,6 +5,7 @@ import { getServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { RefreshCw, Activity, AlertTriangle, CheckCircle, XCircle, Clock, ListTodo } from "lucide-react";
 import { BrandingSettings } from "@/components/admin/BrandingSettings";
+import { BotSettingsSection } from "@/components/admin/BotSettingsSection";
 
 async function getHubboPosStatus() {
   const supabase = await getServerClient();
@@ -84,6 +85,8 @@ export default async function AdminSettingsPage() {
       </div>
 
       <BrandingSettings logoUrl={logoUrl} heroImageUrl={heroImageUrl} />
+
+      <BotSettingsSection />
 
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>

@@ -3,6 +3,7 @@ import { createStripeClient } from '@/lib/stripe/client'
 import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
+import { notifyKitchenOfPaidOrder } from '@/lib/bots/notifications'
 
 async function attemptHubboPosPush(supabase: ReturnType<typeof createServerClient>, orderId: string): Promise<void> {
   if (!env.HUBBOPOS_ENABLED) return;
@@ -190,6 +191,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     console.log(`[Webhook] Order ${orderId} marked as paid and advanced to preparing`)
+
+    // Bot order notifications (best-effort, never fail webhook)
+    if (order.source === 'telegram' || order.source === 'whatsapp') {
+      await notifyKitchenOfPaidOrder(orderId)
+      try {
+        const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
+        await sendOrderStatusNotification(orderId, 'preparing')
+      } catch {
+        // Notification failure must not break the webhook
+      }
+    }
 
     // Push to HubboPOS if enabled (best-effort, non-blocking)
     await attemptHubboPosPush(supabase, orderId);

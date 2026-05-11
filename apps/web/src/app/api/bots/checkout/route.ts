@@ -5,7 +5,7 @@ import { env } from '@/lib/validators/env'
 import { createServerClient } from '@supabase/ssr'
 import { findOrCreateBotCustomer } from '@/lib/bots/customer'
 import { clearSession } from '@/lib/bots/conversation'
-import { getFreshBotSettings, getOperatingHoursForBot } from '@/lib/bots/settings'
+import { getFreshBotSettings, getOperatingHoursForBot, isBotEnabled } from '@/lib/bots/settings'
 import { isWithinDeliveryZone, geocodeAddress, type ParsedAddress } from '@/lib/bots/address'
 
 const BotCheckoutItemSchema = z.object({
@@ -36,6 +36,7 @@ const BotCheckoutRequestSchema = z.object({
   contactName: z.string().min(1),
   contactPhone: z.string().min(1),
   deliveryType: z.enum(['delivery', 'self_pickup']).default('delivery'),
+  sessionId: z.string().uuid(),
 })
 
 interface BotCheckoutSuccess {
@@ -115,12 +116,25 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
       contactName,
       contactPhone,
       deliveryType,
+      sessionId,
     } = parsed.data
 
     const supabase = getServiceClient()
 
-    // ── Operating hours check ──────────────────────────────────────
+    // ── Bot settings & operating hours check ───────────────────────
     const botSettings = await getFreshBotSettings()
+
+    if (!isBotEnabled(botSettings, platform)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Ordering via ${platform} is currently disabled.`,
+          code: 'BOT_DISABLED',
+        },
+        { status: 400 }
+      )
+    }
+
     const hours = getOperatingHoursForBot(botSettings)
     if (!hours.isOpen) {
       return NextResponse.json(
@@ -277,15 +291,19 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
       phone: contactPhone,
     })
 
-    // ── Find existing bot session ──────────────────────────────────
+    // ── Validate session exists ────────────────────────────────────
     const { data: botSession } = await supabase
       .from('bot_sessions')
       .select('id')
-      .eq('platform', platform)
-      .eq('platform_user_id', platformUserId)
+      .eq('id', sessionId)
       .maybeSingle()
 
-    const botSessionId = botSession?.id ?? null
+    if (!botSession) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid or expired session', code: 'INVALID_SESSION' },
+        { status: 400 }
+      )
+    }
 
     // ── Generate order number ──────────────────────────────────────
     const orderNumber = generateOrderNumber()
@@ -323,7 +341,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
         include_cutlery: includeCutlery,
         stripe_session_id: null,
         source: platform,
-        bot_session_id: botSessionId,
+        bot_session_id: sessionId,
       })
       .select('id')
       .single()
@@ -434,7 +452,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
       metadata: {
         order_id: order.id,
         customer_id: customer.id,
-        source: platform,
+        platform,
       },
       shipping_address_collection: deliveryType === 'delivery'
         ? { allowed_countries: ['MY'] }
@@ -458,13 +476,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
       .eq('id', order.id)
 
     // ── Clear bot session ──────────────────────────────────────────
-    if (botSessionId) {
-      try {
-        await clearSession(botSessionId)
-      } catch (clearErr) {
-        console.error('[BotCheckout] Failed to clear bot session:', clearErr)
-        // Non-fatal: order is already created
-      }
+    try {
+      await clearSession(sessionId)
+    } catch (clearErr) {
+      console.error('[BotCheckout] Failed to clear bot session:', clearErr)
+      // Non-fatal: order is already created
     }
 
     return NextResponse.json(

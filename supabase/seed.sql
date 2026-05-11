@@ -2,7 +2,7 @@
 -- Restaurant: Mad Krapow TTDI Jaya
 
 -- 1. Store Settings
-INSERT INTO store_settings (id, store_name, address, phone, operating_hours, lalamove_market, min_order_amount, delivery_fee)
+INSERT INTO store_settings (id, store_name, address, phone, operating_hours, lalamove_market, min_order_amount, delivery_fee, delivery_geofence_json)
 VALUES (
     '11111111-1111-1111-1111-111111111111',
     'Mad Krapow TTDI Jaya',
@@ -11,7 +11,8 @@ VALUES (
     '{"mon": {"open": "11:00", "close": "22:00"}, "tue": {"open": "11:00", "close": "22:00"}, "wed": {"open": "11:00", "close": "22:00"}, "thu": {"open": "11:00", "close": "22:00"}, "fri": {"open": "11:00", "close": "23:00"}, "sat": {"open": "11:00", "close": "23:00"}, "sun": {"open": "11:00", "close": "22:00"}}'::jsonb,
     'MY',
     2000,
-    0
+    0,
+    '{"type": "Polygon", "coordinates": [[[101.5240, 3.1500], [101.5360, 3.1500], [101.5360, 3.1620], [101.5240, 3.1620], [101.5240, 3.1500]]]}'::jsonb
 );
 
 -- 2. Categories

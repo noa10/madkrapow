@@ -180,13 +180,13 @@ export async function isWithinDeliveryZone(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('store_settings')
-    .select('geofence')
+    .select('delivery_geofence_json')
     .limit(1)
     .single()
 
   if (error || !data) return true
 
-  const geofence = data.geofence as GeoJSONPolygon | null | undefined
+  const geofence = data.delivery_geofence_json as GeoJSONPolygon | null | undefined
   if (!geofence || geofence.type !== 'Polygon') return true
 
   return pointInPolygon([lng, lat], geofence)

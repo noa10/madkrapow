@@ -52,7 +52,17 @@ WITH CHECK (
 );
 
 -- 7. Enable realtime on store_branding
-ALTER PUBLICATION supabase_realtime ADD TABLE public.store_branding;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+        AND schemaname = 'public' 
+        AND tablename = 'store_branding'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.store_branding;
+    END IF;
+END $$;
 
 -- 8. Remove store_settings from realtime to stop leaking operational data
 -- (conditional: may already have been removed)

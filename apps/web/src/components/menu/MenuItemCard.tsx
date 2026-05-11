@@ -41,7 +41,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview }: M
       : item.description
     : null
 
-  const itemHref = buildItemHref(item.name, item.id)
+  const itemHref = buildItemHref(item.slug, item.name)
   const detailActionLabel = item.has_modifiers
     ? `View details and customize ${item.name}`
     : `View details for ${item.name}`

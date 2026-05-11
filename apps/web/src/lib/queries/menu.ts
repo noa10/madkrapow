@@ -28,6 +28,7 @@ export type MenuItem = {
   id: string
   category_id: string
   name: string
+  slug: string
   description: string | null
   price_cents: number
   image_url: string | null
@@ -294,6 +295,27 @@ export async function getItemById(id: string): Promise<FullMenuItem | null> {
 
   if (error || !menuItem) return null
 
+  return hydrateFullMenuItem(supabase, menuItem)
+}
+
+export async function getItemBySlug(slug: string): Promise<FullMenuItem | null> {
+  const supabase = await getClient()
+
+  const { data: menuItem, error } = await supabase
+    .from('menu_items')
+    .select('*')
+    .eq('slug', slug)
+    .maybeSingle()
+
+  if (error || !menuItem) return null
+
+  return hydrateFullMenuItem(supabase, menuItem)
+}
+
+async function hydrateFullMenuItem(
+  supabase: SupabaseClient<any, any, any>,
+  menuItem: MenuItem
+): Promise<FullMenuItem | null> {
   const { data: category, error: catError } = await supabase
     .from('categories')
     .select('id, name')
@@ -305,7 +327,7 @@ export async function getItemById(id: string): Promise<FullMenuItem | null> {
   const { data: menuItemModifierGroups, error: migError } = await supabase
     .from('menu_item_modifier_groups')
     .select('*')
-    .eq('menu_item_id', id)
+    .eq('menu_item_id', menuItem.id)
 
   if (migError) return null
 

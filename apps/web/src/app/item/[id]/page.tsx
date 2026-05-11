@@ -1,5 +1,5 @@
 import { notFound, permanentRedirect } from 'next/navigation'
-import { getItemById, type FullMenuItem } from '@/lib/queries/menu'
+import { getItemById, getItemBySlug, type FullMenuItem } from '@/lib/queries/menu'
 import { ItemDetailClient } from '@/components/menu/ItemDetailClient'
 import { buildItemHref, parseItemRouteParam } from '@/lib/item-url'
 import { ClientPageShell } from '@/components/layout/ClientPageShell'
@@ -8,31 +8,42 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
-async function getItem(id: string): Promise<FullMenuItem | null> {
-  try {
-    return await getItemById(id)
-  } catch (error) {
-    console.error('Failed to fetch item:', error)
-    return null
+async function resolveItem(raw: string): Promise<{ item: FullMenuItem; shouldRedirect: boolean } | null> {
+  const parsed = parseItemRouteParam(raw)
+
+  if (parsed.kind === 'invalid') return null
+
+  if (parsed.kind === 'slug') {
+    const item = await getItemBySlug(parsed.slug)
+    if (!item) return null
+    return { item, shouldRedirect: item.slug !== raw }
   }
+
+  // Legacy routes: look up by UUID, then redirect to the canonical slug URL.
+  const item = await getItemById(parsed.itemId)
+  if (!item) return null
+  return { item, shouldRedirect: true }
 }
 
 export default async function ItemDetailPage({ params }: PageProps) {
-  const { id: slugAndId } = await params
-  const parsed = parseItemRouteParam(slugAndId)
+  const { id: raw } = await params
 
-  if (!parsed.itemId) {
+  let resolved
+  try {
+    resolved = await resolveItem(raw)
+  } catch (error) {
+    console.error('Failed to fetch item:', error)
     notFound()
   }
 
-  const item = await getItem(parsed.itemId)
-
-  if (!item) {
+  if (!resolved) {
     notFound()
   }
 
-  const canonicalHref = buildItemHref(item.name, item.id)
-  if (parsed.isLegacyUuidRoute || slugAndId !== canonicalHref.replace('/item/', '')) {
+  const { item, shouldRedirect } = resolved
+  const canonicalHref = buildItemHref(item.slug, item.name)
+
+  if (shouldRedirect) {
     permanentRedirect(canonicalHref)
   }
 

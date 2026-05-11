@@ -13,40 +13,53 @@ export function isUuidLike(value: string): boolean {
   return UUID_V4_LIKE_REGEX.test(value)
 }
 
-export function buildItemHref(name: string, id: string): string {
-  const slug = slugifyItemName(name) || 'item'
-  return `/item/${slug}--${id}`
+/**
+ * Canonical item URL: `/item/{slug}` (SEO-friendly, no UUID).
+ * Pass the item's persisted slug column. Falls back to slugifying the name.
+ */
+export function buildItemHref(slugOrName: string, fallbackName?: string): string {
+  const candidate = slugOrName && slugOrName.trim().length > 0 ? slugOrName : (fallbackName ?? '')
+  const slug = slugifyItemName(candidate) || 'item'
+  return `/item/${slug}`
 }
 
-export function parseItemRouteParam(slugAndId: string): {
-  itemId: string | null
-  isLegacyUuidRoute: boolean
-} {
-  if (isUuidLike(slugAndId)) {
-    return {
-      itemId: slugAndId,
-      isLegacyUuidRoute: true,
+export type ParsedItemRouteParam =
+  | { kind: 'slug'; slug: string }
+  | { kind: 'legacy-slug-uuid'; itemId: string; slug: string }
+  | { kind: 'legacy-uuid'; itemId: string }
+  | { kind: 'invalid' }
+
+/**
+ * Parse the `[id]` segment of `/item/[id]`. Three historical shapes are accepted:
+ *   - Canonical:    `set-krapow-daging` → { kind: 'slug', slug }
+ *   - Legacy pair:  `set-krapow-daging--<uuid>` → { kind: 'legacy-slug-uuid', itemId, slug }
+ *   - Legacy bare:  `<uuid>` → { kind: 'legacy-uuid', itemId }
+ */
+export function parseItemRouteParam(raw: string): ParsedItemRouteParam {
+  if (!raw || raw.length === 0) {
+    return { kind: 'invalid' }
+  }
+
+  if (isUuidLike(raw)) {
+    return { kind: 'legacy-uuid', itemId: raw }
+  }
+
+  const splitIndex = raw.lastIndexOf('--')
+  if (splitIndex !== -1) {
+    const slugPart = raw.slice(0, splitIndex)
+    const idCandidate = raw.slice(splitIndex + 2)
+    if (isUuidLike(idCandidate)) {
+      return {
+        kind: 'legacy-slug-uuid',
+        itemId: idCandidate,
+        slug: slugPart.length > 0 ? slugPart : 'item',
+      }
     }
   }
 
-  const splitIndex = slugAndId.lastIndexOf('--')
-  if (splitIndex === -1) {
-    return {
-      itemId: null,
-      isLegacyUuidRoute: false,
-    }
+  const slug = slugifyItemName(raw)
+  if (slug.length === 0) {
+    return { kind: 'invalid' }
   }
-
-  const idCandidate = slugAndId.slice(splitIndex + 2)
-  if (!isUuidLike(idCandidate)) {
-    return {
-      itemId: null,
-      isLegacyUuidRoute: false,
-    }
-  }
-
-  return {
-    itemId: idCandidate,
-    isLegacyUuidRoute: false,
-  }
+  return { kind: 'slug', slug }
 }

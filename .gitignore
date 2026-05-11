@@ -97,3 +97,6 @@ mempalace.yaml
 
 # Memory
 memory/*
+
+# omo
+.sisyphus/*

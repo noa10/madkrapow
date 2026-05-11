@@ -17,4 +17,5 @@ abstract class AppRoutes {
   static const updatePassword = '/auth/update-password';
   static const authCallback = '/auth/callback';
   static const emailVerification = '/auth/verify-email';
+  static const appSettings = '/profile/settings';
 }

@@ -7,6 +7,9 @@ import 'config/routes.dart';
 import 'config/theme.dart';
 import 'core/constants/roles.dart';
 import 'core/providers/supabase_provider.dart';
+import 'core/services/update/app_updates_panel.dart';
+import 'core/services/update/update_lifecycle_observer.dart';
+import 'core/services/update/whats_new_screen.dart';
 import 'core/widgets/admin_shell.dart';
 import 'features/auth/presentation/screens/admin_sign_in_screen.dart';
 import 'features/auth/providers/admin_auth_providers.dart';
@@ -462,8 +465,44 @@ class MerchantApp extends ConsumerWidget {
       themeMode: ThemeMode.dark,
       routerConfig: router,
       builder: (context, child) {
-        return _NotificationHandler(child: child ?? const SizedBox.shrink());
+        return UpdateLifecycleObserver(
+          child: UpdatePromptMount(
+            child: _WhatsNewGate(
+              child: _NotificationHandler(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        );
       },
     );
+  }
+}
+
+/// Shows the What's-new screen once after a self-install by watching the
+/// pending flag in UpdateSettingsService. Pushed via root navigator so the
+/// shell route doesn't swallow it.
+class _WhatsNewGate extends ConsumerStatefulWidget {
+  const _WhatsNewGate({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_WhatsNewGate> createState() => _WhatsNewGateState();
+}
+
+class _WhatsNewGateState extends ConsumerState<_WhatsNewGate> {
+  bool _handled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_handled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || _handled) return;
+        _handled = true;
+        await maybeShowWhatsNew(context, ref);
+      });
+    }
+    return widget.child;
   }
 }

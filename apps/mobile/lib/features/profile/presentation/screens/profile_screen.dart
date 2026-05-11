@@ -174,6 +174,22 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
 
+              Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('Settings'),
+                      subtitle: const Text('App updates and preferences'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(AppRoutes.appSettings),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
               const SizedBox(height: 24),
 
               OutlinedButton.icon(

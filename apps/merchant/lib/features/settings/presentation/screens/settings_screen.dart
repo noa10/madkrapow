@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../../core/services/update/app_updates_panel.dart';
 import '../../../../generated/tables/store_settings.dart';
 import '../../../../generated/tables/hubbopos_sync_runs.dart';
 import '../../providers/settings_providers.dart';
@@ -32,6 +33,10 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             // ── Store Branding ──
             const _StoreBrandingCard(),
+            const SizedBox(height: 16),
+
+            // ── App Updates (in-app GitHub updater) ──
+            const AppUpdatesPanel(),
             const SizedBox(height: 16),
 
             // ── HubboPOS Integration ──

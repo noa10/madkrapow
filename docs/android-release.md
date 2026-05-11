@@ -253,3 +253,90 @@ Any hit indicates a regression in the masking logic — file an issue immediatel
 - Release workflow: `.github/workflows/android-release.yml` (signed AAB + APK + draft Release)
 - Consensus plan: `.omc/plans/android-ci-release-consensus-plan.md`
 - Deep interview spec: `.omc/specs/deep-interview-android-ci-release.md`
+
+---
+
+## In-app updater (sideload auto-update)
+
+Both apps ship with a self-contained APK updater that polls this repo's GitHub Releases every 6 hours (plus on every cold start and resume) and downloads/installs new APKs **without going through the Play Store**. This section explains how testers interact with it.
+
+### How it finds the right release
+
+| App | Release tag prefix | Example |
+|---|---|---|
+| `apps/mobile` | `mobile-v` | `mobile-v1.2.3` |
+| `apps/merchant` | `merchant-v` | `merchant-v1.2.3` |
+
+The updater scans `/repos/noa10/madkrapow/releases`, picks the highest-versioned release whose `tag_name` starts with the prefix for that app, then reads `assets[0].browser_download_url` to find the APK. Version comparison is semver-aware (`1.10.0 > 1.9.9`).
+
+### What testers see
+
+**Per-device toggles** live under:
+
+- Mobile app: **Profile → Settings → App Updates**
+- Merchant app: **More → Settings → App Updates** (admin role required to open Settings)
+
+Available controls:
+
+- **Auto-update on Wi-Fi** — default **ON**. When a new release is found and the device is on Wi-Fi, the APK downloads silently (flutter_downloader shows a persistent progress notification) and then the system installer prompts once the file lands.
+- **Auto-update on mobile data** — default **OFF**. Same behavior but over cellular.
+- **Check for updates now** — force a check regardless of the 6-hour debounce. Shows the current version, last-checked time, any skipped version, and surfaces the manual dialog when an update is found.
+
+**Manual mode dialog** (either toggle is off, or neither connectivity condition matches):
+
+- New version + changelog (release body)
+- Download size
+- Actions: **Update now**, **Later**, **Skip this version**
+
+Skipping a version persists until the user clears it from Settings or a newer release appears. "Later" re-prompts after 24 hours.
+
+### Android permissions prompted at install time
+
+- `REQUEST_INSTALL_PACKAGES` — required on Android 8+; the first time a tester taps **Update now**, Android asks "Allow from this source?" — they must grant it once per device. The in-app updater launches this system prompt via `permission_handler`.
+- `POST_NOTIFICATIONS` (Android 13+) — used by flutter_downloader's progress notification. If denied, downloads still work; the notification just won't appear.
+- `FOREGROUND_SERVICE_DATA_SYNC` — declared so Android 14+ allows flutter_downloader to keep downloading if the user backgrounds the app.
+
+### Supported Android versions
+
+Android 10 (API 29) through Android 15 (API 35). The updater tests for `Platform.isAndroid` before doing any network or file work, so iOS/desktop/web builds still compile and run normally — they just never detect an update.
+
+### GitHub rate limiting
+
+Unauthenticated requests share a 60/hr budget per IP. With 4 auto-checks per day (every 6h) this is never an issue for individual testers, but if a CI environment ever needs to check, set a `GITHUB_TOKEN` build-time define:
+
+```bash
+flutter build apk --release --dart-define=GITHUB_TOKEN=ghp_xxx...
+```
+
+Leaving `GITHUB_TOKEN` empty (the default) falls back to anonymous access.
+
+### Testing the updater end-to-end
+
+1. Install a build with a low version (e.g. `pubspec.yaml: version: 0.0.1+1`).
+2. Cut a real release tag at a higher version: `git tag mobile-v9.9.9 && git push origin mobile-v9.9.9`.
+3. Wait for the release workflow to finish and **publish** the draft (the updater only sees non-draft releases).
+4. Open the app, tap **Check for updates now**.
+5. Expect the manual dialog with the release notes from the tag. Tap **Update now** → grant install permission → the system installer takes over.
+6. On first launch of the new version, the **What's new** screen appears once, showing the release body.
+
+### Failure modes (none crash the app)
+
+| Condition | Behavior |
+|---|---|
+| No internet | Check logs a warning, Settings shows "Could not reach GitHub" |
+| No release matches the tag prefix | Shows "You're on the latest version." |
+| Download fails mid-stream or size mismatches release metadata | Downloaded file is discarded, controller resets to idle |
+| User denies `REQUEST_INSTALL_PACKAGES` | Settings shows "Could not launch installer" |
+| GitHub rate limit hit (403 with `x-ratelimit-remaining: 0`) | Logged, manual check surfaces the error message |
+
+### Source layout
+
+Shared under `lib/core/services/update/` in both apps (files are byte-identical; each app configures `UpdaterConfig.appType` / `tagPrefix` in its `main.dart`):
+
+- `github_updater.dart` — HTTP + download + install orchestration
+- `update_controller.dart` — state machine feeding the UI
+- `update_settings_service.dart` — SharedPreferences-backed toggles + cache
+- `update_providers.dart` — Riverpod wiring
+- `update_lifecycle_observer.dart` — WidgetsBindingObserver that triggers checks
+- `app_updates_panel.dart` — Settings UI
+- `update_dialog.dart` / `whats_new_screen.dart` — user-facing screens

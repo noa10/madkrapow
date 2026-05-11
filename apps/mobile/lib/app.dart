@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'core/providers/supabase_provider.dart';
+import 'core/services/update/app_updates_panel.dart';
+import 'core/services/update/update_lifecycle_observer.dart';
+import 'core/services/update/whats_new_screen.dart';
 import 'core/widgets/app_shell.dart';
 import 'features/auth/presentation/screens/auth_callback_screen.dart';
 import 'features/auth/presentation/screens/auth_splash_screen.dart';
@@ -22,6 +25,7 @@ import 'features/menu/presentation/screens/home_screen.dart';
 import 'features/orders/presentation/screens/order_detail_screen.dart';
 import 'features/orders/presentation/screens/order_history_screen.dart';
 import 'features/profile/presentation/screens/address_management_screen.dart';
+import 'features/profile/presentation/screens/app_settings_screen.dart';
 import 'features/profile/presentation/screens/contact_management_screen.dart';
 import 'features/profile/presentation/screens/profile_screen.dart';
 import 'features/menu/presentation/screens/item_detail_screen.dart';
@@ -170,6 +174,12 @@ GoRouter _createRouter(Ref ref) {
         redirect: (context, state) => '/orders/${state.pathParameters['id']}',
       ),
 
+      // App Settings (outside shell, pushed from Profile)
+      GoRoute(
+        path: AppRoutes.appSettings,
+        builder: (context, state) => const AppSettingsScreen(),
+      ),
+
       // ── Shell route WITH bottom nav bar ──
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -265,7 +275,42 @@ class MadKrapowApp extends ConsumerWidget {
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.dark,
         routerConfig: router,
+        builder: (context, child) {
+          return UpdateLifecycleObserver(
+            child: UpdatePromptMount(
+              child: _WhatsNewGate(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          );
+        },
       ),
     );
+  }
+}
+
+/// Shows the What's-new screen once after a self-install.
+class _WhatsNewGate extends ConsumerStatefulWidget {
+  const _WhatsNewGate({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_WhatsNewGate> createState() => _WhatsNewGateState();
+}
+
+class _WhatsNewGateState extends ConsumerState<_WhatsNewGate> {
+  bool _handled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_handled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || _handled) return;
+        _handled = true;
+        await maybeShowWhatsNew(context, ref);
+      });
+    }
+    return widget.child;
   }
 }

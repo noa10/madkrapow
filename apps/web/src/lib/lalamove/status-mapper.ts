@@ -87,6 +87,9 @@ export function isValidStatusTransition(
 
   if (fromIdx === -1 || toIdx === -1) return false
 
-  // Can only move forward by one step
-  return toIdx === fromIdx + 1
+  // Allow any strictly-forward step. Lalamove fires concurrent webhooks within
+  // a few seconds (ON_GOING, PICKED_UP, COMPLETED), so a single handler can
+  // snapshot an older shipment state and race a later webhook. Strict +1
+  // stepping drops those and leaves orders stuck mid-lifecycle.
+  return toIdx > fromIdx
 }

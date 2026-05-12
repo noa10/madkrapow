@@ -142,17 +142,31 @@ describe('isValidStatusTransition', () => {
     })
   })
 
-  describe('skip transitions are blocked', () => {
-    it('blocks quoted → driver_assigned (skips driver_pending)', () => {
-      expect(isValidStatusTransition('quoted', 'driver_assigned')).toBe(false)
+  describe('forward skips are allowed (concurrent webhooks)', () => {
+    it('allows quoted → driver_assigned (skips driver_pending)', () => {
+      expect(isValidStatusTransition('quoted', 'driver_assigned')).toBe(true)
     })
 
-    it('blocks driver_pending → in_transit (skips driver_assigned)', () => {
-      expect(isValidStatusTransition('driver_pending', 'in_transit')).toBe(false)
+    it('allows driver_pending → in_transit (skips driver_assigned)', () => {
+      expect(isValidStatusTransition('driver_pending', 'in_transit')).toBe(true)
     })
 
-    it('blocks quoted → delivered (skips all intermediate)', () => {
-      expect(isValidStatusTransition('quoted', 'delivered')).toBe(false)
+    it('allows quoted → delivered (late COMPLETED after snapshot)', () => {
+      expect(isValidStatusTransition('quoted', 'delivered')).toBe(true)
+    })
+
+    it('allows driver_assigned → delivered (the race that stuck order 98df443a)', () => {
+      expect(isValidStatusTransition('driver_assigned', 'delivered')).toBe(true)
+    })
+  })
+
+  describe('same-state and backward forward-lane transitions', () => {
+    it('blocks driver_pending → driver_pending (duplicate webhook)', () => {
+      expect(isValidStatusTransition('driver_pending', 'driver_pending')).toBe(false)
+    })
+
+    it('blocks in_transit → driver_pending (backward across multiple steps)', () => {
+      expect(isValidStatusTransition('in_transit', 'driver_pending')).toBe(false)
     })
   })
 

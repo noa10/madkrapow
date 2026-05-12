@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import crypto from 'crypto'
 import { verifyWebhookSignature } from '@/lib/lalamove/auth'
 import { createLalamoveClient } from '@/lib/lalamove/client'
 import { mapV3StatusToDispatch, mapDispatchToOrderStatus, isValidStatusTransition } from '@/lib/lalamove/status-mapper'
@@ -14,8 +15,24 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Diagnostic trace: single correlation id per request so we can follow a
+  // webhook across every log line in Vercel. Log the very first thing before
+  // any parsing, env reads, or DB work so we can prove HTTP arrives even if
+  // we blow up later.
+  const trace = crypto.randomUUID().slice(0, 8)
+  const log = (stage: string, extra?: Record<string, unknown>) =>
+    console.log(`[Lalamove Webhook] [${trace}] ${stage}`, extra ?? '')
+  const logErr = (stage: string, extra?: Record<string, unknown>) =>
+    console.error(`[Lalamove Webhook] [${trace}] ${stage}`, extra ?? '')
+
+  log('received', {
+    contentType: req.headers.get('content-type'),
+    hasLalamoveSigHeader: !!req.headers.get('x-lalamove-signature'),
+  })
+
   try {
     const body = await req.text()
+    log('body-read', { bodyLength: body.length })
     const response = NextResponse.json({ success: true }, { status: 200 })
 
     // Parse payload
@@ -23,27 +40,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     try {
       payload = JSON.parse(body)
     } catch {
-      console.error('[Lalamove Webhook] Invalid JSON')
+      logErr('invalid-json', { bodyPreview: body.slice(0, 120) })
       return NextResponse.json({ success: false, error: 'Invalid JSON' }, { status: 400 })
     }
 
     // Lalamove v3 webhook payload uses `eventType`, `eventId`, and nests order data under `data.order`.
     // Signature is sent in the JSON body, not as a header.
     const eventType = payload.eventType as string || payload.type as string
+    const eventId = payload.eventId as string | undefined
     const eventTimestampRaw = payload.timestamp
     const signature = req.headers.get('x-lalamove-signature') || (payload.signature as string)
     const secret = process.env.LALAMOVE_API_SECRET
+
+    log('parsed', {
+      eventType: eventType ?? null,
+      eventId: eventId ?? null,
+      hasSignature: !!signature,
+      hasSecret: !!secret,
+      secretLen: secret ? secret.length : 0,
+      timestampType: typeof eventTimestampRaw,
+    })
 
     // Lalamove sends a signature-less POST probe (empty body `{}`) during webhook
     // URL validation in their portal. Return 200 so the URL is accepted.
     const trimmedBody = body.trim()
     if (!signature && (trimmedBody === '' || trimmedBody === '{}')) {
-      console.log('[Lalamove Webhook] Received validation ping — returning 200')
+      log('validation-ping')
       return response
     }
 
     if (!secret) {
-      console.error('[Lalamove Webhook] LALAMOVE_API_SECRET not configured')
+      logErr('missing-secret')
       return NextResponse.json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
@@ -52,18 +79,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // state. An unknown or invalid signature throws or returns false and is
     // rejected with 401.
     let verified = false
+    let verifyError: string | null = null
     try {
       verified = verifyWebhookSignature(body, signature ?? '', secret)
-    } catch {
+    } catch (e) {
       verified = false
+      verifyError = e instanceof Error ? e.message : String(e)
     }
     if (!verified) {
-      console.warn('[Lalamove Webhook] Signature verification failed')
+      logErr('signature-failed', {
+        signaturePreview: signature ? signature.slice(0, 12) + '…' : null,
+        verifyError,
+      })
       return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })
     }
+    log('signature-verified')
 
     if (!eventType) {
-      console.error('[Lalamove Webhook] Missing eventType')
+      logErr('missing-event-type')
       return NextResponse.json({ success: false, error: 'Missing eventType' }, { status: 400 })
     }
 
@@ -83,9 +116,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const orderData = (eventData as any)?.order as Record<string, unknown> | undefined
     const lalamoveOrderId = orderData?.orderId as string || payload.orderId as string
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !supabaseServiceKey) {
+      logErr('missing-supabase-env', {
+        hasUrl: !!supabaseUrl,
+        hasServiceKey: !!supabaseServiceKey,
+      })
+      return NextResponse.json(
+        { success: false, error: 'Supabase env not configured' },
+        { status: 500 }
+      )
+    }
+
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      supabaseUrl,
+      supabaseServiceKey,
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
@@ -101,26 +147,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       insertData.lalamove_order_id = lalamoveOrderId
     }
 
-    const { data: insertedEvent } = await supabase
+    const { data: insertedEvent, error: insertError } = await supabase
       .from('lalamove_webhook_events')
       .insert(insertData)
       .select('id')
       .single()
 
-    const eventId = insertedEvent?.id as string | undefined
+    if (insertError) {
+      logErr('event-insert-failed', {
+        message: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint,
+      })
+      return NextResponse.json(
+        { success: false, error: 'DB insert failed' },
+        { status: 500 }
+      )
+    }
+
+    const eventRowId = insertedEvent?.id as string | undefined
+    log('event-inserted', { eventRowId: eventRowId ?? null, lalamoveOrderId: lalamoveOrderId ?? null })
 
     // Events without an order ID (e.g., WALLET_BALANCE_CHANGED) don't need shipment lookup
     if (!lalamoveOrderId) {
       if (eventType === 'WALLET_BALANCE_CHANGED') {
-        console.log('[Lalamove Webhook] Ignoring WALLET_BALANCE_CHANGED')
+        log('ignoring-wallet-balance')
       } else {
-        console.log('[Lalamove Webhook] Event without order ID:', sanitizeForLog(eventType))
+        log('event-without-order-id', { eventType: sanitizeForLog(eventType) })
       }
-      if (eventId) {
+      if (eventRowId) {
         await supabase
           .from('lalamove_webhook_events')
           .update({ processed: true })
-          .eq('id', eventId)
+          .eq('id', eventRowId)
       }
       return response
     }
@@ -137,10 +197,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     shipment = shipmentByLalamoveId
 
-    // For ORDER_CREATED, also try finding by metadata.orderId if lalamove_order_id is not yet set
-    if (!shipment && eventType === 'ORDER_CREATED' && orderData?.metadata) {
+    // Fallback: Lalamove occasionally fires ORDER_STATUS_CHANGED before
+    // ORDER_CREATED (or before POST /orders commits lalamove_order_id).
+    // Match the draft shipment via metadata.orderId for any event type, then
+    // backfill lalamove_order_id so later webhooks hit the primary index.
+    if (!shipment && orderData?.metadata) {
       const metadata = orderData.metadata as Record<string, unknown>
-      const internalOrderId = metadata?.orderId as string
+      const internalOrderId = metadata?.orderId as string | undefined
       if (internalOrderId) {
         const { data: shipmentByMeta } = await supabase
           .from('lalamove_shipments')
@@ -150,20 +213,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
-        shipment = shipmentByMeta
+
+        if (shipmentByMeta) {
+          if (eventType !== 'ORDER_CREATED') {
+            await supabase
+              .from('lalamove_shipments')
+              .update({ lalamove_order_id: lalamoveOrderId })
+              .eq('id', shipmentByMeta.id)
+              .is('lalamove_order_id', null)
+            shipmentByMeta.lalamove_order_id = lalamoveOrderId
+          }
+          shipment = shipmentByMeta
+        }
       }
     }
 
     if (!shipment) {
-      console.warn('[Lalamove Webhook] No shipment found for order:', sanitizeForLog(lalamoveOrderId))
-      if (eventId) {
+      logErr('shipment-not-found', { lalamoveOrderId: sanitizeForLog(lalamoveOrderId) })
+      if (eventRowId) {
         await supabase
           .from('lalamove_webhook_events')
           .update({ processed: true, processing_error: 'Shipment not found' })
-          .eq('id', eventId)
+          .eq('id', eventRowId)
       }
       return response
     }
+
+    log('shipment-found', { shipmentId: shipment.id as string, dispatchStatus: shipment.dispatch_status as string })
 
     // Route by event type
     try {
@@ -189,32 +265,39 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           break
 
         default:
-          console.log('[Lalamove Webhook] Unknown event type:', sanitizeForLog(eventType))
+          log('unknown-event-type', { eventType: sanitizeForLog(eventType) })
       }
 
-      if (eventId) {
+      if (eventRowId) {
         await supabase
           .from('lalamove_webhook_events')
           .update({ processed: true })
-          .eq('id', eventId)
+          .eq('id', eventRowId)
       }
+      log('done')
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error('[Lalamove Webhook] Processing error:', errorMessage)
+      const errorStack = error instanceof Error ? error.stack : undefined
+      logErr('handler-error', { message: errorMessage, stack: errorStack })
 
-      if (eventId) {
+      if (eventRowId) {
         await supabase
           .from('lalamove_webhook_events')
           .update({ processing_error: errorMessage })
-          .eq('id', eventId)
+          .eq('id', eventRowId)
       }
     }
 
     return response
   } catch (error) {
-    console.error('[Lalamove Webhook] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logErr('fatal', { message, stack })
+    return NextResponse.json(
+      { success: false, error: 'Internal error', trace },
+      { status: 500 }
+    )
   }
 }
 
@@ -336,10 +419,10 @@ async function updateDriverDetails(
   const lalamove = createLalamoveClient()
   const driver = await lalamove.getDriverDetails(lalamoveOrderId, driverId)
 
+  // Always refresh driver info — phone/plate/location can change mid-delivery.
   await supabase
     .from('lalamove_shipments')
     .update({
-      dispatch_status: 'driver_assigned',
       driver_name: driver.name,
       driver_phone: driver.phone,
       driver_plate: driver.plateNumber,
@@ -353,13 +436,34 @@ async function updateDriverDetails(
   await supabase
     .from('orders')
     .update({
-      lalamove_status: 'ON_GOING',
-      dispatch_status: 'driver_assigned',
       driver_name: driver.name,
       driver_phone: driver.phone,
       driver_plate_number: driver.plateNumber,
     })
     .eq('id', shipment.order_id)
+
+  // Advance dispatch_status only if the shipment hasn't already progressed.
+  // Prevents late DRIVER_ASSIGNED webhooks from regressing in_transit/delivered
+  // rows. The .in() filter is evaluated by Postgres, so concurrent webhooks
+  // race safely.
+  await supabase
+    .from('lalamove_shipments')
+    .update({ dispatch_status: 'driver_assigned' })
+    .eq('id', shipment.id)
+    .in('dispatch_status', ['quoted', 'driver_pending', 'manual_review'])
+
+  await supabase
+    .from('orders')
+    .update({ lalamove_status: 'ON_GOING', dispatch_status: 'driver_assigned' })
+    .eq('id', shipment.order_id)
+    .in('dispatch_status', [
+      'not_ready',
+      'queued',
+      'submitted',
+      'quoted',
+      'driver_pending',
+      'manual_review',
+    ])
 
   return driver
 }
@@ -400,9 +504,11 @@ async function handleDriverAssigned(
 
     console.log(`[Lalamove Webhook] Driver assigned: ${driver.name} for order ${shipment.order_id}`)
   } catch (error) {
-    // Driver details may return 403 - update status anyway
+    // Driver details may return 403 (permissions) or 404 (driver not yet
+    // indexed on Lalamove's side). Both self-heal on the next webhook, so
+    // log and advance dispatch_status only if the shipment hasn't progressed.
     const errorMessage = error instanceof Error ? error.message : ''
-    if (!errorMessage.includes('403')) {
+    if (!errorMessage.includes('403') && !errorMessage.includes('404')) {
       throw error
     }
 
@@ -410,11 +516,20 @@ async function handleDriverAssigned(
       .from('lalamove_shipments')
       .update({ dispatch_status: 'driver_assigned' })
       .eq('id', shipment.id)
+      .in('dispatch_status', ['quoted', 'driver_pending', 'manual_review'])
 
     await supabase
       .from('orders')
       .update({ dispatch_status: 'driver_assigned' })
       .eq('id', shipment.order_id)
+      .in('dispatch_status', [
+        'not_ready',
+        'queued',
+        'submitted',
+        'quoted',
+        'driver_pending',
+        'manual_review',
+      ])
 
     console.log(`[Lalamove Webhook] Driver assigned (details unavailable yet) for order ${shipment.order_id}`)
   }

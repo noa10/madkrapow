@@ -89,7 +89,11 @@ export default function ProfilePage() {
         }
         setError(customerData.error || "Failed to load profile")
       } else {
-        setCustomer(customerData.customer)
+        setCustomer({
+          ...customerData.customer,
+          addresses: customerData.addresses || [],
+          contacts: customerData.contacts || [],
+        })
       }
 
       if (ordersData.success) {

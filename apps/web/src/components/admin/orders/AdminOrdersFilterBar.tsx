@@ -1,6 +1,6 @@
 "use client"
 
-import { RefreshCw, Wifi, WifiOff, Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
+import { RefreshCw, Wifi, WifiOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { OrderTab, OrderSource } from "@/types/orders"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
@@ -22,12 +22,12 @@ const TABS: { value: OrderTab; label: string }[] = [
   { value: "history", label: "History" },
 ]
 
-const SOURCE_OPTIONS: { value: "all" | OrderSource; label: string; icon: React.ReactNode }[] = [
-  { value: "all", label: "All Sources", icon: null },
-  { value: "web", label: "Web", icon: <Globe className="h-3.5 w-3.5" /> },
-  { value: "telegram", label: "Telegram", icon: <MessageCircle className="h-3.5 w-3.5" /> },
-  { value: "whatsapp", label: "WhatsApp", icon: <MessageSquare className="h-3.5 w-3.5" /> },
-  { value: "mobile", label: "Mobile", icon: <Smartphone className="h-3.5 w-3.5" /> },
+const SOURCE_OPTIONS: { value: "all" | OrderSource; label: string }[] = [
+  { value: "all", label: "All Sources" },
+  { value: "web", label: "Web" },
+  { value: "telegram", label: "Telegram" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "mobile", label: "Mobile" },
 ]
 
 export function AdminOrdersFilterBar({
@@ -68,10 +68,7 @@ export function AdminOrdersFilterBar({
               <SelectContent>
                 {SOURCE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
-                    <span className="flex items-center gap-2">
-                      {opt.icon}
-                      {opt.label}
-                    </span>
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>

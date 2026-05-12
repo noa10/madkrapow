@@ -275,6 +275,7 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
                   src={imageUrl}
                   alt="Menu item"
                   fill
+                  sizes="(min-width: 640px) 320px, 100vw"
                   className="rounded-lg object-cover"
                 />
               </div>

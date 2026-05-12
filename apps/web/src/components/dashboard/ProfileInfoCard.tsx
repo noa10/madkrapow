@@ -49,6 +49,7 @@ export function ProfileInfoCard({ customer }: ProfileInfoCardProps) {
                 src={customer.avatarUrl}
                 alt="Profile photo"
                 fill
+                sizes="48px"
                 className="object-cover"
               />
             </div>

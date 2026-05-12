@@ -50,6 +50,7 @@ export function ProfileDropdown({ userName, userEmail, userAvatarUrl, isAdmin }:
               src={userAvatarUrl}
               alt="Profile"
               fill
+              sizes="24px"
               className="object-cover"
             />
           </div>
@@ -71,6 +72,7 @@ export function ProfileDropdown({ userName, userEmail, userAvatarUrl, isAdmin }:
                     src={userAvatarUrl}
                     alt="Profile"
                     fill
+                    sizes="32px"
                     className="object-cover"
                   />
                 </div>

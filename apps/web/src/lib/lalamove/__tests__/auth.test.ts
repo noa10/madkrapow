@@ -128,45 +128,83 @@ describe('buildAuthHeaders', () => {
 
 describe('verifyWebhookSignature', () => {
   const SECRET = 'sk_test_secret'
+  const PATH = '/api/webhooks/lalamove'
 
-  it('verifies a valid webhook signature', () => {
-    const body = '{"orderId":"123","type":"ORDER_STATUS_CHANGED"}'
+  const signData = (timestamp: number | string, path: string, data: unknown, secret = SECRET) => {
     const crypto = require('crypto')
-    const signature = crypto
-      .createHmac('sha256', SECRET)
-      .update(body)
-      .digest('hex')
+    const raw = `${timestamp}\r\nPOST\r\n${path}\r\n\r\n${JSON.stringify(data)}`
+    return crypto.createHmac('sha256', secret).update(raw).digest('hex')
+  }
 
-    expect(verifyWebhookSignature(body, signature, SECRET)).toBe(true)
+  it('verifies a valid webhook signature using the v3 recipe', () => {
+    const timestamp = 1778608253
+    const data = { balance: { amount: '100', currency: 'MYR' } }
+    const signature = signData(timestamp, PATH, data)
+
+    expect(verifyWebhookSignature(signature, SECRET, timestamp, PATH, data)).toBe(true)
+  })
+
+  it('matches the sandbox sample from the Lalamove portal', () => {
+    // Real sample from the Partner Portal webhook log, used to reverse-confirm
+    // the v3 signing recipe. Keeps us honest if anyone edits the verifier.
+    const portalSecret =
+      'sk_test_bAzqfQxcp94EGxz2zygQKPrCYzW5rm5MgfmtY4YYGbEecTo+HLD+r2rCWFCUUp+2'
+    const timestamp = 1778608253
+    const data = {
+      balance: { amount: '959.2', currency: 'MYR' },
+      updatedAt: '2026-05-13T01:50.00Z',
+    }
+    const realSignature =
+      'a6f9a6b08bbfd16b32ebb346020362712c9ca0f0a4826e625278a83ab613a3ed'
+
+    expect(
+      verifyWebhookSignature(realSignature, portalSecret, timestamp, PATH, data)
+    ).toBe(true)
   })
 
   it('rejects an invalid webhook signature', () => {
-    const body = '{"orderId":"123","type":"ORDER_STATUS_CHANGED"}'
     const invalidSig = 'a'.repeat(64)
-
-    expect(verifyWebhookSignature(body, invalidSig, SECRET)).toBe(false)
+    expect(
+      verifyWebhookSignature(invalidSig, SECRET, 1700000000, PATH, { foo: 1 })
+    ).toBe(false)
   })
 
-  it('rejects when body is tampered', () => {
-    const originalBody = '{"orderId":"123"}'
-    const tamperedBody = '{"orderId":"456"}'
-    const crypto = require('crypto')
-    const signature = crypto
-      .createHmac('sha256', SECRET)
-      .update(originalBody)
-      .digest('hex')
+  it('rejects when data is tampered', () => {
+    const timestamp = 1700000000
+    const signature = signData(timestamp, PATH, { orderId: '123' })
 
-    expect(verifyWebhookSignature(tamperedBody, signature, SECRET)).toBe(false)
+    expect(
+      verifyWebhookSignature(signature, SECRET, timestamp, PATH, { orderId: '456' })
+    ).toBe(false)
+  })
+
+  it('rejects when path does not match', () => {
+    const timestamp = 1700000000
+    const data = { orderId: '123' }
+    const signature = signData(timestamp, PATH, data)
+
+    expect(
+      verifyWebhookSignature(signature, SECRET, timestamp, '/other/path', data)
+    ).toBe(false)
   })
 
   it('rejects when secret is wrong', () => {
-    const body = '{"orderId":"123"}'
-    const crypto = require('crypto')
-    const signature = crypto
-      .createHmac('sha256', SECRET)
-      .update(body)
-      .digest('hex')
+    const timestamp = 1700000000
+    const data = { orderId: '123' }
+    const signature = signData(timestamp, PATH, data)
 
-    expect(verifyWebhookSignature(body, signature, 'wrong_secret')).toBe(false)
+    expect(
+      verifyWebhookSignature(signature, 'wrong_secret', timestamp, PATH, data)
+    ).toBe(false)
+  })
+
+  it('returns false for missing signature', () => {
+    expect(verifyWebhookSignature('', SECRET, 1700000000, PATH, {})).toBe(false)
+  })
+
+  it('returns false for signatures of wrong length', () => {
+    expect(
+      verifyWebhookSignature('abc', SECRET, 1700000000, PATH, {})
+    ).toBe(false)
   })
 })

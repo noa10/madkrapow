@@ -76,12 +76,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Signature verification. Always call the verifier (unconditional),
     // so permission to process the webhook does not branch on user-controlled
-    // state. An unknown or invalid signature throws or returns false and is
-    // rejected with 401.
+    // state. Per Lalamove v3 spec (v3_Webhook_v1.5.pdf p.8), the signed
+    // string is `${timestamp}\r\nPOST\r\n${path}\r\n\r\n${JSON.stringify(data)}`
+    // hashed with HMAC-SHA256 and lowercase hex-encoded.
+    const requestPath = new URL(req.url).pathname
     let verified = false
     let verifyError: string | null = null
     try {
-      verified = verifyWebhookSignature(body, signature ?? '', secret)
+      verified = verifyWebhookSignature(
+        signature ?? '',
+        secret,
+        eventTimestampRaw as string | number,
+        requestPath,
+        payload.data
+      )
     } catch (e) {
       verified = false
       verifyError = e instanceof Error ? e.message : String(e)
@@ -89,6 +97,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!verified) {
       logErr('signature-failed', {
         signaturePreview: signature ? signature.slice(0, 12) + '…' : null,
+        path: requestPath,
+        timestamp: eventTimestampRaw,
         verifyError,
       })
       return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })

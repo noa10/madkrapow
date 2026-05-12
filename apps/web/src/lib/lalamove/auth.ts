@@ -51,18 +51,40 @@ export function buildAuthHeaders(
 }
 
 /**
- * Verify a webhook signature from Lalamove.
+ * Verify a webhook signature from Lalamove v3.
  *
- * Webhooks use HMAC-SHA256 of the raw body string, hex-encoded.
+ * Per Lalamove's v3 webhook spec (see v3_Webhook_v1.5.pdf, page 8 "Validating
+ * the webhooks"), the signature is HMAC-SHA256 over the following string,
+ * lowercase hex encoded:
+ *
+ *   `${timestamp}\r\n${httpVerb}\r\n${path}\r\n\r\n${body}`
+ *
+ * where:
+ *   timestamp = payload.timestamp (Unix seconds, as sent by Lalamove)
+ *   httpVerb  = "POST"
+ *   path      = the webhook URL path after the root domain (e.g. /api/webhooks/lalamove)
+ *   body      = JSON.stringify(payload.data) — only the `data` field, not the full payload
+ *
+ * Returns false for any malformed input rather than throwing.
  */
 export function verifyWebhookSignature(
-  body: string,
   signature: string,
-  secret: string
+  secret: string,
+  timestamp: string | number,
+  path: string,
+  data: unknown
 ): boolean {
-  const expected = crypto.createHmac('sha256', secret).update(body).digest('hex')
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, 'hex'),
-    Buffer.from(expected, 'hex')
-  )
+  if (!signature || !secret) return false
+  const body = JSON.stringify(data ?? {})
+  const raw = `${timestamp}\r\nPOST\r\n${path}\r\n\r\n${body}`
+  const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
+  if (signature.length !== expected.length) return false
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, 'hex'),
+      Buffer.from(expected, 'hex')
+    )
+  } catch {
+    return false
+  }
 }

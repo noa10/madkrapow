@@ -65,7 +65,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(generateOrderDisplayCode(widget.orderId)),
+        title: Text(
+          orderAsync.maybeWhen(
+            data: (d) => getOrderDisplayCode(d.order),
+            orElse: () => generateOrderDisplayCode(widget.orderId),
+          ),
+        ),
         actions: [
           Text(
             widget.orderId,
@@ -107,7 +112,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              generateOrderDisplayCode(widget.orderId),
+                              getOrderDisplayCode(order),
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),

@@ -8,6 +8,10 @@ import type { ShipmentDispatchStatus } from '@/lib/lalamove/types'
 // (GET/POST/etc.), so any helper that needs to be imported by tests must live
 // outside route.ts.
 
+function sanitizeForLog(value: string): string {
+  return value.replace(/\n|\r/g, '')
+}
+
 export async function handleStatusChange(
   supabase: ReturnType<typeof createServerClient>,
   shipment: Record<string, unknown>,
@@ -410,5 +414,7 @@ export async function handleOrderCreated(
     },
   })
 
-  console.log(`[Lalamove Webhook] Order created: ${lalamoveOrderId} for order ${shipment.order_id}`)
+  console.log(
+    `[Lalamove Webhook] Order created: ${sanitizeForLog(lalamoveOrderId)} for order ${shipment.order_id}`
+  )
 }

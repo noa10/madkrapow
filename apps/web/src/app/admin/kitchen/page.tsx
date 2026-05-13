@@ -8,7 +8,7 @@ import { Clock, User, MapPin, Loader2, Package, ShieldAlert, Globe, MessageCircl
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
-import { generateOrderDisplayCode } from '@/lib/utils/order-code';
+import { getOrderDisplayCode } from '@/lib/utils/order-code';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
@@ -128,7 +128,7 @@ function OrderCard({ order }: OrderCardProps) {
       <CardHeader className="pb-4 border-b border-border bg-secondary/30">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl md:text-2xl font-bold font-display text-foreground">
-            {generateOrderDisplayCode(order.id)}
+            {getOrderDisplayCode(order)}
           </CardTitle>
           <div className="flex items-center gap-2">
             {order.source && SOURCE_ICONS[order.source] && (

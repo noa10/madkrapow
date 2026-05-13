@@ -1,5 +1,23 @@
-/// Deterministic daily display code for orders.
-/// Same order + same date = same code across all platforms.
+import '../../generated/tables/orders.dart';
+
+/// Display code for orders.
+///
+///  - Production codes are stored in `orders.display_code` (written by the
+///    Postgres trigger `orders_assign_display_code`). Format: `MK-NNN` base,
+///    auto-expands to `MK-NNNN`, etc. when a day's pool fills.
+///  - [getOrderDisplayCode] prefers the stored code and falls back to the
+///    legacy FNV-1a daily hash for rows without one.
+///  - [generateOrderDisplayCode] is the legacy fallback kept only so callers
+///    that have just an id (e.g. before the order row loads) can render
+///    something. Do not use for new callers that have the row.
+String getOrderDisplayCode(OrdersRow order, [DateTime? date]) {
+  final stored = order.getField<String>('display_code');
+  if (stored != null && stored.isNotEmpty) return stored;
+  return generateOrderDisplayCode(order.id, date);
+}
+
+/// Legacy deterministic daily display code. Kept only as a fallback for
+/// pre-migration rows and for callers that have only an order id.
 String generateOrderDisplayCode(String orderId, [DateTime? date]) {
   final now = date ?? DateTime.now();
   // Kuala Lumpur is UTC+8

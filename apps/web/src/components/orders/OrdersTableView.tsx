@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import { ArrowRight, ShoppingCart, Loader2 } from "lucide-react"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
@@ -12,6 +12,7 @@ import { useCartStore } from "@/stores/cart"
 
 interface Order {
   id: string
+  display_code?: string | null
   status: string
   total_cents: number
   delivery_fee_cents: number
@@ -114,7 +115,7 @@ export function OrdersTableView({ orders }: OrdersTableViewProps) {
                     href={`/order/${order.id}`}
                     className="text-sm font-medium text-gold hover:text-gold/80 tabular-nums tracking-wide"
                   >
-                    {generateOrderDisplayCode(order.id)}
+                    {getOrderDisplayCode(order)}
                   </Link>
                 </td>
                 <td className="px-4 py-3">

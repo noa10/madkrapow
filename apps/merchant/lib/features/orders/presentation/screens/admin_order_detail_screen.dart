@@ -61,7 +61,12 @@ class _AdminOrderDetailScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(generateOrderDisplayCode(widget.orderId)),
+        title: Text(
+          detailAsync.maybeWhen(
+            data: (d) => getOrderDisplayCode(d.order),
+            orElse: () => generateOrderDisplayCode(widget.orderId),
+          ),
+        ),
       ),
       body: AsyncValueWidget<OrderDetail>(
         value: detailAsync,
@@ -96,7 +101,7 @@ class _OrderDetailContent extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          generateOrderDisplayCode(order.id),
+                          getOrderDisplayCode(order),
                           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),

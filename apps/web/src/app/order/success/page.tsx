@@ -11,7 +11,7 @@ import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
-import { generateOrderDisplayCode } from '@/lib/utils/order-code'
+import { getOrderDisplayCode } from '@/lib/utils/order-code'
 
 type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying' | 'processing'
 
@@ -49,6 +49,7 @@ function SuccessContent() {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [orderTotalCents, setOrderTotalCents] = useState(0)
   const [deliveryFeeCents, setDeliveryFeeCents] = useState(0)
+  const [displayCode, setDisplayCode] = useState<string | null>(null)
 
   useEffect(() => {
     clearCart()
@@ -63,13 +64,14 @@ function SuccessContent() {
 
       const { data: orderData } = await supabase
         .from('orders')
-        .select('total_cents, delivery_fee_cents')
+        .select('total_cents, delivery_fee_cents, display_code')
         .eq('id', orderId)
         .single()
 
       if (orderData) {
         setOrderTotalCents(orderData.total_cents ?? 0)
         setDeliveryFeeCents(orderData.delivery_fee_cents ?? 0)
+        setDisplayCode(orderData.display_code ?? null)
       }
 
       const { data: itemsData } = await supabase
@@ -310,7 +312,7 @@ function SuccessContent() {
                   <div>
                     <p className="text-sm text-muted-foreground">Order Code</p>
                     <p className="font-semibold text-lg tracking-tight">
-                      {generateOrderDisplayCode(orderId)}
+                      {getOrderDisplayCode({ id: orderId, display_code: displayCode })}
                     </p>
                     <p className="font-mono text-[11px] text-muted-foreground/60">
                       System ID: {orderId}

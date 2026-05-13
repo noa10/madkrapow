@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { MapPin, User, Clock } from "lucide-react";
 import Link from "next/link";
 import { AdminOrder } from "@/hooks/useAdminOrders";
-import { generateOrderDisplayCode } from "@/lib/utils/order-code";
+import { getOrderDisplayCode } from "@/lib/utils/order-code";
 
 interface OrderTicketProps {
   order: AdminOrder;
@@ -44,7 +44,7 @@ export function OrderTicket({ order }: OrderTicketProps) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <span className="text-base font-bold text-foreground tabular-nums tracking-wide">
-              {generateOrderDisplayCode(order.id)}
+              {getOrderDisplayCode(order)}
             </span>
             <Badge className={statusConfig.color}>
               {statusConfig.label}

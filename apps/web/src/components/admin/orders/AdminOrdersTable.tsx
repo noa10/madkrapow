@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { format, parseISO } from "date-fns"
 import { CompactOrderActions } from "./CompactOrderActions"
 import type { Order } from "@/types/orders"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 
 export interface OrdersByDateGroup {
   dateLabel: string
@@ -100,7 +100,7 @@ export function AdminOrdersTableView({ orders, onStatusChange }: AdminOrdersTabl
                         href={`/admin/orders/${order.id}`}
                         className="text-base font-bold text-gold hover:text-gold/80 tabular-nums tracking-wide"
                       >
-                        {generateOrderDisplayCode(order.id)}
+                        {getOrderDisplayCode(order)}
                       </Link>
                     </td>
                     <td className="px-4 py-3">

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
 import { Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
 import type { Order, OrderSource } from "@/types/orders"
@@ -110,7 +110,7 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
   }
 
   const itemCount = order.item_count
-  const displayCode = generateOrderDisplayCode(order.id)
+  const displayCode = getOrderDisplayCode(order)
   const timeInfo = compactRelativeTime(order.created_at)
 
   return (

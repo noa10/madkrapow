@@ -4,13 +4,14 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import { Clock, Truck, CheckCircle, Package, ArrowRight, Calendar, DollarSign, ShoppingCart, Loader2 } from "lucide-react"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useCartStore } from "@/stores/cart"
 
 interface Order {
   id: string
+  display_code?: string | null
   status: string
   total_cents: number
   created_at: string
@@ -100,7 +101,7 @@ export function OrdersListView({ orders }: OrdersListViewProps) {
           >
             <div className="flex items-center gap-3 min-w-0">
               <span className="text-base font-bold text-foreground tabular-nums shrink-0 tracking-wide">
-                {generateOrderDisplayCode(order.id)}
+                {getOrderDisplayCode(order)}
               </span>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
                 <Calendar className="h-3.5 w-3.5" />

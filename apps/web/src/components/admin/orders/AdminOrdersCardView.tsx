@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { format, parseISO } from "date-fns"
 import { ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
 import type { Order } from "@/types/orders"
 
@@ -95,7 +95,7 @@ export function AdminOrdersCardView({ orders, grouped = true, onStatusChange }: 
                     href={`/admin/orders/${order.id}`}
                     className="text-lg font-bold text-gold hover:text-gold/80 tabular-nums tracking-wide"
                   >
-                    {generateOrderDisplayCode(order.id)}
+                    {getOrderDisplayCode(order)}
                   </Link>
                   <div className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium border", STATUS_COLORS[order.status] || STATUS_COLORS.pending)}>
                     {order.status.charAt(0).toUpperCase() + order.status.slice(1)}

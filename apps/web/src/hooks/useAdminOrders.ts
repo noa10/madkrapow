@@ -6,6 +6,7 @@ import { getBrowserClient } from "@/lib/supabase/client";
 
 export interface AdminOrder {
   id: string;
+  display_code?: string | null;
   status: string;
   total_cents: number;
   delivery_fee_cents: number;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleStatusChange, handlePodStatusChanged } from '../handlers'
+import { handleStatusChange, handlePodStatusChanged, handleDriverAssigned } from '../handlers'
 
 // ---------------------------------------------------------------------------
 // Mock Supabase client
@@ -323,5 +323,96 @@ describe('handlePodStatusChanged', () => {
       pod_image: null,
       pod_delivered_at: null,
     })
+  })
+})
+
+describe('handleDriverAssigned — payload shape variants', () => {
+  const driverPendingShipment = { ...baseShipment, dispatch_status: 'driver_pending' }
+
+  it('uses inline driver record from data.driver (sandbox shape) without calling getDriverDetails', async () => {
+    // The inline-driver path never reaches createLalamoveClient, so the
+    // top-level import is fine and we don't need a doMock here.
+    const supabase = buildMockClient()
+    const data = {
+      order: { orderId: 'lala-1' },
+      driver: {
+        driverId: '80039',
+        name: 'TestDriver 44111',
+        phone: '+6011144111',
+        plateNumber: 'VP2381474',
+        photo: '',
+      },
+    }
+
+    await handleDriverAssigned(supabase as any, driverPendingShipment, 'lala-1', data)
+
+    const shipmentUpdates = updatesTo(supabase.calls, 'lalamove_shipments')
+    const driverWrite = shipmentUpdates.find((u) => u.patch.driver_name === 'TestDriver 44111')
+    expect(driverWrite).toBeDefined()
+    expect(driverWrite?.patch.driver_phone).toBe('+6011144111')
+    expect(driverWrite?.patch.driver_plate).toBe('VP2381474')
+
+    const ordersWrites = updatesTo(supabase.calls, 'orders')
+    const ordersDriver = ordersWrites.find((u) => u.patch.driver_name === 'TestDriver 44111')
+    expect(ordersDriver?.patch.driver_plate_number).toBe('VP2381474')
+
+    const events = insertsTo(supabase.calls, 'order_events')
+    expect(events).toHaveLength(1)
+    expect(events[0].row.event_type).toBe('driver_assigned')
+    expect(events[0].row.new_value).toMatchObject({
+      driver_name: 'TestDriver 44111',
+      driver_plate: 'VP2381474',
+    })
+  })
+
+  it('falls back to GET /v3/orders/{id} when only data.order.orderId is present', async () => {
+    // createLalamoveClient is statically imported in handlers.ts, so mock
+    // it then re-import the handler to pick up the mocked module.
+    vi.doMock('@/lib/lalamove/client', () => ({
+      createLalamoveClient: () => ({
+        getOrderDetails: vi.fn(async () => ({ driverId: 'fetched-driver-id' })),
+        getDriverDetails: vi.fn(async () => ({
+          driverId: 'fetched-driver-id',
+          name: 'Fetched Driver',
+          phone: '+60100000000',
+          plateNumber: 'PLATE-FETCHED',
+          photo: null,
+          coordinates: null,
+        })),
+      }),
+    }))
+    const { handleDriverAssigned: freshHandler } = await import('../handlers')
+    const supabase = buildMockClient()
+
+    await freshHandler(supabase as any, driverPendingShipment, 'lala-1', {
+      order: { orderId: 'lala-1' },
+    })
+
+    const events = insertsTo(supabase.calls, 'order_events')
+    expect(events[0]?.row.event_type).toBe('driver_assigned')
+    expect(events[0]?.row.new_value).toMatchObject({ driver_name: 'Fetched Driver' })
+  })
+
+  it('logs payload keys and returns when no driverId can be discovered', async () => {
+    vi.doMock('@/lib/lalamove/client', () => ({
+      createLalamoveClient: () => ({
+        getOrderDetails: vi.fn(async () => ({ driverId: '' })),
+        getDriverDetails: vi.fn(),
+      }),
+    }))
+    const { handleDriverAssigned: freshHandler } = await import('../handlers')
+    const supabase = buildMockClient()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await freshHandler(supabase as any, driverPendingShipment, 'lala-1', {
+      order: { orderId: 'lala-1' },
+    })
+
+    expect(warnSpy).toHaveBeenCalled()
+    const warnMessage = warnSpy.mock.calls.map((c) => c[0] as string).join('\n')
+    expect(warnMessage).toMatch(/DRIVER_ASSIGNED without driverId/)
+    expect(warnMessage).toMatch(/data keys: order/)
+    expect(insertsTo(supabase.calls, 'order_events')).toHaveLength(0)
+    warnSpy.mockRestore()
   })
 })

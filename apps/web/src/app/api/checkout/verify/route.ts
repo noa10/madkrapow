@@ -68,7 +68,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
 
     // Security: ensure the session belongs to the requested order
     if (session.metadata?.order_id !== orderId) {
-      console.error('[Verify] Session metadata order_id mismatch:', session.metadata?.order_id, '!=', orderId)
+      console.error(
+        '[Verify] Session metadata order_id mismatch:',
+        sanitizeForLog(session.metadata?.order_id ?? ''),
+        '!=',
+        sanitizeForLog(orderId)
+      )
       return NextResponse.json(
         { success: false, error: 'Session does not match order' },
         { status: 400 }

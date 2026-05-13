@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,12 @@ import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
+import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
+
+const DeliveryMap = dynamic(
+  () => import("@/components/order/DeliveryMap").then((mod) => mod.DeliveryMap),
+  { ssr: false }
+);
 
 interface OrderItemModifier {
   id: string;
@@ -218,6 +225,9 @@ export default function AdminOrderDetailPage() {
     driver_phone: string | null
     driver_plate: string | null
     driver_photo_url: string | null
+    driver_latitude: number | null
+    driver_longitude: number | null
+    driver_location_updated_at: string | null
     quoted_fee_cents: number | null
     actual_fee_cents: number | null
     created_at: string
@@ -326,6 +336,35 @@ export default function AdminOrderDetailPage() {
       supabase.removeChannel(channel);
     };
   }, [orderId]);
+
+  // Polling fallback: refresh shipment row every 5s while delivery is active.
+  // Realtime is the primary update path; this is the safety net for missed events.
+  // Deps are scalar fields only — including the full `shipment` object would
+  // re-create the interval on every poll write.
+  useEffect(() => {
+    const TERMINAL_ORDER = ['delivered', 'completed', 'cancelled', 'refunded'];
+    const ACTIVE_DISPATCH = ['driver_pending', 'driver_assigned', 'in_transit'];
+    if (!order || !shipment) return;
+    if (TERMINAL_ORDER.includes(order.status)) return;
+    if (!ACTIVE_DISPATCH.includes(shipment.dispatch_status)) return;
+
+    const supabase = getBrowserClient();
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('lalamove_shipments')
+        .select('*')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) setShipment(data);
+    }, 5000);
+
+    return () => clearInterval(interval);
+    // Scalar deps only: including the full `order`/`shipment` objects would
+    // re-create the interval on every poll write and reset the 5s cadence.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, order?.status, shipment?.dispatch_status]);
 
   if (loading) {
     return (
@@ -764,30 +803,62 @@ export default function AdminOrderDetailPage() {
             </Card>
           )}
 
-          {(shipment?.driver_name || order.driver_name) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Driver Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p>
-                  <strong>Name:</strong> {shipment?.driver_name || order.driver_name}
-                </p>
-                {(shipment?.driver_phone || order.driver_phone) && (
-                  <p>
-                    <strong>Phone:</strong>{" "}
-                    <a href={`tel:${shipment?.driver_phone || order.driver_phone}`} className="text-primary">
-                      {shipment?.driver_phone || order.driver_phone}
-                    </a>
-                  </p>
-                )}
-                {(shipment?.driver_plate || order.driver_plate_number) && (
-                  <p>
-                    <strong>Plate:</strong> {shipment?.driver_plate || order.driver_plate_number}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+          {(shipment?.driver_name || order.driver_name || shipment?.lalamove_order_id) && (
+            <>
+              <AdminDriverTrackingCard
+                orderId={order.id}
+                driver_name={shipment?.driver_name ?? order.driver_name ?? null}
+                driver_phone={shipment?.driver_phone ?? order.driver_phone ?? null}
+                driver_plate_number={shipment?.driver_plate ?? order.driver_plate_number ?? null}
+                driver_photo_url={shipment?.driver_photo_url ?? null}
+                driver_location_updated_at={shipment?.driver_location_updated_at ?? null}
+                canRefresh={
+                  Boolean(shipment?.lalamove_order_id) &&
+                  !['delivered', 'completed', 'cancelled', 'refunded'].includes(order.status)
+                }
+                onRefreshSuccess={(driver) => {
+                  setShipment((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          driver_name: driver.name ?? prev.driver_name,
+                          driver_phone: driver.phone ?? prev.driver_phone,
+                          driver_plate: driver.plateNumber ?? prev.driver_plate,
+                          driver_photo_url: driver.photo ?? prev.driver_photo_url,
+                          driver_latitude: driver.coordinates
+                            ? parseFloat(driver.coordinates.lat)
+                            : prev.driver_latitude,
+                          driver_longitude: driver.coordinates
+                            ? parseFloat(driver.coordinates.lng)
+                            : prev.driver_longitude,
+                          driver_location_updated_at:
+                            driver.coordinates?.updatedAt ?? prev.driver_location_updated_at,
+                        }
+                      : prev,
+                  );
+                }}
+              />
+              {order.delivery_type !== 'self_pickup' && (
+                <DeliveryMap
+                  driverLatitude={shipment?.driver_latitude ?? null}
+                  driverLongitude={shipment?.driver_longitude ?? null}
+                  deliveryLatitude={
+                    order.delivery_address_json
+                      ? ((order.delivery_address_json as Record<string, number>).latitude ?? null)
+                      : null
+                  }
+                  deliveryLongitude={
+                    order.delivery_address_json
+                      ? ((order.delivery_address_json as Record<string, number>).longitude ?? null)
+                      : null
+                  }
+                  driverName={shipment?.driver_name ?? order.driver_name ?? null}
+                  orderStatus={order.status}
+                  deliveryType={order.delivery_type}
+                  driverLocationUpdatedAt={shipment?.driver_location_updated_at ?? null}
+                />
+              )}
+            </>
           )}
         </div>
       </div>

@@ -129,12 +129,16 @@ describe('isValidStatusTransition', () => {
   })
 
   describe('backward transitions are blocked', () => {
-    it('blocks driver_assigned → driver_pending', () => {
-      expect(isValidStatusTransition('driver_assigned', 'driver_pending')).toBe(false)
+    it('blocks driver_assigned → quoted (arbitrary backward)', () => {
+      expect(isValidStatusTransition('driver_assigned', 'quoted')).toBe(false)
     })
 
-    it('blocks in_transit → driver_assigned', () => {
+    it('blocks in_transit → driver_assigned (skips revert step)', () => {
       expect(isValidStatusTransition('in_transit', 'driver_assigned')).toBe(false)
+    })
+
+    it('blocks in_transit → quoted (arbitrary backward)', () => {
+      expect(isValidStatusTransition('in_transit', 'quoted')).toBe(false)
     })
 
     it('blocks delivered → in_transit', () => {
@@ -160,13 +164,22 @@ describe('isValidStatusTransition', () => {
     })
   })
 
-  describe('same-state and backward forward-lane transitions', () => {
-    it('blocks driver_pending → driver_pending (duplicate webhook)', () => {
-      expect(isValidStatusTransition('driver_pending', 'driver_pending')).toBe(false)
+  describe('Lalamove driver-rejection reverts are allowed', () => {
+    it('allows driver_assigned → driver_pending (driver rejected during ON_GOING)', () => {
+      expect(isValidStatusTransition('driver_assigned', 'driver_pending')).toBe(true)
     })
 
-    it('blocks in_transit → driver_pending (backward across multiple steps)', () => {
-      expect(isValidStatusTransition('in_transit', 'driver_pending')).toBe(false)
+    it('allows in_transit → driver_pending (driver rejected during PICKED_UP)', () => {
+      expect(isValidStatusTransition('in_transit', 'driver_pending')).toBe(true)
+    })
+
+    it('allows driver_pending → driver_pending (duplicate ASSIGNING_DRIVER webhook)', () => {
+      expect(isValidStatusTransition('driver_pending', 'driver_pending')).toBe(true)
+    })
+
+    it('does NOT allow arbitrary same-state transitions outside the revert allowlist', () => {
+      expect(isValidStatusTransition('driver_assigned', 'driver_assigned')).toBe(false)
+      expect(isValidStatusTransition('in_transit', 'in_transit')).toBe(false)
     })
   })
 

@@ -53,6 +53,11 @@ export function isTerminalStatus(status: ShipmentDispatchStatus): boolean {
  * Terminal states cannot be reverted. Allowed forward transitions:
  * quoted → driver_pending → driver_assigned → in_transit → delivered
  * Any non-terminal → failed / cancelled / manual_review
+ *
+ * Lalamove also reverts dispatch when a driver rejects mid-delivery
+ * (ON_GOING/PICKED_UP → ASSIGNING_DRIVER), which maps to
+ * driver_assigned/in_transit → driver_pending. Those reverts are explicitly
+ * allowed; arbitrary backward moves remain blocked.
  */
 export function isValidStatusTransition(
   from: ShipmentDispatchStatus,
@@ -70,6 +75,19 @@ export function isValidStatusTransition(
 
   // Any state can go to failed, cancelled, or manual_review
   if (['failed', 'cancelled', 'manual_review'].includes(to)) {
+    return true
+  }
+
+  // Lalamove driver-rejection reverts: an active dispatch returns to
+  // ASSIGNING_DRIVER while Lalamove searches for a replacement. Same-state
+  // driver_pending → driver_pending is allowed so duplicate ASSIGNING_DRIVER
+  // webhooks (a common occurrence around rejections) are not dropped.
+  const legalReverts: ReadonlyArray<readonly [ShipmentDispatchStatus, ShipmentDispatchStatus]> = [
+    ['driver_assigned', 'driver_pending'],
+    ['in_transit', 'driver_pending'],
+    ['driver_pending', 'driver_pending'],
+  ]
+  if (legalReverts.some(([f, t]) => f === from && t === to)) {
     return true
   }
 

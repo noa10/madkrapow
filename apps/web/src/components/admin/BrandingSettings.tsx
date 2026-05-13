@@ -169,6 +169,7 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
                   src={displayUrl}
                   alt={title}
                   fill
+                  sizes={isLogo ? '128px' : '(min-width: 768px) 448px, 100vw'}
                   className={isLogo ? 'object-contain' : 'object-cover'}
                   unoptimized
                 />
@@ -273,6 +274,7 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
                 src={heroPreview || heroImageUrl || ''}
                 alt="Hero preview"
                 fill
+                sizes="(min-width: 768px) 400px, 100vw"
                 className="object-cover opacity-60"
                 unoptimized
               />
@@ -284,6 +286,7 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
                     src={logoPreview || logoUrl || ''}
                     alt="Logo preview"
                     fill
+                    sizes="64px"
                     className="object-contain"
                     unoptimized
                   />

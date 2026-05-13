@@ -145,6 +145,18 @@ async function sendAdminAlert(
   const adminEmail = process.env.ADMIN_EMAIL
   if (!adminEmail) return
 
+  // Surface the specific failure reason so admins don't have to look up what
+  // each internal status means in their inbox. Subject format is unchanged so
+  // existing email filters keep working.
+  const reason =
+    status === 'manual_review'
+      ? 'Driver rejection limit reached — Lalamove could not assign a replacement driver.'
+      : status === 'failed'
+        ? 'Order expired — no driver was assigned within the Lalamove expiry window.'
+        : status === 'cancelled'
+          ? 'Delivery was cancelled.'
+          : ''
+
   await sendEmail({
     to: adminEmail,
     subject: `[Admin] Delivery ${status} for order #${orderNumber}`,
@@ -152,6 +164,7 @@ async function sendAdminAlert(
       <h2>Delivery Alert</h2>
       <p>Order #${orderNumber} (ID: ${orderId})</p>
       <p>Status: <strong>${status}</strong></p>
+      ${reason ? `<p>${reason}</p>` : ''}
       <p>Please review in the admin dashboard.</p>
     `,
   })

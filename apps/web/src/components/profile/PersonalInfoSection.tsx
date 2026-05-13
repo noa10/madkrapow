@@ -182,6 +182,7 @@ export function PersonalInfoSection({ customer, onUpdate }: PersonalInfoSectionP
                 src={avatarUrl}
                 alt="Profile photo"
                 fill
+                sizes="56px"
                 className="object-cover"
               />
             </div>

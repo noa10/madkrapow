@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import crypto from 'crypto'
 import { verifyWebhookSignature } from '@/lib/lalamove/auth'
-import { createLalamoveClient } from '@/lib/lalamove/client'
-import { mapV3StatusToDispatch, mapDispatchToOrderStatus, isValidStatusTransition } from '@/lib/lalamove/status-mapper'
-import type { ShipmentDispatchStatus } from '@/lib/lalamove/types'
+import {
+  handleStatusChange,
+  handleOrderCreated,
+  handleDriverAssigned,
+  handleAmountChanged,
+  handleOrderReplaced,
+} from './handlers'
 
 function sanitizeForLog(value: string): string {
   return value.replace(/\n|\r/g, '')
@@ -76,12 +80,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Signature verification. Always call the verifier (unconditional),
     // so permission to process the webhook does not branch on user-controlled
-    // state. An unknown or invalid signature throws or returns false and is
-    // rejected with 401.
+    // state. Per Lalamove v3 spec (v3_Webhook_v1.5.pdf p.8), the signed
+    // string is `${timestamp}\r\nPOST\r\n${path}\r\n\r\n${JSON.stringify(data)}`
+    // hashed with HMAC-SHA256 and lowercase hex-encoded.
+    const requestPath = new URL(req.url).pathname
     let verified = false
     let verifyError: string | null = null
     try {
-      verified = verifyWebhookSignature(body, signature ?? '', secret)
+      verified = verifyWebhookSignature(
+        signature ?? '',
+        secret,
+        eventTimestampRaw as string | number,
+        requestPath,
+        payload.data
+      )
     } catch (e) {
       verified = false
       verifyError = e instanceof Error ? e.message : String(e)
@@ -89,6 +101,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!verified) {
       logErr('signature-failed', {
         signaturePreview: signature ? signature.slice(0, 12) + '…' : null,
+        path: requestPath,
+        timestamp: eventTimestampRaw,
         verifyError,
       })
       return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 })
@@ -299,363 +313,4 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 500 }
     )
   }
-}
-
-async function handleStatusChange(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  lalamoveOrderId: string,
-  data: Record<string, unknown>
-) {
-  const orderData = (data as any)?.order as Record<string, unknown> | undefined
-  const newV3Status = (orderData?.status as string) || (data.status as string)
-  if (!newV3Status) return
-
-  const newDispatchStatus = mapV3StatusToDispatch(newV3Status as never)
-  const currentStatus = shipment.dispatch_status as ShipmentDispatchStatus
-
-  // Validate status transition (prevents out-of-order webhooks)
-  if (!isValidStatusTransition(currentStatus, newDispatchStatus)) {
-    console.warn(
-      `[Lalamove Webhook] Invalid transition: ${currentStatus} -> ${newDispatchStatus}, skipping`
-    )
-    return
-  }
-
-  const now = new Date().toISOString()
-  const updateData: Record<string, unknown> = {
-    dispatch_status: newDispatchStatus,
-    raw_webhook_payload: data,
-  }
-
-  // Set timestamps
-  if (newDispatchStatus === 'delivered') updateData.completed_at = now
-  if (newDispatchStatus === 'cancelled') updateData.cancelled_at = now
-
-  // Update shipment
-  await supabase
-    .from('lalamove_shipments')
-    .update(updateData)
-    .eq('id', shipment.id)
-
-  // Guard against overwriting cancelled orders
-  const { data: currentOrder } = await supabase
-    .from('orders')
-    .select('status')
-    .eq('id', shipment.order_id)
-    .single()
-
-  if (currentOrder?.status === 'cancelled') {
-    console.warn(`[Lalamove Webhook] Order ${shipment.order_id} is cancelled, skipping status update`)
-    return
-  }
-
-  // Update orders table if lifecycle truly changes
-  const orderStatus = mapDispatchToOrderStatus(newDispatchStatus)
-  if (orderStatus) {
-    await supabase
-      .from('orders')
-      .update({
-        status: orderStatus,
-        lalamove_status: newV3Status,
-        dispatch_status: newDispatchStatus,
-      })
-      .eq('id', shipment.order_id)
-  } else {
-    await supabase
-      .from('orders')
-      .update({
-        lalamove_status: newV3Status,
-        dispatch_status: newDispatchStatus,
-      })
-      .eq('id', shipment.order_id)
-  }
-
-  // Log event
-  await supabase.from('order_events').insert({
-    order_id: shipment.order_id,
-    event_type: `shipment_${newDispatchStatus}`,
-    old_value: { dispatch_status: currentStatus },
-    new_value: { dispatch_status: newDispatchStatus, lalamove_status: newV3Status },
-  })
-
-  // Send email notifications for key status changes
-  try {
-    const { sendShippingNotification } = await import('@/lib/notifications/shipping-emails')
-    await sendShippingNotification(supabase, shipment.order_id as string, newDispatchStatus)
-  } catch {
-    // Email notification failure is non-fatal
-  }
-
-  // Notify bot customers of delivery status changes (best-effort, non-blocking)
-  if (orderStatus) {
-    try {
-      const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
-      await sendOrderStatusNotification(shipment.order_id as string, orderStatus)
-    } catch {
-      // Notification failure must not break the webhook
-    }
-  }
-
-  // If driver is assigned via ON_GOING status change, fetch driver details
-  // (Lalamove v3 bundles driver assignment into ORDER_STATUS_CHANGED rather than
-  // sending a separate DRIVER_ASSIGNED event)
-  if (newV3Status === 'ON_GOING') {
-    const driverId = orderData?.driverId as string
-    if (driverId) {
-      await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
-    }
-  }
-
-  console.log(`[Lalamove Webhook] Status: ${currentStatus} -> ${newDispatchStatus} for order ${shipment.order_id}`)
-}
-
-async function updateDriverDetails(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  lalamoveOrderId: string,
-  driverId: string
-) {
-  const lalamove = createLalamoveClient()
-  const driver = await lalamove.getDriverDetails(lalamoveOrderId, driverId)
-
-  // Always refresh driver info — phone/plate/location can change mid-delivery.
-  await supabase
-    .from('lalamove_shipments')
-    .update({
-      driver_name: driver.name,
-      driver_phone: driver.phone,
-      driver_plate: driver.plateNumber,
-      driver_photo_url: driver.photo || null,
-      driver_latitude: driver.coordinates ? parseFloat(driver.coordinates.lat) : null,
-      driver_longitude: driver.coordinates ? parseFloat(driver.coordinates.lng) : null,
-      driver_location_updated_at: driver.coordinates?.updatedAt || null,
-    })
-    .eq('id', shipment.id)
-
-  await supabase
-    .from('orders')
-    .update({
-      driver_name: driver.name,
-      driver_phone: driver.phone,
-      driver_plate_number: driver.plateNumber,
-    })
-    .eq('id', shipment.order_id)
-
-  // Advance dispatch_status only if the shipment hasn't already progressed.
-  // Prevents late DRIVER_ASSIGNED webhooks from regressing in_transit/delivered
-  // rows. The .in() filter is evaluated by Postgres, so concurrent webhooks
-  // race safely.
-  await supabase
-    .from('lalamove_shipments')
-    .update({ dispatch_status: 'driver_assigned' })
-    .eq('id', shipment.id)
-    .in('dispatch_status', ['quoted', 'driver_pending', 'manual_review'])
-
-  await supabase
-    .from('orders')
-    .update({ lalamove_status: 'ON_GOING', dispatch_status: 'driver_assigned' })
-    .eq('id', shipment.order_id)
-    .in('dispatch_status', [
-      'not_ready',
-      'queued',
-      'submitted',
-      'quoted',
-      'driver_pending',
-      'manual_review',
-    ])
-
-  return driver
-}
-
-async function handleDriverAssigned(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  lalamoveOrderId: string,
-  data: Record<string, unknown>
-) {
-  // Lalamove v3 nests driverId under data.order.driverId, not data.driverId
-  const orderPayload = (data as any)?.order as Record<string, unknown> | undefined
-  const driverId = (orderPayload?.driverId as string) || data.driverId as string || (data.driver as Record<string, unknown>)?.id as string
-
-  if (!driverId) {
-    console.warn('[Lalamove Webhook] DRIVER_ASSIGNED without driverId')
-    return
-  }
-
-  try {
-    const driver = await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
-
-    await supabase.from('order_events').insert({
-      order_id: shipment.order_id,
-      event_type: 'driver_assigned',
-      new_value: {
-        driver_name: driver.name,
-        driver_phone: driver.phone,
-        driver_plate: driver.plateNumber,
-      },
-    })
-
-    // Send driver assigned email
-    try {
-      const { sendShippingNotification } = await import('@/lib/notifications/shipping-emails')
-      await sendShippingNotification(supabase, shipment.order_id as string, 'driver_assigned')
-    } catch {}
-
-    console.log(`[Lalamove Webhook] Driver assigned: ${driver.name} for order ${shipment.order_id}`)
-  } catch (error) {
-    // Driver details may return 403 (permissions) or 404 (driver not yet
-    // indexed on Lalamove's side). Both self-heal on the next webhook, so
-    // log and advance dispatch_status only if the shipment hasn't progressed.
-    const errorMessage = error instanceof Error ? error.message : ''
-    if (!errorMessage.includes('403') && !errorMessage.includes('404')) {
-      throw error
-    }
-
-    await supabase
-      .from('lalamove_shipments')
-      .update({ dispatch_status: 'driver_assigned' })
-      .eq('id', shipment.id)
-      .in('dispatch_status', ['quoted', 'driver_pending', 'manual_review'])
-
-    await supabase
-      .from('orders')
-      .update({ dispatch_status: 'driver_assigned' })
-      .eq('id', shipment.order_id)
-      .in('dispatch_status', [
-        'not_ready',
-        'queued',
-        'submitted',
-        'quoted',
-        'driver_pending',
-        'manual_review',
-      ])
-
-    console.log(`[Lalamove Webhook] Driver assigned (details unavailable yet) for order ${shipment.order_id}`)
-  }
-}
-
-async function handleAmountChanged(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  data: Record<string, unknown>
-) {
-  const priceBreakdown = data.priceBreakdown as Record<string, string> | undefined
-  if (!priceBreakdown?.total) return
-
-  const newFeeCents = Math.round(parseFloat(priceBreakdown.total) * 100)
-  const originalFeeCents = shipment.quoted_fee_cents as number
-
-  await supabase
-    .from('lalamove_shipments')
-    .update({ actual_fee_cents: newFeeCents })
-    .eq('id', shipment.id)
-
-  if (newFeeCents !== originalFeeCents) {
-    await supabase.from('order_events').insert({
-      order_id: shipment.order_id,
-      event_type: 'delivery_fee_changed',
-      old_value: { fee_cents: originalFeeCents },
-      new_value: { fee_cents: newFeeCents, variance: newFeeCents - originalFeeCents },
-    })
-
-    console.log(
-      `[Lalamove Webhook] Fee changed: ${originalFeeCents} -> ${newFeeCents} for order ${shipment.order_id}`
-    )
-  }
-}
-
-async function handleOrderReplaced(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  lalamoveOrderId: string,
-  data: Record<string, unknown>
-) {
-  // Update with new driver info from replacement
-  const orderPayload = (data as any)?.order as Record<string, unknown> | undefined
-  const newDriverId = (orderPayload?.driverId as string) || data.driverId as string
-
-  if (newDriverId) {
-    try {
-      const lalamove = createLalamoveClient()
-      const driver = await lalamove.getDriverDetails(lalamoveOrderId, newDriverId)
-
-      await supabase
-        .from('lalamove_shipments')
-        .update({
-          driver_name: driver.name,
-          driver_phone: driver.phone,
-          driver_plate: driver.plateNumber,
-          driver_photo_url: driver.photo || null,
-          driver_latitude: driver.coordinates ? parseFloat(driver.coordinates.lat) : null,
-          driver_longitude: driver.coordinates ? parseFloat(driver.coordinates.lng) : null,
-        })
-        .eq('id', shipment.id)
-
-      await supabase
-        .from('orders')
-        .update({
-          driver_name: driver.name,
-          driver_phone: driver.phone,
-          driver_plate_number: driver.plateNumber,
-        })
-        .eq('id', shipment.order_id)
-    } catch {}
-  }
-
-  await supabase.from('order_events').insert({
-    order_id: shipment.order_id,
-    event_type: 'driver_replaced',
-    new_value: { new_driver_id: newDriverId },
-  })
-
-  console.log(`[Lalamove Webhook] Order replaced for order ${shipment.order_id}`)
-}
-
-async function handleOrderCreated(
-  supabase: ReturnType<typeof createServerClient>,
-  shipment: Record<string, unknown>,
-  lalamoveOrderId: string,
-  data: Record<string, unknown>
-) {
-  const orderData = (data as any)?.order as Record<string, unknown> | undefined
-  if (!orderData) {
-    console.warn('[Lalamove Webhook] ORDER_CREATED without order data')
-    return
-  }
-
-  const shareLink = orderData.shareLink as string | undefined
-
-  const updateData: Record<string, unknown> = {
-    lalamove_order_id: lalamoveOrderId,
-    dispatch_status: 'driver_pending',
-  }
-  if (shareLink) {
-    updateData.tracking_url = shareLink
-  }
-
-  await supabase
-    .from('lalamove_shipments')
-    .update(updateData)
-    .eq('id', shipment.id)
-
-  await supabase
-    .from('orders')
-    .update({
-      lalamove_status: orderData.status as string,
-      dispatch_status: 'driver_pending',
-    })
-    .eq('id', shipment.order_id)
-
-  await supabase.from('order_events').insert({
-    order_id: shipment.order_id,
-    event_type: 'shipment_created',
-    new_value: {
-      lalamove_order_id: lalamoveOrderId,
-      tracking_url: shareLink,
-      dispatch_status: 'driver_pending',
-    },
-  })
-
-  console.log(`[Lalamove Webhook] Order created: ${lalamoveOrderId} for order ${shipment.order_id}`)
 }

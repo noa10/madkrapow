@@ -390,6 +390,32 @@ export default function AdminOrderDetailPage() {
         </div>
       </div>
 
+      {/* Delivery attention banner — surfaces driver-rejection and expiry
+          terminal states from Lalamove. Webhook handler sets these on
+          shipment.dispatch_status; orders.status stays untouched so the
+          merchant can decide retry vs cancel. */}
+      {shipment && (shipment.dispatch_status === 'manual_review' || shipment.dispatch_status === 'failed') && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <div className="text-destructive mt-0.5">⚠</div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-destructive">
+                  {shipment.dispatch_status === 'manual_review'
+                    ? 'Delivery flagged for manual review'
+                    : 'Delivery failed'}
+                </h3>
+                <p className="text-sm mt-1">
+                  {shipment.dispatch_status === 'manual_review'
+                    ? 'Driver rejection limit reached — Lalamove could not assign a replacement driver. Choose: retry delivery, contact the customer, or cancel the order.'
+                    : 'Order expired — no driver was assigned within the Lalamove expiry window. Choose: retry delivery, contact the customer, or cancel the order.'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Order Status Flow */}
       {order.status !== 'cancelled' && (
         <Card>

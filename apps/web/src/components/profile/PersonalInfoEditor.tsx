@@ -204,6 +204,7 @@ export function PersonalInfoEditor({ customer, onChange }: PersonalInfoEditorPro
                   src={avatarUrl}
                   alt="Profile photo"
                   fill
+                  sizes="64px"
                   className="object-cover"
                 />
               </div>

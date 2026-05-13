@@ -234,17 +234,112 @@ export async function handleDriverAssigned(
   lalamoveOrderId: string,
   data: Record<string, unknown>
 ) {
-  // Lalamove v3 nests driverId under data.order.driverId, not data.driverId
+  // Lalamove v3 ships DRIVER_ASSIGNED in two known shapes:
+  //   1. Order-status style: data.order.driverId (string id only)
+  //   2. Inline driver style: data.driver = { driverId, name, phone,
+  //      plateNumber, photo } — observed in sandbox driver-assignment events.
+  // Both are handled below. If only an order envelope arrives we fall back
+  // to GET /v3/orders/{id} to discover the driverId, then to legacy keys.
   const orderPayload = (data as any)?.order as Record<string, unknown> | undefined
-  const driverId = (orderPayload?.driverId as string) || data.driverId as string || (data.driver as Record<string, unknown>)?.id as string
+  const driverPayload = (data as any)?.driver as Record<string, unknown> | undefined
+
+  const inlineDriverId =
+    (driverPayload?.driverId as string) ||
+    (driverPayload?.id as string) ||
+    ''
+  let driverId =
+    (orderPayload?.driverId as string) ||
+    (data.driverId as string) ||
+    inlineDriverId ||
+    ''
+
+  // Self-heal: when Lalamove sends only data.order.orderId, fetch the order
+  // to discover the driverId. Cheap, idempotent, and avoids leaving the
+  // driver fields blank until the next webhook or admin page-fetch.
+  if (!driverId) {
+    try {
+      const lalamove = createLalamoveClient()
+      const order = await lalamove.getOrderDetails(lalamoveOrderId)
+      driverId = (order.driverId as string) || ''
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : ''
+      console.warn(
+        `[Lalamove Webhook] DRIVER_ASSIGNED order-fetch fallback failed: ${errorMessage.slice(0, 200)}`
+      )
+    }
+  }
 
   if (!driverId) {
-    console.warn('[Lalamove Webhook] DRIVER_ASSIGNED without driverId')
+    console.warn(
+      `[Lalamove Webhook] DRIVER_ASSIGNED without driverId (data keys: ${Object.keys(data).join(',')})`
+    )
     return
   }
 
+  // If the payload already carries the full driver record, use it directly
+  // and skip the GET /v3/orders/{id}/drivers/{driverId} round-trip. This
+  // also avoids the 403 race window where Lalamove rejects the lookup
+  // before the driver is fully indexed on their side.
+  const inlineDriver =
+    driverPayload &&
+    (driverPayload.driverId || driverPayload.id) &&
+    driverPayload.name &&
+    driverPayload.phone
+      ? {
+          driverId: (driverPayload.driverId as string) || (driverPayload.id as string),
+          name: driverPayload.name as string,
+          phone: driverPayload.phone as string,
+          plateNumber: (driverPayload.plateNumber as string) || '',
+          photo: (driverPayload.photo as string) || undefined,
+        }
+      : null
+
   try {
-    const driver = await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
+    let driver: Awaited<ReturnType<typeof updateDriverDetails>>
+    if (inlineDriver) {
+      // Mirror updateDriverDetails' DB writes using the inline payload.
+      await supabase
+        .from('lalamove_shipments')
+        .update({
+          driver_name: inlineDriver.name,
+          driver_phone: inlineDriver.phone,
+          driver_plate: inlineDriver.plateNumber,
+          driver_photo_url: inlineDriver.photo || null,
+        })
+        .eq('id', shipment.id)
+
+      await supabase
+        .from('orders')
+        .update({
+          driver_name: inlineDriver.name,
+          driver_phone: inlineDriver.phone,
+          driver_plate_number: inlineDriver.plateNumber,
+        })
+        .eq('id', shipment.order_id)
+
+      await supabase
+        .from('lalamove_shipments')
+        .update({ dispatch_status: 'driver_assigned' })
+        .eq('id', shipment.id)
+        .in('dispatch_status', ['quoted', 'driver_pending', 'manual_review'])
+
+      await supabase
+        .from('orders')
+        .update({ lalamove_status: 'ON_GOING', dispatch_status: 'driver_assigned' })
+        .eq('id', shipment.order_id)
+        .in('dispatch_status', [
+          'not_ready',
+          'queued',
+          'submitted',
+          'quoted',
+          'driver_pending',
+          'manual_review',
+        ])
+
+      driver = inlineDriver
+    } else {
+      driver = await updateDriverDetails(supabase, shipment, lalamoveOrderId, driverId)
+    }
 
     await supabase.from('order_events').insert({
       order_id: shipment.order_id,

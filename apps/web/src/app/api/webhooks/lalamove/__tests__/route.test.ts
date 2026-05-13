@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleStatusChange } from '../route'
+import { handleStatusChange } from '../handlers'
 
 // ---------------------------------------------------------------------------
 // Mock Supabase client

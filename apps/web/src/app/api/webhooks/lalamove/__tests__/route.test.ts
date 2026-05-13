@@ -1,29 +1,266 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { handleStatusChange } from '../route'
 
-describe('Lalamove Webhook Handler — Idempotency', () => {
-  it('verifies INSERT includes created_at from Lalamove timestamp', async () => {
-    // This test verifies the idempotency fix: the webhook handler now passes
-    // `created_at: eventTimestamp` (from Lalamove) instead of using DB default NOW().
-    //
-    // The full integration test requires Supabase, but we can verify the code path
-    // by checking that the INSERT call includes created_at matching the eventTimestamp.
-    //
-    // Manual verification steps:
-    // 1. Send duplicate webhook with same orderId + type + timestamp
-    // 2. Verify only one row is inserted in lalamove_webhook_events
-    // 3. Verify the second request returns 200 without processing
-    //
-    // The fix is in route.ts lines 76-91: the INSERT now includes created_at: eventTimestamp
-    // and the idempotency check (lines 64-70) matches on this field.
+// ---------------------------------------------------------------------------
+// Mock Supabase client
+// ---------------------------------------------------------------------------
+// The handler interacts with three tables via a small chain DSL:
+//   .from(table).update(patch).eq(col, val) [.in(col, vals)]
+//   .from(table).insert(row)
+//   .from(table).select(cols).eq(col, val).single()
+// We record every update/insert call against the table so tests can assert on
+// the patch payloads without needing a real Postgres.
+type Call =
+  | { kind: 'update'; table: string; patch: Record<string, unknown>; filters: Record<string, unknown> }
+  | { kind: 'insert'; table: string; row: Record<string, unknown> }
 
-    expect(true).toBe(true) // placeholder — see manual verification steps above
+interface MockClient {
+  calls: Call[]
+  ordersStatus: string | null
+  from: (table: string) => any
+}
+
+function buildMockClient(initial?: { ordersStatus?: string | null }): MockClient {
+  const calls: Call[] = []
+  const client: MockClient = {
+    calls,
+    ordersStatus: initial?.ordersStatus ?? 'picked_up',
+    from(table: string) {
+      return {
+        update(patch: Record<string, unknown>) {
+          const filters: Record<string, unknown> = {}
+          const chain = {
+            eq(col: string, val: unknown) {
+              filters[col] = val
+              return chain
+            },
+            in(_col: string, _vals: unknown[]) {
+              return chain
+            },
+            then(resolve: (v: { error: null }) => void) {
+              calls.push({ kind: 'update', table, patch, filters })
+              resolve({ error: null })
+            },
+          }
+          // Allow `await chain` and explicit `.eq().eq().in()` chains
+          return chain
+        },
+        insert(row: Record<string, unknown>) {
+          calls.push({ kind: 'insert', table, row })
+          return {
+            select() {
+              return {
+                single: async () => ({ data: { id: 'test-event-id' }, error: null }),
+              }
+            },
+            then(resolve: (v: { error: null }) => void) {
+              resolve({ error: null })
+            },
+          }
+        },
+        select(_cols: string) {
+          return {
+            eq(_col: string, _val: unknown) {
+              return {
+                single: async () => ({ data: { status: client.ordersStatus }, error: null }),
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+  return client
+}
+
+const baseShipment = {
+  id: 'ship-1',
+  order_id: 'order-1',
+  dispatch_status: 'driver_assigned',
+  driver_name: 'TestDriver 44111',
+  driver_phone: '+6011144111',
+  driver_plate: 'VP2381474',
+  driver_photo_url: null,
+  driver_latitude: null,
+  driver_longitude: null,
+  driver_location_updated_at: null,
+}
+
+const updatesTo = (calls: Call[], table: string) =>
+  calls.filter((c): c is Extract<Call, { kind: 'update' }> => c.kind === 'update' && c.table === table)
+const insertsTo = (calls: Call[], table: string) =>
+  calls.filter((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert' && c.table === table)
+
+beforeEach(() => {
+  vi.resetModules()
+  // Stub out lazy-loaded notification side-effects so the handler doesn't try
+  // to import @resend/resend or hit the bot worker during tests.
+  vi.doMock('@/lib/notifications/shipping-emails', () => ({
+    sendShippingNotification: vi.fn(async () => undefined),
+  }))
+  vi.doMock('@/lib/bots/order-notifications', () => ({
+    sendOrderStatusNotification: vi.fn(async () => undefined),
+  }))
+})
+
+describe('handleStatusChange — driver rejection revert (US-002)', () => {
+  it('clears driver fields on shipment when reverting from driver_assigned to driver_pending', async () => {
+    const supabase = buildMockClient()
+    const data = { order: { status: 'ASSIGNING_DRIVER' } }
+
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', data)
+
+    const shipmentUpdate = updatesTo(supabase.calls, 'lalamove_shipments')[0]
+    expect(shipmentUpdate.patch.dispatch_status).toBe('driver_pending')
+    expect(shipmentUpdate.patch.driver_name).toBeNull()
+    expect(shipmentUpdate.patch.driver_phone).toBeNull()
+    expect(shipmentUpdate.patch.driver_plate).toBeNull()
+    expect(shipmentUpdate.patch.driver_photo_url).toBeNull()
+    expect(shipmentUpdate.patch.driver_latitude).toBeNull()
+    expect(shipmentUpdate.patch.driver_longitude).toBeNull()
+    expect(shipmentUpdate.patch.driver_location_updated_at).toBeNull()
   })
 
-  it('verifies UPDATE queries include created_at filter', async () => {
-    // The fix ensures all UPDATE queries to lalamove_webhook_events include
-    // .eq('created_at', eventTimestamp) to target the specific row.
-    // See route.ts lines 106-110, 138-143, 148-153.
+  it('clears driver fields on orders and does NOT change orders.status', async () => {
+    const supabase = buildMockClient({ ordersStatus: 'picked_up' })
+    await handleStatusChange(
+      supabase as any,
+      { ...baseShipment, dispatch_status: 'in_transit' },
+      'lala-1',
+      { order: { status: 'ASSIGNING_DRIVER' } }
+    )
 
-    expect(true).toBe(true) // placeholder — see manual verification steps above
+    const ordersUpdate = updatesTo(supabase.calls, 'orders')[0]
+    expect(ordersUpdate.patch.driver_name).toBeNull()
+    expect(ordersUpdate.patch.driver_phone).toBeNull()
+    expect(ordersUpdate.patch.driver_plate_number).toBeNull()
+    expect(ordersUpdate.patch.dispatch_status).toBe('driver_pending')
+    expect(ordersUpdate.patch.lalamove_status).toBe('ASSIGNING_DRIVER')
+    expect(ordersUpdate.patch.status).toBeUndefined()
+  })
+
+  it('emits driver_rejected event with prior driver identity', async () => {
+    const supabase = buildMockClient()
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'ASSIGNING_DRIVER' },
+    })
+
+    const event = insertsTo(supabase.calls, 'order_events')[0]
+    expect(event.row.event_type).toBe('driver_rejected')
+    expect((event.row.old_value as Record<string, unknown>).driver_name).toBe('TestDriver 44111')
+    expect((event.row.old_value as Record<string, unknown>).driver_phone).toBe('+6011144111')
+    expect((event.row.old_value as Record<string, unknown>).driver_plate).toBe('VP2381474')
+    expect((event.row.old_value as Record<string, unknown>).lalamove_order_id).toBe('lala-1')
+  })
+
+  it('does not clear driver fields on legitimate forward progress (driver_pending → driver_assigned)', async () => {
+    const supabase = buildMockClient()
+    const shipment = { ...baseShipment, dispatch_status: 'driver_pending', driver_name: null, driver_phone: null, driver_plate: null }
+    // The ON_GOING branch calls updateDriverDetails which would hit the
+    // network for driver lookup. To keep this test pure, skip ON_GOING and
+    // verify the basic forward path with an upstream status.
+    await handleStatusChange(supabase as any, shipment, 'lala-1', {
+      order: { status: 'PICKED_UP' },
+    })
+
+    const shipmentUpdate = updatesTo(supabase.calls, 'lalamove_shipments')[0]
+    expect(shipmentUpdate.patch.dispatch_status).toBe('in_transit')
+    expect(shipmentUpdate.patch.driver_name).toBeUndefined()
+    expect(shipmentUpdate.patch.driver_phone).toBeUndefined()
+  })
+})
+
+describe('handleStatusChange — terminal REJECTED / EXPIRED (US-003)', () => {
+  it('REJECTED sets dispatch_status=manual_review, clears driver, emits delivery_rejected', async () => {
+    const supabase = buildMockClient()
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'REJECTED' },
+    })
+
+    const shipmentUpdate = updatesTo(supabase.calls, 'lalamove_shipments')[0]
+    expect(shipmentUpdate.patch.dispatch_status).toBe('manual_review')
+    expect(shipmentUpdate.patch.driver_name).toBeNull()
+    expect(shipmentUpdate.patch.cancelled_at).toBeUndefined()
+    expect(shipmentUpdate.patch.completed_at).toBeUndefined()
+
+    const event = insertsTo(supabase.calls, 'order_events')[0]
+    expect(event.row.event_type).toBe('delivery_rejected')
+    expect((event.row.new_value as Record<string, unknown>).reason).toBe('rejection_limit')
+  })
+
+  it('EXPIRED sets dispatch_status=failed, clears driver, emits delivery_expired', async () => {
+    const supabase = buildMockClient()
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'EXPIRED' },
+    })
+
+    const shipmentUpdate = updatesTo(supabase.calls, 'lalamove_shipments')[0]
+    expect(shipmentUpdate.patch.dispatch_status).toBe('failed')
+    expect(shipmentUpdate.patch.driver_name).toBeNull()
+    expect(shipmentUpdate.patch.cancelled_at).toBeUndefined()
+    expect(shipmentUpdate.patch.completed_at).toBeUndefined()
+
+    const event = insertsTo(supabase.calls, 'order_events')[0]
+    expect(event.row.event_type).toBe('delivery_expired')
+    expect((event.row.new_value as Record<string, unknown>).reason).toBe('expired')
+  })
+
+  it('does not auto-cancel orders.status on REJECTED', async () => {
+    const supabase = buildMockClient({ ordersStatus: 'picked_up' })
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'REJECTED' },
+    })
+
+    const ordersUpdate = updatesTo(supabase.calls, 'orders')[0]
+    expect(ordersUpdate.patch.status).toBeUndefined()
+    expect(ordersUpdate.patch.dispatch_status).toBe('manual_review')
+  })
+
+  it('does not auto-cancel orders.status on EXPIRED', async () => {
+    const supabase = buildMockClient({ ordersStatus: 'ready' })
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'EXPIRED' },
+    })
+
+    const ordersUpdate = updatesTo(supabase.calls, 'orders')[0]
+    expect(ordersUpdate.patch.status).toBeUndefined()
+    expect(ordersUpdate.patch.dispatch_status).toBe('failed')
+  })
+})
+
+describe('handleStatusChange — orders.status preservation (AC4)', () => {
+  it('keeps a picked_up order at picked_up after rejection revert', async () => {
+    const supabase = buildMockClient({ ordersStatus: 'picked_up' })
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'ASSIGNING_DRIVER' },
+    })
+
+    const ordersUpdate = updatesTo(supabase.calls, 'orders')[0]
+    // No `status` key in the patch means orders.status is left intact.
+    expect(ordersUpdate.patch.status).toBeUndefined()
+  })
+
+  it('skips orders update entirely when orders.status is already cancelled', async () => {
+    const supabase = buildMockClient({ ordersStatus: 'cancelled' })
+    await handleStatusChange(supabase as any, baseShipment, 'lala-1', {
+      order: { status: 'REJECTED' },
+    })
+
+    // Only the shipment write happens before the cancelled-guard fires.
+    expect(updatesTo(supabase.calls, 'orders')).toHaveLength(0)
+  })
+})
+
+describe('handleStatusChange — invalid transitions (AC5 idempotency)', () => {
+  it('rejects an attempt to revert a delivered shipment to driver_pending', async () => {
+    const supabase = buildMockClient()
+    await handleStatusChange(
+      supabase as any,
+      { ...baseShipment, dispatch_status: 'delivered' },
+      'lala-1',
+      { order: { status: 'ASSIGNING_DRIVER' } }
+    )
+    expect(updatesTo(supabase.calls, 'lalamove_shipments')).toHaveLength(0)
+    expect(insertsTo(supabase.calls, 'order_events')).toHaveLength(0)
   })
 })

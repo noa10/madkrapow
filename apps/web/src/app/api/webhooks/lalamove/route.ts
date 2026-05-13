@@ -311,7 +311,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-async function handleStatusChange(
+// Exported for unit tests — keep handleStatusChange a pure function over the
+// supabase client so it can be exercised with a fake client.
+export async function handleStatusChange(
   supabase: ReturnType<typeof createServerClient>,
   shipment: Record<string, unknown>,
   lalamoveOrderId: string,
@@ -332,6 +334,29 @@ async function handleStatusChange(
     return
   }
 
+  // A driver-rejection revert: an active dispatch (driver_assigned/in_transit)
+  // returns to ASSIGNING_DRIVER. Lalamove may also re-fire ASSIGNING_DRIVER
+  // from manual_review when the previous assignment was rejected past the
+  // retry cap. In all of these cases, the prior driver no longer holds the
+  // order, so its identity must be cleared. orders.status stays untouched
+  // (per product decision: a picked_up food order remains picked_up while
+  // Lalamove searches for a replacement driver).
+  const isDriverRejectionRevert =
+    newDispatchStatus === 'driver_pending' &&
+    (currentStatus === 'driver_assigned' ||
+      currentStatus === 'in_transit' ||
+      currentStatus === 'manual_review')
+
+  // Terminal failure paths from Lalamove:
+  //   REJECTED  → manual_review (rejection retry cap reached)
+  //   EXPIRED   → failed       (no driver assigned within the expiry window)
+  // Both should clear stale driver fields and emit a dedicated audit event.
+  // We do NOT auto-cancel orders.status; the order is flagged for admin review.
+  const isTerminalFailure =
+    newDispatchStatus === 'manual_review' || newDispatchStatus === 'failed'
+
+  const clearDriverFields = isDriverRejectionRevert || isTerminalFailure
+
   const now = new Date().toISOString()
   const updateData: Record<string, unknown> = {
     dispatch_status: newDispatchStatus,
@@ -341,6 +366,26 @@ async function handleStatusChange(
   // Set timestamps
   if (newDispatchStatus === 'delivered') updateData.completed_at = now
   if (newDispatchStatus === 'cancelled') updateData.cancelled_at = now
+
+  if (clearDriverFields) {
+    updateData.driver_name = null
+    updateData.driver_phone = null
+    updateData.driver_plate = null
+    updateData.driver_photo_url = null
+    updateData.driver_latitude = null
+    updateData.driver_longitude = null
+    updateData.driver_location_updated_at = null
+  }
+
+  // Snapshot prior driver identity before we overwrite the shipment row.
+  const priorDriver = clearDriverFields
+    ? {
+        driver_name: shipment.driver_name ?? null,
+        driver_phone: shipment.driver_phone ?? null,
+        driver_plate: shipment.driver_plate ?? null,
+        lalamove_order_id: lalamoveOrderId,
+      }
+    : null
 
   // Update shipment
   await supabase
@@ -360,33 +405,55 @@ async function handleStatusChange(
     return
   }
 
-  // Update orders table if lifecycle truly changes
+  // Update orders table. Only forward lifecycle transitions touch
+  // orders.status; revert and terminal-failure paths leave it alone so a
+  // picked_up food order stays picked_up while delivery is in trouble.
   const orderStatus = mapDispatchToOrderStatus(newDispatchStatus)
+  const ordersPatch: Record<string, unknown> = {
+    lalamove_status: newV3Status,
+    dispatch_status: newDispatchStatus,
+  }
   if (orderStatus) {
-    await supabase
-      .from('orders')
-      .update({
-        status: orderStatus,
-        lalamove_status: newV3Status,
-        dispatch_status: newDispatchStatus,
-      })
-      .eq('id', shipment.order_id)
-  } else {
-    await supabase
-      .from('orders')
-      .update({
-        lalamove_status: newV3Status,
-        dispatch_status: newDispatchStatus,
-      })
-      .eq('id', shipment.order_id)
+    ordersPatch.status = orderStatus
+  }
+  if (clearDriverFields) {
+    ordersPatch.driver_name = null
+    ordersPatch.driver_phone = null
+    ordersPatch.driver_plate_number = null
+  }
+  await supabase
+    .from('orders')
+    .update(ordersPatch)
+    .eq('id', shipment.order_id)
+
+  // Log event. Revert and terminal failures get dedicated event types so the
+  // admin order_events history reads as a clear audit trail; everything else
+  // keeps the existing `shipment_<status>` shape.
+  let eventType: string
+  let oldValue: Record<string, unknown> = { dispatch_status: currentStatus }
+  let newValue: Record<string, unknown> = {
+    dispatch_status: newDispatchStatus,
+    lalamove_status: newV3Status,
   }
 
-  // Log event
+  if (isDriverRejectionRevert) {
+    eventType = 'driver_rejected'
+    oldValue = { ...oldValue, ...(priorDriver ?? {}) }
+  } else if (newDispatchStatus === 'manual_review') {
+    eventType = 'delivery_rejected'
+    newValue = { ...newValue, reason: 'rejection_limit' }
+  } else if (newDispatchStatus === 'failed') {
+    eventType = 'delivery_expired'
+    newValue = { ...newValue, reason: 'expired' }
+  } else {
+    eventType = `shipment_${newDispatchStatus}`
+  }
+
   await supabase.from('order_events').insert({
     order_id: shipment.order_id,
-    event_type: `shipment_${newDispatchStatus}`,
-    old_value: { dispatch_status: currentStatus },
-    new_value: { dispatch_status: newDispatchStatus, lalamove_status: newV3Status },
+    event_type: eventType,
+    old_value: oldValue,
+    new_value: newValue,
   })
 
   // Send email notifications for key status changes

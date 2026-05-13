@@ -8,6 +8,7 @@ import {
   handleDriverAssigned,
   handleAmountChanged,
   handleOrderReplaced,
+  handlePodStatusChanged,
 } from './handlers'
 
 function sanitizeForLog(value: string): string {
@@ -168,6 +169,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .single()
 
     if (insertError) {
+      // 23505 = unique_violation. The idx_webhook_events_idempotency index on
+      // (lalamove_order_id, event_type, created_at) already saw this event;
+      // Lalamove is retrying. Acknowledge with 200 so retries stop and the
+      // portal does not flag the URL as "not responsive".
+      if (insertError.code === '23505') {
+        log('duplicate-event-ignored', {
+          eventId: eventId ?? null,
+          eventType: sanitizeForLog(eventType ?? ''),
+          lalamoveOrderId: lalamoveOrderId ? sanitizeForLog(lalamoveOrderId) : null,
+        })
+        return response
+      }
       logErr('event-insert-failed', {
         message: insertError.message,
         code: insertError.code,
@@ -276,6 +289,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         case 'ORDER_REPLACED':
           await handleOrderReplaced(supabase, shipment, lalamoveOrderId, eventData)
+          break
+
+        case 'POD_STATUS_CHANGED':
+          await handlePodStatusChanged(supabase, shipment, eventData)
           break
 
         default:

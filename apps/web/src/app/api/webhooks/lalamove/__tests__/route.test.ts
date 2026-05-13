@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleStatusChange } from '../handlers'
+import { handleStatusChange, handlePodStatusChanged } from '../handlers'
 
 // ---------------------------------------------------------------------------
 // Mock Supabase client
@@ -262,5 +262,66 @@ describe('handleStatusChange — invalid transitions (AC5 idempotency)', () => {
     )
     expect(updatesTo(supabase.calls, 'lalamove_shipments')).toHaveLength(0)
     expect(insertsTo(supabase.calls, 'order_events')).toHaveLength(0)
+  })
+})
+
+describe('handlePodStatusChanged', () => {
+  const podData = {
+    order: {
+      orderId: 'lala-1',
+      status: 'PICKED_UP',
+      stops: [
+        {
+          coordinates: { lat: '3.14', lng: '101.52' },
+          name: 'Mad Krapow Store',
+          phone: '0193456476',
+        },
+        {
+          coordinates: { lat: '3.14', lng: '101.52' },
+          name: 'Customer',
+          phone: '0194567476',
+          POD: {
+            status: 'DELIVERED',
+            image: 'http://example.com/pod.png',
+            deliveredAt: '2026-05-14T03:16:00Z',
+          },
+        },
+      ],
+    },
+    updatedAt: '2026-05-14T03:16:00Z',
+  }
+
+  it('persists raw_webhook_payload and emits a pod_received order_event', async () => {
+    const supabase = buildMockClient()
+    await handlePodStatusChanged(supabase as any, baseShipment, podData)
+
+    const shipmentUpdates = updatesTo(supabase.calls, 'lalamove_shipments')
+    expect(shipmentUpdates).toHaveLength(1)
+    expect(shipmentUpdates[0].patch.raw_webhook_payload).toEqual(podData)
+
+    const events = insertsTo(supabase.calls, 'order_events')
+    expect(events).toHaveLength(1)
+    expect(events[0].row.event_type).toBe('pod_received')
+    expect(events[0].row.new_value).toMatchObject({
+      pod_status: 'DELIVERED',
+      pod_image: 'http://example.com/pod.png',
+      pod_delivered_at: '2026-05-14T03:16:00Z',
+      lalamove_status: 'PICKED_UP',
+    })
+  })
+
+  it('still records an event when POD section is missing', async () => {
+    const supabase = buildMockClient()
+    const payloadNoPod = { order: { orderId: 'lala-1', status: 'PICKED_UP', stops: [] } }
+    await handlePodStatusChanged(supabase as any, baseShipment, payloadNoPod)
+
+    const events = insertsTo(supabase.calls, 'order_events')
+    expect(events).toHaveLength(1)
+    expect(events[0].row.event_type).toBe('pod_received')
+    expect(events[0].row.new_value).toMatchObject({
+      pod_status: null,
+      pod_image: null,
+      pod_delivered_at: null,
+    })
   })
 })

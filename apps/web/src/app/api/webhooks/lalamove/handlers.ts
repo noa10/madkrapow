@@ -418,3 +418,47 @@ export async function handleOrderCreated(
     `[Lalamove Webhook] Order created: ${sanitizeForLog(lalamoveOrderId)} for order ${shipment.order_id}`
   )
 }
+
+// POD_STATUS_CHANGED arrives once a driver completes proof of delivery. Lalamove
+// also sends ORDER_STATUS_CHANGED → COMPLETED moments later, which is what
+// flips orders.status to 'delivered'. This handler captures the POD photo,
+// deliveredAt, and POD status from the recipient stop so we keep an audit
+// trail and can surface the delivery photo in admin/customer views.
+export async function handlePodStatusChanged(
+  supabase: ReturnType<typeof createServerClient>,
+  shipment: Record<string, unknown>,
+  data: Record<string, unknown>
+) {
+  const orderData = (data as any)?.order as Record<string, unknown> | undefined
+  if (!orderData) {
+    console.warn('[Lalamove Webhook] POD_STATUS_CHANGED without order data')
+    return
+  }
+
+  const stops = (orderData.stops as Array<Record<string, unknown>> | undefined) ?? []
+  // Recipient stop is the last one; pickup is index 0.
+  const recipientStop = stops.length > 1 ? stops[stops.length - 1] : null
+  const pod = recipientStop?.POD as
+    | { status?: string; image?: string; deliveredAt?: string }
+    | undefined
+
+  await supabase
+    .from('lalamove_shipments')
+    .update({ raw_webhook_payload: data })
+    .eq('id', shipment.id)
+
+  await supabase.from('order_events').insert({
+    order_id: shipment.order_id,
+    event_type: 'pod_received',
+    new_value: {
+      pod_status: pod?.status ?? null,
+      pod_image: pod?.image ?? null,
+      pod_delivered_at: pod?.deliveredAt ?? null,
+      lalamove_status: orderData.status as string | undefined,
+    },
+  })
+
+  console.log(
+    `[Lalamove Webhook] POD received for order ${shipment.order_id} (pod_status=${pod?.status ?? 'unknown'})`
+  )
+}

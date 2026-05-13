@@ -458,7 +458,8 @@ export async function handlePodStatusChanged(
     },
   })
 
+  const podStatusForLog = sanitizeForLog(pod?.status ?? 'unknown')
   console.log(
-    `[Lalamove Webhook] POD received for order ${shipment.order_id} (pod_status=${pod?.status ?? 'unknown'})`
+    `[Lalamove Webhook] POD received for order ${shipment.order_id} (pod_status=${podStatusForLog})`
   )
 }

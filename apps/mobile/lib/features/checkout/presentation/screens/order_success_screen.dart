@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/routes.dart';
+import '../../../../core/utils/order_code.dart';
 import '../../../orders/data/order_repository.dart';
 
 class OrderSuccessScreen extends ConsumerStatefulWidget {
@@ -20,6 +21,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   _PaymentStatus _status = _PaymentStatus.confirming;
   Timer? _pollTimer;
   int _attempts = 0;
+  String? _displayCode;
   static const _maxAttempts = 7; // ~21 seconds
 
   @override
@@ -47,6 +49,13 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
         final details = await ref
             .read(orderRepositoryProvider)
             .fetchOrderDetails(widget.orderId!);
+
+        if (!mounted) return;
+
+        final code = getOrderDisplayCode(details.order);
+        if (code != _displayCode) {
+          setState(() => _displayCode = code);
+        }
 
         if (details.order.status == 'paid' ||
             details.order.status == 'accepted' ||
@@ -93,6 +102,50 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
+                if (widget.orderId != null && _displayCode != null) ...[
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Order Code',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.6,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _displayCode!,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'System ID: ${widget.orderId}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 if (widget.orderId != null)
                   FilledButton(

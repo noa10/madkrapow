@@ -162,7 +162,7 @@ class _OrderCard extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    generateOrderDisplayCode(order.id),
+                    getOrderDisplayCode(order),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

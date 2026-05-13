@@ -1,9 +1,19 @@
 /**
- * Deterministic daily display code for orders.
- * Same order + same date = same code across all platforms.
+ * Display code for orders.
+ *
+ *  - Production codes are generated server-side by the `reserve_order_display_code(date)`
+ *    Postgres function and stored in `orders.display_code`. Format: `MK-NNN` (3-digit
+ *    base), expanded automatically to `MK-NNNN`, `MK-NNNNN`, etc. when the per-day pool
+ *    fills. Unique per KL calendar day (not globally).
+ *
+ *  - `getOrderDisplayCode(order)` returns the stored code when present and falls back to
+ *    the legacy FNV-1a daily hash for any row that predates the migration.
+ *
+ *  - `generateOrderDisplayCode(id, date?)` is kept for the fallback only. New code should
+ *    prefer `getOrderDisplayCode`.
  */
 
-// FNV-1a 32-bit hash constants
+// FNV-1a 32-bit hash constants (legacy fallback)
 const FNV_PRIME = 0x01000193
 const FNV_OFFSET_BASIS = 0x811c9dc5
 
@@ -32,4 +42,14 @@ export function generateOrderDisplayCode(orderId: string, date?: Date): string {
   const hash = fnv1a(orderId + dateStr)
   const num = hash % 1000
   return `MK-${num.toString().padStart(3, '0')}`
+}
+
+export interface OrderDisplayInput {
+  id: string
+  display_code?: string | null
+}
+
+export function getOrderDisplayCode(order: OrderDisplayInput, date?: Date): string {
+  if (order.display_code) return order.display_code
+  return generateOrderDisplayCode(order.id, date)
 }

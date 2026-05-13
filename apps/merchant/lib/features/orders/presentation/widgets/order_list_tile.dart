@@ -23,7 +23,7 @@ class OrderListTile extends ConsumerWidget {
         children: [
           Expanded(
             child: Text(
-              generateOrderDisplayCode(order.id),
+              getOrderDisplayCode(order),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),

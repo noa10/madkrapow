@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createLalamoveClient } from '@/lib/lalamove/client'
 import { normalizeMalaysianPhone } from '@/lib/lalamove/phone'
+import { buildLalamoveRemarks } from '@/lib/lalamove/remarks'
 import { mapV3StatusToDispatch } from '@/lib/lalamove/status-mapper'
 import { getServiceClient } from '@/lib/supabase/server'
 import { env } from '@/lib/validators/env'
@@ -130,7 +131,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<PlaceOrderRes
           stopId: recipient_stop_id,
           name: recipientName,
           phone: recipientPhone,
-          remarks: `Order #${order.order_number || order_id.slice(0, 8)}`,
+          remarks: buildLalamoveRemarks({
+            displayCode: order.display_code,
+            orderId: order_id,
+            orderNumber: order.order_number,
+            existingNotes:
+              (recipientJson?.remarks as string | undefined) ?? order.notes,
+          }),
         },
       ],
       metadata: {

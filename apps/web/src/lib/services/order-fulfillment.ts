@@ -1,5 +1,6 @@
 import { createLalamoveClient } from '@/lib/lalamove/client'
 import { normalizeMalaysianPhone } from '@/lib/lalamove/phone'
+import { buildLalamoveRemarks } from '@/lib/lalamove/remarks'
 import { mapV3StatusToDispatch } from '@/lib/lalamove/status-mapper'
 import { env } from '@/lib/validators/env'
 
@@ -126,7 +127,12 @@ export async function fulfillDeliveryOrder(
           stopId: quotation.stops[1].stopId,
           name: recipientName,
           phone: recipientPhone,
-          remarks: `Order #${order.order_number || orderId.slice(0, 8)}`,
+          remarks: buildLalamoveRemarks({
+            displayCode: order.display_code,
+            orderId,
+            orderNumber: order.order_number,
+            existingNotes: order.notes,
+          }),
         },
       ],
       metadata: { orderId },

@@ -11,7 +11,7 @@ import { format } from "date-fns";
 import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { generateOrderDisplayCode } from "@/lib/utils/order-code";
+import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 
@@ -34,6 +34,7 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  display_code?: string | null;
   status: string;
   total_cents: number;
   delivery_fee_cents: number;
@@ -363,7 +364,7 @@ export default function AdminOrderDetailPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">{generateOrderDisplayCode(order.id)}</h1>
+          <h1 className="text-2xl font-bold">{getOrderDisplayCode(order)}</h1>
           <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
             System ID: {order.id}
           </p>

@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import { Clock, Truck, CheckCircle, Package, Calendar, ShoppingCart, Loader2 } from "lucide-react"
-import { generateOrderDisplayCode } from "@/lib/utils/order-code"
+import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useCartStore } from "@/stores/cart"
 
 interface Order {
   id: string
+  display_code?: string | null
   status: string
   total_cents: number
   created_at: string
@@ -103,7 +104,7 @@ export function OrdersCardView({ orders }: OrdersCardViewProps) {
             {/* Left: order code + status + date */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
               <span className="text-base font-bold text-foreground tabular-nums tracking-wide shrink-0">
-                {generateOrderDisplayCode(order.id)}
+                {getOrderDisplayCode(order)}
               </span>
               <div className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium shrink-0", statusConfig.color)}>
                 <StatusIcon className="h-3 w-3" />

@@ -12,6 +12,7 @@ import { OrdersCardView } from "@/components/orders/OrdersCardView"
 
 interface Order {
   id: string
+  display_code?: string | null
   status: string
   total_cents: number
   delivery_fee_cents: number

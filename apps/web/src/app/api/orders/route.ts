@@ -3,6 +3,7 @@ import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 interface Order {
   id: string
+  display_code: string | null
   status: string
   total_cents: number
   delivery_fee_cents: number
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<OrdersResult>>
 
     let query = supabase
       .from('orders')
-      .select('id, status, total_cents, delivery_fee_cents, created_at, delivery_address_json, delivery_type, fulfillment_type, include_cutlery')
+      .select('id, display_code, status, total_cents, delivery_fee_cents, created_at, delivery_address_json, delivery_type, fulfillment_type, include_cutlery')
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
 

@@ -150,6 +150,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
+    // Events without an order ID (e.g., WALLET_BALANCE_CHANGED) cannot be
+    // recorded in lalamove_webhook_events — that table has lalamove_order_id
+    // NOT NULL. Ack with 200 before attempting the insert so Lalamove does
+    // not flag the URL as "not responsive" on every wallet event.
+    if (!lalamoveOrderId) {
+      if (eventType === 'WALLET_BALANCE_CHANGED') {
+        log('ignoring-wallet-balance')
+      } else {
+        log('event-without-order-id', { eventType: sanitizeForLog(eventType ?? '') })
+      }
+      return response
+    }
+
     // Log raw payload first so we always have a record to reference
     const insertData: Record<string, unknown> = {
       event_type: eventType,
@@ -157,9 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       raw_payload: payload,
       signature,
       created_at: createdAt,
-    }
-    if (lalamoveOrderId) {
-      insertData.lalamove_order_id = lalamoveOrderId
+      lalamove_order_id: lalamoveOrderId,
     }
 
     const { data: insertedEvent, error: insertError } = await supabase
@@ -177,7 +188,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         log('duplicate-event-ignored', {
           eventId: eventId ?? null,
           eventType: sanitizeForLog(eventType ?? ''),
-          lalamoveOrderId: lalamoveOrderId ? sanitizeForLog(lalamoveOrderId) : null,
+          lalamoveOrderId: sanitizeForLog(lalamoveOrderId),
         })
         return response
       }
@@ -194,23 +205,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const eventRowId = insertedEvent?.id as string | undefined
-    log('event-inserted', { eventRowId: eventRowId ?? null, lalamoveOrderId: lalamoveOrderId ?? null })
-
-    // Events without an order ID (e.g., WALLET_BALANCE_CHANGED) don't need shipment lookup
-    if (!lalamoveOrderId) {
-      if (eventType === 'WALLET_BALANCE_CHANGED') {
-        log('ignoring-wallet-balance')
-      } else {
-        log('event-without-order-id', { eventType: sanitizeForLog(eventType) })
-      }
-      if (eventRowId) {
-        await supabase
-          .from('lalamove_webhook_events')
-          .update({ processed: true })
-          .eq('id', eventRowId)
-      }
-      return response
-    }
+    log('event-inserted', { eventRowId: eventRowId ?? null, lalamoveOrderId })
 
     // Find shipment by Lalamove order ID
     let shipment: Record<string, unknown> | null = null

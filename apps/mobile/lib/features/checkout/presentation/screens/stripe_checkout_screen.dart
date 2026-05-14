@@ -71,7 +71,7 @@ class _StripeCheckoutScreenState extends State<StripeCheckoutScreen> {
             if (_isCancelUrl(url)) {
               if (!_navigated) {
                 _navigated = true;
-                Navigator.of(context).pop();
+                _goBackToCheckout();
               }
               return NavigationDecision.prevent;
             }
@@ -93,21 +93,43 @@ class _StripeCheckoutScreenState extends State<StripeCheckoutScreen> {
     context.go(AppRoutes.orders);
   }
 
+  void _goBackToCheckout() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.checkout);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Payment'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_navigated) return;
+        _navigated = true;
+        _goBackToCheckout();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Payment'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              if (_navigated) return;
+              _navigated = true;
+              _goBackToCheckout();
+            },
+          ),
         ),
-      ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-        ],
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_orders/order_status.dart';
 
 import '../../providers/admin_order_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
@@ -13,10 +14,8 @@ class CancelOrderButton extends ConsumerWidget {
   final String orderId;
   final String currentStatus;
 
-  static const _cancelableStatuses = {'pending', 'paid', 'accepted', 'preparing', 'ready'};
-
   bool _canCancel(StaffRole? role) {
-    if (!_cancelableStatuses.contains(currentStatus)) return false;
+    if (!OrderStatusFlow.isCancellableWire(currentStatus)) return false;
     switch (role) {
       case StaffRole.kitchen:
         return false;

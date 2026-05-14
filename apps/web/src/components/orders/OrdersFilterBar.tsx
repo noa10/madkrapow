@@ -18,8 +18,8 @@ const STATUS_FILTERS = [
   { value: "pending", label: "Pending" },
   { value: "preparing", label: "Preparing" },
   { value: "ready", label: "Ready" },
-  { value: "delivering", label: "On the Way" },
-  { value: "completed", label: "Completed" },
+  { value: "picked_up", label: "On the Way" },
+  { value: "delivered", label: "Delivered" },
   { value: "cancelled", label: "Cancelled" },
 ]
 

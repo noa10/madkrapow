@@ -1,25 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_orders/order_status.dart';
 
 /// Visual stepper showing the order status progression.
-/// paid → preparing → ready → picked_up/delivered
+/// pending → paid → preparing → ready → picked_up → delivered
 /// Cancelled orders get a distinct red indicator instead of the stepper.
 class AdminStatusStepper extends StatelessWidget {
   const AdminStatusStepper({super.key, required this.currentStatus});
 
   final String currentStatus;
 
-  static const _steps = [
-    ('paid', 'Paid', Icons.payment),
-    ('preparing', 'Preparing', Icons.restaurant),
-    ('ready', 'Ready', Icons.done_all),
-    ('picked_up', 'Picked Up', Icons.person_pin),
-    ('delivered', 'Delivered', Icons.task_alt),
-  ];
+  static const _stepIcons = <OrderStatus, IconData>{
+    OrderStatus.pending: Icons.schedule,
+    OrderStatus.paid: Icons.payment,
+    OrderStatus.preparing: Icons.restaurant,
+    OrderStatus.ready: Icons.done_all,
+    OrderStatus.pickedUp: Icons.person_pin,
+    OrderStatus.delivered: Icons.task_alt,
+  };
 
   @override
   Widget build(BuildContext context) {
-    // Cancelled orders get a distinct red indicator
-    if (currentStatus == 'cancelled') {
+    final parsed = parseOrderStatus(currentStatus);
+    if (parsed == OrderStatus.cancelled) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
@@ -40,14 +42,18 @@ class AdminStatusStepper extends StatelessWidget {
       );
     }
 
-    final currentIndex =
-        _steps.indexWhere((s) => s.$1 == currentStatus).clamp(0, _steps.length - 1);
+    final steps = OrderStatusFlow.adminSteps;
+    final currentIndex = parsed == null
+        ? 0
+        : steps.indexOf(parsed).clamp(0, steps.length - 1);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
-        children: List.generate(_steps.length, (i) {
-          final step = _steps[i];
+        children: List.generate(steps.length, (i) {
+          final step = steps[i];
+          final icon = _stepIcons[step] ?? Icons.circle_outlined;
+          final label = stepLabel(step);
           final isCompleted = i <= currentIndex;
           final isCurrent = i == currentIndex;
           final color = isCompleted
@@ -71,12 +77,12 @@ class AdminStatusStepper extends StatelessWidget {
                       radius: isCurrent ? 16 : 12,
                       backgroundColor: color.withValues(alpha: 0.15),
                       child: Icon(
-                        step.$3,
+                        icon,
                         size: isCurrent ? 18 : 14,
                         color: color,
                       ),
                     ),
-                    if (i < _steps.length - 1)
+                    if (i < steps.length - 1)
                       Expanded(
                         child: Container(
                           height: 2,
@@ -87,7 +93,7 @@ class AdminStatusStepper extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  step.$2,
+                  label,
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,

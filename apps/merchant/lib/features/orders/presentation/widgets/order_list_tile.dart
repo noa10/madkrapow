@@ -130,8 +130,8 @@ class OrderListTile extends ConsumerWidget {
       'paid' => Colors.orange,
       'preparing' => Colors.amber,
       'ready' => Colors.green,
-      'delivering' => Colors.teal,
-      'completed' => Colors.grey,
+      'picked_up' => Colors.teal,
+      'delivered' => Colors.green.shade700,
       'cancelled' => Colors.red,
       _ => Colors.grey,
     };

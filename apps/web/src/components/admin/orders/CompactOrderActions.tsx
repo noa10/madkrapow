@@ -8,6 +8,11 @@ import { InlineSpinner } from "@/components/ui/InlineSpinner"
 import { ConfirmModal } from "@/components/ui/ConfirmModal"
 import { useToastStore } from "@/stores/toast"
 import { differenceInMinutes, parseISO } from "date-fns"
+import {
+  CANCELLABLE_STATUSES,
+  TERMINAL_STATUSES,
+  parseOrderStatus,
+} from "@/lib/orders/status"
 
 interface FlowStep {
   status: string
@@ -22,9 +27,6 @@ const STATUS_FLOW: FlowStep[] = [
   { status: "paid", label: "Start Preparing", shortLabel: "Prepare", icon: ChefHat, next: "preparing" },
   { status: "preparing", label: "Mark Ready", shortLabel: "Ready", icon: Package, next: "ready" },
 ]
-
-const CANCELLABLE_STATUSES = ["pending", "paid", "preparing", "ready", "accepted"]
-const TERMINAL_STATUSES = ["picked_up", "delivered", "cancelled", "completed"]
 
 type ModalState =
   | { type: "cancel" }
@@ -56,8 +58,9 @@ export function CompactOrderActions({
 
   const currentStep = STATUS_FLOW.find((s) => s.status === effectiveStatus)
   const canForward = currentStep !== undefined
-  const canCancel = CANCELLABLE_STATUSES.includes(effectiveStatus)
-  const isTerminal = TERMINAL_STATUSES.includes(effectiveStatus)
+  const parsed = parseOrderStatus(effectiveStatus)
+  const canCancel = parsed !== "unknown" && CANCELLABLE_STATUSES.has(parsed)
+  const isTerminal = parsed !== "unknown" && TERMINAL_STATUSES.has(parsed)
 
   const doTransition = useCallback(
     async (targetStatus: string, note?: string) => {

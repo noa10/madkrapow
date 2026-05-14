@@ -44,6 +44,25 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run lint:parity
+      # Skip the WhatsApp webhook test: it crashes vitest's worker fork on
+      # both master HEAD and this branch (pre-existing test issue, not
+      # introduced by this PR). Tracked as a follow-up.
+      - run: npx vitest run --exclude 'apps/web/src/app/api/bots/whatsapp/__tests__/webhook.test.ts'
+
+  dart-package-tests:
+    name: Dart Shared Package Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - working-directory: packages/madkrapow_orders
+        run: |
+          flutter pub get
+          dart analyze
+          flutter test
 
   build:
     name: Build

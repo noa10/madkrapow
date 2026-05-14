@@ -2,6 +2,7 @@
 
 import { DollarSign, ClipboardList, CheckCircle2, XCircle } from "lucide-react"
 import type { Order } from "@/types/orders"
+import { isCompleted, parseOrderStatus } from "@/lib/orders/status"
 
 function formatPrice(cents: number) {
   return `RM ${(cents / 100).toFixed(2)}`
@@ -14,9 +15,7 @@ interface HistoryTabSummaryProps {
 export function HistoryTabSummary({ orders }: HistoryTabSummaryProps) {
   const totalCents = orders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0)
   const orderCount = orders.length
-  const completedCount = orders.filter(
-    (o) => o.status === "picked_up" || o.status === "delivered" || o.status === "completed"
-  ).length
+  const completedCount = orders.filter((o) => isCompleted(parseOrderStatus(o.status))).length
   const cancelledCount = orders.filter((o) => o.status === "cancelled").length
 
   const items = [

@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_orders/order_status.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/supabase_provider.dart';
 import '../../../generated/tables/lalamove_shipments.dart';
+import '../../../generated/tables/order_events.dart';
 import '../../../generated/tables/order_items.dart';
 import '../../../generated/tables/order_item_modifiers.dart';
 import '../../../generated/tables/orders.dart';
@@ -23,11 +25,13 @@ class OrderWithDetails {
   const OrderWithDetails({
     required this.order,
     this.items = const [],
+    this.events = const [],
     this.shipment,
   });
 
   final OrdersRow order;
   final List<OrderItemWithModifiers> items;
+  final List<OrderEventsRow> events;
   final LalamoveShipmentsRow? shipment;
 }
 
@@ -103,8 +107,21 @@ class OrderRepository {
       shipment = LalamoveShipmentsRow.fromJson(shipmentRes.first);
     }
 
+    final eventsRes = await _supabase
+        .from('order_events')
+        .select()
+        .eq('order_id', orderId)
+        .order('created_at', ascending: true);
+
+    final events = eventsRes
+        .map((json) => OrderEventsRow.fromJson(json))
+        .toList();
+
     return OrderWithDetails(
-        order: order, items: itemsWithModifiers, shipment: shipment);
+        order: order,
+        items: itemsWithModifiers,
+        events: events,
+        shipment: shipment);
   }
 
   /// Fetch order history for the current user, optionally filtered by date range.
@@ -214,7 +231,9 @@ class OrderRepository {
         .toList();
   }
 
-  /// Subscribe to realtime updates for an order.
+  /// Subscribe to realtime updates for an order, including its events row.
+  /// This is what the customer detail screen uses so the (eventually) shown
+  /// timeline stays in sync with the merchant timeline.
   RealtimeChannel subscribeToOrder(
     String orderId, {
     required void Function() onUpdate,
@@ -233,6 +252,16 @@ class OrderRepository {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'lalamove_shipments',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'order_id',
+            value: orderId,
+          ),
+          callback: (_) => onUpdate(),
+        ).onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'order_events',
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'order_id',
@@ -281,7 +310,7 @@ final orderSummaryProvider = Provider<OrderSummary>((ref) {
   final orders = ordersAsync.valueOrNull ?? <OrderWithItemCount>[];
 
   final completedCount = orders
-      .where((o) => o.order.status == 'picked_up' || o.order.status == 'delivered')
+      .where((o) => OrderStatusFlow.isCompletedWire(o.order.status))
       .length;
   final cancelledCount = orders.where((o) => o.order.status == 'cancelled').length;
 

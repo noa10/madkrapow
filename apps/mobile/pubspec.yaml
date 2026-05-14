@@ -11,6 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  madkrapow_orders:
+    path: ../../packages/madkrapow_orders
+
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.9.0
   gotrue: ^2.12.0

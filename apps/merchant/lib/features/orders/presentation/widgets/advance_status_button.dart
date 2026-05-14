@@ -1,36 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_orders/order_status.dart';
 
 import '../../providers/admin_order_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
 import '../../../../core/constants/roles.dart';
 
-/// Button to advance an order to its next valid status.
-/// Server-side VALID_TRANSITIONS enforced by the API route.
-/// The only manual forward transition supported is preparing → ready.
+/// Button to advance an order to its next valid status. Forward transitions
+/// and role gating come from the shared `madkrapow_orders` package; the API
+/// route enforces the same map server-side.
 class AdvanceStatusButton extends ConsumerWidget {
   const AdvanceStatusButton({super.key, required this.orderId, required this.currentStatus});
 
   final String orderId;
   final String currentStatus;
 
-  static const _nextStatus = {
-    'preparing': 'ready',
-  };
-
-  String? _roleAwareNextStatus(StaffRole? role) {
-    final next = _nextStatus[currentStatus];
-    if (next == null) return null;
-
+  StaffRoleForOrders? _mapRole(StaffRole? role) {
     switch (role) {
       case StaffRole.kitchen:
-        return next; // Only possible transition is preparing → ready, which kitchen is allowed
+        return StaffRoleForOrders.kitchen;
       case StaffRole.cashier:
+        return StaffRoleForOrders.cashier;
       case StaffRole.admin:
+        return StaffRoleForOrders.admin;
       case StaffRole.manager:
+        return StaffRoleForOrders.manager;
       case null:
-        return next;
+        return null;
     }
+  }
+
+  String? _roleAwareNextStatus(StaffRole? role) {
+    final current = parseOrderStatus(currentStatus);
+    if (current == null) return null;
+    final next = OrderStatusFlow.nextForwardForAdmin(current, _mapRole(role));
+    return next?.wire;
   }
 
   @override
@@ -40,7 +44,6 @@ class AdvanceStatusButton extends ConsumerWidget {
     final isTerminal = nextStatus == null;
 
     if (isTerminal) {
-      // Terminal state indicator
       if (currentStatus == 'picked_up' || currentStatus == 'delivered') {
         return const Center(
           child: Row(
@@ -82,10 +85,8 @@ class AdvanceStatusButton extends ConsumerWidget {
   }
 
   String _label(String status) {
-    return switch (status) {
-      'ready' => 'Ready',
-      _ => status,
-    };
+    final parsed = parseOrderStatus(status);
+    return parsed == null ? status : adminLabel(parsed);
   }
 
   Future<void> _advanceStatus(

@@ -44,6 +44,22 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run lint:parity
+      - run: npm test -- run
+
+  dart-package-tests:
+    name: Dart Shared Package Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - working-directory: packages/madkrapow_orders
+        run: |
+          flutter pub get
+          dart analyze
+          flutter test
 
   build:
     name: Build

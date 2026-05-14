@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_orders/order_status.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../data/order_repository.dart';
+import '../widgets/customer_order_timeline.dart';
 import '../widgets/driver_info_card.dart';
 import '../widgets/driver_map.dart';
 import '../widgets/order_item_card.dart';
@@ -21,22 +23,32 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
 }
 
-class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
+class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
+    with WidgetsBindingObserver {
   RealtimeChannel? _channel;
   Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupRealtime();
     _startPolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _channel?.unsubscribe();
     _pollingTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshOrder();
+    }
   }
 
   void _setupRealtime() {
@@ -117,7 +129,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            _StatusChip(status: order.status),
+                            _StatusChip(
+                              status: order.status,
+                              deliveryType: order.deliveryType == 'self_pickup'
+                                  ? DeliveryType.selfPickup
+                                  : DeliveryType.delivery,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
@@ -139,6 +156,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Bulk-order approval banner (mirrors web /order/[id]).
+                if (order.orderKind == 'bulk')
+                  _BulkApprovalBanner(approvalStatus: order.approvalStatus),
+
+                // Dispatch trouble banner — read-only on customer side.
+                if (details.shipment != null)
+                  _DispatchBanner(dispatchStatus: details.shipment!.dispatchStatus),
 
                 // Status stepper
                 Card(
@@ -201,6 +226,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ),
                   ),
 
+                // Customer-facing timeline (mirrors merchant timeline copy)
+                if (details.events.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: CustomerOrderTimeline(
+                      events: details.events,
+                      deliveryType: order.deliveryType == 'self_pickup'
+                          ? DeliveryType.selfPickup
+                          : DeliveryType.delivery,
+                    ),
+                  ),
+
                 // Order items
                 Card(
                   child: Padding(
@@ -257,8 +294,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, this.deliveryType = DeliveryType.delivery});
   final String status;
+  final DeliveryType deliveryType;
 
   @override
   Widget build(BuildContext context) {
@@ -280,25 +318,116 @@ class _StatusChip extends StatelessWidget {
     );
   }
 
-  Color get _statusColor => switch (status) {
-        'paid' => Colors.blue,
-        'accepted' => Colors.indigo,
-        'preparing' => Colors.orange,
-        'ready' => Colors.teal,
-        'picked_up' => Colors.purple,
-        'delivered' => Colors.green,
-        'cancelled' => Colors.red,
-        _ => Colors.grey,
-      };
+  Color get _statusColor {
+    switch (colorRoleFromWire(status)) {
+      case OrderStatusColorRole.primary:
+        return Colors.orange;
+      case OrderStatusColorRole.success:
+        return Colors.green;
+      case OrderStatusColorRole.info:
+        return Colors.blue;
+      case OrderStatusColorRole.warning:
+        return Colors.amber.shade700;
+      case OrderStatusColorRole.danger:
+        return Colors.red;
+      case OrderStatusColorRole.neutral:
+        return Colors.grey;
+    }
+  }
 
-  String get _statusLabel => switch (status) {
-        'paid' => 'Paid',
-        'accepted' => 'Accepted',
-        'preparing' => 'Preparing',
-        'ready' => 'Ready',
-        'picked_up' => 'On the way',
-        'delivered' => 'Delivered',
-        'cancelled' => 'Cancelled',
-        _ => status,
-      };
+  String get _statusLabel => customerLabelFromWire(status, deliveryType);
+}
+
+class _DispatchBanner extends StatelessWidget {
+  const _DispatchBanner({required this.dispatchStatus});
+  final String dispatchStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = dispatchBanner(dispatchStatus);
+    if (copy == null || copy.severity == 'info') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.error_outline,
+                  color: Theme.of(context).colorScheme.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(copy.title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(copy.customerBody),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BulkApprovalBanner extends StatelessWidget {
+  const _BulkApprovalBanner({required this.approvalStatus});
+  final String approvalStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    String? title;
+    String? body;
+    Color color = Theme.of(context).colorScheme.primary;
+    switch (approvalStatus) {
+      case 'pending_review':
+        title = 'Your bulk order is being reviewed';
+        body = 'Our team will respond within 24 hours.';
+        color = Colors.amber.shade700;
+        break;
+      case 'approved':
+        title = 'Your bulk order has been approved';
+        body = 'Please complete payment to confirm your order.';
+        color = Colors.green;
+        break;
+      case 'rejected':
+        title = 'Your bulk order was not approved';
+        body = 'Reach out to our team for next steps.';
+        color = Theme.of(context).colorScheme.error;
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: color.withValues(alpha: 0.12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700, color: color)),
+              const SizedBox(height: 4),
+              Text(body),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

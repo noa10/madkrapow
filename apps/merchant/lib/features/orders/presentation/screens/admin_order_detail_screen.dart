@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_orders/order_status.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/admin_order_providers.dart';
@@ -26,13 +29,16 @@ class AdminOrderDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminOrderDetailScreenState
-    extends ConsumerState<AdminOrderDetailScreen> {
+    extends ConsumerState<AdminOrderDetailScreen> with WidgetsBindingObserver {
   RealtimeChannel? _channel;
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _subscribeToOrder();
+    _startPolling();
   }
 
   void _subscribeToOrder() {
@@ -46,12 +52,38 @@ class _AdminOrderDetailScreenState
     );
   }
 
+  void _startPolling() {
+    // 5-second polling fallback. Auto-stops when the order reaches a
+    // terminal status. Detail-screen only — list screens stay realtime-only.
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final detail = ref.read(adminOrderDetailProvider(widget.orderId)).valueOrNull;
+      final status = detail?.order.status;
+      if (status != null && OrderStatusFlow.isTerminalWire(status)) {
+        _pollingTimer?.cancel();
+        _pollingTimer = null;
+        return;
+      }
+      ref.invalidate(adminOrderDetailProvider(widget.orderId));
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(adminOrderDetailProvider(widget.orderId));
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (_channel != null) {
       _channel!.unsubscribe();
       _channel = null;
     }
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
     super.dispose();
   }
 
@@ -173,6 +205,13 @@ class _OrderDetailContent extends StatelessWidget {
 
         const SizedBox(height: 16),
 
+        // Dispatch trouble banner — visible to staff with admin-side copy and
+        // a hint to retry / contact the customer / cancel via existing
+        // controls below. Mirrors the web admin banner.
+        if (detail.shipment != null)
+          _DispatchAdminBanner(
+              dispatchStatus: detail.shipment!.dispatchStatus),
+
         // Status stepper
         Card(
           child: Padding(
@@ -283,6 +322,48 @@ class _OrderDetailContent extends StatelessWidget {
           currentStatus: order.status,
         ),
       ],
+    );
+  }
+}
+
+class _DispatchAdminBanner extends StatelessWidget {
+  const _DispatchAdminBanner({required this.dispatchStatus});
+  final String dispatchStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = dispatchBanner(dispatchStatus);
+    if (copy == null || copy.severity != 'danger') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.warning_amber_rounded,
+                  color: Theme.of(context).colorScheme.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(copy.title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(copy.body),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

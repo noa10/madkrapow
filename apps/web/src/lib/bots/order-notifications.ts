@@ -1,6 +1,11 @@
 import { sendTelegramMessage } from '@/lib/bots/telegram'
 import { sendWhatsAppTextMessage } from '@/lib/bots/whatsapp'
 import { getCustomerForOrder } from '@/lib/bots/customer'
+import {
+  NOTIFY_STATUSES,
+  parseOrderStatus,
+  type OrderStatus,
+} from '@/lib/orders/status'
 import { createServerClient } from '@supabase/ssr'
 
 function getServiceClient() {
@@ -21,34 +26,48 @@ function getServiceClient() {
   })
 }
 
-function getStatusMessage(orderNumber: string, newStatus: string): string {
-  switch (newStatus) {
-    case 'preparing':
-      return `✅ Your order #${orderNumber} is now being prepared!`
-    case 'ready':
-      return `🍽️ Your order #${orderNumber} is ready for pickup/delivery!`
-    case 'picked_up':
-      return `🚚 Your order #${orderNumber} has been picked up by the driver!`
-    case 'delivered':
-      return `🎉 Your order #${orderNumber} has been delivered! Enjoy your meal!`
-    case 'cancelled':
-      return `❌ Your order #${orderNumber} has been cancelled.`
-    default:
-      return `📦 Your order #${orderNumber} status updated to: ${newStatus}`
-  }
+const STATUS_MESSAGE_TEMPLATES: Record<OrderStatus, ((n: string) => string) | null> = {
+  pending: null,
+  paid: null,
+  accepted: null,
+  preparing: (n) => `✅ Your order #${n} is now being prepared!`,
+  ready: (n) => `🍽️ Your order #${n} is ready for pickup/delivery!`,
+  picked_up: (n) => `🚚 Your order #${n} has been picked up by the driver!`,
+  delivered: (n) => `🎉 Your order #${n} has been delivered! Enjoy your meal!`,
+  cancelled: (n) => `❌ Your order #${n} has been cancelled.`,
 }
 
 /**
- * Send a platform-appropriate status update to the customer who placed
- * the order via Telegram or WhatsApp.
- *
- * Best-effort: errors are logged but never thrown.
+ * Build the customer-facing message for a status, or `null` if the status
+ * is suppressed (pending/paid/accepted) or unknown. Exported for testing
+ * the allowlist.
+ */
+export function getStatusMessage(
+  orderNumber: string,
+  newStatus: string,
+): string | null {
+  const parsed = parseOrderStatus(newStatus)
+  if (parsed === 'unknown') return null
+  if (!NOTIFY_STATUSES.has(parsed)) return null
+  const builder = STATUS_MESSAGE_TEMPLATES[parsed]
+  return builder ? builder(orderNumber) : null
+}
+
+/**
+ * Send a customer status update via Telegram or WhatsApp. Best-effort:
+ * errors are logged but never thrown. Returns early without dispatching for
+ * suppressed (`pending`/`paid`/`accepted`) or unknown statuses.
  */
 export async function sendOrderStatusNotification(
   orderId: string,
-  newStatus: string
+  newStatus: string,
 ): Promise<void> {
   try {
+    const parsed = parseOrderStatus(newStatus)
+    if (parsed === 'unknown' || !NOTIFY_STATUSES.has(parsed)) {
+      return
+    }
+
     const supabase = getServiceClient()
 
     const { data: order, error: orderError } = await supabase
@@ -61,7 +80,7 @@ export async function sendOrderStatusNotification(
       console.error(
         '[OrderNotifications] Order not found for status notify:',
         orderId,
-        orderError
+        orderError,
       )
       return
     }
@@ -77,13 +96,14 @@ export async function sendOrderStatusNotification(
     }
 
     const message = getStatusMessage(order.order_number as string, newStatus)
+    if (!message) return
 
     if (order.source === 'telegram') {
       const telegramId = customer.telegram_id
       if (!telegramId) {
         console.warn(
           '[OrderNotifications] No telegram_id for customer of order:',
-          orderId
+          orderId,
         )
         return
       }
@@ -93,7 +113,7 @@ export async function sendOrderStatusNotification(
       if (!whatsappId) {
         console.warn(
           '[OrderNotifications] No whatsapp_id for customer of order:',
-          orderId
+          orderId,
         )
         return
       }
@@ -102,7 +122,7 @@ export async function sendOrderStatusNotification(
   } catch (error) {
     console.error(
       '[OrderNotifications] Status notification failed (best-effort):',
-      error
+      error,
     )
   }
 }

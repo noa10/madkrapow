@@ -1,0 +1,140 @@
+{
+  "$schema": "./order_status.schema.json",
+  "version": 1,
+  "description": "Canonical order-status spec for madkrapow. Single source of truth for the orders.status enum, transitions, labels, color roles, and dispatch banner messages. Generated artifacts in apps/web/src/lib/orders/status.ts and packages/madkrapow_orders/lib/order_status.g.dart MUST agree with this file. CI parity check: scripts/check-order-status-parity.ts.",
+  "schemaSource": "supabase/migrations/008_scheduled_bulk_orders.sql:9-12",
+  "statuses": [
+    "pending",
+    "paid",
+    "accepted",
+    "preparing",
+    "ready",
+    "picked_up",
+    "delivered",
+    "cancelled"
+  ],
+  "terminal": ["delivered", "cancelled"],
+  "cancellable": ["pending", "paid", "accepted", "preparing", "ready"],
+  "flowSteps": ["pending", "paid", "preparing", "ready", "picked_up", "delivered"],
+  "adminFlowSteps": ["pending", "paid", "preparing", "ready", "picked_up", "delivered"],
+  "forwardTransitions": {
+    "pending": ["paid", "cancelled"],
+    "paid": ["preparing", "cancelled"],
+    "accepted": ["cancelled"],
+    "preparing": ["ready", "cancelled"],
+    "ready": ["picked_up", "cancelled"],
+    "picked_up": ["delivered"],
+    "delivered": [],
+    "cancelled": []
+  },
+  "adminTransitions": {
+    "pending": ["paid", "cancelled"],
+    "paid": ["preparing", "cancelled"],
+    "accepted": ["cancelled"],
+    "preparing": ["ready", "cancelled"],
+    "ready": ["cancelled"]
+  },
+  "kitchenTransitions": {
+    "preparing": ["ready"]
+  },
+  "customerLabels": {
+    "pending": "Pending Payment",
+    "paid": "Paid",
+    "accepted": "Accepted",
+    "preparing": "Preparing",
+    "ready": "Ready",
+    "picked_up_delivery": "On the way",
+    "picked_up_self_pickup": "Picked Up",
+    "delivered": "Delivered",
+    "cancelled": "Cancelled"
+  },
+  "adminLabels": {
+    "pending": "Pending",
+    "paid": "Paid",
+    "accepted": "Accepted",
+    "preparing": "Preparing",
+    "ready": "Ready",
+    "picked_up": "Picked Up",
+    "delivered": "Delivered",
+    "cancelled": "Cancelled"
+  },
+  "stepLabels": {
+    "pending": "Pending",
+    "paid": "Paid",
+    "preparing": "Preparing",
+    "ready": "Ready",
+    "picked_up": "Picked Up",
+    "delivered": "Delivered"
+  },
+  "colorRoles": {
+    "pending": "warning",
+    "paid": "info",
+    "accepted": "info",
+    "preparing": "primary",
+    "ready": "success",
+    "picked_up": "success",
+    "delivered": "success",
+    "cancelled": "danger"
+  },
+  "tailwindClasses": {
+    "primary": "bg-orange-100 text-orange-800",
+    "success": "bg-green-100 text-green-800",
+    "info": "bg-blue-100 text-blue-800",
+    "warning": "bg-yellow-100 text-yellow-800",
+    "danger": "bg-red-100 text-red-800",
+    "neutral": "bg-gray-100 text-gray-800"
+  },
+  "notifyStatuses": ["preparing", "ready", "picked_up", "delivered", "cancelled"],
+  "notifyMessages": {
+    "preparing": "✅ Your order #{orderNumber} is now being prepared!",
+    "ready": "🍽️ Your order #{orderNumber} is ready for pickup/delivery!",
+    "picked_up": "🚚 Your order #{orderNumber} has been picked up by the driver!",
+    "delivered": "🎉 Your order #{orderNumber} has been delivered! Enjoy your meal!",
+    "cancelled": "❌ Your order #{orderNumber} has been cancelled."
+  },
+  "dispatchStatuses": [
+    "not_ready",
+    "queued",
+    "submitted",
+    "failed",
+    "quoted",
+    "driver_pending",
+    "driver_assigned",
+    "in_transit",
+    "delivered",
+    "cancelled",
+    "manual_review"
+  ],
+  "dispatchMessages": {
+    "manual_review": {
+      "title": "Delivery flagged for manual review",
+      "body": "Driver rejection limit reached — Lalamove could not assign a replacement driver. Choose: retry delivery, contact the customer, or cancel the order.",
+      "customerBody": "We hit a delivery hiccup and our team is working on it. We'll keep you posted.",
+      "severity": "danger"
+    },
+    "failed": {
+      "title": "Delivery failed",
+      "body": "Order expired — no driver was assigned within the Lalamove expiry window. Choose: retry delivery, contact the customer, or cancel the order.",
+      "customerBody": "We couldn't dispatch a driver in time. Our team is sorting this out.",
+      "severity": "danger"
+    },
+    "driver_pending": {
+      "title": "Looking for a driver",
+      "body": "Lalamove is assigning a driver.",
+      "customerBody": "Looking for a driver…",
+      "severity": "info"
+    },
+    "driver_assigned": {
+      "title": "Driver assigned",
+      "body": "A driver has been assigned and will arrive shortly.",
+      "customerBody": "A driver has been assigned and is on the way.",
+      "severity": "info"
+    },
+    "in_transit": {
+      "title": "Driver in transit",
+      "body": "The driver has picked up the order.",
+      "customerBody": "Your order is on the way.",
+      "severity": "info"
+    }
+  }
+}

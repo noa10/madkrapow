@@ -16,6 +16,14 @@ import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
+import {
+  ADMIN_STATUS_LABELS,
+  STATUS_FLOW_STEPS,
+  TERMINAL_STATUSES as SHARED_TERMINAL_STATUSES,
+  parseOrderStatus,
+  tailwindClassesFor,
+  type OrderStatus,
+} from "@/lib/orders/status";
 
 const DeliveryMap = dynamic(
   () => import("@/components/order/DeliveryMap").then((mod) => mod.DeliveryMap),
@@ -82,17 +90,12 @@ interface CustomerInfo {
   auth_user_id: string | null;
 }
 
-const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
-  pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
-  paid: { color: "bg-blue-100 text-blue-800", label: "Paid" },
-  accepted: { color: "bg-sky-100 text-sky-800", label: "Accepted" },
-  preparing: { color: "bg-orange-100 text-orange-800", label: "Preparing" },
-  ready: { color: "bg-green-100 text-green-800", label: "Ready" },
-  picked_up: { color: "bg-indigo-100 text-indigo-800", label: "Picked Up" },
-  delivered: { color: "bg-teal-100 text-teal-800", label: "Delivered" },
-  completed: { color: "bg-teal-100 text-teal-800", label: "Completed" },
-  cancelled: { color: "bg-red-100 text-red-800", label: "Cancelled" },
-};
+const STATUS_CONFIG: Record<string, { color: string; label: string }> = Object.fromEntries(
+  (Object.keys(ADMIN_STATUS_LABELS) as OrderStatus[]).map((s) => [
+    s,
+    { color: tailwindClassesFor(s), label: ADMIN_STATUS_LABELS[s] },
+  ])
+);
 
 const SOURCE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
   web: { icon: <Globe className="h-3 w-3" />, label: "Web", color: "bg-sky-100 text-sky-800" },
@@ -101,19 +104,17 @@ const SOURCE_CONFIG: Record<string, { icon: React.ReactNode; label: string; colo
   mobile: { icon: <Smartphone className="h-3 w-3" />, label: "Mobile", color: "bg-violet-100 text-violet-800" },
 };
 
-const ORDER_FLOW_STEPS: { key: string; label: string }[] = [
-  { key: 'pending', label: 'Pending' },
-  { key: 'paid', label: 'Paid' },
-  { key: 'preparing', label: 'Preparing' },
-  { key: 'ready', label: 'Ready' },
-  { key: 'picked_up', label: 'Picked Up' },
-  { key: 'delivered', label: 'Delivered' },
-];
-
-const TERMINAL_STATUSES = ['delivered', 'completed', 'cancelled'];
+const ORDER_FLOW_STEPS: { key: OrderStatus; label: string }[] = STATUS_FLOW_STEPS.map(
+  (key) => ({ key, label: ADMIN_STATUS_LABELS[key] })
+);
 
 function getFlowStepIndex(status: string): number {
   return ORDER_FLOW_STEPS.findIndex((s) => s.key === status);
+}
+
+function isTerminalStatus(status: string): boolean {
+  const parsed = parseOrderStatus(status);
+  return parsed !== "unknown" && SHARED_TERMINAL_STATUSES.has(parsed);
 }
 
 interface OrderEvent {
@@ -342,10 +343,9 @@ export default function AdminOrderDetailPage() {
   // Deps are scalar fields only — including the full `shipment` object would
   // re-create the interval on every poll write.
   useEffect(() => {
-    const TERMINAL_ORDER = ['delivered', 'completed', 'cancelled', 'refunded'];
     const ACTIVE_DISPATCH = ['driver_pending', 'driver_assigned', 'in_transit'];
     if (!order || !shipment) return;
-    if (TERMINAL_ORDER.includes(order.status)) return;
+    if (isTerminalStatus(order.status)) return;
     if (!ACTIVE_DISPATCH.includes(shipment.dispatch_status)) return;
 
     const supabase = getBrowserClient();
@@ -814,7 +814,7 @@ export default function AdminOrderDetailPage() {
                 driver_location_updated_at={shipment?.driver_location_updated_at ?? null}
                 canRefresh={
                   Boolean(shipment?.lalamove_order_id) &&
-                  !['delivered', 'completed', 'cancelled', 'refunded'].includes(order.status)
+                  !isTerminalStatus(order.status)
                 }
                 onRefreshSuccess={(driver) => {
                   setShipment((prev) =>

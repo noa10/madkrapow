@@ -3,6 +3,11 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Package, X, Ban, BadgeDollarSign, ChefHat } from "lucide-react";
+import {
+  CANCELLABLE_STATUSES,
+  TERMINAL_STATUSES,
+  parseOrderStatus,
+} from "@/lib/orders/status";
 
 interface StatusTransitionButtonsProps {
   orderId: string;
@@ -23,12 +28,6 @@ const STATUS_FLOW: FlowStep[] = [
   { status: "preparing", label: "Mark Ready", icon: Package, next: "ready" },
 ];
 
-/** Statuses from which an admin can cancel an order. */
-const CANCELLABLE_STATUSES = ["pending", "paid", "preparing", "ready", "accepted"];
-
-/** Terminal statuses — no actions possible. */
-const TERMINAL_STATUSES = ["picked_up", "delivered", "cancelled", "completed"];
-
 export function StatusTransitionButtons({
   orderId,
   currentStatus,
@@ -38,10 +37,11 @@ export function StatusTransitionButtons({
   const [cancelLoading, setCancelLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const parsed = parseOrderStatus(currentStatus);
   const currentStep = STATUS_FLOW.find((s) => s.status === currentStatus);
   const canForward = currentStep !== undefined;
-  const canCancel = CANCELLABLE_STATUSES.includes(currentStatus);
-  const isTerminal = TERMINAL_STATUSES.includes(currentStatus);
+  const canCancel = parsed !== "unknown" && CANCELLABLE_STATUSES.has(parsed);
+  const isTerminal = parsed !== "unknown" && TERMINAL_STATUSES.has(parsed);
 
   const handleTransition = useCallback(
     async (targetStatus: string) => {

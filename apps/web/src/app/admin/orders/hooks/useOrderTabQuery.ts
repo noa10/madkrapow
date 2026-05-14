@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import type { Order, OrderTab } from "@/types/orders"
+import { ADMIN_TAB_STATUSES } from "@/lib/orders/status"
 
 const ORDER_SELECT = "*, order_items(quantity), source, customer_id"
 
@@ -106,7 +107,7 @@ export function useOrderTabQuery(tab: OrderTab) {
             let query = supabase
               .from("orders")
               .select(ORDER_SELECT)
-              .in("status", ["picked_up", "delivered", "cancelled", "completed"])
+              .in("status", [...ADMIN_TAB_STATUSES.history])
               .gte("created_at", start)
               .lte("created_at", end)
               .order("created_at", { ascending: false })

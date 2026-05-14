@@ -22,6 +22,15 @@ import { DriverInfo } from '@/components/order/DriverInfo'
 import dynamic from 'next/dynamic'
 import { getOrderDisplayCode } from '@/lib/utils/order-code'
 import { PageContainer } from '@/components/layout/PageContainer'
+import {
+  STATUS_FLOW_STEPS,
+  TERMINAL_STATUSES as SHARED_TERMINAL_STATUSES,
+  STEP_LABELS as SHARED_STEP_LABELS,
+  customerLabel as sharedCustomerLabel,
+  parseOrderStatus,
+  type OrderStatus as SharedOrderStatus,
+  type DeliveryType as SharedDeliveryType,
+} from '@/lib/orders/status'
 
 const DeliveryMap = dynamic(
   () => import('@/components/order/DeliveryMap').then((mod) => mod.DeliveryMap),
@@ -99,28 +108,16 @@ interface Order {
   order_items?: OrderItem[]
 }
 
-type OrderStatus = 'pending' | 'paid' | 'accepted' | 'preparing' | 'ready' | 'picked_up' | 'delivered' | 'cancelled'
+type OrderStatus = SharedOrderStatus
 
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: 'Pending Payment',
-  paid: 'Paid',
-  accepted: 'Accepted',
-  preparing: 'Preparing',
-  ready: 'Ready',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
+const ORDER_STEPS: { key: OrderStatus; label: string }[] = STATUS_FLOW_STEPS.map(
+  (key) => ({ key, label: SHARED_STEP_LABELS[key as keyof typeof SHARED_STEP_LABELS] }),
+)
+
+function isTerminalStatus(status: string): boolean {
+  const parsed = parseOrderStatus(status)
+  return parsed !== 'unknown' && SHARED_TERMINAL_STATUSES.has(parsed)
 }
-
-const ORDER_STEPS: { key: string; label: string }[] = [
-  { key: 'paid', label: 'Paid' },
-  { key: 'preparing', label: 'Preparing' },
-  { key: 'ready', label: 'Ready' },
-  { key: 'picked_up', label: 'Picked Up' },
-  { key: 'delivered', label: 'Delivered' },
-]
-
-const TERMINAL_STATUSES = ['delivered', 'cancelled']
 
 function getStepIndex(status: string): number {
   return ORDER_STEPS.findIndex((s) => s.key === status)
@@ -315,7 +312,7 @@ export default function OrderTrackingPage() {
   // polling ensures the customer still sees status updates.
   useEffect(() => {
     if (!isAuthenticated || authChecking) return
-    if (order?.status && TERMINAL_STATUSES.includes(order.status)) return
+    if (order?.status && isTerminalStatus(order.status)) return
 
     const interval = setInterval(() => {
       fetchOrder()
@@ -452,7 +449,7 @@ export default function OrderTrackingPage() {
                     )}
                   </div>
                   <div>
-                    <p className="font-medium">{STATUS_LABELS[order.status as OrderStatus] || order.status}</p>
+                    <p className="font-medium">{sharedCustomerLabel(parseOrderStatus(order.status), (order.delivery_type as SharedDeliveryType) ?? 'delivery')}</p>
                     <p className="text-sm text-muted-foreground">{formatDate(order.created_at)}</p>
                   </div>
                 </div>

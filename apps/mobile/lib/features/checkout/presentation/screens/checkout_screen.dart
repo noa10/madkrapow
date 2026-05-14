@@ -493,6 +493,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final discountTotal = checkout.discountTotalCents;
     final total = subtotal + deliveryFee - discountTotal;
 
+    final isDelivery = checkout.deliveryType == DeliveryType.delivery;
+    final hasDeliveryAddress = isDelivery
+        ? (checkout.useManualAddress
+            ? _manualAddressLine1Controller.text.trim().isNotEmpty
+            : checkout.selectedAddressId != null)
+        : true;
+    final isQuoteReady = !isDelivery ||
+        (checkout.deliveryQuote != null && !checkout.isQuoteExpired());
+    final canCheckout = !_isLoading && hasDeliveryAddress && isQuoteReady;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Checkout'),
@@ -769,11 +779,40 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ),
               ],
 
+              // Delivery quote pending notice
+              if (isDelivery && hasDeliveryAddress && !isQuoteReady) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    SizedBox(
+                      height: 14,
+                      width: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        checkout.deliveryQuote == null
+                            ? 'Calculating delivery fee — please wait before paying.'
+                            : 'Delivery quote expired. Tap "Calculate Delivery Fee" to refresh.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
               const SizedBox(height: 32),
 
               // Pay button
               FilledButton(
-                onPressed: _isLoading ? null : _handleCheckout,
+                onPressed: canCheckout ? _handleCheckout : null,
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52),
                 ),
@@ -783,7 +822,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text('Pay ${formatPrice(total)}'),
+                    : Text(
+                        isDelivery && !isQuoteReady
+                            ? 'Calculating delivery fee...'
+                            : 'Pay ${formatPrice(total)}',
+                      ),
               ),
               const SizedBox(height: 32),
             ],

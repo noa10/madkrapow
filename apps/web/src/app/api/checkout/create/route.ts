@@ -162,6 +162,22 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         ? moneyStringToCents(priceBreakdown.total)
         : deliveryFee
 
+    // Defense-in-depth: a delivery order must arrive with a valid Lalamove quote
+    // (priceBreakdown + quotationId). Reject zero / missing fees so a client bug
+    // can't slip a free-delivery order past the server.
+    if (deliveryType === 'delivery') {
+      if (!priceBreakdown || !quotationId || effectiveDeliveryFee <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Delivery quote is required before checkout. Please wait for the delivery fee to finish calculating.',
+            code: 'DELIVERY_QUOTE_REQUIRED',
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     // ── Validate all prices from database (never trust client) ─────
     const menuItemIds = items.map(i => i.id)
     const modifierIds = items.flatMap(i => i.modifiers.map(m => m.id))

@@ -534,7 +534,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     (!needsDeliveryAddress || hasDeliveryAddress) &&
     !needsScheduleSelection &&
     !quoteExpired &&
-    !quoteFailed
+    !quoteFailed &&
+    !(needsDeliveryAddress && isDeliveryFeeLoading) &&
+    !(needsDeliveryAddress && !deliveryQuote && !priceBreakdown)
 
   const currentStep = needsDeliveryAddress && !hasDeliveryAddress ? 1
     : needsScheduleSelection ? 1
@@ -1192,6 +1194,13 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                     </>
                   ) : needsScheduleSelection ? (
                     'Select a time slot'
+                  ) : needsDeliveryAddress && isDeliveryFeeLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Calculating delivery fee...
+                    </>
+                  ) : needsDeliveryAddress && !deliveryQuote && !priceBreakdown ? (
+                    'Waiting for delivery quote'
                   ) : (
                     `Pay ${formatPrice(total)}`
                   )}

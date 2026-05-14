@@ -2,7 +2,7 @@ name: madkrapow_merchant
 description: "Mad Krapow merchant app for store staff"
 publish_to: 'none'
 
-version: 0.1.0+1000
+version: 0.1.1+1001
 
 environment:
   sdk: ^3.11.1

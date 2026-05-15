@@ -131,7 +131,24 @@ jobs:
 
       - name: Create .env for code generation
         working-directory: apps/${{ steps.tag.outputs.app }}
-        run: cp .env.example .env
+        env:
+          APP: ${{ steps.tag.outputs.app }}
+          GOOGLE_WEB_CLIENT_ID_MOBILE: ${{ secrets.GOOGLE_WEB_CLIENT_ID_MOBILE }}
+          GOOGLE_ANDROID_CLIENT_ID_MOBILE: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID_MOBILE }}
+          GOOGLE_WEB_CLIENT_ID_MERCHANT: ${{ secrets.GOOGLE_WEB_CLIENT_ID_MERCHANT }}
+          GOOGLE_ANDROID_CLIENT_ID_MERCHANT: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID_MERCHANT }}
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+
+          # Inject Google client IDs from secrets
+          if [[ "$APP" == "mobile" ]]; then
+            echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MOBILE" >> .env
+            echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MOBILE" >> .env
+          else
+            echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MERCHANT" >> .env
+            echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MERCHANT" >> .env
+          fi
 
       - name: Generate code
         working-directory: apps/${{ steps.tag.outputs.app }}

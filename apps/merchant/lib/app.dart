@@ -36,7 +36,7 @@ import 'features/settings/presentation/screens/settings_screen.dart';
 import 'main.dart' show firebaseInitialized;
 
 // Navigator keys for each branch of the shell
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 final _ordersNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'orders');
 final _menuNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'menu');
 final _analyticsNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'analytics');
@@ -44,7 +44,7 @@ final _moreNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'more');
 
 GoRouter _createRouter(Ref ref) {
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: AppRoutes.orders,
     refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
@@ -500,7 +500,7 @@ class _WhatsNewGateState extends ConsumerState<_WhatsNewGate> {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted || _handled) return;
         _handled = true;
-        await maybeShowWhatsNew(context, ref);
+        await maybeShowWhatsNew(ref);
       });
     }
     return widget.child;

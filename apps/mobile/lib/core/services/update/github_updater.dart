@@ -436,6 +436,14 @@ class GithubUpdater {
     } catch (_) {/* ignore */}
   }
 
+  Future<void> cancelActiveDownload() async {
+    final id = _activeDownloadTaskId;
+    if (id == null) return;
+    try {
+      await FlutterDownloader.cancel(taskId: id);
+    } catch (_) {/* ignore */}
+  }
+
   Future<void> cleanupOldApks() async {
     try {
       if (!Platform.isAndroid) return;

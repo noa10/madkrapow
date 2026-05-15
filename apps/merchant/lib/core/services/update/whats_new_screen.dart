@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app.dart';
 import 'update_providers.dart';
 
 class WhatsNewScreen extends ConsumerWidget {
@@ -71,10 +72,12 @@ class WhatsNewScreen extends ConsumerWidget {
   }
 }
 
-Future<void> maybeShowWhatsNew(BuildContext context, WidgetRef ref) async {
+Future<void> maybeShowWhatsNew(WidgetRef ref) async {
   final settings = ref.read(updateSettingsProvider);
   if (!settings.whatsNewPending) return;
-  await Navigator.of(context, rootNavigator: true).push(
+  final navigator = rootNavigatorKey.currentState;
+  if (navigator == null) return;
+  await navigator.push(
     MaterialPageRoute(
       builder: (_) => const WhatsNewScreen(),
       fullscreenDialog: true,

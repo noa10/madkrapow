@@ -37,7 +37,7 @@ const _protectedRoutes = [
   AppRoutes.orderSuccess,
   AppRoutes.orderDetail,
   AppRoutes.orders,
-  AppRoutes.profile,
+  AppRoutes.more,
   AppRoutes.addresses,
   AppRoutes.contacts,
 ];
@@ -71,7 +71,7 @@ bool _requiresVerification(String location) {
 }
 
 // Navigator keys for each branch of the shell
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 final _homeNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'home');
 final _ordersNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'orders');
 final _cartNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'cart');
@@ -79,7 +79,7 @@ final _profileNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 GoRouter _createRouter(Ref ref) {
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: AppRoutes.splash,
     refreshListenable: ref.read(authStateListenableProvider),
     redirect: (context, state) {
@@ -230,12 +230,12 @@ GoRouter _createRouter(Ref ref) {
               ),
             ],
           ),
-          // Branch 3: Profile
+          // Branch 3: More
           StatefulShellBranch(
             navigatorKey: _profileNavigatorKey,
             routes: [
               GoRoute(
-                path: AppRoutes.profile,
+                path: AppRoutes.more,
                 builder: (context, state) => const ProfileScreen(),
                 routes: [
                   GoRoute(
@@ -253,6 +253,24 @@ GoRouter _createRouter(Ref ref) {
             ],
           ),
         ],
+      ),
+
+      // Legacy /profile/* redirects.
+      GoRoute(
+        path: '/profile',
+        redirect: (context, state) => AppRoutes.more,
+      ),
+      GoRoute(
+        path: '/profile/contacts',
+        redirect: (context, state) => AppRoutes.contacts,
+      ),
+      GoRoute(
+        path: '/profile/addresses',
+        redirect: (context, state) => AppRoutes.addresses,
+      ),
+      GoRoute(
+        path: '/profile/settings',
+        redirect: (context, state) => AppRoutes.appSettings,
       ),
     ],
   );
@@ -308,7 +326,7 @@ class _WhatsNewGateState extends ConsumerState<_WhatsNewGate> {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted || _handled) return;
         _handled = true;
-        await maybeShowWhatsNew(context, ref);
+        await maybeShowWhatsNew(ref);
       });
     }
     return widget.child;

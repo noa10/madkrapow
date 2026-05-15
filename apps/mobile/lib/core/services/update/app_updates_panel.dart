@@ -8,6 +8,7 @@ import 'github_updater.dart';
 import 'update_controller.dart';
 import 'update_dialog.dart';
 import 'update_providers.dart';
+import '../../../app.dart';
 
 /// Self-contained Settings panel for app updates.
 class AppUpdatesPanel extends ConsumerStatefulWidget {
@@ -156,8 +157,16 @@ class _AppUpdatesPanelState extends ConsumerState<AppUpdatesPanel> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text('Downloading v${state.info?.version ?? ''} — '
-                    '${state.downloadProgress}%'),
+                Expanded(
+                  child: Text('Downloading v${state.info?.version ?? ''} — '
+                      '${state.downloadProgress}%'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () =>
+                      ref.read(updateControllerProvider).cancelDownload(),
+                  child: const Text('Cancel'),
+                ),
               ],
             ),
           ],
@@ -184,7 +193,7 @@ class _AppUpdatesPanelState extends ConsumerState<AppUpdatesPanel> {
                 style: Theme.of(context).textTheme.bodyMedium),
             const Spacer(),
             Text(
-              'v${pkg.version} (${pkg.buildNumber})',
+              'v${pkg.version}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -235,15 +244,14 @@ class _AppUpdatesPanelState extends ConsumerState<AppUpdatesPanel> {
           break;
         case UpdateCheckStatus.updateAvailable:
           setState(() => _manualStatus = 'v${result.info!.version} available.');
+          final controller = ref.read(updateControllerProvider);
+          controller.seedInfo(result.info!);
           final choice = await showUpdateDialog(
             context,
             info: result.info!,
             currentVersion: pkg.version,
           );
           if (!mounted) return;
-          final controller = ref.read(updateControllerProvider);
-          // Refresh controller state so it knows about the candidate info.
-          await controller.runCheck();
           if (choice == 'update') {
             await controller.acceptUpdate();
           } else if (choice == 'later') {
@@ -309,8 +317,13 @@ class _UpdatePromptMountState extends ConsumerState<UpdatePromptMount> {
       _dialogOpen = false;
       return;
     }
+    final navContext = rootNavigatorKey.currentContext;
+    if (navContext == null) {
+      _dialogOpen = false;
+      return;
+    }
     final choice = await showUpdateDialog(
-      context,
+      navContext,
       info: info,
       currentVersion: pkg.version,
     );

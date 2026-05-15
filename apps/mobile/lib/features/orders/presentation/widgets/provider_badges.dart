@@ -41,7 +41,9 @@ PaymentProvider paymentProviderFor(ProviderBadgeData data) {
 }
 
 DeliveryProvider deliveryProviderFor(ProviderBadgeData data) {
-  if (data.deliveryType == 'self_pickup') return DeliveryProvider.selfPickup;
+  if (data.deliveryType == 'self_pickup' || data.deliveryType == 'pickup') {
+    return DeliveryProvider.selfPickup;
+  }
   if ((data.lalamoveOrderId != null && data.lalamoveOrderId!.isNotEmpty) ||
       (data.lalamoveQuoteId != null && data.lalamoveQuoteId!.isNotEmpty)) {
     return DeliveryProvider.lalamove;

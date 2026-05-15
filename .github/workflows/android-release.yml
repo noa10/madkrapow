@@ -148,11 +148,14 @@ jobs:
           PREV=$(git tag --list "${APP}-v*" --sort=-v:refname | grep -vx "$TAG" | head -n 1 || true)
           if [[ -z "$PREV" ]]; then
             PREV=$(git rev-list --max-parents=0 HEAD | head -n 1)
-            echo "floor=root" >> "$GITHUB_OUTPUT"
+            FLOOR=root
           else
-            echo "floor=tag" >> "$GITHUB_OUTPUT"
+            FLOOR=tag
           fi
-          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          {
+            echo "floor=$FLOOR"
+            echo "prev=$PREV"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog

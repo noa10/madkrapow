@@ -12,6 +12,7 @@ import '../../../cart/data/cart_item.dart';
 import '../../data/order_repository.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/order_stats_card.dart';
+import '../widgets/provider_badges.dart';
 
 class OrderHistoryScreen extends ConsumerStatefulWidget {
   const OrderHistoryScreen({super.key});
@@ -195,6 +196,20 @@ class _OrderCard extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              ProviderBadges(
+                data: ProviderBadgeData(
+                  status: order.status,
+                  deliveryType: order.deliveryType,
+                  stripePaymentIntentId: order.stripePaymentIntentId,
+                  stripeSessionId: order.stripeSessionId,
+                  lalamoveOrderId: order.lalamoveOrderId,
+                  lalamoveQuoteId: order.lalamoveQuoteId,
+                  driverName: order.driverName,
+                  driverPhone: order.driverPhone,
+                ),
+                dense: true,
               ),
               const SizedBox(height: 8),
               Row(

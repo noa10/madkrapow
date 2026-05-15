@@ -14,6 +14,7 @@ import '../widgets/driver_map.dart';
 import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
+import '../widgets/provider_badges.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/widgets/async_value_widget.dart';
@@ -179,6 +180,19 @@ class _OrderDetailContent extends StatelessWidget {
                 ),
                 if (order.notes != null)
                   Text('Notes: ${order.notes}'),
+                const SizedBox(height: 8),
+                ProviderBadges(
+                  data: ProviderBadgeData(
+                    status: order.status,
+                    deliveryType: order.deliveryType,
+                    stripePaymentIntentId: order.stripePaymentIntentId,
+                    stripeSessionId: order.stripeSessionId,
+                    lalamoveOrderId: order.lalamoveOrderId,
+                    lalamoveQuoteId: order.lalamoveQuoteId,
+                    driverName: order.driverName,
+                    driverPhone: order.driverPhone,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Row(
                   children: [

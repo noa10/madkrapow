@@ -148,16 +148,20 @@ jobs:
 
           # Inject secrets from GitHub Actions
           if [[ "$APP" == "mobile" ]]; then
-            echo "SUPABASE_URL=$SUPABASE_URL_MOBILE" >> .env
-            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MOBILE" >> .env
-            echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MOBILE" >> .env
-            echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MOBILE" >> .env
+            {
+              echo "SUPABASE_URL=$SUPABASE_URL_MOBILE"
+              echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MOBILE"
+              echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MOBILE"
+              echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MOBILE"
+            } >> .env
           else
-            echo "SUPABASE_URL=$SUPABASE_URL_MERCHANT" >> .env
-            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MERCHANT" >> .env
-            echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MERCHANT" >> .env
-            echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MERCHANT" >> .env
-            echo "FCM_SENDER_ID=$FCM_SENDER_ID_MERCHANT" >> .env
+            {
+              echo "SUPABASE_URL=$SUPABASE_URL_MERCHANT"
+              echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MERCHANT"
+              echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MERCHANT"
+              echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MERCHANT"
+              echo "FCM_SENDER_ID=$FCM_SENDER_ID_MERCHANT"
+            } >> .env
           fi
 
       - name: Generate code
@@ -175,11 +179,14 @@ jobs:
           PREV=$(git tag --list "${APP}-v*" --sort=-v:refname | grep -vx "$TAG" | head -n 1 || true)
           if [[ -z "$PREV" ]]; then
             PREV=$(git rev-list --max-parents=0 HEAD | head -n 1)
-            echo "floor=root" >> "$GITHUB_OUTPUT"
+            FLOOR=root
           else
-            echo "floor=tag" >> "$GITHUB_OUTPUT"
+            FLOOR=tag
           fi
-          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          {
+            echo "floor=$FLOOR"
+            echo "prev=$PREV"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog

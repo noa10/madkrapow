@@ -22,6 +22,12 @@ export interface Order {
   item_count?: number
   source: OrderSource
   customer_id: string | null
+  stripe_payment_intent_id: string | null
+  stripe_session_id: string | null
+  lalamove_order_id: string | null
+  lalamove_quote_id: string | null
+  driver_name: string | null
+  driver_phone: string | null
 }
 
 export interface DateRange {

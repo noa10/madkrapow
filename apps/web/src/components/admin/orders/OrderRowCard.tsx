@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
+import { ProviderBadges } from "@/components/orders/ProviderBadges"
 import { Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
 import type { Order, OrderSource } from "@/types/orders"
 
@@ -198,10 +199,8 @@ export function OrderRowCard({ order, onStatusChange }: OrderRowCardProps) {
         <span className="text-xs text-muted-foreground truncate">
           {order.customer_name || "Guest"}
         </span>
-        <div className="flex items-center gap-1 shrink-0">
-          {order.delivery_type === "self_pickup" && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1.5">Pickup</Badge>
-          )}
+        <div className="flex items-center gap-1 shrink-0 flex-wrap">
+          <ProviderBadges order={order} size="xs" showLabels={false} />
           {order.fulfillment_type === "scheduled" && (
             <Badge variant="outline" className="text-[10px] h-4 px-1.5">Scheduled</Badge>
           )}

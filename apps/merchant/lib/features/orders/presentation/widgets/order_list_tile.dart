@@ -6,6 +6,7 @@ import '../../../../generated/tables/orders.dart';
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../providers/admin_order_providers.dart';
+import 'provider_badges.dart';
 
 class OrderListTile extends ConsumerWidget {
   const OrderListTile({super.key, required this.order});
@@ -49,7 +50,21 @@ class OrderListTile extends ConsumerWidget {
         children: [
           const SizedBox(height: 4),
           Text(order.customerName ?? 'Unknown customer'),
-          const SizedBox(height: 2),
+          const SizedBox(height: 6),
+          ProviderBadges(
+            data: ProviderBadgeData(
+              status: order.status,
+              deliveryType: order.deliveryType,
+              stripePaymentIntentId: order.stripePaymentIntentId,
+              stripeSessionId: order.stripeSessionId,
+              lalamoveOrderId: order.lalamoveOrderId,
+              lalamoveQuoteId: order.lalamoveQuoteId,
+              driverName: order.driverName,
+              driverPhone: order.driverPhone,
+            ),
+            dense: true,
+          ),
+          const SizedBox(height: 6),
           Row(
             children: [
               Text(
@@ -57,24 +72,12 @@ class OrderListTile extends ConsumerWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: 8),
-              Icon(
-                order.deliveryType == 'pickup'
-                    ? Icons.store_outlined
-                    : Icons.delivery_dining_outlined,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                order.deliveryType == 'pickup' ? 'Pickup' : 'Delivery',
-                style: const TextStyle(fontSize: 12),
-              ),
               if (order.orderKind == 'bulk') ...[
-                const SizedBox(width: 8),
                 const Icon(Icons.groups_outlined, size: 16),
                 const SizedBox(width: 4),
                 const Text('Bulk', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
               ],
-              const SizedBox(width: 8),
               Icon(
                 Icons.flatware,
                 size: 16,

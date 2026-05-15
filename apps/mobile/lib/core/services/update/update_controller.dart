@@ -83,7 +83,7 @@ class UpdateController extends ChangeNotifier {
       switch (result.status) {
         case UpdateCheckStatus.updateAvailable:
           _emit(_state.copyWith(info: result.info));
-          if (await updater.shouldAutoDownload()) {
+          if (await updater.shouldAutoDownload() && updater.shouldRePrompt()) {
             await _startAutoDownload(result.info!);
           } else if (updater.shouldRePrompt()) {
             _emit(_state.copyWith(action: UpdateAction.promptManual));
@@ -115,6 +115,10 @@ class UpdateController extends ChangeNotifier {
     }
   }
 
+  void seedInfo(UpdateInfo info) {
+    _emit(_state.copyWith(info: info));
+  }
+
   Future<void> acceptUpdate() async {
     final info = _state.info;
     if (info == null) return;
@@ -123,16 +127,37 @@ class UpdateController extends ChangeNotifier {
   }
 
   Future<void> deferUpdate() async {
+    await updater.cancelActiveDownload();
     await settings.markPromptShown();
-    _emit(_state.copyWith(action: UpdateAction.none));
+    _emit(_state.copyWith(
+      action: UpdateAction.none,
+      downloading: false,
+      downloadProgress: 0,
+    ));
   }
 
   Future<void> skipCurrentVersion() async {
     final info = _state.info;
     if (info == null) return;
+    await updater.cancelActiveDownload();
     await settings.skipVersion(info.version.toString());
     await settings.markPromptShown();
-    _emit(_state.copyWith(action: UpdateAction.none));
+    _emit(_state.copyWith(
+      action: UpdateAction.none,
+      downloading: false,
+      downloadProgress: 0,
+    ));
+  }
+
+  Future<void> cancelDownload() async {
+    await updater.cancelActiveDownload();
+    await settings.markPromptShown();
+    _emit(_state.copyWith(
+      action: UpdateAction.none,
+      downloading: false,
+      downloadProgress: 0,
+      clearDownloadedPath: true,
+    ));
   }
 
   void dismissPrompt() {
@@ -140,6 +165,7 @@ class UpdateController extends ChangeNotifier {
   }
 
   Future<void> _startAutoDownload(UpdateInfo info) async {
+    await settings.markPromptShown();
     _emit(_state.copyWith(
       action: UpdateAction.autoDownloading,
       downloading: true,
@@ -156,7 +182,6 @@ class UpdateController extends ChangeNotifier {
       _emit(_state.copyWith(
         downloading: false,
         action: UpdateAction.none,
-        lastCheckError: 'Download failed',
       ));
       return;
     }

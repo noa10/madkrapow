@@ -69,9 +69,9 @@ class AppNavBar extends ConsumerWidget {
           label: 'Cart',
         ),
         const NavigationDestination(
-          icon: Icon(Icons.person_outlined),
-          selectedIcon: Icon(Icons.person),
-          label: 'Profile',
+          icon: Icon(Icons.more_horiz_outlined),
+          selectedIcon: Icon(Icons.more_horiz),
+          label: 'More',
         ),
       ],
     );

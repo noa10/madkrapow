@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/admin_auth_providers.dart';
@@ -222,6 +223,22 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                         minimumSize: const Size(double.infinity, 50),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  FutureBuilder<PackageInfo>(
+                    future: PackageInfo.fromPlatform(),
+                    builder: (ctx, snap) {
+                      if (!snap.hasData) return const SizedBox.shrink();
+                      return Text(
+                        'v${snap.data!.version}',
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.5),
+                            ),
+                      );
+                    },
                   ),
                 ],
               ),

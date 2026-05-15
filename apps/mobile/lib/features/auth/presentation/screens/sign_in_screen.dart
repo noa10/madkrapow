@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -186,11 +187,33 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   onPressed: _isLoading ? null : () => context.go(AppRoutes.home),
                   child: const Text('Continue as Guest'),
                 ),
+                const SizedBox(height: 16),
+                const _VersionFooter(),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VersionFooter extends StatelessWidget {
+  const _VersionFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (ctx, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        return Text(
+          'v${snap.data!.version}',
+          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+        );
+      },
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../generated/tables/customers.dart';
@@ -20,7 +21,7 @@ class ProfileScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: const Text('More')),
       body: AsyncValueWidget(
         value: profileAsync,
         data: (profile) {
@@ -206,6 +207,23 @@ class ProfileScreen extends ConsumerWidget {
                   minimumSize: const Size(double.infinity, 48),
                 ),
               ),
+              const SizedBox(height: 16),
+              Center(
+                child: FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return const SizedBox.shrink();
+                    return Text(
+                      'v${snap.data!.version}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.5),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           );
         },

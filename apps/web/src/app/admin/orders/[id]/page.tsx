@@ -16,6 +16,7 @@ import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
+import { ProviderBadges } from "@/components/orders/ProviderBadges";
 import {
   ADMIN_STATUS_LABELS,
   STATUS_FLOW_STEPS,
@@ -79,6 +80,10 @@ interface Order {
   bulk_contact_phone: string | null;
   bulk_special_notes: string | null;
   bulk_dropoff_instructions: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_session_id: string | null;
+  lalamove_order_id: string | null;
+  lalamove_quote_id: string | null;
   order_items: OrderItem[];
   source: import("@/types/orders").OrderSource;
 }
@@ -407,6 +412,7 @@ export default function AdminOrderDetailPage() {
           <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
             System ID: {order.id}
           </p>
+          <ProviderBadges order={order} size="sm" className="mt-2" />
         </div>
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           <Badge className={statusConfig.color}>
@@ -419,9 +425,6 @@ export default function AdminOrderDetailPage() {
                 {SOURCE_CONFIG[order.source].label}
               </span>
             </Badge>
-          )}
-          {order.delivery_type === 'self_pickup' && (
-            <Badge variant="outline">Pickup</Badge>
           )}
           {order.fulfillment_type === 'scheduled' && (
             <Badge variant="outline">Scheduled</Badge>

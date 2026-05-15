@@ -19,6 +19,7 @@ import {
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { DriverInfo } from '@/components/order/DriverInfo'
+import { ProviderBadges } from '@/components/orders/ProviderBadges'
 import dynamic from 'next/dynamic'
 import { getOrderDisplayCode } from '@/lib/utils/order-code'
 import { PageContainer } from '@/components/layout/PageContainer'
@@ -91,7 +92,10 @@ interface Order {
   delivery_fee_cents: number
   delivery_address_json: Record<string, unknown> | null
   lalamove_order_id: string | null
+  lalamove_quote_id: string | null
   lalamove_status: string | null
+  stripe_payment_intent_id: string | null
+  stripe_session_id: string | null
   driver_name: string | null
   driver_phone: string | null
   driver_plate_number: string | null
@@ -416,6 +420,7 @@ export default function OrderTrackingPage() {
                   <p className="text-xs text-muted-foreground/60 mt-0.5 font-mono">
                     System ID: {order.id}
                   </p>
+                  <ProviderBadges order={order} size="sm" className="mt-2" />
                 </div>
               </div>
               <button

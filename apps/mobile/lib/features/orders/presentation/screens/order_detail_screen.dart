@@ -12,6 +12,7 @@ import '../widgets/customer_order_timeline.dart';
 import '../widgets/driver_info_card.dart';
 import '../widgets/driver_map.dart';
 import '../widgets/order_item_card.dart';
+import '../widgets/provider_badges.dart';
 import '../widgets/status_stepper.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
@@ -149,6 +150,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                           _formatDate(order.createdAt),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ProviderBadges(
+                          data: ProviderBadgeData(
+                            status: order.status,
+                            deliveryType: order.deliveryType,
+                            stripePaymentIntentId: order.stripePaymentIntentId,
+                            stripeSessionId: order.stripeSessionId,
+                            lalamoveOrderId: order.lalamoveOrderId,
+                            lalamoveQuoteId: order.lalamoveQuoteId,
+                            driverName: order.driverName,
+                            driverPhone: order.driverPhone,
                           ),
                         ),
                       ],

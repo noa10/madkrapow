@@ -7,6 +7,7 @@ import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useCartStore } from "@/stores/cart"
+import { ProviderBadges } from "@/components/orders/ProviderBadges"
 
 interface Order {
   id: string
@@ -17,6 +18,12 @@ interface Order {
   delivery_type: string
   include_cutlery: boolean
   item_count: number
+  stripe_payment_intent_id?: string | null
+  stripe_session_id?: string | null
+  lalamove_order_id?: string | null
+  lalamove_quote_id?: string | null
+  driver_name?: string | null
+  driver_phone?: string | null
 }
 
 const STATUS_CONFIG: Record<string, { color: string; label: string; icon: typeof Clock }> = {
@@ -122,16 +129,7 @@ export function OrdersCardView({ orders }: OrdersCardViewProps) {
               <span className="text-xs text-muted-foreground">
                 {order.item_count} {order.item_count === 1 ? "item" : "items"}
               </span>
-              {order.delivery_type === "self_pickup" && (
-                <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-400">
-                  Pickup
-                </span>
-              )}
-              {order.delivery_type === "delivery" && (
-                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-400">
-                  Delivery
-                </span>
-              )}
+              <ProviderBadges order={order} size="xs" />
               <span className="text-sm font-medium text-foreground tabular-nums">
                 {formatPrice(order.total_cents)}
               </span>

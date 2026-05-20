@@ -170,7 +170,7 @@ export async function handleStatusChange(
     }
   }
 
-  console.log(`[Lalamove Webhook] Status: ${currentStatus} -> ${newDispatchStatus} for order ${shipment.order_id}`)
+  console.log(`[Lalamove Webhook] Status: ${sanitizeForLog(currentStatus)} -> ${sanitizeForLog(newDispatchStatus)} for order ${shipment.order_id}`)
 }
 
 export async function updateDriverDetails(
@@ -356,7 +356,7 @@ export async function handleDriverAssigned(
       await sendShippingNotification(supabase, shipment.order_id as string, 'driver_assigned')
     } catch {}
 
-    console.log(`[Lalamove Webhook] Driver assigned: ${driver.name} for order ${shipment.order_id}`)
+    console.log(`[Lalamove Webhook] Driver assigned: ${sanitizeForLog(driver.name)} for order ${shipment.order_id}`)
   } catch (error) {
     // Driver details may return 403 (permissions) or 404 (driver not yet
     // indexed on Lalamove's side). Both self-heal on the next webhook.

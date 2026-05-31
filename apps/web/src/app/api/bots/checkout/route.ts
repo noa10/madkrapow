@@ -81,7 +81,7 @@ function generateOrderNumber(): string {
 export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutResult>> {
   try {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2026-04-22.dahlia' as const,
+      apiVersion: '2026-05-27.dahlia' as const,
     })
 
     let body

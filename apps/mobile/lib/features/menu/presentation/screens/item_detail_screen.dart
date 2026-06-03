@@ -39,6 +39,30 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
     return total * _quantity;
   }
 
+  bool get _allRequiredGroupsSatisfied {
+    final item = ref.read(menuItemDetailProvider(widget.itemId)).value;
+    if (item == null) return false;
+    return item.modifierGroups.every((group) {
+      if (!group.isRequired) return true;
+      final selected = _selectedModifiers[group.group.id] ?? [];
+      return selected.length >= group.group.minSelections;
+    });
+  }
+
+  /// Names of required groups that are unsatisfied (for error message).
+  List<String> get _unsatisfiedRequiredGroupNames {
+    final item = ref.read(menuItemDetailProvider(widget.itemId)).value;
+    if (item == null) return [];
+    return item.modifierGroups
+        .where((group) {
+          if (!group.isRequired) return false;
+          final selected = _selectedModifiers[group.group.id] ?? [];
+          return selected.length < group.group.minSelections;
+        })
+        .map((group) => group.group.name)
+        .toList();
+  }
+
   void _toggleModifier(
     ModifierGroupWithModifiers group,
     ModifiersRow modifier,
@@ -139,41 +163,62 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
           appBar: AppBar(),
           bottomNavigationBar: isUnavailable
               ? _UnavailableBottomBar()
-              : _BottomBar(
-                  totalCents: _totalCents,
-                  onAddToCart: () {
-                    ref
-                        .read(cartProvider.notifier)
-                        .addItem(
-                          CartItem(
-                            menuItemId: item.item.id,
-                            name: item.item.name,
-                            unitPrice: item.item.priceCents,
-                            quantity: _quantity,
-                            selectedModifiers: _selectedModifiers.values
-                                .expand((mods) => mods)
-                                .map(
-                                  (m) => SelectedModifier(
-                                    id: m.id,
-                                    name: m.name,
-                                    priceDeltaCents: m.priceDeltaCents,
-                                  ),
-                                )
-                                .toList(),
-                            specialInstructions: _specialInstructions,
-                            imageUrl: item.item.imageUrl,
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_allRequiredGroupsSatisfied)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                        child: Text(
+                          'Please select required options: ${_unsatisfiedRequiredGroupNames.join(', ')}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    _BottomBar(
+                      totalCents: _totalCents,
+                      isEnabled: _allRequiredGroupsSatisfied,
+                      onAddToCart: () {
+                        if (!_allRequiredGroupsSatisfied) return;
+                        ref
+                            .read(cartProvider.notifier)
+                            .addItem(
+                              CartItem(
+                                menuItemId: item.item.id,
+                                name: item.item.name,
+                                unitPrice: item.item.priceCents,
+                                quantity: _quantity,
+                                selectedModifiers: _selectedModifiers.values
+                                    .expand((mods) => mods)
+                                    .map(
+                                      (m) => SelectedModifier(
+                                        id: m.id,
+                                        name: m.name,
+                                        priceDeltaCents: m.priceDeltaCents,
+                                      ),
+                                    )
+                                    .toList(),
+                                specialInstructions: _specialInstructions,
+                                imageUrl: item.item.imageUrl,
+                              ),
+                            );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '${_quantity}x ${item.item.name} added to cart',
+                            ),
+                            behavior: SnackBarBehavior.floating,
                           ),
                         );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${_quantity}x ${item.item.name} added to cart',
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                    context.pop();
-                  },
+                        context.pop();
+                      },
+                    ),
+                  ],
                 ),
           body: Opacity(
             opacity: isUnavailable ? 0.75 : 1.0,
@@ -530,9 +575,10 @@ class _SpecialInstructionsField extends StatelessWidget {
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.totalCents, required this.onAddToCart});
+  const _BottomBar({required this.totalCents, this.isEnabled = true, required this.onAddToCart});
 
   final int totalCents;
+  final bool isEnabled;
   final VoidCallback onAddToCart;
 
   @override
@@ -541,19 +587,32 @@ class _BottomBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: FilledButton(
-          onPressed: onAddToCart,
+          onPressed: isEnabled ? onAddToCart : null,
           style: FilledButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
+            disabledBackgroundColor: isEnabled
+                ? null
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('Add to Cart'),
-              const SizedBox(width: 8),
               Text(
-                formatPrice(totalCents),
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                isEnabled ? 'Add to Cart' : 'Select required options',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isEnabled
+                      ? null
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
               ),
+              if (isEnabled) ...[
+                const SizedBox(width: 8),
+                Text(
+                  formatPrice(totalCents),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
             ],
           ),
         ),

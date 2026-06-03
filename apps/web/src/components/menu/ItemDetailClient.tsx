@@ -78,6 +78,16 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
     })
   }, [item.modifier_groups, selectedModifierIds])
 
+  const unsatisfiedRequiredGroupNames = useMemo(() => {
+    return item.modifier_groups
+      .filter((group) => {
+        if (!group.is_required) return false
+        const selected = selectedModifierIds[group.id] || []
+        return selected.length < group.min_selections
+      })
+      .map((group) => group.name)
+  }, [item.modifier_groups, selectedModifierIds])
+
   const handleModifierChange = (groupId: string, modifierIds: string[], _priceDelta: number) => {
     setSelectedModifierIds((prev) => ({
       ...prev,
@@ -170,7 +180,7 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
 
             {!allRequiredGroupsSatisfied && !isUnavailable && (
               <p className="text-sm text-destructive text-center">
-                Please select all required options
+                Please select required options: {unsatisfiedRequiredGroupNames.join(', ')}
               </p>
             )}
           </section>
@@ -196,11 +206,25 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
           ) : (
             <Button
               size="lg"
-              onClick={handleAddToCart}
-              disabled={!allRequiredGroupsSatisfied}
-              className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+              onClick={!allRequiredGroupsSatisfied ? () => {
+                addToast({
+                  type: 'error',
+                  title: 'Required options missing',
+                  description: `Please select: ${unsatisfiedRequiredGroupNames.join(', ')}`,
+                })
+              } : handleAddToCart}
+              disabled={false}
+              className={cn(
+                "w-full shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform",
+                allRequiredGroupsSatisfied
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-destructive/90 text-destructive-foreground border border-destructive"
+              )}
             >
-              add to basket - {formatPrice(totalPriceCents)} (Incl. tax)
+              {allRequiredGroupsSatisfied
+                ? `add to basket - ${formatPrice(totalPriceCents)} (Incl. tax)`
+                : `Select required: ${unsatisfiedRequiredGroupNames.join(', ')}`
+                }
             </Button>
           )}
         </div>

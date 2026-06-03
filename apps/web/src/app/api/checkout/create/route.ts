@@ -223,6 +223,56 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
+    // ── Validate required modifier groups have selections ──────────
+    const modifierGroupIds = [...new Set(
+      (await supabase
+        .from('menu_item_modifier_groups')
+        .select('modifier_group_id, menu_item_id, is_required')
+        .in('menu_item_id', menuItemIds))
+        .data?.filter(r => r.is_required)
+        .map(r => r.modifier_group_id) ?? []
+    )]
+
+    if (modifierGroupIds.length > 0) {
+      const { data: requiredGroups } = await supabase
+        .from('modifier_groups')
+        .select('id, name, min_selections')
+        .in('id', modifierGroupIds)
+
+      const { data: requiredJunctions } = await supabase
+        .from('menu_item_modifier_groups')
+        .select('menu_item_id, modifier_group_id, is_required')
+        .in('modifier_group_id', modifierGroupIds)
+        .eq('is_required', true)
+
+      if (requiredGroups && requiredJunctions) {
+        for (const item of items) {
+          const itemRequiredGroups = requiredJunctions
+            .filter(j => j.menu_item_id === item.id)
+            .map(j => requiredGroups.find(g => g.id === j.modifier_group_id))
+            .filter(Boolean) as { id: string; name: string; min_selections: number }[]
+
+          for (const group of itemRequiredGroups) {
+            const selectedInGroup = item.modifiers.filter(m => {
+              return dbModifiers?.some(d => d.id === m.id)
+            }).length
+
+            if (selectedInGroup < group.min_selections) {
+              const dbItem = dbItems.find(d => d.id === item.id)
+              return NextResponse.json(
+                {
+                  success: false,
+                  error: `${dbItem?.name ?? 'Item'} requires selecting at least ${group.min_selections} option(s) from "${group.name}"`,
+                  code: 'REQUIRED_MODIFIER_MISSING',
+                },
+                { status: 400 }
+              )
+            }
+          }
+        }
+      }
+    }
+
     // Calculate subtotal from DB prices (server-truth) — includes modifier price deltas
     let subtotalCents = 0
     const validatedItems = items.map(item => {

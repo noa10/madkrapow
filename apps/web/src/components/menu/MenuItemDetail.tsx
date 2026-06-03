@@ -8,6 +8,7 @@ import { SpecialInstructions } from './SpecialInstructions'
 import { Button } from '@/components/ui/button'
 import { useCartStore, type SelectedModifier } from '@/stores/cart'
 import { useToastStore } from '@/stores/toast'
+import { cn } from '@/lib/utils'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
 
 interface MenuItemDetailProps {
@@ -59,6 +60,16 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
       const selected = selectedModifierIds[group.id] || []
       return selected.length >= group.min_selections
     })
+  }, [item.modifier_groups, selectedModifierIds])
+
+  const unsatisfiedRequiredGroupNames = useMemo(() => {
+    return item.modifier_groups
+      .filter((group) => {
+        if (!group.is_required) return false
+        const selected = selectedModifierIds[group.id] || []
+        return selected.length < group.min_selections
+      })
+      .map((group) => group.name)
   }, [item.modifier_groups, selectedModifierIds])
 
   const handleModifierChange = (groupId: string, modifierIds: string[], _priceDelta: number) => {
@@ -128,18 +139,32 @@ export function MenuItemDetail({ item }: MenuItemDetailProps) {
 
       {!allRequiredGroupsSatisfied && (
         <p className="text-sm text-destructive text-center">
-          Please select all required options
+          Please select required options: {unsatisfiedRequiredGroupNames.join(', ')}
         </p>
       )}
 
       <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 mt-6 border-t bg-card/95 backdrop-blur-sm p-4 z-30 rounded-b-2xl">
         <Button
           size="lg"
-          onClick={handleAddToCart}
-          disabled={!allRequiredGroupsSatisfied}
-          className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+          onClick={!allRequiredGroupsSatisfied ? () => {
+            addToast({
+              type: 'error',
+              title: 'Required options missing',
+              description: `Please select: ${unsatisfiedRequiredGroupNames.join(', ')}`,
+            })
+          } : handleAddToCart}
+          disabled={false}
+          className={cn(
+            "w-full shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform",
+            allRequiredGroupsSatisfied
+              ? "bg-primary text-primary-foreground"
+              : "bg-destructive/90 text-destructive-foreground border border-destructive"
+          )}
         >
-          add to basket - {formatPrice(totalPriceCents)} (Incl. tax)
+          {allRequiredGroupsSatisfied
+            ? `add to basket - ${formatPrice(totalPriceCents)} (Incl. tax)`
+            : `Select required: ${unsatisfiedRequiredGroupNames.join(', ')}`
+          }
         </Button>
       </div>
     </div>

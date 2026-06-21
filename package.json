@@ -30,7 +30,7 @@
     "eslint-config-next": "^16.2.9",
     "eslint-plugin-react": "^7.37.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
+    "lint-staged": "^17.0.8",
     "playwright": "^1.58.2",
     "supabase": "^2.107.0",
     "typescript": "^6.0.3",

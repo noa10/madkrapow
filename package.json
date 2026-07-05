@@ -27,7 +27,7 @@
     "@types/node": "^26.1.0",
     "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.9",
+    "eslint-config-next": "^16.2.10",
     "eslint-plugin-react": "^7.37.5",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",

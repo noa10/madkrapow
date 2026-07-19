@@ -33,7 +33,7 @@
     "lint-staged": "^17.1.0",
     "playwright": "^1.61.1",
     "supabase": "^2.109.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   },
   "lint-staged": {

@@ -30,7 +30,7 @@
     "@react-google-maps/api": "^2.20.8",
     "@sentry/nextjs": "^10.68.0",
     "@supabase/ssr": "^0.12.3",
-    "@supabase/supabase-js": "^2.110.2",
+    "@supabase/supabase-js": "^2.110.8",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

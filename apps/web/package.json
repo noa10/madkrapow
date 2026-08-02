@@ -42,7 +42,7 @@
     "next": "^16.2.6",
     "postcss": "^8.5.25",
     "react": "^19.2.8",
-    "react-dom": "^19.2.7",
+    "react-dom": "^19.2.8",
     "recharts": "^3.9.2",
     "stripe": "^22.3.2",
     "tailwindcss": "^4.2.2",

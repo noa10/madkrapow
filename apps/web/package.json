@@ -36,7 +36,7 @@
     "@types/react-dom": "^19.2.4",
     "autoprefixer": "^10.5.4",
     "canvas-confetti": "^1.9.4",
-    "chrome-devtools-mcp": "^1.6.0",
+    "chrome-devtools-mcp": "^1.7.0",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
     "next": "^16.3.0",

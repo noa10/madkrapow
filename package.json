@@ -22,7 +22,7 @@
     "prepare": "[ -z \"$CI\" ] && husky || true"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
+    "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "^4.1.11",

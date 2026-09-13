@@ -44,7 +44,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.3.0",
     "recharts": "^3.10.1",
-    "stripe": "^22.4.0",
+    "stripe": "^22.6.2",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.3",
     "zod": "^4.6.1",

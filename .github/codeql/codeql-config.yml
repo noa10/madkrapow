@@ -1,0 +1,6 @@
+name: "CodeQL config"
+
+# vendor/ holds unmodified third-party dependency code (see vendor/README.md).
+# CodeQL must not scan it, same as it does not scan node_modules.
+paths-ignore:
+  - vendor/**

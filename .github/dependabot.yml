@@ -9,6 +9,11 @@ updates:
       - dependency-name: "next"
         versions: [">=16.2.0"]
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      # typescript 7 is the native (tsgo) compiler package: it ships no JS compiler API,
+      # so typescript-eslint (the parser used by eslint) cannot run against it yet.
+      # Re-enable once typescript-eslint ships TS7/tsgo support.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
     groups:
       typescript-eslint:
         patterns:

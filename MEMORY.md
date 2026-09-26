@@ -17,10 +17,21 @@ This file contains curated memories, decisions, and learnings that persist acros
 ## Key Architectural Decisions
 
 ### 2026-03-17: ECC Integration
-- **Decision**: Merged ECC (Everything Claude Code) agent harness patterns into existing GitNexus setup
-- **Rationale**: GitNexus provides code graph intelligence; ECC adds behavioral frameworks and persistent memory
+- **Decision**: Merged ECC (Everything Claude Code) agent harness patterns into the project
+- **Rationale**: ECC adds behavioral frameworks and persistent memory
 - **Implementation**: Created SOUL.md, MEMORY.md, HEARTBEAT.md; enhanced AGENTS.md with ECC patterns
 - **Impact**: AI assistants now have session continuity and defined working style
+
+### 2026-09-26: GitNexus removed
+- **Decision**: Dropped GitNexus code-intelligence tooling; the project is no longer indexed by it
+- **Rationale**: Not in active use. The mandatory `gitnexus_impact` / `gitnexus_detect_changes`
+  gates were unenforceable — the MCP tools were not available in agent sessions, so the rules
+  could not be followed as written
+- **Implementation**: Deleted CLAUDE.md (was entirely a GitNexus block); removed the
+  `gitnexus:start`/`gitnexus:end` block from AGENTS.md and the `.gitnexus/` .gitignore entry;
+  rewrote the inline GitNexus references in AGENTS.md, SOUL.md, TOOLS.md and MEMORY.md to
+  tool-neutral wording. The underlying behavioural intent of each rule was preserved
+- **Impact**: No build, test or runtime change. Docs-only
 
 ### Project Inception: Technology Stack
 - **Next.js 14+ App Router**: SSR/RSC for SEO, Server Actions for mutations
@@ -159,9 +170,12 @@ supabase/
 
 - Always read SOUL.md first to understand working style
 - Check memory/YYYY-MM-DD.md for recent session context
-- Run GitNexus impact analysis before modifying payment/delivery code
+- Assess impact (callers, affected flows) before modifying payment/delivery code
 - Test payment flows locally before committing
 - Update this file when significant decisions or learnings occur
+- Never add a floor-style Dependabot `ignore` (e.g. `versions: [">=X"]`). A floor suppresses
+  every future CVE fix for that package, because Dependabot can never raise the floor. This is
+  what left the critical Next.js RCE alerts open — see `.github/dependabot.yml`
 
 ---
 

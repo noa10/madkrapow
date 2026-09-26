@@ -61,13 +61,6 @@ npx supabase db pull          # Pull remote schema to local
 npx supabase migration new <name>  # Create new migration
 ```
 
-### GitNexus
-```bash
-npx gitnexus analyze          # Re-index codebase
-npx gitnexus status           # Check index freshness
-npx gitnexus wiki             # Generate documentation
-```
-
 ---
 
 ## Common Patterns

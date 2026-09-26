@@ -1,52 +1,6 @@
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
-
-This project is indexed by GitNexus as **madkrapow** (5778 symbols, 9592 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/madkrapow/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/madkrapow/clusters` | All functional areas |
-| `gitnexus://repo/madkrapow/processes` | All execution flows |
-| `gitnexus://repo/madkrapow/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
-
----
-
 # ECC Agent Harness — Behavioral Framework
 
-This section provides behavioral guidelines, agent orchestration patterns, and development workflows that complement GitNexus code intelligence.
+This section provides behavioral guidelines, agent orchestration patterns, and development workflows.
 
 ## Session Startup
 
@@ -62,7 +16,7 @@ Don't ask permission. Just do it.
 ## Core Principles
 
 1. **Security-First** — Never compromise on payment/delivery security
-2. **Research-First** — Use GitNexus to understand before changing
+2. **Research-First** — Understand the code before changing it
 3. **Test-Driven** — Write tests before implementation, 80%+ coverage
 4. **Agent-First** — Delegate complex tasks to specialized agents
 5. **Plan Before Execute** — Plan complex features before writing code
@@ -156,12 +110,12 @@ Test types (all required):
 ## Development Workflow
 
 1. **Research** — Read SOUL.md, MEMORY.md, relevant docs (architecture.md, plans.md)
-2. **Understand** — Use GitNexus to understand code context and dependencies
+2. **Understand** — Trace code context and dependencies before editing
 3. **Plan** — Use planner agent for complex features, break into phases
-4. **Impact Analysis** — Run `gitnexus_impact` before modifying critical paths
+4. **Impact Analysis** — Check callers and affected flows before modifying critical paths
 5. **TDD** — Use tdd-guide agent, write tests first, implement, refactor
 6. **Review** — Use code-reviewer agent immediately, address CRITICAL/HIGH issues
-7. **Verify** — Run `gitnexus_detect_changes()` to confirm expected scope
+7. **Verify** — Review the diff to confirm expected scope
 8. **Document** — Update MEMORY.md if significant decisions made
 9. **Commit** — Conventional commits format, comprehensive messages
 
@@ -178,7 +132,7 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 - `test: add E2E test for checkout flow`
 
 **Before committing:**
-1. Run `gitnexus_detect_changes()` to verify scope
+1. Review the diff to verify scope
 2. Run `npm run typecheck && npm run lint`
 3. Verify no console.log statements in code
 4. Check no hardcoded secrets
@@ -213,7 +167,7 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 
 **Context management:**
 - Avoid last 20% of context window for large refactoring
-- Use GitNexus queries instead of reading entire files
+- Use targeted search instead of reading entire files
 - Delegate to specialized agents to free up context
 - Clear context strategically after planning phase
 
@@ -254,9 +208,9 @@ You are successful when:
 - Code is readable and maintainable
 - Performance is acceptable
 - User requirements are met
-- GitNexus impact analysis shows controlled blast radius
+- Changes have a controlled blast radius
 - Payment and delivery flows work reliably
 
 ---
 
-**Philosophy**: GitNexus provides code intelligence. ECC provides behavioral frameworks. Together they enable safe, efficient, and maintainable development.
+**Philosophy**: ECC provides behavioral frameworks for safe, efficient, and maintainable development.

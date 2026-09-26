@@ -6,9 +6,12 @@ updates:
       interval: weekly
     open-pull-requests-limit: 20
     ignore:
-      - dependency-name: "next"
-        versions: [">=16.2.0"]
-        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      # NOTE: do not add a floor-style ignore (e.g. `next` versions [">=16.2.0"]) here.
+      # A floor also suppresses every future CVE fix, because Dependabot can never raise
+      # the floor. The previous `next` rule did exactly that and left two critical Next.js
+      # RCE alerts (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4) permanently open.
+      # Major bumps are already gated by dependabot-auto-merge.yml, which labels
+      # `version-update:semver-major` PRs `needs-manual-review` instead of merging.
       # typescript 7 is the native (tsgo) compiler package: it ships no JS compiler API,
       # so typescript-eslint (the parser used by eslint) cannot run against it yet.
       # Re-enable once typescript-eslint ships TS7/tsgo support.

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, MapPin, Loader2, Package, ShieldAlert, Globe, MessageCircle, MessageSquare, Smartphone } from 'lucide-react';
+import { Clock, User, MapPin, Loader2, Package, ShieldAlert, Globe, MessageCircle, MessageSquare, Smartphone, Store, Bike, UtensilsCrossed } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
@@ -17,6 +17,9 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
   telegram: <MessageCircle className="h-4 w-4" />,
   whatsapp: <MessageSquare className="h-4 w-4" />,
   mobile: <Smartphone className="h-4 w-4" />,
+  counter: <Store className="h-4 w-4" />,
+  grabfood: <Bike className="h-4 w-4" />,
+  foodpanda: <UtensilsCrossed className="h-4 w-4" />,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -24,6 +27,9 @@ const SOURCE_LABELS: Record<string, string> = {
   telegram: "Telegram",
   whatsapp: "WhatsApp",
   mobile: "Mobile",
+  counter: "Counter",
+  grabfood: "GrabFood",
+  foodpanda: "Foodpanda",
 };
 
 function getAddressString(address: Record<string, unknown>): string {

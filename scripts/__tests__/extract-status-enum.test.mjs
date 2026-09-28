@@ -68,6 +68,41 @@ ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (
     ]);
   });
 
+  it('ignores status CHECK constraints on non-orders tables (e.g. payments in 049)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mk-migrations-side-table-'));
+    writeFileSync(
+      join(dir, '008_widen.sql'),
+      `ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (
+  status IN ('pending','paid','accepted','preparing','ready','picked_up','delivered','cancelled')
+);`
+    );
+    writeFileSync(
+      join(dir, '049_channel_model.sql'),
+      `CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  method TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'succeeded' CHECK (status IN ('pending', 'succeeded', 'failed', 'refunded'))
+);
+CREATE TABLE channel_orders (
+  id UUID PRIMARY KEY,
+  channel TEXT NOT NULL CHECK (channel IN ('grabfood', 'foodpanda', 'legacy_pos'))
+);`
+    );
+    const enumValues = extractLatestStatusEnum(dir);
+    expect(enumValues).toEqual([
+      'pending',
+      'paid',
+      'accepted',
+      'preparing',
+      'ready',
+      'picked_up',
+      'delivered',
+      'cancelled',
+    ]);
+  });
+
   it('throws when no CHECK constraint is found', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mk-migrations-empty-'));
     writeFileSync(join(dir, '001_noop.sql'), '-- nothing here');

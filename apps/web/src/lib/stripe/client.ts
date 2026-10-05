@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { env } from '@/lib/validators/env'
+import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 
 export class StripeClient {
   private readonly stripe: Stripe
@@ -7,7 +8,7 @@ export class StripeClient {
 
   constructor() {
     this.stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2026-08-26.dahlia' as const,
+      apiVersion: STRIPE_API_VERSION,
     })
     this.webhookSecret = env.STRIPE_WEBHOOK_SECRET!
   }
@@ -33,8 +34,12 @@ export class StripeClient {
       metadata = {},
     } = params
 
-    const sessionParams: Parameters<typeof this.stripe.checkout.sessions.create>[0] = {
-      payment_method_types: ['fpx', 'grabpay', 'card'],
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      // API 2026-09-30.endive removed `payment_method_types` from session create
+      // params. `allowed_payment_method_types` is the replacement and acts as a
+      // filter on the dashboard-configured set, so it can only ever narrow the
+      // offered methods — never widen them beyond what the account enables.
+      allowed_payment_method_types: ['fpx', 'grabpay', 'card'],
       line_items: [
         {
           price_data: {
@@ -51,10 +56,7 @@ export class StripeClient {
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata,
-    }
-
-    if (customerEmail) {
-      sessionParams.customer_email = customerEmail
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
     }
 
     return this.stripe.checkout.sessions.create(sessionParams)

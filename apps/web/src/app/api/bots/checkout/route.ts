@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
+import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { createServerClient } from '@supabase/ssr'
 import { findOrCreateBotCustomer } from '@/lib/bots/customer'
 import { clearSession } from '@/lib/bots/conversation'
@@ -81,7 +82,7 @@ function generateOrderNumber(): string {
 export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutResult>> {
   try {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2026-08-26.dahlia' as const,
+      apiVersion: STRIPE_API_VERSION,
     })
 
     let body
@@ -444,7 +445,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      allowed_payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
       success_url: `${env.NEXT_PUBLIC_URL}/order/success?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}&source=bot`,

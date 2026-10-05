@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
+import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { requireAdmin } from '@/lib/admin/require-admin'
 
 const ApproveRequestSchema = z.discriminatedUnion('action', [
@@ -35,7 +36,7 @@ export async function POST(
 ): Promise<NextResponse<ApproveResult>> {
   try {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2026-08-26.dahlia' as const,
+      apiVersion: STRIPE_API_VERSION,
     })
 
     const guard = await requireAdmin(req)
@@ -172,7 +173,7 @@ export async function POST(
     ]
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      allowed_payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
       success_url: `${env.NEXT_PUBLIC_URL}/order/success?orderId=${orderId}&session_id={CHECKOUT_SESSION_ID}`,

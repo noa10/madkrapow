@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
+import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 
 function sanitizeForLog(value: string): string {
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
     }
 
     const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      apiVersion: '2026-08-26.dahlia' as const,
+      apiVersion: STRIPE_API_VERSION,
     })
 
     // Verify the checkout session with Stripe

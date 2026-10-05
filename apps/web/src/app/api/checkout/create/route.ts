@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
+import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { moneyStringToCents } from '@/lib/lalamove/quote'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 
@@ -104,7 +105,7 @@ function generateOrderNumber(): string {
 export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResult>> {
   try {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2026-08-26.dahlia' as const,
+      apiVersion: STRIPE_API_VERSION,
     })
 
     // Use dual auth (cookie for web, Bearer token for mobile)
@@ -719,7 +720,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      allowed_payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
       discounts: stripeCouponIds.length > 0

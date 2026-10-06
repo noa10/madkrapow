@@ -37,8 +37,12 @@ export function computeSignature(rawBody: string, secret: string): string {
 export function verifyWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
   const secret = env.GRABFOOD_WEBHOOK_SECRET
   if (!secret) {
-    // Not configured: only acceptable in mock/local environments.
-    return env.GRABFOOD_ENV === 'mock' || !env.GRABFOOD_ENABLED
+    // Fail closed. An unset secret must never let unauthenticated requests
+    // through a production process, so the bypass is limited to an explicit
+    // mock (or unconfigured) local environment outside production. Staging and
+    // production MUST set GRABFOOD_WEBHOOK_SECRET.
+    const grabEnv = process.env.GRABFOOD_ENV ?? env.GRABFOOD_ENV
+    return process.env.NODE_ENV !== 'production' && (grabEnv === undefined || grabEnv === 'mock')
   }
   if (!signatureHeader) return false
 

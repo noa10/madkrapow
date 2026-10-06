@@ -69,8 +69,13 @@ Internal and external status are kept separate (`orders.status` vs
 
 Three layers, mirroring the Stripe/Lalamove webhook discipline:
 
-1. `integration_events` — UNIQUE(provider, event_type, external_event_id);
-   replays are acked 200 with `status='skipped'`.
+1. `integration_events` — UNIQUE(provider, event_type, external_event_id).
+   Replays of `processed`/`skipped` events are acked 200 as duplicates; a
+   replay of a `failed` event (e.g. the first delivery hit an unmapped
+   product) is reset to `received` and reprocessed, so Grab's retry after the
+   mapping fix actually imports the order. `submit_order` keys on the Grab
+   order id; `order_state` keys on `orderID:toState` so every stage of an
+   order's lifecycle is processed once.
 2. `channel_orders` — UNIQUE(channel, external_order_id) is the hard guarantee;
    the `import_channel_order` RPC rolls back and reports `duplicate` on races.
 3. Order-state transitions use atomic conditional updates
@@ -114,8 +119,13 @@ Implemented in `lib/grabfood/verify.ts`: HMAC-SHA256 over the raw request body
 with `GRABFOOD_WEBHOOK_SECRET`, compared via `timingSafeEqual`. The exact
 header/algorithm is part of Grab's partner-gated onboarding; align
 `GRABFOOD_WEBHOOK_SIGNATURE_HEADER` (and, if needed, the scheme in
-`verify.ts`) when it is confirmed in staging. Production MUST set the secret —
-verification is skipped only in mock/unconfigured local setups.
+`verify.ts`) when it is confirmed in staging — both webhook routes read that
+configured header (default `x-grab-signature`).
+
+Verification **fails closed**: if `GRABFOOD_WEBHOOK_SECRET` is missing in a
+production process, or `GRABFOOD_ENV` is `staging`/`production`, the routes
+reject every request. The unverified bypass exists only for an explicit
+`mock` (or unconfigured) environment outside production.
 
 ## Onboarding checklist (Grab Developer Portal)
 
@@ -134,4 +144,28 @@ verification is skipped only in mock/unconfigured local setups.
 `GET /partner/v1/orders` (window ≤ 30 days, cacheable 30 min) backs the daily
 reconciliation cron (`/api/cron/grabfood/reconcile`): compare per-order totals
 against `orders`/`payments` and report mismatches (Grab's side funds
-promos/delivery — the merchant earning is the expected delta).
+promos/delivery — the merchant earning is the expected delta). The cron
+requires `CRON_SECRET` (Bearer) and fails closed when it is unset.
+
+## Known gaps before go-live
+
+These are deliberately out of scope for the groundwork PR and are the first
+items to close during Grab onboarding (they need real credentials, captured
+payloads, or a product decision):
+
+- **Order acceptance is not wired.** `GrabFoodClient.acceptOrder()`
+  (`POST /partner/v1/order/prepare`) is implemented and tested but not called:
+  the kitchen acceptance that moves an order `paid → preparing` is a local
+  staff action only, so Grab is never told and may auto-cancel the order. Wire
+  it into the acceptance step for `source='grabfood'` and record the result.
+- **Promo/tax semantics need a captured payload.** `price.merchantFundPromo`,
+  `price.basketPromo` and `price.tax` are read per the public reference;
+  confirm the exact split (and whether `price.subtotal` is tax-inclusive)
+  against a real onboarding payload before trusting `total_cents` for P&L.
+- **Menu sync is unthrottled.** Batches of ≤ 200 are pushed in a tight loop
+  (Grab documents 1 req/s for `batch/menu`); add spacing/retry and a
+  resumability key before syncing a full production menu.
+- **Counter QR Pay badge.** The admin/customer order queries do not join
+  `payments`, so a counter order paid by QR Pay currently renders the generic
+  Cash badge. Join `payments(method)` (or denormalise the method) to display
+  QR Pay.

@@ -16,6 +16,7 @@ type Call = { table: string; op: string; row?: unknown; payload?: unknown }
 interface ChainOptions {
   eventInsertError?: { code: string } | null
   channelOrderExisting?: Record<string, unknown> | null
+  existingEventRow?: Record<string, unknown> | null
   mappingRows?: unknown[]
   rpcResult?: Record<string, unknown>
   rpcError?: { message: string } | null
@@ -72,10 +73,13 @@ function buildMockClient(opts: ChainOptions = {}) {
           }
           resolve({ data: [], error: null })
         },
-        // maybeSingle for channel_orders existence check
+        // maybeSingle for the channel_orders / integration_events existence checks
         maybeSingle: async () => {
           if (table === 'channel_orders') {
             return { data: opts.channelOrderExisting ?? null, error: null }
+          }
+          if (table === 'integration_events') {
+            return { data: opts.existingEventRow ?? null, error: null }
           }
           return { data: null, error: null }
         },
@@ -179,6 +183,37 @@ describe('POST /api/integrations/grabfood/webhooks/submit-order', () => {
     const body = await res.json()
     expect(body.status).toBe('duplicate')
     expect(body.order_number).toBe('MKEARLIER')
+  })
+
+  it('reprocesses a previously failed event when Grab retries', async () => {
+    const client = buildMockClient({
+      eventInsertError: { code: '23505' },
+      existingEventRow: { id: 'evt-old', status: 'failed' },
+      mappingRows: [
+        { external_item_id: 'GF-ITEM-1', menu_item_id: 'menu-1', external_name: 'Set Krapow Daging' },
+      ],
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await POST(makeRequest(VALID_PAYLOAD) as never)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe('created')
+    expect(client.calls.some((c) => c.table === 'rpc')).toBe(true)
+  })
+
+  it('dedupes a retry whose event was already processed', async () => {
+    const client = buildMockClient({
+      eventInsertError: { code: '23505' },
+      existingEventRow: { id: 'evt-old', status: 'processed' },
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await POST(makeRequest(VALID_PAYLOAD) as never)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe('duplicate')
+    expect(client.calls.some((c) => c.table === 'rpc')).toBe(false)
   })
 
   it('returns 5xx on unmapped items so Grab retries', async () => {

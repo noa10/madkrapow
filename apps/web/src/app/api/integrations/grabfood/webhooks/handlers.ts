@@ -32,14 +32,15 @@ async function recordEvent(
   supabase: SupabaseClient,
   eventType: string,
   payload: unknown,
-  externalOrderId: string
+  externalOrderId: string,
+  eventKey: string = externalOrderId
 ): Promise<{ id: string } | { duplicate: true }> {
   const { data, error } = await supabase
     .from('integration_events')
     .insert({
       provider: 'grabfood',
       event_type: eventType,
-      external_event_id: externalOrderId,
+      external_event_id: eventKey,
       external_order_id: externalOrderId,
       payload: payload as Record<string, unknown>,
       status: 'received',
@@ -50,6 +51,24 @@ async function recordEvent(
   if (error) {
     // Unique index (provider, event_type, external_event_id) => replay.
     if ((error as { code?: string }).code === '23505') {
+      // A previously *failed* event is retried: Grab redelivers precisely
+      // because the first attempt returned 5xx (e.g. unmapped products), so
+      // treat the redelivery as a fresh attempt once the cause is fixed.
+      // Already-processed/skipped events stay deduplicated.
+      const { data: existing } = await supabase
+        .from('integration_events')
+        .select('id, status')
+        .eq('provider', 'grabfood')
+        .eq('event_type', eventType)
+        .eq('external_event_id', eventKey)
+        .maybeSingle()
+      if (existing && existing.status === 'failed') {
+        await supabase
+          .from('integration_events')
+          .update({ status: 'received', error: null })
+          .eq('id', existing.id)
+        return { id: existing.id as string }
+      }
       return { duplicate: true }
     }
     throw error
@@ -143,6 +162,7 @@ export async function handleSubmitOrder(
 
     const result = rpcResult as { status: string; order_id?: string; order_number?: string }
     if (result.status === 'created') {
+      await markEvent(supabase, eventId, 'processed')
       return {
         status: 'created',
         order_id: result.order_id,
@@ -167,7 +187,15 @@ export async function handleOrderState(
 ): Promise<HandlerResult> {
   let eventId: string | null = null
   try {
-    const event = await recordEvent(supabase, 'order_state', payload, payload.orderID)
+    // Dedupe per (order, new state): a Grab order receives several state
+    // pushes, so keying on orderID alone would drop every push after the first.
+    const event = await recordEvent(
+      supabase,
+      'order_state',
+      payload,
+      payload.orderID,
+      `${payload.orderID}:${payload.toState}`
+    )
     if ('duplicate' in event) {
       return { status: 'duplicate', detail: 'order_state event already recorded' }
     }

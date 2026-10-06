@@ -27,7 +27,8 @@ interface ReconcileRow {
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${env.CRON_SECRET}`) {
+  const cronSecret = env.CRON_SECRET
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -57,16 +58,17 @@ export async function POST(req: NextRequest) {
     )
 
     const supabase = getServiceClient()
+    // Query the whole local window (not just Grab's ids) so orders we recorded
+    // but Grab did not return are reported as missingOnGrab. Grab's date window
+    // is treated as UTC day boundaries.
     const { data: localRows, error } = await supabase
       .from('channel_orders')
       .select(
         'external_order_id, external_order_number, orders(status, subtotal_cents, discount_cents, total_cents)'
       )
       .eq('channel', 'grabfood')
-      .in(
-        'external_order_id',
-        [...grabOrders.keys()].length > 0 ? [...grabOrders.keys()] : ['__none__']
-      )
+      .gte('created_at', `${dateFrom}T00:00:00.000Z`)
+      .lte('created_at', `${dateTo}T23:59:59.999Z`)
 
     if (error) {
       return NextResponse.json({ error: `Local query failed: ${error.message}` }, { status: 500 })
@@ -76,19 +78,18 @@ export async function POST(req: NextRequest) {
       ((localRows ?? []) as unknown as ReconcileRow[]).map((r) => [r.external_order_id, r])
     )
 
-    const missingLocally: string[] = []
-    const missingOnGrab: string[] = [...localById.keys()].filter((id) => !grabOrders.has(id))
+    const missingLocally = [...grabOrders.keys()].filter((id) => !localById.has(id))
+    const missingOnGrab = [...localById.keys()].filter((id) => !grabOrders.has(id))
     const totalMismatches: Array<{ order: string; grab: number; local: number }> = []
 
     for (const [orderId, grabOrder] of grabOrders) {
       const local = localById.get(orderId)
-      if (!local) {
-        missingLocally.push(orderId)
-        continue
-      }
+      if (!local) continue
       const o = local.orders
       if (!o) continue
-      // Compare merchant food revenue: subtotal (Grab) vs subtotal + discounts (ours).
+      // Compare the pre-promo food value on both sides: Grab reports it as
+      // price.subtotal, we store it as orders.subtotal_cents. Promo-funded
+      // differences live in orders.discount_cents and net out of total_cents.
       const grabItemValue = grabOrder.price?.subtotal ?? 0
       const localGrossValue = o.subtotal_cents
       if (Math.abs(grabItemValue - localGrossValue) > 0) {

@@ -18,6 +18,15 @@ export async function POST(_req: NextRequest) {
   const auth = await requireRole(_req, ['admin', 'manager'])
   if ('error' in auth) return auth.error
 
+  // Never push the live menu while the integration flag is off. Mock mode is
+  // offline, so it stays available for local/staging dry runs.
+  if (!env.GRABFOOD_ENABLED && env.GRABFOOD_ENV !== 'mock') {
+    return NextResponse.json(
+      { error: 'GrabFood integration is disabled (GRABFOOD_ENABLED=false)' },
+      { status: 409 }
+    )
+  }
+
   const supabase = getServiceClient()
   const { mappings, error } = await fetchGrabMenuMappings(supabase)
   if (error) {

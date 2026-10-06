@@ -1,6 +1,13 @@
 export type OrderTab = "preparing" | "ready" | "upcoming" | "history"
 
-export type OrderSource = "web" | "telegram" | "whatsapp" | "mobile"
+export type OrderSource =
+  | "web"
+  | "telegram"
+  | "whatsapp"
+  | "mobile"
+  | "counter"
+  | "grabfood"
+  | "foodpanda"
 
 export interface Order {
   id: string

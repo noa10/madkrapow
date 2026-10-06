@@ -449,6 +449,48 @@ Payload: new/updated row → updates OrderFeed, plays audio on INSERT
 
 ---
 
+## Multi-Channel Order Model (POS)
+
+MadKrapow is the single source of truth for orders from every sales channel.
+GrabFood (and later Foodpanda) are **sales channels**, not separate order
+systems — the canonical order always lives in the `orders` table.
+
+```
+Counter POS (/pos) ─┐
+Web checkout ───────┤   orders.source:
+Telegram / WhatsApp ─┼─►  web | telegram | whatsapp | mobile | counter
+GrabFood webhook ───┤     | grabfood | foodpanda
+Foodpanda (future) ─┘
+        │
+        ├── order_items (menu/price snapshots)
+        ├── payments / refunds (money movement is first-class)
+        ├── channel_orders (external identity; UNIQUE(channel, external_order_id)
+        │      is the webhook idempotency anchor)
+        └── order_events (audit)
+```
+
+Key pieces (see `docs/grabfood-integration.md` for the GrabFood specifics):
+
+- **Money is integer sen everywhere**, matching Grab's MYR minor units.
+- **Ingestion is atomic + idempotent** via the `import_channel_order` /
+  `import_legacy_order` RPCs (migrations 051/052): order + items + payment +
+  channel identity + audit land together or not at all, and a replayed webhook
+  reports `duplicate` instead of creating a second order.
+- **No new order statuses.** Channel lifecycles map onto the existing
+  8-status machine (`lib/grabfood/mapper.ts` plans the transitions; routes
+  apply them with atomic conditional updates). `npm run lint:parity` stays the
+  cross-platform contract.
+- **Refunds are `refunds` rows linked to their original order** — never
+  negative orders. The legacy Aliments POS export (816 orders, 2026-03 →
+  2026-05) is imported with a full audit trail in `legacy_import_records`
+  (`scripts/import-legacy-pos/`, re-runnable: idempotent).
+- **Menu is per-channel through `channel_products`**: the local product is the
+  master; channel rows hold external IDs, channel price overrides and
+  availability. The counter POS screen (`/pos`) creates orders through the
+  same server-validated engine as web checkout.
+
+---
+
 ## Architectural Invariants
 
 These must hold true at all times:

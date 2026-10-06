@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { CompactOrderActions } from "./CompactOrderActions"
 import { ProviderBadges } from "@/components/orders/ProviderBadges"
-import { Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react"
+import { Globe, MessageCircle, MessageSquare, Smartphone, Store, Bike, UtensilsCrossed } from "lucide-react"
 import type { Order, OrderSource } from "@/types/orders"
 
 const SOURCE_ICONS: Record<OrderSource, React.ReactNode> = {
@@ -15,6 +15,9 @@ const SOURCE_ICONS: Record<OrderSource, React.ReactNode> = {
   telegram: <MessageCircle className="h-3.5 w-3.5" />,
   whatsapp: <MessageSquare className="h-3.5 w-3.5" />,
   mobile: <Smartphone className="h-3.5 w-3.5" />,
+  counter: <Store className="h-3.5 w-3.5" />,
+  grabfood: <Bike className="h-3.5 w-3.5" />,
+  foodpanda: <UtensilsCrossed className="h-3.5 w-3.5" />,
 }
 
 const SOURCE_LABELS: Record<OrderSource, string> = {
@@ -22,6 +25,9 @@ const SOURCE_LABELS: Record<OrderSource, string> = {
   telegram: "Telegram",
   whatsapp: "WhatsApp",
   mobile: "Mobile",
+  counter: "Counter",
+  grabfood: "GrabFood",
+  foodpanda: "Foodpanda",
 }
 
 const SOURCE_COLORS: Record<OrderSource, string> = {
@@ -29,6 +35,9 @@ const SOURCE_COLORS: Record<OrderSource, string> = {
   telegram: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   whatsapp: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   mobile: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  counter: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  grabfood: "bg-green-500/15 text-green-400 border-green-500/30",
+  foodpanda: "bg-pink-500/15 text-pink-400 border-pink-500/30",
 }
 
 const STATUS_COLORS: Record<string, string> = {

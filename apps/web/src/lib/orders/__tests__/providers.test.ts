@@ -27,6 +27,36 @@ describe("getPaymentBadge", () => {
       label: "Cash",
     })
   })
+
+  it("returns GrabFood when source is grabfood", () => {
+    expect(getPaymentBadge({ status: "paid", source: "grabfood" })).toEqual({
+      provider: "grabfood",
+      label: "GrabFood",
+    })
+  })
+
+  it("returns Foodpanda when source is foodpanda", () => {
+    expect(getPaymentBadge({ status: "paid", source: "foodpanda" })).toEqual({
+      provider: "foodpanda",
+      label: "Foodpanda",
+    })
+  })
+
+  it("returns QR Pay when payment_method is qr_pay (counter POS)", () => {
+    expect(
+      getPaymentBadge({ status: "paid", source: "counter", payment_method: "qr_pay" }),
+    ).toEqual({ provider: "qr_pay", label: "QR Pay" })
+  })
+
+  it("keeps Stripe priority over platform source", () => {
+    expect(
+      getPaymentBadge({
+        status: "paid",
+        source: "grabfood",
+        stripe_payment_intent_id: "pi_123",
+      }),
+    ).toEqual({ provider: "stripe", label: "Stripe" })
+  })
 })
 
 describe("getDeliveryBadge", () => {
@@ -76,6 +106,27 @@ describe("getDeliveryBadge", () => {
       getDeliveryBadge({
         delivery_type: "self_pickup",
         lalamove_order_id: "lm_123",
+      }),
+    ).toEqual({ provider: "self_pickup", label: "Self Pickup" })
+  })
+
+  it("returns platform rider for grabfood delivery orders", () => {
+    expect(
+      getDeliveryBadge({ delivery_type: "delivery", source: "grabfood" }),
+    ).toEqual({ provider: "platform", label: "GrabFood Rider" })
+  })
+
+  it("returns platform rider for foodpanda delivery orders", () => {
+    expect(
+      getDeliveryBadge({ delivery_type: "delivery", source: "foodpanda" }),
+    ).toEqual({ provider: "platform", label: "Foodpanda Rider" })
+  })
+
+  it("keeps self_pickup priority for platform pickup orders", () => {
+    expect(
+      getDeliveryBadge({
+        delivery_type: "self_pickup",
+        source: "grabfood",
       }),
     ).toEqual({ provider: "self_pickup", label: "Self Pickup" })
   })

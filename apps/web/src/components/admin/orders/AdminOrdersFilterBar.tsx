@@ -28,6 +28,9 @@ const SOURCE_OPTIONS: { value: "all" | OrderSource; label: string }[] = [
   { value: "telegram", label: "Telegram" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "mobile", label: "Mobile" },
+  { value: "counter", label: "Counter" },
+  { value: "grabfood", label: "GrabFood" },
+  { value: "foodpanda", label: "Foodpanda" },
 ]
 
 export function AdminOrdersFilterBar({

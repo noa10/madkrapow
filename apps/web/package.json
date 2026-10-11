@@ -64,7 +64,7 @@
     "clsx": "^2.1.1",
     "eslint": "^10.10.0",
     "eslint-config-next": "^16.4.0",
-    "lucide-react": "^1.49.0",
+    "lucide-react": "^1.52.0",
     "playwright": "^1.62.0",
     "supabase": "^2.120.0",
     "tailwind-merge": "^3.7.0",

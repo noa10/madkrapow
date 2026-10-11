@@ -171,3 +171,137 @@ describe('GrabFoodClient', () => {
     })
   })
 })
+
+describe('GrabFoodClient extended endpoints', () => {
+  type FetchMock = ReturnType<typeof vi.fn>
+
+  function makeClient(fetchImpl: FetchMock) {
+    authModule.clearGrabFoodTokenCache()
+    process.env.GRABFOOD_CLIENT_ID = 'id'
+    process.env.GRABFOOD_CLIENT_SECRET = 'secret'
+    return new clientModule.GrabFoodClient({
+      environment: 'staging',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+  }
+
+  function authThen(...responses: Response[]) {
+    return vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
+      )
+      .mockResolvedValueOnce(responses[0])
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+  }
+
+  it('getMenuSyncTrace sends merchantID as a query param', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
+      )
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status: 'COMPLETED' }), { status: 200 })
+      )
+    const client = makeClient(fetchImpl)
+
+    const trace = await client.getMenuSyncTrace('mch-1')
+
+    expect(trace).toMatchObject({ status: 'COMPLETED' })
+    const [url] = fetchImpl.mock.calls[1]
+    expect(String(url)).toBe(
+      'https://partner-api.grab.com/grabfood-sandbox/partner/v1/merchant/menu/trace?merchantID=mch-1'
+    )
+  })
+
+  it('isOrderCancelable reads data.isCancelable', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { isCancelable: true } }), { status: 200 })
+      )
+    const client = makeClient(fetchImpl)
+
+    const cancelable = await client.isOrderCancelable('order-1')
+
+    expect(cancelable).toBe(true)
+    const [url] = fetchImpl.mock.calls[1]
+    expect(String(url)).toBe(
+      'https://partner-api.grab.com/grabfood-sandbox/partner/v1/order/cancelable?orderID=order-1'
+    )
+  })
+
+  it('isOrderCancelable defaults to false on unexpected shapes', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const client = makeClient(fetchImpl)
+
+    await expect(client.isOrderCancelable('order-1')).resolves.toBe(false)
+  })
+
+  it('updateReadyTime PUTs orderID + readyTime', async () => {
+    const fetchImpl = authThen(new Response('{}', { status: 200 }))
+    const client = makeClient(fetchImpl)
+
+    await client.updateReadyTime('order-1', '2026-10-11T12:30:00+08:00')
+
+    const [url, init] = fetchImpl.mock.calls[1]
+    expect(url).toBe('https://partner-api.grab.com/grabfood-sandbox/partner/v1/order/readytime')
+    expect((init as RequestInit).method).toBe('PUT')
+    expect((init as RequestInit).body).toContain('2026-10-11T12:30:00')
+  })
+
+  it('pauseStore PUTs merchantID + isPaused', async () => {
+    const fetchImpl = authThen(new Response('{}', { status: 200 }))
+    const client = makeClient(fetchImpl)
+
+    await client.pauseStore('mch-1', true)
+
+    const [url, init] = fetchImpl.mock.calls[1]
+    expect(url).toBe('https://partner-api.grab.com/grabfood-sandbox/partner/v1/merchant/pause')
+    expect((init as RequestInit).method).toBe('PUT')
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      merchantID: 'mch-1',
+      isPaused: true,
+    })
+  })
+
+  it('getStoreStatus encodes the merchant id in the path', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ isOpened: false, gasStatus: 'MERCHANT_PAUSED' }), {
+          status: 200,
+        })
+      )
+    const client = makeClient(fetchImpl)
+
+    const status = await client.getStoreStatus('mch-1')
+
+    expect(status).toMatchObject({ isOpened: false })
+    const [url] = fetchImpl.mock.calls[1]
+    expect(String(url)).toBe(
+      'https://partner-api.grab.com/grabfood-sandbox/partner/v1/merchants/mch-1/store/status'
+    )
+  })
+
+  it('extended endpoints stay offline in mock mode', async () => {
+    const fetchImpl = vi.fn()
+    const client = new clientModule.GrabFoodClient({ environment: 'mock', fetchImpl })
+
+    await client.pauseStore('mch-1', true)
+    await client.updateReadyTime('order-1', '2026-10-11T12:30:00+08:00')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})

@@ -49,13 +49,6 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-function authHeaders(token: string | null): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
-}
-
 export default function GrabFoodAdminPage() {
   const { hasAccess, isLoading: isAccessLoading } = useRoleGuard(['admin', 'manager'])
   const { addToast } = useToastStore()

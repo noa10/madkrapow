@@ -25,6 +25,7 @@
 import { env } from '@/lib/validators/env'
 import { getAccessToken, clearGrabFoodTokenCache, isGrabFoodConfigured } from './auth'
 import type {
+  GrabBatchMenuEntry,
   GrabListOrdersResponse,
   GrabMenuRecordUpdate,
   GrabMenuSyncTrace,
@@ -167,9 +168,14 @@ export class GrabFoodClient {
     await this.request({ method: 'PUT', path: '/partner/v1/menu', body: record })
   }
 
-  /** PUT /partner/v1/batch/menu — up to 200 records, rate limit 1 req/s. */
-  async batchUpdateMenuRecords(records: GrabMenuRecordUpdate[]): Promise<void> {
-    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: records })
+  /**
+   * PUT /partner/v1/batch/menu — one HTTP call per batch entry, each entry
+   * carrying up to 200 menuEntities of one record type. Entries are wrapped
+   * via toBatchMenuEntries() — the endpoint rejects flat record arrays.
+   * Rate limit: 1 req/s (callers must space batches).
+   */
+  async batchUpdateMenuRecords(entries: GrabBatchMenuEntry[]): Promise<void> {
+    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: entries })
   }
 
   /** POST /partner/v1/merchant/menu/notification — tell Grab to pull the menu. */

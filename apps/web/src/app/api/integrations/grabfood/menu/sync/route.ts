@@ -3,16 +3,17 @@ import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
 import { createGrabFoodClient } from '@/lib/grabfood/client'
 import { buildMenuRecordUpdates, fetchGrabMenuMappings } from '@/lib/grabfood/menu'
+import { pushMenuRecords, MenuPushError } from '@/lib/grabfood/push'
 import { env } from '@/lib/validators/env'
-
-const BATCH_LIMIT = 200
 
 /**
  * Push the mapped menu to GrabFood (admin/manager action).
  *
- * Builds record updates (price + availability) from channel_products joined to
- * menu_items, pushes them in batches of <= 200 (Grab's limit), then notifies
- * Grab that the menu changed. Mock mode returns the summary without network.
+ * Builds ITEM record updates (price + availability, snooze-aware) from
+ * channel_products joined to menu_items, pushes them through the throttled
+ * runner (batches of <= 200 entities spaced at 1 req/s with backoff on
+ * 429/5xx), then notifies Grab that the menu changed. Mock mode returns the
+ * summary without network.
  */
 export async function POST(_req: NextRequest) {
   const auth = await requireRole(_req, ['admin', 'manager'])
@@ -46,16 +47,20 @@ export async function POST(_req: NextRequest) {
 
   const client = createGrabFoodClient()
   try {
-    for (let i = 0; i < records.length; i += BATCH_LIMIT) {
-      await client.batchUpdateMenuRecords(records.slice(i, i + BATCH_LIMIT))
-    }
+    await pushMenuRecords(client, records)
     if (records.length > 0) {
       await client.notifyMenuUpdated(merchantId)
     }
   } catch (err) {
     console.error('[GrabFood] menu sync failed:', err)
+    const progress = err instanceof MenuPushError ? err.progress : null
     return NextResponse.json(
-      { error: 'Menu sync failed', detail: err instanceof Error ? err.message : String(err) },
+      {
+        error: 'Menu sync failed',
+        detail: err instanceof Error ? err.message : String(err),
+        // Resumable cursor: how far the push got before failing.
+        ...(progress ? { pushed_records: progress.pushedEntities, batches_total: progress.batchesTotal } : {}),
+      },
       { status: 502 }
     )
   }

@@ -71,6 +71,33 @@ This file contains curated memories, decisions, and learnings that persist acros
   `channel_orders UNIQUE(channel, external_order_id)`; admin UI source filters
   and badges cover the new channels; `/pos` counter screen live.
 
+### 2026-10-11: GrabFood full-menu push + LAN printing (Hubbo RE)
+- **Decision**: Built on `feat/grabfood-menu-printing` (stacked on
+  `feat/pos-canonical-orders`). Reverse-engineered the Hubbo POS APK
+  (`/Users/khairulanwar/dev/hubbo`, findings in `docs/hubbo-re-findings.md`):
+  the app has NO GrabFood credentials — Hubbo's backend
+  (`api.aliments.my/alimentsBackend`, device login → `apiKey` header)
+  mediates GrabFood via "GRABFOOD ROBOT" workers.
+- **GrabFood spec corrections** (verified against Grab's official OpenAPI
+  SDK): batch/menu is `[{merchantID, field, menuEntities: [...]}]` ≤ 200
+  entities/entry (flat arrays are rejected); `UNAVAILABLE` requires
+  `maxStock: 0`; `UNAVAILABLETODAY` auto-restores at Grab's next business day.
+  Push runner throttles at 1 req/s with backoff + resumable cursor. Accept
+  order (`POST /partner/v1/order/prepare`) now fires inside submit-order after
+  a successful import (closes pre-launch gap #1).
+- **Snooze**: `snooze_till` (migration 053) computed at read time; same-day
+  snoozes push `UNAVAILABLETODAY`, longer ones push `UNAVAILABLE`+maxStock 0.
+  Admin page `/admin/grabfood` covers mapping, snooze presets, sync+trace,
+  store pause.
+- **Printing**: pure ESC/POS generator (`lib/printing/escpos.ts`, 32/42/48
+  cols) + job builders; delivery via `scripts/print-bridge/` Node agent on the
+  LAN (poll claim; exactly-once via `order_events printed_<type>` markers;
+  localhost /print for manual reprints). Vercel cannot reach LAN printers —
+  the bridge is the delivery path.
+- **Interim Hubbo adapter**: `lib/hubbo-merchant/` (UNOFFICIAL, env-gated,
+  default off) pulls the full menu and pushes sold-out before official Grab
+  onboarding; needs a one-time apiKey capture from a real POS device.
+
 ### 2026-10-14: Log sanitiser is now one shared module
 - **Decision**: All untrusted values reach loggers through a single
   `sanitizeForLog` (`apps/web/src/lib/logging/safe-log.ts`), not per-route copies.

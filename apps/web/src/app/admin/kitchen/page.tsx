@@ -4,10 +4,12 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, User, MapPin, Loader2, Package, ShieldAlert, Globe, MessageCircle, MessageSquare, Smartphone, Store, Bike, UtensilsCrossed } from 'lucide-react';
+import { Clock, User, MapPin, Loader2, Package, Printer, ShieldAlert, Globe, MessageCircle, MessageSquare, Smartphone, Store, Bike, UtensilsCrossed } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAdminOrders, AdminOrder } from '@/hooks/useAdminOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
+import { useToastStore } from '@/stores/toast';
+import { isPrintBridgeConfigured, printViaBridge } from '@/lib/printing/client';
 import { getOrderDisplayCode } from '@/lib/utils/order-code';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
@@ -184,7 +186,8 @@ function OrderCard({ order }: OrderCardProps) {
             </div>
           </div>
 
-          <div className="pt-4">
+          <div className="pt-4 flex gap-2 items-stretch">
+            <KitchenPrintButton orderId={order.id} source={order.source} />
             <KitchenStatusTransitionButtons
               orderId={order.id}
               currentStatus={order.status}
@@ -208,6 +211,52 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   completed: { color: "bg-teal-500 text-white", label: "Completed" },
   cancelled: { color: "bg-destructive text-destructive-foreground", label: "Cancelled" },
 };
+
+// Kitchen-specific print button: reprints the docket/ticket via the LAN print
+// bridge (Hubbo's REPRINT pattern). Hidden when no bridge is configured.
+interface KitchenPrintButtonProps {
+  orderId: string;
+  source?: string;
+}
+
+function KitchenPrintButton({ orderId, source }: KitchenPrintButtonProps) {
+  const { addToast } = useToastStore();
+  const [printing, setPrinting] = useState(false);
+
+  if (!isPrintBridgeConfigured()) {
+    return null;
+  }
+
+  const type: 'kitchen_docket' | 'grabfood_ticket' =
+    source === 'grabfood' ? 'grabfood_ticket' : 'kitchen_docket';
+
+  const handlePrint = async () => {
+    setPrinting(true);
+    try {
+      const result = await printViaBridge(orderId, type);
+      if (!result.ok) {
+        addToast({ type: 'error', title: 'Print failed', description: result.error });
+      } else {
+        addToast({ type: 'success', title: 'Sent to printer' });
+      }
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="lg"
+      className="flex-1 text-base md:text-lg font-semibold"
+      onClick={handlePrint}
+      disabled={printing}
+    >
+      {printing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5 mr-1" />}
+      Print
+    </Button>
+  );
+}
 
 // Kitchen-specific status transition buttons with larger size for visibility
 interface KitchenStatusTransitionButtonsProps {

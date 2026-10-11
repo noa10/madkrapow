@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { useRoleGuard } from '@/hooks/use-role-guard'
 import { useToastStore } from '@/stores/toast'
 import { getBrowserClient } from '@/lib/supabase/client'
+import { autoPrintOrder } from '@/lib/printing/client'
 import { cn } from '@/lib/utils'
 
 interface PosMenuItem {
@@ -166,6 +167,11 @@ export default function PosPage() {
         description: `${formatPrice(data.total_cents)} — ${paymentMethod === 'cash' ? 'Cash' : 'QR Pay'}`,
       })
       resetCart()
+      // Auto-print kitchen docket + receipt via the LAN bridge (no-op when
+      // unconfigured); failures never block the counter flow.
+      void autoPrintOrder(data.order_id, 'counter', (error) =>
+        addToast({ type: 'error', title: 'Print failed', description: error })
+      )
     } catch (err) {
       addToast({ type: 'error', title: 'Network error creating order' })
       console.error('[POS] submit failed:', err)

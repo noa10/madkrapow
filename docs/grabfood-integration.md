@@ -26,11 +26,25 @@ Outbound (staff actions):
   admin [Cancel]    ──► /api/integrations/grabfood/orders/[id]/cancel
                         PUT /partner/v1/order/cancel first, then local mirror
 
-Menu sync (admin action):
+Menu sync (admin action, /admin/grabfood):
   POST /api/integrations/grabfood/menu/sync
-                        channel_products + menu_items → PUT /partner/v1/batch/menu
-                        (+ POST /partner/v1/merchant/menu/notification)
+                        channel_products + menu_items → throttled batch push
+                        (PUT /partner/v1/batch/menu, entries of <= 200
+                        menuEntities spaced at 1 req/s, backoff on 429/5xx,
+                        resumable progress on permanent failure)
+                        + POST /partner/v1/merchant/menu/notification
+  GET  /api/integrations/grabfood/menu/trace   last sync outcome on Grab's side
+  POST/DELETE /api/integrations/grabfood/menu/snooze   time-based sold-out
+  PATCH/POST/DELETE /api/integrations/grabfood/menu/mapping   mapping CRUD
+  GET/POST /api/integrations/grabfood/store/pause   store pause toggle
 ```
+
+Order acceptance (closes the auto-cancel gap):
+  submit-order webhook → import_channel_order RPC succeeds →
+  POST /partner/v1/order/prepare (accept) + PUT /partner/v1/order/readytime
+  (20-minute promise). Grab-side failures land in order_events as
+  `grabfood_accept_failed` and never fail the webhook (the order is already
+  canonical locally).
 
 ## Order model mapping
 
@@ -153,18 +167,20 @@ These are deliberately out of scope for the groundwork PR and are the first
 items to close during Grab onboarding (they need real credentials, captured
 payloads, or a product decision):
 
-- **Order acceptance is not wired.** `GrabFoodClient.acceptOrder()`
-  (`POST /partner/v1/order/prepare`) is implemented and tested but not called:
-  the kitchen acceptance that moves an order `paid → preparing` is a local
-  staff action only, so Grab is never told and may auto-cancel the order. Wire
-  it into the acceptance step for `source='grabfood'` and record the result.
+- ~~**Order acceptance is not wired.**~~ CLOSED: submit-order now accepts on
+  Grab (`POST /partner/v1/order/prepare`) right after a successful import and
+  promises a 20-minute ready time; failures are recorded in `order_events`.
 - **Promo/tax semantics need a captured payload.** `price.merchantFundPromo`,
   `price.basketPromo` and `price.tax` are read per the public reference;
   confirm the exact split (and whether `price.subtotal` is tax-inclusive)
   against a real onboarding payload before trusting `total_cents` for P&L.
-- **Menu sync is unthrottled.** Batches of ≤ 200 are pushed in a tight loop
-  (Grab documents 1 req/s for `batch/menu`); add spacing/retry and a
-  resumability key before syncing a full production menu.
+- ~~**Menu sync is unthrottled.**~~ CLOSED: the push runner spaces batches at
+  Grab's documented 1 req/s, retries 429/5xx with exponential backoff, and
+  reports resumable progress. NOTE: the batch wire shape was corrected to
+  Grab's actual spec — `[{merchantID, field, menuEntities: [...]}]` with up to
+  200 entities per entry; the groundwork PR's flat record array would have
+  been rejected. Confirm exact semantics against a staging payload at
+  onboarding.
 - **Counter QR Pay badge.** The admin/customer order queries do not join
   `payments`, so a counter order paid by QR Pay currently renders the generic
   Cash badge. Join `payments(method)` (or denormalise the method) to display
@@ -178,3 +194,46 @@ snooze/availability, accept-order and printing work: see
 holds no GrabFood credentials — GrabFood is mediated by Hubbo's backend — so the
 interim pre-onboarding path is the `lib/hubbo-merchant/` adapter (menu pull +
 snooze push against `api.aliments.my`), not a GrabFood session proxy.
+
+## Full menu push, snooze and mapping UI (this branch)
+
+- **Snooze (time-based sold-out)** — `channel_products.snooze_till` /
+  `menu_items.snooze_till` (migration 053). Effective availability is computed
+  at read time: master AND channel availability, each gated by an active
+  snooze — an expired snooze never needs a restore write. Same-day snoozes
+  push Grab's native `UNAVAILABLETODAY` (auto-restores at Grab's next business
+  day without another push); longer/hard unavailable states push `UNAVAILABLE`
+  with `maxStock: 0` as Grab requires.
+- **Mapping admin** — `/admin/grabfood`: unmapped-item warnings, inline
+  mapping (POST), external id / price override / availability edits (PATCH),
+  unmap (DELETE), snooze presets (30/60/120 min) + restore, sync + trace, and
+  the store pause toggle.
+- **Store controls** — pause/reopen via `PUT /partner/v1/merchant/pause`,
+  status via `GET /partner/v1/merchants/{id}/store/status`.
+
+## Interim pre-onboarding path: Hubbo merchant adapter
+
+While official GrabFood access is pending, `lib/hubbo-merchant/` implements the
+reverse-engineered Hubbo merchant backend (`api.aliments.my/alimentsBackend` —
+see [hubbo-re-findings.md](./hubbo-re-findings.md)): device login → `apiKey`
+header, full menu pull into the local catalog (source-tagged
+`aliments_backend`, reusing the `hubbo_pos_external_id` columns) with GrabFood
+`channel_products` seeding, and `snoozeMenu` push. Gated by
+`HUBBO_MERCHANT_ENABLED` (default off), supports a captured
+`HUBBO_MERCHANT_API_KEY` override, and `POST /api/admin/hubbopos-merchant/menu/pull`
+accepts `{"dryRun": true}`. Caveats: unofficial (ToS-gray), device-ID
+provisioning may gate logins, payload shapes are unconfirmed until a live pull.
+
+## Printing (LAN thermal printers)
+
+`lib/printing/` renders ESC/POS bytes from canonical orders (kitchen docket,
+customer receipt, GrabFood ticket; 32/42/48-char widths; REPRINT watermark;
+optional cash-drawer kick on counter cash receipts). Because Vercel cannot
+reach a LAN printer, delivery runs through `scripts/print-bridge/` — a
+dependency-free Node agent on the restaurant LAN that polls
+`GET /api/print/jobs/claim` (auto-print; jobs claimed exactly once via
+`order_events printed_<type>` markers) and serves `POST /print` on localhost
+for manual reprints from `/pos` and the kitchen page. Setup:
+[scripts/print-bridge/README.md](../scripts/print-bridge/README.md).
+Env: `PRINT_BRIDGE_SECRET` (app↔bridge), `NEXT_PUBLIC_PRINT_BRIDGE_URL`,
+`NEXT_PUBLIC_PRINT_BRIDGE_TOKEN` (pages→bridge).

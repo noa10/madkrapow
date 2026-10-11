@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { getSignatureHeaderName, verifyWebhookSignature } from '@/lib/grabfood/verify'
+import { createGrabFoodClient } from '@/lib/grabfood/client'
 import { handleSubmitOrder } from '../handlers'
 import type { GrabSubmitOrderPayload } from '@/lib/grabfood/types'
 
@@ -31,7 +32,9 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
-  const result = await handleSubmitOrder(supabase, payload)
+  // Accept the order on Grab's side right after a successful import (no-op in
+  // mock mode) — unaccepted orders may be auto-cancelled by Grab.
+  const result = await handleSubmitOrder(supabase, payload, createGrabFoodClient())
 
   if (result.status === 'error' || result.status === 'unmapped') {
     // 5xx => Grab retries the delivery (mapping fixes land on retry).

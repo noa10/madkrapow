@@ -9,6 +9,15 @@ vi.mock('@/lib/supabase/server', () => ({
   getServiceClient: () => serviceClientMock(),
 }))
 
+// Acceptance client is injected by the route; spy on what it does.
+const grabClientMock = vi.hoisted(() => ({
+  acceptOrder: vi.fn<(orderId: string) => Promise<void>>(async () => {}),
+  updateReadyTime: vi.fn<(orderId: string, readyTime: string) => Promise<void>>(async () => {}),
+}))
+vi.mock('@/lib/grabfood/client', () => ({
+  createGrabFoodClient: () => grabClientMock,
+}))
+
 import { POST } from '../submit-order/route'
 
 type Call = { table: string; op: string; row?: unknown; payload?: unknown }
@@ -123,6 +132,8 @@ const VALID_PAYLOAD = {
 describe('POST /api/integrations/grabfood/webhooks/submit-order', () => {
   beforeEach(() => {
     serviceClientMock.mockReset()
+    grabClientMock.acceptOrder.mockClear()
+    grabClientMock.updateReadyTime.mockClear()
   })
 
   it('creates an order through the RPC and acks 200', async () => {
@@ -234,5 +245,55 @@ describe('POST /api/integrations/grabfood/webhooks/submit-order', () => {
   it('rejects invalid JSON with 400', async () => {
     const res = await POST(makeRequest('not-json') as never)
     expect(res.status).toBe(400)
+  })
+
+  it('accepts the order on Grab and sets a ready time after successful import', async () => {
+    const client = buildMockClient({
+      mappingRows: [
+        { external_item_id: 'GF-ITEM-1', menu_item_id: 'menu-1', external_name: 'Set Krapow Daging' },
+      ],
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await POST(makeRequest(VALID_PAYLOAD) as never)
+    expect(res.status).toBe(200)
+
+    expect(grabClientMock.acceptOrder).toHaveBeenCalledWith('91646057-CYUWL64UGF5XVA')
+    expect(grabClientMock.updateReadyTime).toHaveBeenCalledWith(
+      '91646057-CYUWL64UGF5XVA',
+      expect.any(String)
+    )
+  })
+
+  it('never accepts when the import did not create an order', async () => {
+    serviceClientMock.mockReturnValue(buildMockClient({ mappingRows: [] }))
+
+    await POST(makeRequest(VALID_PAYLOAD) as never)
+
+    expect(grabClientMock.acceptOrder).not.toHaveBeenCalled()
+  })
+
+  it('records a Grab accept failure but still acks 200', async () => {
+    grabClientMock.acceptOrder.mockRejectedValueOnce(new Error('grab unreachable'))
+    const client = buildMockClient({
+      mappingRows: [
+        { external_item_id: 'GF-ITEM-1', menu_item_id: 'menu-1', external_name: 'Set Krapow Daging' },
+      ],
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await POST(makeRequest(VALID_PAYLOAD) as never)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe('created')
+
+    // Ops trail: the order is canonical locally, Grab acceptance failed.
+    const acceptFail = client.calls.find(
+      (c) => c.table === 'order_events' && (c.row as { event_type?: string })?.event_type === 'grabfood_accept_failed'
+    )
+    expect(acceptFail).toBeTruthy()
+    expect((acceptFail?.row as { new_value: { error: string } }).new_value.error).toContain(
+      'grab unreachable'
+    )
   })
 })

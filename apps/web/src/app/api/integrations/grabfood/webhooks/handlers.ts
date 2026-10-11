@@ -15,6 +15,18 @@ import type { GrabOrderStatePayload, GrabSubmitOrderPayload } from '@/lib/grabfo
 import { mapGrabSubmitOrder, planInternalTransitions } from '@/lib/grabfood/mapper'
 import type { ChannelProductMapping } from '@/lib/grabfood/mapper'
 
+/**
+ * Grab-side actions taken after a successful local import. Acceptance is
+ * time-sensitive: Grab may auto-cancel orders the partner never accepts.
+ */
+export interface GrabOrderActions {
+  acceptOrder(orderId: string): Promise<void>
+  updateReadyTime(orderId: string, readyTime: string): Promise<void>
+}
+
+/** Promised ready time reported to Grab on acceptance (configurable later). */
+export const DEFAULT_READY_TIME_MINUTES = 20
+
 export type HandlerResult = {
   status: 'created' | 'duplicate' | 'skipped' | 'unmapped' | 'unknown_order' | 'noop' | 'error'
   order_number?: string
@@ -92,9 +104,38 @@ async function markEvent(
     .eq('id', eventId)
 }
 
+/**
+ * Accept the order on Grab's side after a successful local import. The order
+ * is already canonical locally, so a Grab-side failure never fails the
+ * webhook — it is recorded for ops (Grab may auto-cancel unaccepted orders).
+ */
+async function acceptOnGrab(
+  supabase: SupabaseClient,
+  grab: GrabOrderActions,
+  orderId: string,
+  internalOrderId: string
+): Promise<void> {
+  try {
+    await grab.acceptOrder(orderId)
+    await grab.updateReadyTime(
+      orderId,
+      new Date(Date.now() + DEFAULT_READY_TIME_MINUTES * 60_000).toISOString()
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[GrabFood] accept-order failed:', message)
+    await supabase.from('order_events').insert({
+      order_id: internalOrderId,
+      event_type: 'grabfood_accept_failed',
+      new_value: { error: message, external_order_id: orderId },
+    })
+  }
+}
+
 export async function handleSubmitOrder(
   supabase: SupabaseClient,
-  payload: GrabSubmitOrderPayload
+  payload: GrabSubmitOrderPayload,
+  grab?: GrabOrderActions | null
 ): Promise<HandlerResult> {
   let eventId: string | null = null
   try {
@@ -163,6 +204,9 @@ export async function handleSubmitOrder(
     const result = rpcResult as { status: string; order_id?: string; order_number?: string }
     if (result.status === 'created') {
       await markEvent(supabase, eventId, 'processed')
+      if (grab && result.order_id) {
+        await acceptOnGrab(supabase, grab, payload.orderID, result.order_id)
+      }
       return {
         status: 'created',
         order_id: result.order_id,

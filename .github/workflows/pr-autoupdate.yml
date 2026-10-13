@@ -1,0 +1,44 @@
+name: PR Auto-Update
+
+# Keeps open PRs current with their base branch so CI always validates the
+# code that would actually land (PR #399 landed 29 commits behind master).
+# Complements dependabot-stale.yml, which closes long-conflicted Dependabot PRs.
+
+on:
+  schedule:
+    # Every 6 hours, off the top of the hour.
+    - cron: "17 1,7,13,19 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be updated without calling update-branch"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-autoupdate
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update Behind PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # A PAT (secret AUTO_UPDATE_TOKEN) is preferred: pushes made with
+      # GITHUB_TOKEN do not re-trigger CI, so updated branches would stay
+      # stale-checked. Falls back to GITHUB_TOKEN (update works, CI re-run
+      # does not — the job summary says so).
+      - name: Update behind PRs
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
+          AUTO_UPDATE_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AUTO_UPDATE_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/pr-autoupdate/pr-autoupdate.mjs

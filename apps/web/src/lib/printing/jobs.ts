@@ -65,10 +65,12 @@ export function formatCents(cents: number): string {
 
 function timestamp(iso: string): string {
   // MYT (UTC+8) — the restaurant's local clock, regardless of server TZ.
+  // Slice off the milliseconds only (19 chars keeps YYYY-MM-DD HH:MM:SS;
+  // 17 would drop the seconds and leave a dangling colon).
   return new Date(new Date(iso).getTime() + 8 * 3600_000)
     .toISOString()
     .replace('T', ' ')
-    .slice(0, 17)
+    .slice(0, 19)
 }
 
 function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {

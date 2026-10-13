@@ -107,3 +107,37 @@ describe('renderJob', () => {
     expect(bytes.byteLength).toBeGreaterThan(100)
   })
 })
+
+describe('timestamp rendering', () => {
+  /** Pull printable ASCII text back out of an ESC/POS byte stream. */
+  function printableText(bytes: Uint8Array): string {
+    let out = ''
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i]
+      if (b === 0x1b || b === 0x1d) {
+        i += 2 // skip this command's parameter bytes
+        continue
+      }
+      if (b === 0x0a || (b >= 0x20 && b <= 0x7e)) out += String.fromCharCode(b)
+    }
+    return out
+  }
+
+  // Every docket/receipt prints a creation timestamp in MYT (UTC+8). It used to
+  // be sliced to 17 chars, which dropped the seconds and left a dangling colon
+  // ("2026-10-14 00:05:") on real paper.
+  it('renders MYT timestamps with seconds and no dangling colon', () => {
+    const order: PrintOrder = { ...ORDER, createdAt: '2026-10-14T00:05:00.000Z' }
+    const text = printableText(renderJob(buildKitchenDocket(order)))
+
+    // The full MYT timestamp must survive to the paper. At the old 17-char
+    // slice the text ended "... 08:05:" and this assertion fails.
+    expect(text).toContain('2026-10-14 08:05:00')
+  })
+
+  it('applies the same MYT rendering on receipts', () => {
+    const order: PrintOrder = { ...ORDER, createdAt: '2026-10-14T00:05:00.000Z' }
+    const text = printableText(renderJob(buildReceipt(order, STORE)))
+    expect(text).toContain('2026-10-14 08:05:00')
+  })
+})

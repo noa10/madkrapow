@@ -9,13 +9,31 @@ master with green CI on the old base.
 Runs every 6 hours (and on demand via *Run workflow*) as
 [.github/workflows/pr-autoupdate.yml](../../.github/workflows/pr-autoupdate.yml):
 
+The manual *Run workflow* dispatch takes a **`dry_run`** checkbox, which reports
+what *would* be updated without calling `update-branch`. Use it first — a real
+run pushes merge commits onto live branches. The summary is clearly labelled
+`🧪 Dry run` so it can't be mistaken for an applied update.
+
 | PR state | Action |
 | --- | --- |
-| `BEHIND` + mergeable | `gh pr update-branch` — merges master into the branch; the push re-runs CI |
+| Behind base (compare API: `behind_by > 0`) + mergeable | `gh pr update-branch` — merges master into the branch; the push re-runs CI |
 | Conflicted (`CONFLICTING` / `DIRTY`) | Left alone, listed under "Conflicts" in the job summary |
 | Draft | Skipped |
 | Fork head | Skipped (`update-branch` doesn't support forks) |
-| `CLEAN` / `BLOCKED` / unknown | Skipped with a reason (see summary) |
+| `behind_by === 0` / `BLOCKED` / unknown | Skipped with a reason (see summary) |
+
+### How behindness is determined
+
+Behindness comes from the **compare API** (`behind_by`), not from
+`mergeStateStatus === 'BEHIND'`. This matters: GitHub only reports `BEHIND` when
+branch protection requires branches to be up to date before merging, and this
+repo has **no branch protection**. A PR 29 commits behind still reports `CLEAN`
+(PR #399 did exactly that), and behind Dependabot PRs report `UNSTABLE`. Trusting
+`mergeStateStatus` made the bot a silent no-op — it reported success while
+updating nothing.
+
+`mergeStateStatus` is retained only for conflict routing (`DIRTY`) and as a
+fallback if a compare call fails.
 
 The report lands in the workflow run's job summary; exit code is 1 only when an
 update attempt itself failed (so GitHub emails you about real breakage —

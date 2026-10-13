@@ -13,6 +13,14 @@
  * $GITHUB_STEP_SUMMARY and stdout. Exit 1 only when an update attempt failed;
  * conflicts/skips are expected states, not failures.
  *
+ * Behindness is NOT taken from `mergeStateStatus === 'BEHIND'`: GitHub only
+ * reports that when branch protection requires branches to be up to date before
+ * merging. This repo has no branch protection, so a PR 29 commits behind still
+ * reports `CLEAN` (PR #399 did exactly that), and behind PRs report `UNSTABLE`.
+ * Trusting `mergeStateStatus` made the bot a silent no-op. Behindness therefore
+ * comes from the compare API (real commit ancestry); `mergeStateStatus` is kept
+ * only as a fallback and for conflict routing.
+ *
  * Token note: pushes made with the repository's GITHUB_TOKEN do NOT re-trigger
  * CI. Prefer the AUTO_UPDATE_TOKEN secret (a PAT) so updated branches get a
  * fresh CI run; the bot falls back to GITHUB_TOKEN and says so in the summary.
@@ -47,10 +55,21 @@ export function classifyPrs(prs, { repoOwner } = {}) {
       conflicts.push(pr)
       continue
     }
-    if (pr.mergeable === 'UNKNOWN') {
+    if (pr.mergeable === 'UNKNOWN' && pr.behindBy === undefined) {
       skipped.push({ pr, reason: 'GitHub is still computing mergeability' })
       continue
     }
+    // Behindness comes from the compare API (pr.behindBy). mergeStateStatus
+    // cannot be trusted here — see the note in the file header.
+    if (typeof pr.behindBy === 'number') {
+      if (pr.behindBy > 0 && pr.mergeable !== 'CONFLICTING') {
+        updatable.push(pr)
+        continue
+      }
+      skipped.push({ pr, reason: 'up to date with base' })
+      continue
+    }
+    // Fallback for when the compare call failed: only trust an explicit BEHIND.
     if (pr.mergeStateStatus === 'BEHIND' && pr.mergeable === 'MERGEABLE') {
       updatable.push(pr)
       continue
@@ -59,7 +78,10 @@ export function classifyPrs(prs, { repoOwner } = {}) {
       skipped.push({ pr, reason: 'up to date with base' })
       continue
     }
-    skipped.push({ pr, reason: `merge state ${pr.mergeStateStatus ?? 'UNKNOWN'} (${pr.mergeable ?? '?'})` })
+    skipped.push({
+      pr,
+      reason: `merge state ${pr.mergeStateStatus ?? 'UNKNOWN'} (${pr.mergeable ?? '?'}); behindness unknown`,
+    })
   }
 
   return { updatable, conflicts, skipped }
@@ -69,12 +91,16 @@ export function classifyPrs(prs, { repoOwner } = {}) {
  * Attempt update-branch for every updatable PR; failures are recorded and do
  * not stop the run.
  */
-export async function runAutoupdate({ gh, prs, repoOwner, baseBranch = BASE_BRANCH }) {
+export async function runAutoupdate({ gh, prs, repoOwner, baseBranch = BASE_BRANCH, dryRun = false }) {
   const { updatable, conflicts, skipped } = classifyPrs(prs, { repoOwner })
   const updated = []
   const failed = []
 
   for (const pr of updatable) {
+    if (dryRun) {
+      updated.push(pr)
+      continue
+    }
     try {
       await gh.updateBranch(pr.number, baseBranch)
       updated.push(pr)
@@ -83,7 +109,7 @@ export async function runAutoupdate({ gh, prs, repoOwner, baseBranch = BASE_BRAN
     }
   }
 
-  return { updated, failed, conflicts, skipped }
+  return { updated, failed, conflicts, skipped, dryRun }
 }
 
 function prLabel(pr) {
@@ -95,6 +121,10 @@ export function buildSummary(report, { ciRetrigger }) {
   const lines = []
   lines.push('## PR Auto-Update report')
   lines.push('')
+  if (report.dryRun) {
+    lines.push('> 🧪 **Dry run** — no branches were updated. Remove the `dry_run` input to apply changes.')
+    lines.push('')
+  }
   if (!ciRetrigger) {
     lines.push(
       '> ⚠️ Running with `GITHUB_TOKEN`: branches are updated, but GitHub does **not** re-trigger CI on those pushes. Add an `AUTO_UPDATE_TOKEN` secret (PAT) for fresh CI runs.'
@@ -156,14 +186,77 @@ export function makeGh({ exec = execFile, repo } = {}) {
     async updateBranch(number) {
       await exec('gh', ['pr', 'update-branch', '--repo', repository, String(number)])
     },
+    /**
+     * Real commit ancestry: how many commits `baseBranch` is ahead of the PR
+     * head. `mergeStateStatus` does not reliably report BEHIND (see header), so
+     * this is the authoritative behindness signal. Returns undefined if the
+     * compare fails, letting the caller fall back rather than crash.
+     */
+    async countBehindBy(number, baseBranch) {
+      const { stdout } = await exec('gh', [
+        'pr', 'view', String(number), '--repo', repository, '--json', 'headRefName', '--jq', '.headRefName',
+      ])
+      const headRefName = stdout.trim()
+      if (!headRefName) return undefined
+
+      const { stdout: compareStdout } = await exec('gh', [
+        'api', `repos/${repository}/compare/${baseBranch}...${headRefName}`, '--jq', '.behind_by',
+      ])
+      const behindBy = Number.parseInt(compareStdout.trim(), 10)
+      return Number.isNaN(behindBy) ? undefined : behindBy
+    },
   }
+}
+
+/**
+ * Fill in `behindBy` (real commit ancestry) for PRs that might be updatable.
+ * Drafts, forks and conflicts are skipped to avoid wasted API calls, and a
+ * failed compare leaves `behindBy` undefined so classification falls back to
+ * `mergeStateStatus` instead of throwing.
+ */
+export async function enrichWithBehindness({ gh, prs, baseBranch, repoOwner }) {
+  const candidates = (prs ?? []).filter(
+    (pr) =>
+      !pr.isDraft &&
+      pr.mergeable !== 'CONFLICTING' &&
+      pr.mergeStateStatus !== 'DIRTY' &&
+      !(repoOwner && pr.headRepositoryOwner?.login && pr.headRepositoryOwner.login !== repoOwner)
+  )
+
+  const behindBy = new Map()
+  for (const pr of candidates) {
+    try {
+      behindBy.set(pr.number, await gh.countBehindBy(pr.number, baseBranch))
+    } catch {
+      behindBy.set(pr.number, undefined)
+    }
+  }
+
+  return (prs ?? []).map((pr) =>
+    behindBy.has(pr.number) ? { ...pr, behindBy: behindBy.get(pr.number) } : pr
+  )
 }
 
 async function main() {
   const gh = makeGh()
   const repoOwner = (process.env.GITHUB_REPOSITORY ?? '').split('/')[0]
+  const baseBranch = process.env.AUTO_UPDATE_BASE_BRANCH || BASE_BRANCH
+  if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+    console.error(
+      'No GitHub token: set GH_TOKEN (the workflow does this). Refusing to run so `gh` cannot prompt for credentials.'
+    )
+    process.exitCode = 1
+    return
+  }
   const prs = await gh.listOpenPrs()
-  const report = await runAutoupdate({ gh, prs, repoOwner })
+  const enriched = await enrichWithBehindness({ gh, prs, baseBranch, repoOwner })
+  const report = await runAutoupdate({
+    gh,
+    prs: enriched,
+    repoOwner,
+    baseBranch,
+    dryRun: Boolean(process.env.AUTO_UPDATE_DRY_RUN),
+  })
 
   const usingPat = Boolean(process.env.AUTO_UPDATE_TOKEN)
   const summary = buildSummary(report, { ciRetrigger: usingPat })

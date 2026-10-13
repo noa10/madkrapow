@@ -9,6 +9,11 @@ on:
     # Every 6 hours, off the top of the hour.
     - cron: "17 1,7,13,19 * * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be updated without calling update-branch"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,8 +35,10 @@ jobs:
       # stale-checked. Falls back to GITHUB_TOKEN (update works, CI re-run
       # does not — the job summary says so).
       - name: Update behind PRs
+        timeout-minutes: 15
         env:
           GH_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
           AUTO_UPDATE_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          AUTO_UPDATE_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: node scripts/pr-autoupdate/pr-autoupdate.mjs

@@ -28,12 +28,19 @@ export function extractStatusSetsFromSql(sql) {
     sets.push(matches.map((q) => q.slice(1, -1)));
   }
 
-  // Also handle the original `CREATE TABLE ... status TEXT ... CHECK (status IN (...))`
+  // Also handle the original `CREATE TABLE orders (... status TEXT ... CHECK (status IN (...)))`.
+  // Scoped to the orders table only — other tables (e.g. payments since migration 049)
+  // carry their own status CHECK constraints that must not be mistaken for the
+  // order-status enum.
   const createRe =
-    /status\s+TEXT[^,]*?CHECK\s*\(\s*status\s+IN\s*\(([^)]+)\)\s*\)/i;
-  const createMatch = sql.match(createRe);
-  if (createMatch) {
-    const matches = createMatch[1].match(/'([^']+)'/g);
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?orders\s*\(([\s\S]*?)\);/gi;
+  let c;
+  while ((c = createRe.exec(sql)) !== null) {
+    const statusMatch = c[1].match(
+      /status\s+TEXT[^,]*?CHECK\s*\(\s*status\s+IN\s*\(([^)]+)\)\s*\)/i
+    );
+    if (!statusMatch) continue;
+    const matches = statusMatch[1].match(/'([^']+)'/g);
     if (matches) sets.unshift(matches.map((q) => q.slice(1, -1)));
   }
 

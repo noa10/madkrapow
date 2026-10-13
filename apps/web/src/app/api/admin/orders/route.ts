@@ -3,7 +3,9 @@ import { requireRole } from '@/lib/admin/require-role';
 import { z } from 'zod';
 
 const ordersQuerySchema = z.object({
-  source: z.enum(['web', 'telegram', 'whatsapp', 'mobile']).optional(),
+  source: z
+    .enum(['web', 'telegram', 'whatsapp', 'mobile', 'counter', 'grabfood', 'foodpanda'])
+    .optional(),
   status: z.string().optional(),
   limit: z.coerce.number().min(1).max(500).optional().default(200),
   offset: z.coerce.number().min(0).optional().default(0),

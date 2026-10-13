@@ -48,8 +48,28 @@ This file contains curated memories, decisions, and learnings that persist acros
 
 ### 2026-03-27: Checkout Workflow Fixes
 - **Address Selection**: Fixed redirect to home page by implementing an inline address input toggle.
-- **Bulk Ordering**: Relaxed Zod validation for delivery address in bulk orders to allow optional fields for initial review.
+- **Bulk Ordering**: Relaxed Zod validation for bulk orders to allow optional fields for initial review.
 - **API Reliability**: Added defensive JSON parsing and detailed validation error reporting to the checkout creation endpoint.
+
+### 2026-09-29: Single-Source-of-Truth POS (channels, legacy import, GrabFood)
+- **Decision**: Made MadKrapow the canonical POS for all sales channels. Migrations
+  048–052 add the channel model (`orders.source` + counter/grabfood/foodpanda,
+  `payments`, `refunds`, `channel_orders`, `channel_products`, `integration_events`,
+  `legacy_import_*`), fix the stale analytics views, and add atomic import RPCs.
+- **Legacy import**: Aliments POS export (816 orders / 1207 items, Desa Subang
+  Permai, 2026-03→2026-05) imported via `scripts/import-legacy-pos/` — verified
+  reconciled to the sen, idempotent (re-run skips all), raw rows in
+  `legacy_import_records`. Refunds are `refunds` rows, never negative orders.
+- **GrabFood**: `lib/grabfood/` + webhook routes (submit-order, order-state) +
+  mark-ready/cancel/menu-sync admin routes + reconciliation cron. Mock transport
+  (`GRABFOOD_ENV=mock`) allows full local testing without Grab credentials.
+- **Key semantics**: money = integer sen everywhere (Grab MYR exponent 2
+  compatible); GrabFood order revenue = subtotal − merchant-funded promos
+  (never `price.total`, which includes delivery fees); no new order statuses —
+  channel states map onto the existing 8-status machine so `lint:parity` holds.
+- **Impact**: webhook idempotency anchored on
+  `channel_orders UNIQUE(channel, external_order_id)`; admin UI source filters
+  and badges cover the new channels; `/pos` counter screen live.
 
 ---
 

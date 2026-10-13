@@ -160,6 +160,30 @@ the **real** menu mapped into a dry-run plan. Sanity-check the first live pull:
 > Reset `HUBBO_MERCHANT_ENABLED=false` and remove the captured `apiKey` when
 > done. Rotate/re-capture if the key is ever exposed.
 
+### 2c. Automated live dry-run (repeatable — prefer this over manual curl)
+
+`apps/web/src/lib/hubbo-merchant/__tests__/live.e2e.test.ts` runs the same §2
+check without a dev server, an admin session, or any database access. It drives
+the **real** `HubboMerchantClient` against `api.aliments.my` and the real
+`mapHubboMenuToLocal`, with Supabase replaced by a fail-loud stub so a dry run
+that ever attempted a write would fail the test.
+
+```sh
+HUBBO_LIVE_E2E=1 \
+HUBBO_MERCHANT_API_KEY=<captured-apiKey> \
+  npx vitest run apps/web/src/lib/hubbo-merchant/__tests__/live.e2e.test.ts
+```
+
+It is skipped unless `HUBBO_LIVE_E2E=1` and a key are both set, so the default
+suite stays hermetic and needs no credential. The backend **rate-limits per
+burst** (two concurrent pulls return `429 too_many_requests` while the next
+sequential request succeeds), so the test makes a single request and retries
+briefly on 429 — don't add parallel pulls to it.
+
+Verified against production: `3 categories, 16/16 items mapped`, `31730001` →
+`1450` sen / `1930` grab sen, snoozed `31730027|31730023|31730028` →
+`isAvailable:false`, and `grabfoodPrice: 0.0` items → `grabfoodPriceCents:null`.
+
 ---
 
 ## Pass criteria
@@ -168,4 +192,9 @@ the **real** menu mapped into a dry-run plan. Sanity-check the first live pull:
 - §1 mock: route returns the mapped dry-run plan over real HTTP; the mock
   received the `apiKey` header; nothing written.
 - §2 live: route returns the real menu mapped correctly; price units confirmed
-  (RM decimals × 100 → sen); adapter reset to OFF afterwards.
+  (RM decimals × 100 → sen); adapter reset to OFF afterwards. §2c automates
+  this and is the preferred regression check.
+- Known limitation: a dry run reports `categoriesUpserted: 0` /
+  `itemsUpserted: 0` by design, so it cannot show the plan size without a real
+  write. Drive `mapHubboMenuToLocal` directly (as §2c does) when you need the
+  counts.

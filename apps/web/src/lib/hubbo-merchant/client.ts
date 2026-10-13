@@ -6,9 +6,11 @@
  *   GET  /api/merchant/menu       full menu incl. per-channel prices + snooze
  *   POST /api/merchant/snoozeMenu time-based sold-out push
  *
- * Every request sends the `apiKey` header + `X-Request-Id` UUID. Responses use
- * the envelope {code, message, body} with the string "200" for success; the
- * client unwraps `body` and throws HubboMerchantApiError otherwise.
+ * Every request sends the `apiKey` header + `X-Request-Id` UUID. The menu
+ * endpoint returns a FLAT envelope ({code, message, menu[], categories[], ...})
+ * — payload at the top level, NOT wrapped in `body` (confirmed on a live pull),
+ * so the client must not read `envelope.body` for it. The string "200" marks
+ * success; the client throws HubboMerchantApiError otherwise.
  */
 
 import {
@@ -16,7 +18,7 @@ import {
   hubboMerchantBaseUrl,
   isHubboMerchantConfigured,
 } from './auth'
-import type { HubboMerchantEnvelope, HubboMerchantMenu, HubboSnoozeMenuItem } from './types'
+import type { HubboMerchantEnvelope, HubboMerchantMenuResponse, HubboSnoozeMenuItem } from './types'
 
 export class HubboMerchantApiError extends Error {
   readonly status: number
@@ -44,7 +46,7 @@ export class HubboMerchantClient {
     this.timeoutMs = options?.timeoutMs ?? 15000
   }
 
-  private async request<T>(opts: HubboMerchantRequestOptions): Promise<T> {
+  private async requestRaw(opts: HubboMerchantRequestOptions): Promise<HubboMerchantEnvelope<unknown>> {
     if (!isHubboMerchantConfigured()) {
       throw new HubboMerchantApiError('Hubbo merchant backend is not configured', 0, opts.path)
     }
@@ -79,7 +81,7 @@ export class HubboMerchantClient {
       )
     }
 
-    const envelope = (await res.json().catch(() => ({}))) as HubboMerchantEnvelope<T>
+    const envelope = (await res.json().catch(() => ({}))) as HubboMerchantEnvelope<unknown>
     if (envelope.code !== undefined && envelope.code !== '200') {
       throw new HubboMerchantApiError(
         `Hubbo merchant ${opts.method} ${opts.path} error ${envelope.code}: ${envelope.message ?? envelope.reason ?? 'unknown'}`,
@@ -87,12 +89,21 @@ export class HubboMerchantClient {
         opts.path
       )
     }
+    return envelope
+  }
+
+  /** Generic request for body-wrapped endpoints (unwraps `envelope.body`). */
+  private async request<T>(opts: HubboMerchantRequestOptions): Promise<T> {
+    const envelope = await this.requestRaw(opts)
     return envelope.body as T
   }
 
-  /** GET /api/merchant/menu — full merchant menu. */
-  async getMenu(): Promise<HubboMerchantMenu> {
-    return this.request<HubboMerchantMenu>({ method: 'GET', path: '/api/merchant/menu' })
+  /** GET /api/merchant/menu — full merchant menu (flat envelope). */
+  async getMenu(): Promise<HubboMerchantMenuResponse> {
+    // Menu payload is FLAT (menu[]/categories[] at top level), not under `body`.
+    // We still reuse requestRaw()'s auth + status + code checking, then return
+    // the flat envelope itself rather than envelope.body.
+    return this.requestRaw({ method: 'GET', path: '/api/merchant/menu' }) as Promise<HubboMerchantMenuResponse>
   }
 
   /** POST /api/merchant/snoozeMenu — push time-based sold-out entries. */

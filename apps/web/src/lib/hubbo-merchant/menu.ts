@@ -7,13 +7,22 @@
  * on the hubbo_pos_external_id columns (distinct from the DRAFT developer-API
  * integration in lib/hubbopos/, which uses source 'hubbopos').
  *
- * Price assumptions (no captured payload yet — verify on first live pull):
- *   - `price` / `grabfoodPrice` are integer sen when present;
- *   - `priceInTwoDecimal` ("12.50") is the fallback, rounded to sen.
+ * Price assumptions — CONFIRMED against a live /api/merchant/menu pull:
+ *   - `price` / `grabfoodPrice` are RM decimals (e.g. 14.5 = RM 14.50); multiply
+ *     by 100 to get cents. `priceInTwoDecimal` is an optional string fallback.
+ *   - `grabfoodPrice` of 0.0 means the item is NOT sold on GrabFood -> null.
+ *   - item/category ids arrive as numbers; coerce to string.
+ *   - item->category linkage is via `subCategories[0].id` (no `categoryId`).
+ *   - `snoozeTill` is epoch-ms; a future value means sold-out (unavailable).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { HubboMerchantMenu, HubboMerchantMenuItem, HubboMerchantCategory } from './types'
+import type {
+  HubboMerchantMenu,
+  HubboMerchantMenuResponse,
+  HubboMerchantMenuItem,
+  HubboMerchantCategory,
+} from './types'
 import { createHubboMerchantClient, type HubboMerchantClient } from './client'
 
 export const HUBBO_MERCHANT_SOURCE = 'aliments_backend'
@@ -38,6 +47,8 @@ export interface LocalItemUpsert {
 export interface HubboMenuToLocalResult {
   categories: LocalCategoryUpsert[]
   items: LocalItemUpsert[]
+  /** Raw item entries examined (flat `menu[]` or nested) before filtering. */
+  scanned: number
   warnings: string[]
 }
 
@@ -50,19 +61,27 @@ export interface HubboMenuPullResult {
   warnings: string[]
 }
 
-/** Hubbo snoozeTill is epoch seconds; active while in the future. */
-function isSnoozedEpoch(snoozeTill: number | undefined, nowMs: number): boolean {
-  if (!snoozeTill || snoozeTill <= 0) return false
-  // Heuristic: values below 10^12 are seconds; above are milliseconds.
+/** Hubbo snoozeTill is epoch-ms; active while in the future. */
+function isSnoozedEpoch(snoozeTill: number | undefined | null, nowMs: number): boolean {
+  if (snoozeTill == null || snoozeTill <= 0) return false
+  // Defensive heuristic: values below 10^12 are seconds; above are ms.
   const ms = snoozeTill < 1e12 ? snoozeTill * 1000 : snoozeTill
   return ms > nowMs
 }
 
+/** Ids arrive as numbers on live payloads; normalise to string. */
+function idToStr(id: string | number | undefined | null): string | null {
+  if (id == null) return null
+  const s = String(id)
+  return s.length > 0 ? s : null
+}
+
+/** `price` is an RM decimal (14.5) -> cents (1450). */
 function priceToCents(
   item: Pick<HubboMerchantMenuItem, 'price' | 'priceInTwoDecimal'>
 ): number | null {
   if (typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0) {
-    return Math.round(item.price)
+    return Math.round(item.price * 100)
   }
   if (typeof item.priceInTwoDecimal === 'string') {
     const parsed = Number.parseFloat(item.priceInTwoDecimal)
@@ -71,9 +90,19 @@ function priceToCents(
   return null
 }
 
+/**
+ * GrabFood selling price is an RM decimal; 0.0 (or missing/invalid) means the
+ * item is NOT offered on GrabFood -> null.
+ */
+function grabfoodPriceToCents(grabfoodPrice: number | null | undefined): number | null {
+  if (typeof grabfoodPrice !== 'number' || !Number.isFinite(grabfoodPrice)) return null
+  if (grabfoodPrice <= 0) return null
+  return Math.round(grabfoodPrice * 100)
+}
+
 /** Pure mapping: Hubbo menu -> local upsert plan (no I/O, fully testable). */
 export function mapHubboMenuToLocal(
-  menu: HubboMerchantMenu,
+  menu: HubboMerchantMenu | HubboMerchantMenuResponse,
   nowMs: number = Date.now()
 ): HubboMenuToLocalResult {
   const warnings: string[] = []
@@ -82,29 +111,33 @@ export function mapHubboMenuToLocal(
 
   const rawCategories = menu.categories ?? []
   rawCategories.forEach((category: HubboMerchantCategory, index: number) => {
-    if (!category.id || !category.name) {
+    const id = idToStr(category.id)
+    if (!id || !category.name) {
       warnings.push(`category#${index}: missing id/name — skipped`)
       return
     }
-    if (seenCategoryIds.has(category.id)) return
-    seenCategoryIds.add(category.id)
+    if (seenCategoryIds.has(id)) return
+    seenCategoryIds.add(id)
     categories.push({
-      externalId: category.id,
+      externalId: id,
       name: category.name,
       sortOrder: index,
     })
   })
 
-  // Items arrive either flat or nested under categories — accept both shapes.
+  // Live responses are flat (menu[]); older/nested shapes put items under
+  // categories. Accept both, preferring the flat list when present.
+  const flatItems = (menu as HubboMerchantMenuResponse).menu
   const rawItems: HubboMerchantMenuItem[] =
-    menu.items && menu.items.length > 0
-      ? menu.items
+    flatItems && flatItems.length > 0
+      ? flatItems
       : rawCategories.flatMap((c) => c.items ?? [])
 
   const items: LocalItemUpsert[] = []
   const skipped = { noIdOrName: 0, noPrice: 0 }
   for (const item of rawItems) {
-    if (!item.id || !item.name) {
+    const externalId = idToStr(item.id)
+    if (!externalId || !item.name) {
       skipped.noIdOrName += 1
       continue
     }
@@ -114,23 +147,23 @@ export function mapHubboMenuToLocal(
       warnings.push(`item "${item.name}": no parsable price — skipped`)
       continue
     }
-    let grabfoodPriceCents: number | null = null
-    if (typeof item.grabfoodPrice === 'number' && Number.isFinite(item.grabfoodPrice)) {
-      grabfoodPriceCents = Math.round(item.grabfoodPrice)
-    }
+    // Live linkage: subCategories[0].id; fall back to any categoryId if present.
+    const subId = item.subCategories?.[0]?.id
+    const externalCategoryId = idToStr(subId) ?? idToStr(item.categoryId)
+    const sku = typeof item.sku === 'string' && item.sku.length > 0 ? item.sku : externalId
     items.push({
-      externalId: item.id,
-      sku: item.sku ?? null,
+      externalId,
+      sku,
       name: item.name,
       description: item.desc ?? null,
       priceCents,
       isAvailable: !isSnoozedEpoch(item.snoozeTill, nowMs),
-      externalCategoryId: item.categoryId ?? null,
-      grabfoodPriceCents,
+      externalCategoryId,
+      grabfoodPriceCents: grabfoodPriceToCents(item.grabfoodPrice),
     })
   }
 
-  const result: HubboMenuToLocalResult = { categories, items, warnings }
+  const result: HubboMenuToLocalResult = { categories, items, scanned: rawItems.length, warnings }
   if (skipped.noIdOrName > 0) {
     result.warnings.push(`${skipped.noIdOrName} item(s) skipped: missing id/name`)
   }
@@ -159,7 +192,12 @@ export async function pullHubboMenu(
     categoriesUpserted: 0,
     itemsUpserted: 0,
     grabfoodMappingsCreated: 0,
-    skipped: [{ reason: 'missing id/name or price', count: (menu.items ?? []).length - plan.items.length }],
+    skipped: [
+      {
+        reason: 'missing id/name or price',
+        count: Math.max(0, plan.scanned - plan.items.length),
+      },
+    ],
     warnings: plan.warnings,
   }
   if (dryRun) {

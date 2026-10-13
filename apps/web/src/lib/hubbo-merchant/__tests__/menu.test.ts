@@ -1,92 +1,72 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { mapHubboMenuToLocal, pullHubboMenu, HUBBO_MERCHANT_SOURCE } from '../menu'
-import type { HubboMerchantMenu } from '../types'
+import type { HubboMerchantMenuResponse } from '../types'
+// Real captured payload from a live /api/merchant/menu pull (see runbook). Proves
+// the response is a FLAT envelope: { code, menu[], categories[] } with RM-decimal
+// prices and item->category linkage via subCategories[0].id.
+import liveResponse from './fixtures/live-menu-response.json'
 
-const NOW = new Date('2026-10-11T02:00:00Z').getTime()
-const FUTURE_SNOOZE = Math.floor((NOW + 60 * 60 * 1000) / 1000) // epoch seconds
+const NOW = new Date('2026-10-13T00:00:00Z').getTime()
 
 describe('mapHubboMenuToLocal', () => {
-  it('maps flat categories + items with grabfood price overrides', () => {
-    const menu: HubboMerchantMenu = {
-      categories: [
-        { id: 'cat-1', name: 'Rice Dishes' },
-        { id: 'cat-2', name: 'Drinks' },
-      ],
-      items: [
-        {
-          id: 'item-1',
-          name: 'Nasi Lemak',
-          desc: 'Fragrant rice',
-          price: 1250,
-          grabfoodPrice: 1300,
-          sku: 'GF-NL-1',
-          categoryId: 'cat-1',
-        },
-        {
-          id: 'item-2',
-          name: 'Teh Ais',
-          priceInTwoDecimal: '3.50',
-          categoryId: 'cat-2',
-        },
-      ],
-    }
-
-    const plan = mapHubboMenuToLocal(menu, NOW)
+  it('maps the live flat envelope: menu[] items, subCategories link, RM-decimal prices', () => {
+    const plan = mapHubboMenuToLocal(liveResponse as unknown as HubboMerchantMenuResponse, NOW)
 
     expect(plan.categories).toEqual([
-      { externalId: 'cat-1', name: 'Rice Dishes', sortOrder: 0 },
-      { externalId: 'cat-2', name: 'Drinks', sortOrder: 1 },
+      { externalId: '31730001', name: 'Set Krapow', sortOrder: 0 },
+      { externalId: '31730002', name: 'Lauk Sahaja', sortOrder: 1 },
+      { externalId: '31730004', name: 'Minuman', sortOrder: 2 },
     ])
-    expect(plan.items[0]).toMatchObject({
-      externalId: 'item-1',
-      sku: 'GF-NL-1',
-      priceCents: 1250,
-      grabfoodPriceCents: 1300,
+    expect(plan.items).toHaveLength(16)
+
+    const first = plan.items.find((i) => i.externalId === '31730001')!
+    expect(first).toMatchObject({
+      name: 'Set Krapow Daging dengan Minuman',
+      priceCents: 1450, // 14.50 RM, not 15 (sen) — the 100x bug is fixed
+      grabfoodPriceCents: 1930, // 19.30 RM
       isAvailable: true,
+      externalCategoryId: '31730001',
     })
-    expect(plan.items[1]).toMatchObject({ priceCents: 350, grabfoodPriceCents: null })
     expect(plan.warnings).toEqual([])
   })
 
-  it('accepts items nested under categories when there is no flat list', () => {
-    const menu: HubboMerchantMenu = {
-      categories: [{ id: 'cat-1', name: 'Rice', items: [{ id: 'item-1', name: 'X', price: 900 }] }],
-    }
-
-    const plan = mapHubboMenuToLocal(menu, NOW)
-
-    expect(plan.items).toHaveLength(1)
-    expect(plan.items[0]).toMatchObject({ externalId: 'item-1', externalCategoryId: null })
+  it('treats grabfoodPrice 0.0 as not-on-GrabFood (null), not 0 cents', () => {
+    const plan = mapHubboMenuToLocal(liveResponse as unknown as HubboMerchantMenuResponse, NOW)
+    const notOnGrab = plan.items.filter(
+      (i) => i.externalId === '31730033' || i.externalId === '31730034'
+    )
+    expect(notOnGrab).toHaveLength(2)
+    for (const item of notOnGrab) expect(item.grabfoodPriceCents).toBeNull()
   })
 
-  it('treats a future snoozeTill (epoch seconds) as unavailable', () => {
-    const menu: HubboMerchantMenu = {
-      categories: [{ id: 'cat-1', name: 'Rice' }],
-      items: [
-        { id: 'item-1', name: 'Snoozed', price: 900, snoozeTill: FUTURE_SNOOZE, categoryId: 'cat-1' },
-        { id: 'item-2', name: 'Available', price: 900, categoryId: 'cat-1' },
-      ],
+  it('treats a future snoozeTill (epoch ms) as unavailable', () => {
+    const plan = mapHubboMenuToLocal(liveResponse as unknown as HubboMerchantMenuResponse, NOW)
+    for (const id of ['31730027', '31730023', '31730028']) {
+      expect(plan.items.find((i) => i.externalId === id)!.isAvailable).toBe(false)
     }
+    expect(plan.items.find((i) => i.externalId === '31730001')!.isAvailable).toBe(true)
+  })
 
+  it('accepts items nested under categories when there is no flat menu[] list', () => {
+    const menu: HubboMerchantMenuResponse = {
+      categories: [{ id: 1, name: 'Rice', items: [{ id: 10, name: 'X', price: 9.0 }] }],
+    }
     const plan = mapHubboMenuToLocal(menu, NOW)
-
-    expect(plan.items[0].isAvailable).toBe(false)
-    expect(plan.items[1].isAvailable).toBe(true)
+    expect(plan.items).toHaveLength(1)
+    expect(plan.items[0]).toMatchObject({ externalId: '10', priceCents: 900, externalCategoryId: null })
   })
 
   it('skips malformed entries and reports them as warnings', () => {
-    const menu: HubboMerchantMenu = {
+    const menu: HubboMerchantMenuResponse = {
       categories: [{ name: 'no id' }],
-      items: [
-        { name: 'no id', price: 100 },
-        { id: 'item-2', name: 'no price' },
-        { id: 'item-3', name: 'bad price', priceInTwoDecimal: 'abc' },
+      menu: [
+        { name: 'no id', price: 5 },
+        { id: 2, name: 'no price' },
+        { id: 3, name: 'bad price', priceInTwoDecimal: 'abc' },
       ],
     }
-
     const plan = mapHubboMenuToLocal(menu, NOW)
-
     expect(plan.categories).toHaveLength(0)
     expect(plan.items).toHaveLength(0)
     expect(plan.warnings.join(' ')).toContain('no parsable price')
@@ -94,16 +74,16 @@ describe('mapHubboMenuToLocal', () => {
 })
 
 describe('pullHubboMenu', () => {
-  const MENU: HubboMerchantMenu = {
-    categories: [{ id: 'cat-1', name: 'Rice' }],
-    items: [
+  const MENU: HubboMerchantMenuResponse = {
+    categories: [{ id: 1, name: 'Rice' }],
+    menu: [
       {
-        id: 'item-1',
+        id: 10,
         name: 'Nasi Lemak',
-        price: 1250,
-        grabfoodPrice: 1300,
+        price: 12.5,
+        grabfoodPrice: 13.0,
         sku: 'GF-NL-1',
-        categoryId: 'cat-1',
+        subCategories: [{ id: 1 }],
       },
     ],
   }
@@ -152,9 +132,10 @@ describe('pullHubboMenu', () => {
 
   it('dry run fetches and maps without writing', async () => {
     const { client, calls } = supabaseMock()
-
-    const result = await pullHubboMenu(client as unknown as SupabaseClient, { dryRun: true, client: fakeClient })
-
+    const result = await pullHubboMenu(client as unknown as SupabaseClient, {
+      dryRun: true,
+      client: fakeClient,
+    })
     expect(result.dryRun).toBe(true)
     expect(result.categoriesUpserted).toBe(0)
     expect(result.itemsUpserted).toBe(0)
@@ -163,9 +144,7 @@ describe('pullHubboMenu', () => {
 
   it('upserts categories/items and seeds the GrabFood channel mapping', async () => {
     const { client, calls } = supabaseMock()
-
     const result = await pullHubboMenu(client as unknown as SupabaseClient, { client: fakeClient })
-
     expect(result.dryRun).toBe(false)
     expect(result.categoriesUpserted).toBe(1)
     expect(result.itemsUpserted).toBe(1)
@@ -179,14 +158,14 @@ describe('pullHubboMenu', () => {
     const itemUpsert = calls.find((c) => c.table === 'menu_items' && c.op === 'insert')
     expect(itemUpsert?.payload).toMatchObject({
       name: 'Nasi Lemak',
-      price_cents: 1250,
+      price_cents: 1250, // 12.50 RM
       hubbo_pos_sku: 'GF-NL-1',
     })
     const mappingInsert = calls.find((c) => c.table === 'channel_products')
     expect(mappingInsert?.payload).toMatchObject({
       channel: 'grabfood',
       external_item_id: 'GF-NL-1',
-      price_cents: 1300,
+      price_cents: 1300, // 13.00 RM
     })
   })
 })

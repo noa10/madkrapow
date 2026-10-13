@@ -1,4 +1,4 @@
-import { Banknote, Bike, CreditCard, Hourglass, Store, Truck } from "lucide-react"
+import { Banknote, Bike, CreditCard, Hourglass, Store, Truck, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   getDeliveryBadge,
@@ -17,6 +17,18 @@ const PAYMENT_STYLE: Record<PaymentProvider, { className: string; Icon: typeof C
     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
     Icon: Banknote,
   },
+  qr_pay: {
+    className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    Icon: Banknote,
+  },
+  grabfood: {
+    className: "bg-green-500/15 text-green-400 border-green-500/30",
+    Icon: Wallet,
+  },
+  foodpanda: {
+    className: "bg-pink-500/15 text-pink-400 border-pink-500/30",
+    Icon: Wallet,
+  },
   pending: {
     className: "bg-amber-500/15 text-amber-400 border-amber-500/30",
     Icon: Hourglass,
@@ -34,6 +46,10 @@ const DELIVERY_STYLE: Record<DeliveryProvider, { className: string; Icon: typeof
   },
   in_house: {
     className: "bg-teal-500/15 text-teal-400 border-teal-500/30",
+    Icon: Bike,
+  },
+  platform: {
+    className: "bg-violet-500/15 text-violet-400 border-violet-500/30",
     Icon: Bike,
   },
   pending: {

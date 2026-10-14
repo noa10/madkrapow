@@ -113,6 +113,15 @@ This file contains curated memories, decisions, and learnings that persist acros
   lifecycle.
 - **Kept**: mapping CRUD, snooze, the read-only menu trace, store pause, and the
   single-item push used by snooze — all independent of the batch runner.
+- **Review follow-up (#423)**: the *local-only contract* is now explicit in the
+  `PATCH /menu/mapping` docstring, the `/admin/grabfood` copy, and the docs — a
+  price/availability edit is saved locally and only reaches Grab as part of the
+  next per-item write (snooze/restore carries price + availability together);
+  no route pushes a price edit on its own. Also dropped the never-consumed
+  category scaffolding (`fetchChannelCategoryMappings` +
+  `ChannelCategoryMappingRow`) and the write-only
+  `menu_item_category_id`/`external_category_id` fields on `GrabMenuMappingRow`.
+  The trace button is **kept** as read-only diagnostics (answers review ask #2).
 
 ### 2026-10-14: Log sanitiser is now one shared module
 - **Decision**: All untrusted values reach loggers through a single

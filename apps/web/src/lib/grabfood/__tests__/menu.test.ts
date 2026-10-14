@@ -23,8 +23,6 @@ function mapping(overrides: Partial<GrabMenuMappingRow> = {}): GrabMenuMappingRo
     menu_item_price_cents: 1250,
     menu_item_is_available: true,
     menu_item_snooze_till: null,
-    menu_item_category_id: 'cat-1',
-    external_category_id: null,
     external_item_id: 'grab-item-1',
     external_name: 'Nasi Lemak',
     channel_price_cents: null,

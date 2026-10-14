@@ -4,8 +4,11 @@ import { createGrabFoodClient } from '@/lib/grabfood/client'
 import { env } from '@/lib/validators/env'
 
 /**
- * Menu sync trace (admin/manager): what Grab last saw — the sync outcome on
- * Grab's side after a push + notification. Mock mode returns synthetic state.
+ * Read-only menu trace (admin/manager): what Grab last recorded for this
+ * merchant's menu. With the batch push descoped there is no push +
+ * notification flow — the trace reflects per-item writes (snooze/restore)
+ * and whatever is maintained on Grab's own side. Mock mode returns synthetic
+ * state.
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(req, ['admin', 'manager'])

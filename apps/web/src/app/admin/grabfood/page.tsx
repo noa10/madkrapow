@@ -175,7 +175,7 @@ export default function GrabFoodAdminPage() {
     }
     addToast({
       type: 'info',
-      title: 'Last menu sync on Grab',
+      title: 'Last menu update seen on Grab',
       description: `${data.trace?.status ?? 'unknown'}${data.trace?.lastSyncTime ? ` at ${data.trace.lastSyncTime}` : ''}`,
     })
   }, [getToken, addToast])
@@ -303,7 +303,9 @@ export default function GrabFoodAdminPage() {
       <div>
         <h1 className="text-2xl font-bold">GrabFood Channel</h1>
         <p className="text-sm text-muted-foreground">
-          Mapping, sold-out (snooze), menu trace and store controls. Environment:{' '}
+          Mapping, sold-out (snooze), menu trace and store controls. Only
+          sold-out/restored writes reach Grab — the catalogue (items, prices) is
+          maintained on Grab&apos;s side. Environment:{' '}
           <Badge variant="outline">mock or live per GRABFOOD_ENV</Badge>
         </p>
       </div>
@@ -311,7 +313,7 @@ export default function GrabFoodAdminPage() {
       <section className="flex flex-wrap items-center gap-3">
         <Button variant="outline" onClick={showTrace}>
           <ScanSearch className="h-4 w-4 mr-2" />
-          Check sync trace
+          Check menu trace
         </Button>
         <Button variant="outline" onClick={togglePause} disabled={togglingPause || storeOpened === null}>
           {storeOpened === false ? (

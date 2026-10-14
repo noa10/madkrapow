@@ -1,9 +1,10 @@
 /**
- * Menu synchronization: MadKrapow product (master) -> GrabFood records.
+ * Menu record updates: MadKrapow product (master) -> GrabFood records.
  *
  * channel_products holds the per-channel mapping (external_item_id, channel
- * price override, availability, snooze). This module builds the record updates
- * Grab's API consumes (PUT /partner/v1/menu) and surfaces mapping gaps.
+ * price override, availability, snooze). This module builds the per-item
+ * record updates Grab's API consumes (PUT /partner/v1/menu) — the only menu
+ * writes this integration makes; the batch catalogue push is descoped.
  *
  * Grab semantics (per the official OpenAPI models):
  *   - availableStatus: AVAILABLE | UNAVAILABLE | UNAVAILABLETODAY
@@ -16,7 +17,6 @@
  * and hard unavailable flags become UNAVAILABLE + maxStock 0.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { GrabAvailableStatus, GrabMenuRecordUpdate } from './types'
 
 /** Malaysia never observes DST: MYT is a fixed UTC+8 offset. */
@@ -29,68 +29,11 @@ export interface GrabMenuMappingRow {
   menu_item_price_cents: number
   menu_item_is_available: boolean
   menu_item_snooze_till: string | null
-  menu_item_category_id: string | null
-  external_category_id: string | null
   external_item_id: string | null
   external_name: string | null
   channel_price_cents: number | null
   channel_is_available: boolean
   channel_snooze_till: string | null
-}
-
-export interface ChannelCategoryMappingRow {
-  channel_category_id: string
-  category_id: string
-  category_name: string
-  category_sort_order: number
-  category_is_active: boolean
-  external_category_id: string | null
-  external_name: string | null
-  sort_order: number
-}
-
-/** Category-level mapping (channel_categories ⋈ categories) for the admin UI. */
-export async function fetchChannelCategoryMappings(
-  supabase: SupabaseClient
-): Promise<{ categories: ChannelCategoryMappingRow[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from('channel_categories')
-    .select(
-      `
-      id,
-      external_category_id,
-      external_name,
-      sort_order,
-      categories (
-        id,
-        name,
-        sort_order,
-        is_active
-      )
-    `
-    )
-    .eq('channel', 'grabfood')
-
-  if (error) return { categories: [], error: error.message }
-
-  const categories: ChannelCategoryMappingRow[] = (data ?? []).map((row) => {
-    const raw = row.categories as
-      | { id: string; name: string; sort_order: number; is_active: boolean }
-      | Array<{ id: string; name: string; sort_order: number; is_active: boolean }>
-      | null
-    const category = Array.isArray(raw) ? raw[0] : raw
-    return {
-      channel_category_id: row.id,
-      category_id: category?.id ?? '',
-      category_name: category?.name ?? '(deleted category)',
-      category_sort_order: category?.sort_order ?? 0,
-      category_is_active: category?.is_active ?? false,
-      external_category_id: row.external_category_id,
-      external_name: row.external_name,
-      sort_order: row.sort_order,
-    }
-  })
-  return { categories, error: null }
 }
 
 /** A snooze is active while `snoozeTill` is in the future. */
@@ -180,7 +123,11 @@ export function buildMenuRecordUpdates(
     })
 }
 
-/** Item-level update when the POS changes one product's price or stock. */
+/**
+ * Per-item record for a single product's state — used by the snooze routes.
+ * Carries the stored price (channel override when set, else master price)
+ * alongside availability, so the next write syncs both.
+ */
 export function buildSingleItemUpdate(
   mapping: GrabMenuMappingRow,
   merchantId: string,

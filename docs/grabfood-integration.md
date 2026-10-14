@@ -31,8 +31,9 @@ Menu (admin action, /admin/grabfood):
                         per-item PUT /partner/v1/menu (same-day snoozes push
                         UNAVAILABLETODAY; longer/hard ones UNAVAILABLE +
                         maxStock 0); availability is computed at read time
-  GET  /api/integrations/grabfood/menu/trace   last sync outcome on Grab's side
+  GET  /api/integrations/grabfood/menu/trace   what Grab last recorded for the menu
   PATCH/POST/DELETE /api/integrations/grabfood/menu/mapping   mapping CRUD
+                        (saved locally — no catalogue push to Grab)
   GET/POST /api/integrations/grabfood/store/pause   store pause toggle
 
 The full-menu batch push (PUT /partner/v1/batch/menu) was descoped on
@@ -102,7 +103,11 @@ Products are mapped per channel in `channel_products` (admin-managed):
 - `menu_item_id` → the master product (counter/web price lives on `menu_items`)
 - `external_item_id` → Grab's `merchantItemID` (from the menu setup on Grab's
   side or Get Menu response)
-- `price_cents` → optional channel price (GrabFood RM13 vs counter RM10)
+- `price_cents` → optional channel price (GrabFood RM13 vs counter RM10).
+  Mapping/price edits via `PATCH /menu/mapping` are **saved locally only** —
+  with the catalogue push descoped nothing propagates them on their own; a
+  stored price reaches Grab only as part of the next per-item write
+  (snooze/restore), which carries price and availability together
 - `is_available` → ANDed with the master availability when pushing updates
 
 Unmapped items cause the submit-order webhook to return 5xx so Grab retries
@@ -208,7 +213,8 @@ snooze push against `api.aliments.my`), not a GrabFood session proxy.
   day without another push); longer/hard unavailable states push `UNAVAILABLE`
   with `maxStock: 0` as Grab requires.
 - **Mapping admin** — `/admin/grabfood`: unmapped-item warnings, inline
-  mapping (POST), external id / price override / availability edits (PATCH),
+  mapping (POST), external id / price override / availability edits (PATCH —
+  saved locally; the catalogue itself is maintained on Grab's side),
   unmap (DELETE), snooze presets (30/60/120 min) + restore, trace, and
   the store pause toggle.
 - **Store controls** — pause/reopen via `PUT /partner/v1/merchant/pause`,

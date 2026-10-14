@@ -38,6 +38,11 @@ const CLAIM_WINDOW_HOURS = 24
 const ACTIVE_STATUSES = ['paid', 'preparing', 'ready', 'delivering', 'completed']
 const AUTO_PRINT_SOURCES = ['counter', 'grabfood']
 
+/** Postgres foreign-key violation: the referenced order no longer exists. */
+const PG_FOREIGN_KEY_VIOLATION = '23503'
+/** Postgres unique violation: another bridge claimed the job first. */
+const PG_UNIQUE_VIOLATION = '23505'
+
 export async function GET(req: NextRequest) {
   const authError = assertBridgeAuth(req)
   if (authError) return authError
@@ -64,6 +69,16 @@ export async function GET(req: NextRequest) {
   }> = []
 
   for (const row of orders ?? []) {
+    // The order may have been deleted/voided since the query above. Confirm it
+    // still exists before doing the (more expensive) render work; the marker
+    // insert below re-checks, since a delete can land in between.
+    const { data: liveOrder } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('id', row.id)
+      .maybeSingle()
+    if (!liveOrder) continue
+
     for (const type of jobTypesForOrder(row.source as string)) {
       const marker = printedMarkerFor(type)
       const { data: existing } = await supabase
@@ -84,6 +99,13 @@ export async function GET(req: NextRequest) {
         new_value: { via: 'bridge' },
       })
       if (markerError) {
+        const code = (markerError as { code?: string }).code
+        // The order was deleted (or voided and purged) between the query above
+        // and this claim — routine churn, not a failure worth alerting on.
+        // Skip it silently instead of logging a scary FK violation every poll.
+        if (code === PG_FOREIGN_KEY_VIOLATION) continue
+        // Another bridge won the race; its marker already guards the job.
+        if (code === PG_UNIQUE_VIOLATION) continue
         console.error('[Print] failed to claim job:', markerError.message)
         continue
       }

@@ -47,16 +47,34 @@ const ITEM_ROW = {
 interface Opts {
   orders?: unknown[]
   printedMarkerExists?: boolean
+  /** Returned by loadPrintOrder's `orders` lookup (the render path). */
   orderRow?: unknown
+  /** Returned by the claim route's pre-flight existence check. */
+  liveOrderRow?: unknown
+  /** Simulate a failing marker insert (e.g. a Postgres error code). */
+  markerInsertError?: { code?: string; message: string } | null
 }
 
+/** `orders` returning a row is not enough — `.maybeSingle()` gives the live row. */
 function buildMockClient(opts: Opts = {}) {
-  const insertedMarkers: unknown[] = []
+  const attemptedInserts: Array<{ table: string; payload: unknown }> = []
   return {
-    insertedMarkers,
+    attemptedInserts,
     from(table: string) {
-      const builder = {
-        select(_cols?: string) {
+      const builder: {
+        cols?: string
+        select: (cols?: string) => unknown
+        eq: (col: string, val: unknown) => unknown
+        in: (col: string, vals: unknown[]) => unknown
+        gte: (col: string, val: unknown) => unknown
+        order: (col: string, opts?: unknown) => unknown
+        limit: (n: number) => unknown
+        insert: (payload: unknown) => unknown
+        maybeSingle: () => Promise<{ data: unknown; error: null }>
+        then: (resolve: (v: { data: unknown; error: null }) => void) => void
+      } = {
+        select(cols?: string) {
+          builder.cols = cols
           return builder
         },
         eq(_col: string, _val: unknown) {
@@ -75,15 +93,25 @@ function buildMockClient(opts: Opts = {}) {
           return builder
         },
         insert(payload: unknown) {
-          insertedMarkers.push(payload)
+          attemptedInserts.push({ table, payload })
           return {
+            // Awaiting the insert yields `{ error }`; chaining `.select().single()`
+            // is only used by callers that want the inserted row back.
+            error: opts.markerInsertError ?? null,
             select: () => ({ single: async () => ({ data: { id: 'evt-1' }, error: null }) }),
           }
         },
-        maybeSingle: async () => ({
-          data: table === 'orders' ? (opts.orderRow ?? null) : null,
-          error: null,
-        }),
+        maybeSingle: async () => {
+          // Two call sites hit `orders.maybeSingle()`: the claim route's
+          // pre-flight existence check (`select('id')`) and loadPrintOrder
+          // (`select('<many cols>')`). Distinguish them so a test can express
+          // "loadable but already deleted" and exercise the pre-flight alone.
+          const isPreflight = builder.cols === 'id'
+          if (table === 'orders') {
+            return { data: (isPreflight ? opts.liveOrderRow : opts.orderRow) ?? null, error: null }
+          }
+          return { data: null, error: null }
+        },
         then(resolve: (v: { data: unknown; error: null }) => void) {
           if (table === 'orders') resolve({ data: opts.orders ?? [], error: null })
           else if (table === 'order_items') resolve({ data: [ITEM_ROW], error: null })
@@ -99,6 +127,11 @@ function buildMockClient(opts: Opts = {}) {
   }
 }
 
+const markersOf = (client: { attemptedInserts: Array<{ table: string; payload: unknown }> }) =>
+  client.attemptedInserts
+    .filter((i) => i.table === 'order_events')
+    .map((i) => (i.payload as { event_type: string }).event_type)
+
 function bridgeRequest(url: string): Request {
   return new Request(url, {
     headers: { authorization: `Bearer ${envMock.PRINT_BRIDGE_SECRET}` },
@@ -111,7 +144,7 @@ beforeEach(() => {
 
 describe('GET /api/print/jobs/claim', () => {
   it('returns jobs with ESC/POS bytes and claims them with printed markers', async () => {
-    const client = buildMockClient({ orders: [ORDER_ROW], orderRow: ORDER_ROW })
+    const client = buildMockClient({ orders: [ORDER_ROW], liveOrderRow: ORDER_ROW, orderRow: ORDER_ROW })
     serviceClientMock.mockReturnValue(client)
 
     const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
@@ -128,8 +161,8 @@ describe('GET /api/print/jobs/claim', () => {
       // Base64 decodes and starts with ESC @.
       expect(Array.from(Buffer.from(job.bytes, 'base64')).slice(0, 2)).toEqual([0x1b, 0x40])
     }
-    expect(client.insertedMarkers).toHaveLength(2)
-    expect(client.insertedMarkers.map((m) => (m as { event_type: string }).event_type).sort()).toEqual([
+    expect(markersOf(client)).toHaveLength(2)
+    expect(markersOf(client).sort()).toEqual([
       'printed_kitchen_docket',
       'printed_receipt',
     ])
@@ -143,7 +176,103 @@ describe('GET /api/print/jobs/claim', () => {
     const json = await res.json()
 
     expect(json.jobs).toHaveLength(0)
-    expect(client.insertedMarkers).toHaveLength(0)
+    expect(markersOf(client)).toHaveLength(0)
+  })
+
+  it('skips an order that vanished after the query, without attempting a claim', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      // Listed by the initial query, then deleted before the pre-flight check.
+      // loadPrintOrder would still succeed, so if the pre-flight check is ever
+      // removed this test fails: the insert would run and a job would be emitted.
+      const client = buildMockClient({
+        orders: [ORDER_ROW],
+        liveOrderRow: null,
+        orderRow: ORDER_ROW,
+      })
+      serviceClientMock.mockReturnValue(client)
+
+      const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+      const json = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(json.jobs).toHaveLength(0)
+      expect(markersOf(client)).toHaveLength(0)
+      expect(errorSpy).not.toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('treats an FK violation on the marker insert as a vanished order, not an error', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      // Exists for the pre-flight check, then deleted before the marker insert —
+      // this is the race seen in production (23503).
+      const client = buildMockClient({
+        orders: [ORDER_ROW],
+        liveOrderRow: ORDER_ROW,
+        orderRow: ORDER_ROW,
+        markerInsertError: {
+          code: '23503',
+          message:
+            'insert or update on table "order_events" violates foreign key constraint "order_events_order_id_fkey"',
+        },
+      })
+      serviceClientMock.mockReturnValue(client)
+
+      const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+      const json = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(json.jobs).toHaveLength(0)
+      // The insert was attempted (it failed) — proving we hit the FK path.
+      expect(markersOf(client).length).toBeGreaterThan(0)
+      expect(errorSpy).not.toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('treats a unique violation as a lost race, without logging an error', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const client = buildMockClient({
+        orders: [ORDER_ROW],
+        liveOrderRow: ORDER_ROW,
+        orderRow: ORDER_ROW,
+        markerInsertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+      })
+      serviceClientMock.mockReturnValue(client)
+
+      const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+      const json = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(json.jobs).toHaveLength(0)
+      expect(errorSpy).not.toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('still logs genuinely unexpected claim failures', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const client = buildMockClient({
+        orders: [ORDER_ROW],
+        liveOrderRow: ORDER_ROW,
+        orderRow: ORDER_ROW,
+        markerInsertError: { code: '08006', message: 'connection failure' },
+      })
+      serviceClientMock.mockReturnValue(client)
+
+      const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+      expect(res.status).toBe(200)
+      expect(errorSpy).toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
   it('rejects a wrong bridge secret with 401', async () => {

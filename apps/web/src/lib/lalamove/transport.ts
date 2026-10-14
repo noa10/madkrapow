@@ -1,10 +1,7 @@
 import type { LalamoveApiResponse } from './types'
 import { LalamoveApiError, LalamoveRateLimitError, LalamoveAuthError } from './types'
 import { buildAuthHeaders, type HttpMethod } from './auth'
-
-function sanitizeForLog(value: string): string {
-  return value.replace(/\n|\r/g, '')
-}
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 
 export interface LalamoveTransportConfig {
   apiKey: string

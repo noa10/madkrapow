@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { getSignatureHeaderName, verifyWebhookSignature } from '@/lib/grabfood/verify'
 import { handleOrderState } from '../handlers'
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 import type { GrabOrderStatePayload } from '@/lib/grabfood/types'
 
 /**
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
   const result = await handleOrderState(supabase, payload)
 
   if (result.status === 'error') {
-    console.error('[GrabFood] order-state failed:', result.detail)
+    // Detail can carry a PostgREST/upstream message; keep it on one log line.
+    console.error('[GrabFood] order-state failed:', sanitizeForLog(result.detail))
     return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
   }
 

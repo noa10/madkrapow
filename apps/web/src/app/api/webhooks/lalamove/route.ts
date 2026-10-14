@@ -10,10 +10,7 @@ import {
   handleOrderReplaced,
   handlePodStatusChanged,
 } from './handlers'
-
-function sanitizeForLog(value: string): string {
-  return value.replace(/\n|\r/g, '')
-}
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json({ success: true }, { status: 200 })

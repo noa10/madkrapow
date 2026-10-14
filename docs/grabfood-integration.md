@@ -169,3 +169,12 @@ payloads, or a product decision):
   `payments`, so a counter order paid by QR Pay currently renders the generic
   Cash badge. Join `payments(method)` (or denormalise the method) to display
   QR Pay.
+
+## Related analysis
+
+The Hubbo POS (Aliments) app was reverse-engineered to inform the full-menu push,
+snooze/availability, accept-order and printing work: see
+[docs/hubbo-re-findings.md](./hubbo-re-findings.md). Key outcome: the Hubbo app
+holds no GrabFood credentials — GrabFood is mediated by Hubbo's backend — so the
+interim pre-onboarding path is the `lib/hubbo-merchant/` adapter (menu pull +
+snooze push against `api.aliments.my`), not a GrabFood session proxy.

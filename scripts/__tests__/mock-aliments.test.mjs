@@ -6,7 +6,7 @@
  * prices, subCategories linkage, epoch-ms snooze) so the manual dry-run path
  * cannot silently stop representing the real API again.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { MOCK_MENU, createMockAlimentsServer } from '../mock-aliments.mjs'
 
 let server
@@ -44,6 +44,24 @@ describe('mock alimentsBackend harness', () => {
     // Header echo proves the call reached the harness (not a proxy/cache).
     expect(lastHeaders.apikey).toBe('dummy')
     expect(lastHeaders['x-request-id']).toBe('req-1')
+  })
+
+  it('never logs the apiKey in clear text (CodeQL: clear-text logging)', async () => {
+    const logged = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => logged.push(args.join(' ')))
+    try {
+      await fetch(`${baseUrl}/api/merchant/menu`, {
+        headers: { apiKey: 'super-secret-credential-value', 'X-Request-Id': 'req-2' },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+
+    const output = logged.join('\n')
+    // Identity stays visible for debugging, but the credential must not.
+    expect(output).not.toContain('super-secret-credential-value')
+    expect(output).toContain('supe…alue')
+    expect(output).toContain('X-Request-Id=req-2')
   })
 
   it('exposes a menu whose shape matches the live wire format', async () => {

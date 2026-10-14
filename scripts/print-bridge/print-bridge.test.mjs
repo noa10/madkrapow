@@ -183,3 +183,40 @@ describe('bridge HTTP surface', () => {
     )
   })
 })
+
+describe('log injection hardening', () => {
+  it('strips control characters from externally-supplied job ids and errors', async () => {
+    const logged = []
+    const errors = []
+    const hostile = {
+      ...JOB,
+      // Real newlines here would forge extra log lines (CodeQL: log injection).
+      job_id: 'order-1\n[print-bridge] FORGED ERROR LINE',
+    }
+    const bridge = startBridge(
+      { ...CONFIG, autoPrint: false },
+      {
+        log: (...a) => logged.push(a.join(' ')),
+        logError: (...a) => errors.push(a.join(' ')),
+        printer: async () => {
+          throw new Error('boom\n[print-bridge] FORGED FROM PRINTER ERROR')
+        },
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ ok: true, jobs: [hostile] }), { status: 200 }),
+      }
+    )
+    cleanups.push(bridge.stopBridge)
+
+    await bridge.pollOnce()
+
+    const output = [...logged, ...errors].join('\n')
+    // The payload text survives, but it can no longer start a line of its own —
+    // the injected "\n[print-bridge] ..." is neutralised to "?[print-bridge] ...".
+    expect(output).toContain('order-1?[print-bridge] FORGED ERROR LINE')
+    expect(output).toContain('boom?[print-bridge] FORGED FROM PRINTER ERROR')
+    // One log line per call: no forged extras from the embedded newlines.
+    expect(logged).toHaveLength(0)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).not.toContain('\n')
+  })
+})

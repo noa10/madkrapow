@@ -66,6 +66,17 @@ export function decodeClaimResponse(payload) {
 }
 
 /**
+ * Strip control characters from anything logged that originates outside this
+ * process (claim payloads, printer errors, HTTP status text) so a crafted value
+ * cannot forge extra log lines, then bound the length.
+ */
+function safeLogValue(value) {
+  const str = String(value ?? '')
+  const stripped = str.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?')
+  return stripped.length > 200 ? `${stripped.slice(0, 197)}...` : stripped
+}
+
+/**
  * Start the bridge. Returns the running HTTP server and handles for tests.
  * `deps` is injectable: fetchImpl, printer (printBytes), setTimeoutImpl.
  */
@@ -91,7 +102,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
     await printer(new Uint8Array(bytes), config)
     lastPrintAt = new Date().toISOString()
     printedCount += 1
-    log(`printed ${task.jobId} (${bytes.length} bytes)`)
+    log(`printed ${safeLogValue(task.jobId)} (${bytes.length} bytes)`)
   }
 
   async function withRetry(task) {
@@ -100,10 +111,10 @@ export function startBridge(configOverrides = {}, deps = {}) {
     } catch (err) {
       task.attempts = (task.attempts ?? 0) + 1
       if (task.attempts >= 5) {
-        logError(`giving up on ${task.jobId} after ${task.attempts} attempts:`, err.message)
+        logError(`giving up on ${safeLogValue(task.jobId)} after ${task.attempts} attempts:`, safeLogValue(err.message))
         return
       }
-      logError(`print failed for ${task.jobId} (attempt ${task.attempts}), will retry:`, err.message)
+      logError(`print failed for ${safeLogValue(task.jobId)} (attempt ${task.attempts}), will retry:`, safeLogValue(err.message))
       retryQueue.push(task)
     }
   }
@@ -121,7 +132,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
       }
       payload = await res.json()
     } catch (err) {
-      logError('claim unreachable:', err.message)
+      logError('claim unreachable:', safeLogValue(err.message))
       return
     }
     const tasks = decodeClaimResponse(payload)
@@ -214,7 +225,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
           await printer(new Uint8Array(bytes), config)
           lastPrintAt = new Date().toISOString()
           printedCount += 1
-          log(`printed ${orderId}:${type} (${bytes.length} bytes)`)
+          log(`printed ${safeLogValue(orderId)}:${safeLogValue(type)} (${bytes.length} bytes)`)
           res.writeHead(200, { 'Content-Type': 'application/json', ...cors })
           res.end(JSON.stringify({ ok: true, type: rendered.type, order_number: rendered.order_number }))
         } catch (err) {

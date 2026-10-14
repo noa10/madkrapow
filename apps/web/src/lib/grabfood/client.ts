@@ -11,15 +11,26 @@
  *   POST /partner/v1/order/prepare       accept/reject order
  *   POST /partner/v1/orders/mark         mark order ready
  *   PUT  /partner/v1/order/cancel        cancel order
+ *   GET  /partner/v1/order/cancelable    check order cancelable
+ *   PUT  /partner/v1/order/readytime     update promised ready time
  *   GET  /partner/v1/orders              list orders (<= 30 days)
  *   PUT  /partner/v1/menu                update menu record
  *   PUT  /partner/v1/batch/menu          batch update menu records (<= 200)
  *   POST /partner/v1/merchant/menu/notification  notify menu changed
+ *   GET  /partner/v1/merchant/menu/trace last menu sync on Grab's side
+ *   PUT  /partner/v1/merchant/pause      pause/unpause the store
+ *   GET  /partner/v1/merchants/{id}/store/status  store open state
  */
 
 import { env } from '@/lib/validators/env'
 import { getAccessToken, clearGrabFoodTokenCache, isGrabFoodConfigured } from './auth'
-import type { GrabListOrdersResponse, GrabMenuRecordUpdate } from './types'
+import type {
+  GrabBatchMenuEntry,
+  GrabListOrdersResponse,
+  GrabMenuRecordUpdate,
+  GrabMenuSyncTrace,
+  GrabStoreStatus,
+} from './types'
 
 export type GrabFoodEnvironment = 'mock' | 'staging' | 'production'
 
@@ -157,9 +168,14 @@ export class GrabFoodClient {
     await this.request({ method: 'PUT', path: '/partner/v1/menu', body: record })
   }
 
-  /** PUT /partner/v1/batch/menu — up to 200 records, rate limit 1 req/s. */
-  async batchUpdateMenuRecords(records: GrabMenuRecordUpdate[]): Promise<void> {
-    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: records })
+  /**
+   * PUT /partner/v1/batch/menu — one HTTP call per batch entry, each entry
+   * carrying up to 200 menuEntities of one record type. Entries are wrapped
+   * via toBatchMenuEntries() — the endpoint rejects flat record arrays.
+   * Rate limit: 1 req/s (callers must space batches).
+   */
+  async batchUpdateMenuRecords(entries: GrabBatchMenuEntry[]): Promise<void> {
+    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: entries })
   }
 
   /** POST /partner/v1/merchant/menu/notification — tell Grab to pull the menu. */
@@ -168,6 +184,51 @@ export class GrabFoodClient {
       method: 'POST',
       path: '/partner/v1/merchant/menu/notification',
       body: { merchantID: merchantId },
+    })
+  }
+
+  /** GET /partner/v1/merchant/menu/trace — inspect the last menu sync on Grab's side. */
+  async getMenuSyncTrace(merchantId: string): Promise<GrabMenuSyncTrace> {
+    return this.request<GrabMenuSyncTrace>({
+      method: 'GET',
+      path: '/partner/v1/merchant/menu/trace',
+      query: { merchantID: merchantId },
+    })
+  }
+
+  /** GET /partner/v1/order/cancelable — whether the order can still be cancelled. */
+  async isOrderCancelable(orderId: string): Promise<boolean> {
+    const res = await this.request<{ data?: { isCancelable?: boolean } }>({
+      method: 'GET',
+      path: '/partner/v1/order/cancelable',
+      query: { orderID: orderId },
+    })
+    return res?.data?.isCancelable === true
+  }
+
+  /** PUT /partner/v1/order/readytime — set/adjust the promised ready time. */
+  async updateReadyTime(orderId: string, readyTime: string): Promise<void> {
+    await this.request({
+      method: 'PUT',
+      path: '/partner/v1/order/readytime',
+      body: { orderID: orderId, readyTime },
+    })
+  }
+
+  /** PUT /partner/v1/merchant/pause — pause/unpause the store on Grab's side. */
+  async pauseStore(merchantId: string, isPaused: boolean): Promise<void> {
+    await this.request({
+      method: 'PUT',
+      path: '/partner/v1/merchant/pause',
+      body: { merchantID: merchantId, isPaused },
+    })
+  }
+
+  /** GET /partner/v1/merchants/{merchantID}/store/status — open/paused state. */
+  async getStoreStatus(merchantId: string): Promise<GrabStoreStatus> {
+    return this.request<GrabStoreStatus>({
+      method: 'GET',
+      path: `/partner/v1/merchants/${encodeURIComponent(merchantId)}/store/status`,
     })
   }
 }

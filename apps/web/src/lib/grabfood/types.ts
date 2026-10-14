@@ -102,16 +102,62 @@ export const GRAB_STATE_TO_INTERNAL: Record<string, 'preparing' | 'ready' | 'pic
 // Outbound request/response types
 // ---------------------------------------------------------------------------
 
+export type GrabAvailableStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'UNAVAILABLETODAY'
+
+/**
+ * One menu update record (PUT /partner/v1/menu — flat shape).
+ *
+ * Grab semantics: setting UNAVAILABLE requires maxStock = 0 on the same
+ * record; maxStock > 0 flips the item back to AVAILABLE. UNAVAILABLETODAY
+ * auto-restores at Grab's next business day (their native sold-out-today).
+ */
 export interface GrabMenuRecordUpdate {
   merchantID: string
   field: 'ITEM' | 'MODIFIER'
   id: string
   /** Minor units */
   price?: number
-  availableStatus?: 'AVAILABLE' | 'UNAVAILABLE'
+  availableStatus?: GrabAvailableStatus
   maxStock?: number
+}
+
+/** Entity inside a batch entry (no merchantID — the entry carries it). */
+export interface GrabMenuEntity {
+  id: string
+  price?: number
+  availableStatus?: GrabAvailableStatus
+  maxStock?: number
+}
+
+/**
+ * One PUT /partner/v1/batch/menu entry: up to 200 menuEntities of one record
+ * type for one merchant. The batch endpoint does NOT accept flat records.
+ */
+export interface GrabBatchMenuEntry {
+  merchantID: string
+  field: 'ITEM'
+  menuEntities: GrabMenuEntity[]
 }
 
 export interface GrabListOrdersResponse {
   orders?: Array<GrabOrderBase & { orderState?: string }>
+}
+
+/** GET /partner/v1/merchant/menu/trace — last menu sync attempt on Grab's side. */
+export interface GrabMenuSyncTrace {
+  merchantID?: string
+  /** ISO timestamp of the last completed sync, when available. */
+  lastSyncTime?: string
+  /** Sync outcome reported by Grab (values are informational). */
+  status?: string
+  message?: string
+  [key: string]: unknown
+}
+
+/** GET /partner/v1/merchants/{merchantID}/store/status — open/paused + reasons. */
+export interface GrabStoreStatus {
+  isOpened?: boolean
+  /** Present when closed/paused (e.g. gas:OUT_OF_STOCK → MERCHANT_PAUSED). */
+  gasStatus?: string
+  [key: string]: unknown
 }

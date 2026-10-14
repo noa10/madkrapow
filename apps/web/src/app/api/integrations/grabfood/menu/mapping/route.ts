@@ -4,11 +4,15 @@ import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
 
 /**
- * channel_products / channel_categories mapping management (admin/manager).
+ * channel_products mapping management (admin/manager).
  *
  * PATCH  — update an existing mapping: external id, channel price override
- *          (null clears the override), availability. Saved silently; use the
- *          sync route to push changes to Grab.
+ *          (null clears the override), availability. Saved LOCALLY only:
+ *          catalogue sync to Grab is descoped (the menu is maintained on
+ *          Grab's side during onboarding), so nothing here pushes to Grab.
+ *          The only per-item writes that reach Grab are snooze/restore
+ *          (`PUT /partner/v1/menu`), which carry the stored price and
+ *          effective availability when they fire.
  * POST   — map an unmapped local item (creates the channel_products row).
  * DELETE — unmap (row id in ?channel_product_id=).
  *

@@ -51,7 +51,7 @@ async function fetchMapping(
       price_cents,
       is_available,
       snooze_till,
-      menu_items ( id, name, price_cents, is_available, snooze_till, category_id )
+      menu_items ( id, name, price_cents, is_available, snooze_till )
     `
     )
     .eq('channel', 'grabfood')
@@ -67,9 +67,8 @@ async function fetchMapping(
         price_cents: number
         is_available: boolean
         snooze_till: string | null
-        category_id: string | null
       }
-    | Array<{ id: string; name: string; price_cents: number; is_available: boolean; snooze_till: string | null; category_id: string | null }>
+    | Array<{ id: string; name: string; price_cents: number; is_available: boolean; snooze_till: string | null }>
     | null
   const item = Array.isArray(raw) ? raw[0] : raw
   return {
@@ -79,8 +78,6 @@ async function fetchMapping(
     menu_item_price_cents: item?.price_cents ?? 0,
     menu_item_is_available: item?.is_available ?? false,
     menu_item_snooze_till: item?.snooze_till ?? null,
-    menu_item_category_id: item?.category_id ?? null,
-    external_category_id: null,
     external_item_id: row.external_item_id,
     external_name: row.external_name,
     channel_price_cents: row.price_cents,

@@ -42,7 +42,6 @@ const MAPPED_ROW = {
       price_cents: 1250,
       is_available: true,
       snooze_till: null,
-      category_id: 'cat-1',
     },
   ],
 }

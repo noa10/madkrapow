@@ -121,24 +121,6 @@ export interface GrabMenuRecordUpdate {
   maxStock?: number
 }
 
-/** Entity inside a batch entry (no merchantID — the entry carries it). */
-export interface GrabMenuEntity {
-  id: string
-  price?: number
-  availableStatus?: GrabAvailableStatus
-  maxStock?: number
-}
-
-/**
- * One PUT /partner/v1/batch/menu entry: up to 200 menuEntities of one record
- * type for one merchant. The batch endpoint does NOT accept flat records.
- */
-export interface GrabBatchMenuEntry {
-  merchantID: string
-  field: 'ITEM'
-  menuEntities: GrabMenuEntity[]
-}
-
 export interface GrabListOrdersResponse {
   orders?: Array<GrabOrderBase & { orderState?: string }>
 }

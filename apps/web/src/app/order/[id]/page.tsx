@@ -22,6 +22,7 @@ import { DriverInfo } from '@/components/order/DriverInfo'
 import { ProviderBadges } from '@/components/orders/ProviderBadges'
 import dynamic from 'next/dynamic'
 import { getOrderDisplayCode } from '@/lib/utils/order-code'
+import { orderSubtotalCents, orderTotalCents } from '@/lib/orders/money'
 import { PageContainer } from '@/components/layout/PageContainer'
 import {
   STATUS_FLOW_STEPS,
@@ -682,7 +683,7 @@ export default function OrderTrackingPage() {
                   <div className="border-t border-border mt-4 pt-4 space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Subtotal</span>
-                      <span>{formatPrice(order.total_cents)}</span>
+                      <span>{formatPrice(orderSubtotalCents(order))}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Delivery Fee</span>
@@ -690,7 +691,7 @@ export default function OrderTrackingPage() {
                     </div>
                     <div className="flex items-center justify-between font-semibold border-t border-border pt-2">
                       <span>Total</span>
-                      <span className="text-primary">{formatPrice(order.total_cents + order.delivery_fee_cents)}</span>
+                      <span className="text-primary">{formatPrice(orderTotalCents(order))}</span>
                     </div>
                   </div>
                 </section>

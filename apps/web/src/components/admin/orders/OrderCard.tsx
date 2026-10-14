@@ -8,7 +8,7 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal"
 import { cn } from "@/lib/utils"
 import { getOrderDisplayCode } from "@/lib/utils/order-code"
 import { getOrderUrgencyNow, type UrgencyTier } from "@/lib/orders/urgency"
-import { formatMoney } from "@/lib/orders/money"
+import { formatMoney, orderTotalCents } from "@/lib/orders/money"
 import { getPaymentPill } from "@/lib/orders/payment-pill"
 import { adminLabel, parseOrderStatus } from "@/lib/orders/status"
 import { useOrderStatusTransition } from "@/app/admin/orders/hooks/useOrderStatusTransition"
@@ -200,7 +200,9 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
   })
 
   const displayCode = getOrderDisplayCode(order)
-  const total = formatMoney((order.total_cents ?? 0) + (order.delivery_fee_cents ?? 0))
+  // `total_cents` already includes the delivery fee — `orderTotalCents` owns
+  // that definition so the fee is never added a second time.
+  const total = formatMoney(orderTotalCents(order))
   const paymentPill = getPaymentPill(order)
 
   // The confirmation must not promise a refund for an order that was never paid.

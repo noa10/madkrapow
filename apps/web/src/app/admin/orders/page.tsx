@@ -13,6 +13,7 @@ import { OrdersToolbar } from "@/components/admin/orders/OrdersToolbar"
 import { StatusTabs } from "@/components/admin/orders/StatusTabs"
 import { TabEmptyState } from "@/components/admin/orders/TabEmptyState"
 import { TabSkeleton } from "@/components/admin/orders/TabSkeleton"
+import { orderTotalCents } from "@/lib/orders/money"
 import { matchesOrderQuery } from "@/lib/orders/search"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import { useOrderTabCounts } from "./hooks/useOrderTabCounts"
@@ -61,8 +62,11 @@ export default function AdminOrdersPage() {
   // Global "Today's Sales" summary (ASAP orders today, cancelled excluded)
   const { orders: todayAsapOrders } = useTodayAsapOrdersQuery()
 
+  // Revenue is the sum of what each order was actually worth. `total_cents`
+  // already includes the delivery fee, so it must not be added again — see
+  // `orderTotalCents`.
   const summaryTotalCents = useMemo(
-    () => todayAsapOrders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0),
+    () => todayAsapOrders.reduce((sum, o) => sum + orderTotalCents(o), 0),
     [todayAsapOrders]
   )
 

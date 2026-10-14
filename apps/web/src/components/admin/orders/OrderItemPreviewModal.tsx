@@ -6,7 +6,7 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { getOrderDisplayCode } from "@/lib/utils/order-code"
-import { formatMoney } from "@/lib/orders/money"
+import { formatMoney, orderTotalCents } from "@/lib/orders/money"
 import type { Order } from "@/types/orders"
 import { useOrderItemsQuery } from "@/app/admin/orders/hooks/useOrderItemsQuery"
 
@@ -71,7 +71,7 @@ export function OrderItemPreviewModal({ open, order, onClose }: OrderItemPreview
     [onClose]
   )
 
-  const totalCents = order ? order.total_cents + order.delivery_fee_cents : 0
+  const totalCents = order ? orderTotalCents(order) : 0
 
   return (
     <dialog

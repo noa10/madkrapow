@@ -11,6 +11,7 @@ import { useRoleGuard } from '@/hooks/use-role-guard';
 import { useToastStore } from '@/stores/toast';
 import { isPrintBridgeConfigured, printViaBridge } from '@/lib/printing/client';
 import { getOrderDisplayCode } from '@/lib/utils/order-code';
+import { orderTotalCents } from '@/lib/orders/money';
 
 const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready'];
 
@@ -182,7 +183,7 @@ function OrderCard({ order }: OrderCardProps) {
 
           <div className="pt-3">
             <div className="text-2xl md:text-3xl font-bold text-center py-3 bg-secondary rounded-lg text-foreground border border-border">
-              RM {((order.total_cents + order.delivery_fee_cents) / 100).toFixed(0)}
+              RM {(orderTotalCents(order) / 100).toFixed(0)}
             </div>
           </div>
 

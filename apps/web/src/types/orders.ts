@@ -29,6 +29,8 @@ export interface Order {
   item_count?: number
   source: OrderSource
   customer_id: string | null
+  // No `payment_method` here: `orders` has no such column. The persisted method
+  // lives in `payments.method` — see the derivation note in lib/orders/payment-pill.ts.
   stripe_payment_intent_id: string | null
   stripe_session_id: string | null
   lalamove_order_id: string | null

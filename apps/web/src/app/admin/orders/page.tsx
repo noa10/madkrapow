@@ -1,24 +1,27 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Loader2, ShieldAlert, ArrowUpDown } from "lucide-react"
+import { Loader2, ShieldAlert } from "lucide-react"
 import { useRoleGuard } from "@/hooks/use-role-guard"
 import { NewOrderAlert } from "@/components/admin/NewOrderAlert"
-import { AdminOrdersFilterBar } from "@/components/admin/orders/AdminOrdersFilterBar"
-import { OrderRowCard } from "@/components/admin/orders/OrderRowCard"
 import { DateRangePicker, type DateRange as PickerDateRange } from "@/components/admin/orders/DateRangePicker"
-import { AdminOrdersSalesSummary } from "@/components/admin/orders/AdminOrdersSalesSummary"
 import { HistoryTabSummary } from "@/components/admin/orders/HistoryTabSummary"
+import { OrderCard } from "@/components/admin/orders/OrderCard"
+import { OrderItemPreviewModal } from "@/components/admin/orders/OrderItemPreviewModal"
+import { OrdersMetricCards } from "@/components/admin/orders/OrdersMetricCards"
+import { OrdersToolbar } from "@/components/admin/orders/OrdersToolbar"
+import { StatusTabs } from "@/components/admin/orders/StatusTabs"
 import { TabEmptyState } from "@/components/admin/orders/TabEmptyState"
 import { TabSkeleton } from "@/components/admin/orders/TabSkeleton"
+import { orderTotalCents } from "@/lib/orders/money"
+import { matchesOrderQuery } from "@/lib/orders/search"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
+import { useOrderTabCounts } from "./hooks/useOrderTabCounts"
 import { useOrderTabQuery } from "./hooks/useOrderTabQuery"
 import { useRealtimeOrderUpdates } from "./hooks/useRealtimeOrderUpdates"
 import { useTodayAsapOrdersQuery } from "./hooks/useTodayAsapOrdersQuery"
 import { toDateRange } from "./utils/toDateRange"
-import { cn } from "@/lib/utils"
-import type { OrderTab } from "@/types/orders"
-import type { Order } from "@/types/orders"
+import type { Order, OrderSource, OrderTab } from "@/types/orders"
 
 type SortDirection = "desc" | "asc"
 
@@ -27,18 +30,17 @@ export default function AdminOrdersPage() {
 
   const activeTab = useAdminOrdersStore((s) => s.activeTab)
   const caches = useAdminOrdersStore((s) => s.caches)
-  const activeDateFilter = useAdminOrdersStore((s) => s.activeDateFilter)
-  const customDateRange = useAdminOrdersStore((s) => s.customDateRange)
   const sourceFilter = useAdminOrdersStore((s) => s.sourceFilter)
   const setActiveTab = useAdminOrdersStore((s) => s.setActiveTab)
   const setDateRange = useAdminOrdersStore((s) => s.setDateRange)
-  const setActiveDateFilter = useAdminOrdersStore((s) => s.setActiveDateFilter)
-  const setCustomDateRange = useAdminOrdersStore((s) => s.setCustomDateRange)
   const setSourceFilter = useAdminOrdersStore((s) => s.setSourceFilter)
   const invalidateAllTabs = useAdminOrdersStore((s) => s.invalidateAllTabs)
 
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [search, setSearch] = useState("")
   const [activePickerRange, setActivePickerRange] = useState<PickerDateRange | null>(null)
+  // Order whose item list is open in the preview modal, or null when closed.
+  const [previewOrder, setPreviewOrder] = useState<Order | null>(null)
 
   // Initialize date range to Today on mount
   useEffect(() => {
@@ -51,32 +53,47 @@ export default function AdminOrdersPage() {
   // Tab data fetching
   useOrderTabQuery(activeTab)
 
+  // Per-tab counters for the status pills and the Active Orders metric
+  const { counts, unpaidCount } = useOrderTabCounts()
+
   // Realtime subscriptions
   const { realtimeConnected } = useRealtimeOrderUpdates()
 
-  // Global "Today's Sales" summary (ASAP orders today)
+  // Global "Today's Sales" summary (ASAP orders today, cancelled excluded)
   const { orders: todayAsapOrders } = useTodayAsapOrdersQuery()
 
-  const { summaryLabel, summaryTotalCents } = useMemo(() => {
-    const totalCents = todayAsapOrders.reduce(
-      (sum, o) => sum + o.total_cents + o.delivery_fee_cents,
-      0
-    )
-    return { summaryLabel: "Total Sales Today", summaryTotalCents: totalCents }
-  }, [todayAsapOrders])
+  // Revenue is the sum of what each order was actually worth. `total_cents`
+  // already includes the delivery fee, so it must not be added again — see
+  // `orderTotalCents`.
+  const summaryTotalCents = useMemo(
+    () => todayAsapOrders.reduce((sum, o) => sum + orderTotalCents(o), 0),
+    [todayAsapOrders]
+  )
+
+  // Preparing + Ready are the orders still in flight; null-propagate so the
+  // metric reads "—" until both counts land rather than showing a partial sum.
+  const activeOrdersCount = useMemo(() => {
+    if (counts.preparing === null || counts.ready === null) return null
+    return counts.preparing + counts.ready
+  }, [counts.preparing, counts.ready])
 
   const activeCache = caches[activeTab]
-  const activeOrders = activeCache.orders
   const isLoading = activeCache.isLoading
   const error = activeCache.error
 
-  // Sort orders
-  const sortedOrders = useMemo(() => {
-    return [...activeOrders].sort((a, b) => {
+  // Sort then filter: the sort is stable and the filter is cheap enough to run
+  // on every keystroke over the loaded tab (200-row ceiling).
+  const visibleOrders = useMemo(() => {
+    const sorted = [...activeCache.orders].sort((a, b) => {
       const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       return sortDirection === "desc" ? -diff : diff
     })
-  }, [activeOrders, sortDirection])
+    const query = search.trim()
+    if (!query) return sorted
+    return sorted.filter((order) => matchesOrderQuery(order, query))
+  }, [activeCache.orders, sortDirection, search])
+
+  const hasSearch = search.trim().length > 0
 
   const handleTabChange = (tab: OrderTab) => {
     setActiveTab(tab)
@@ -86,23 +103,8 @@ export default function AdminOrdersPage() {
     invalidateAllTabs()
   }
 
-  const handleSourceFilterChange = (source: "all" | import("@/types/orders").OrderSource) => {
+  const handleSourceFilterChange = (source: "all" | OrderSource) => {
     setSourceFilter(source)
-  }
-
-  const handleDateFilterChange = (value: "today" | "weekly" | "monthly" | "custom") => {
-    setActiveDateFilter(value)
-    const range = toDateRange(value, customDateRange)
-    if (range) {
-      setDateRange(range)
-    }
-  }
-
-  const handleApplyCustomRange = () => {
-    const range = toDateRange("custom", customDateRange)
-    if (range) {
-      setDateRange(range)
-    }
   }
 
   const handlePickerRangeChange = (range: PickerDateRange) => {
@@ -150,11 +152,26 @@ export default function AdminOrdersPage() {
     <>
       <NewOrderAlert />
       <div className="space-y-4">
-        {/* Header */}
-        <h1 className="text-xl font-bold font-display text-foreground">Orders</h1>
+        <h1 className="text-xl font-bold font-heading text-foreground">Orders</h1>
 
-        {/* Global Sales Summary */}
-        <AdminOrdersSalesSummary label={summaryLabel} totalCents={summaryTotalCents} />
+        <OrdersMetricCards
+          totalSalesCents={summaryTotalCents}
+          activeOrders={activeOrdersCount}
+          unpaidOrders={unpaidCount}
+        />
+
+        <OrdersToolbar
+          search={search}
+          onSearchChange={setSearch}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={handleSourceFilterChange}
+          onRefresh={handleRefresh}
+          realtimeConnected={realtimeConnected}
+          sortDirection={sortDirection}
+          onToggleSort={toggleSort}
+        />
+
+        <StatusTabs activeTab={activeTab} onTabChange={handleTabChange} counts={counts} />
 
         {/* Date Range Picker — only visible on History */}
         {activeTab === "history" && (
@@ -165,60 +182,42 @@ export default function AdminOrdersPage() {
           />
         )}
 
-        {/* Status Filter Bar */}
-        <AdminOrdersFilterBar
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          onRefresh={handleRefresh}
-          orderCount={sortedOrders.length}
-          realtimeConnected={realtimeConnected}
-          sourceFilter={sourceFilter}
-          onSourceFilterChange={handleSourceFilterChange}
-        />
-
-        {/* Sort header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between py-2 bg-background/80 backdrop-blur-sm">
-          <span className="text-xs text-muted-foreground">
-            Sorted: {sortDirection === "desc" ? "Newest first" : "Oldest first"}
-          </span>
-          <button
-            onClick={toggleSort}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all",
-              "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground border border-transparent"
-            )}
-            aria-label={`Sort ${sortDirection === "desc" ? "oldest first" : "newest first"}`}
-          >
-            <ArrowUpDown className="h-3 w-3" />
-            {sortDirection === "desc" ? "Newest" : "Oldest"}
-          </button>
-        </div>
-
         {/* Tab Content */}
-        {isLoading ? (
+        {isLoading && !hasSearch ? (
           <TabSkeleton />
-        ) : sortedOrders.length === 0 ? (
+        ) : visibleOrders.length === 0 ? (
           <TabEmptyState tab={activeTab} />
         ) : (
           <>
             {/* History tab: local summary */}
-            {activeTab === "history" && (
-              <HistoryTabSummary orders={sortedOrders} />
+            {activeTab === "history" && <HistoryTabSummary orders={visibleOrders} />}
+
+            {hasSearch && (
+              <p className="text-xs text-muted-foreground/60">
+                {visibleOrders.length} of {activeCache.orders.length}{" "}
+                {activeCache.orders.length === 1 ? "order" : "orders"} match
+              </p>
             )}
 
-            {/* Unified row list for all tabs */}
             <div className="space-y-2">
-              {sortedOrders.map((order) => (
-                <OrderRowCard
+              {visibleOrders.map((order) => (
+                <OrderCard
                   key={order.id}
                   order={order}
                   onStatusChange={handleRefresh}
+                  onOpenItems={setPreviewOrder}
                 />
               ))}
             </div>
           </>
         )}
       </div>
+
+      <OrderItemPreviewModal
+        open={previewOrder !== null}
+        order={previewOrder}
+        onClose={() => setPreviewOrder(null)}
+      />
     </>
   )
 }

@@ -2,18 +2,15 @@
 
 import { DollarSign, ClipboardList, CheckCircle2, XCircle } from "lucide-react"
 import type { Order } from "@/types/orders"
+import { formatMoney, orderTotalCents } from "@/lib/orders/money"
 import { isCompleted, parseOrderStatus } from "@/lib/orders/status"
-
-function formatPrice(cents: number) {
-  return `RM ${(cents / 100).toFixed(2)}`
-}
 
 interface HistoryTabSummaryProps {
   orders: Order[]
 }
 
 export function HistoryTabSummary({ orders }: HistoryTabSummaryProps) {
-  const totalCents = orders.reduce((sum, o) => sum + o.total_cents + o.delivery_fee_cents, 0)
+  const totalCents = orders.reduce((sum, o) => sum + orderTotalCents(o), 0)
   const orderCount = orders.length
   const completedCount = orders.filter((o) => isCompleted(parseOrderStatus(o.status))).length
   const cancelledCount = orders.filter((o) => o.status === "cancelled").length
@@ -21,7 +18,7 @@ export function HistoryTabSummary({ orders }: HistoryTabSummaryProps) {
   const items = [
     {
       label: "Total Sales",
-      value: formatPrice(totalCents),
+      value: formatMoney(totalCents),
       icon: DollarSign,
       color: "text-gold",
       bg: "bg-gold/10",

@@ -13,6 +13,7 @@ import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circl
 import Link from "next/link";
 import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
+import { orderSubtotalCents, orderTotalCents } from "@/lib/orders/money";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
@@ -697,7 +698,7 @@ export default function AdminOrderDetailPage() {
             </div>
             <div className="flex justify-between pt-4 font-semibold">
               <span>Subtotal</span>
-              <span>{formatPrice(order.total_cents)}</span>
+              <span>{formatPrice(orderSubtotalCents(order))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Delivery Fee</span>
@@ -705,7 +706,7 @@ export default function AdminOrderDetailPage() {
             </div>
             <div className="flex justify-between pt-2 text-lg font-bold">
               <span>Total</span>
-              <span>{formatPrice(order.total_cents + order.delivery_fee_cents)}</span>
+              <span>{formatPrice(orderTotalCents(order))}</span>
             </div>
           </CardContent>
         </Card>

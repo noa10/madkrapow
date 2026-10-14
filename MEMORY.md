@@ -194,6 +194,18 @@ Customer pays → Stripe webhook → Verify signature → Update order (PAID)
 - **Webhook testing**: Use Stripe CLI to forward webhooks locally
 - **Lalamove sandbox**: Test full flow against sandbox before production
 
+### Money / Order Totals
+- **`orders.total_cents` is inclusive of the delivery fee** and net of discount. Every
+  writer stores `subtotal_cents + delivery_fee_cents - discount_cents`, and Stripe is
+  charged the items plus a *separate* "Delivery Fee" line — so that sum is the amount the
+  customer actually paid. Adding `delivery_fee_cents` on top therefore double-counts the
+  fee (a RM 12.50 order with a RM 4.00 fee renders as RM 20.50 instead of RM 16.50).
+- **Read totals through `lib/orders/money.ts`** — `orderTotalCents` / `orderSubtotalCents` —
+  never by summing columns by hand. That wrong sum had been copy-pasted into seven surfaces
+  before PR #424 fixed them; the helpers are now the single definition, and
+  `orderSubtotalCents(order) + delivery_fee_cents === orderTotalCents(order)` is what keeps a
+  receipt's rows reconciling to the amount charged.
+
 ---
 
 ## Known Risks (from docs/plans.md)
@@ -205,6 +217,41 @@ Customer pays → Stripe webhook → Verify signature → Update order (PAID)
 | No driver available | Monitor EXPIRED/REJECTED webhooks, alert owner for manual booking |
 | Client-side price manipulation | All prices re-validated server-side from DB |
 | Webhook replay/duplication | Idempotency checks (lalamove_order_id, Stripe event ID) |
+
+---
+
+## Deferred Follow-ups (recorded in the PR #424 review)
+
+Agreed during review as follow-ups rather than merge blockers. Each is inherited
+behaviour, not a regression introduced by that PR.
+
+- **`accepted` orders have no forward action.** `PRIMARY_ACTIONS` in
+  `lib/orders/transition-ui.ts` has no `accepted` key, and `lib/orders/status.ts:131`
+  permits only `accepted: ['cancelled']`. GrabFood writes `status: 'accepted'`
+  (`lib/grabfood/mapper.ts:138`), so adding `accepted` to the Preparing tab fixed those
+  orders being invisible everywhere — but the kitchen still cannot advance one, and the
+  only offered action is Cancel. Fix by adding `accepted → preparing` to the canonical
+  status machine (all three parity sources) or recording the dead end as intentional.
+- **Cancellation reasons are collected and then discarded.** The cancel modal requires a
+  ≥10-char note and `useOrderStatusTransition` sends it, but
+  `api/admin/orders/[id]/status/route.ts` validates `z.object({ status })`, which strips
+  unknown keys, and nothing writes a note to `order_events`. An operator is therefore
+  forced to type a reason that is silently dropped, and there is no audit trail of *why*
+  an order was cancelled — the record you would want when a cancellation is disputed.
+  Either persist it into the existing `order_events` insert or drop `requireNote` rather
+  than imply a record that does not exist.
+- **The Upcoming pill counter can exceed the rendered list.** The counter is a single
+  unbounded `count` query, while the tab query merges two `.limit(200)` fetches in memory
+  (`useOrderTabQuery.ts`), so at volume the pill disagrees with the screen. Fine if the
+  200-row cap is intended — worth a comment either way.
+- **The "Unpaid" metric counts only ASAP `pending` orders** (`useOrderTabCounts.ts`).
+  Documented as deliberate, but the label reads broader than the query.
+- **`useTodayAsapOrdersQuery` pins `now` at mount** (`:17`, `[]` deps), so a dashboard left
+  open overnight keeps summing against the original day's window instead of rolling over.
+  It also refetches up to 500 rows on *every* `orders` realtime event with no debounce,
+  which a busy kitchen feed could turn into the heaviest query on the page.
+- **`StatusTabs` uses `role="tab"` without `aria-controls`/`tabpanel` linkage.** Disclosed
+  as a known minor a11y gap; the missing panel link is the part screen readers care about.
 
 ---
 

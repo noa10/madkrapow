@@ -2,7 +2,7 @@
 
 This file contains curated memories, decisions, and learnings that persist across sessions. This is your long-term memory — the distilled essence of what matters.
 
-**Last Updated**: 2026-03-17
+**Last Updated**: 2026-10-14
 
 ---
 
@@ -70,6 +70,33 @@ This file contains curated memories, decisions, and learnings that persist acros
 - **Impact**: webhook idempotency anchored on
   `channel_orders UNIQUE(channel, external_order_id)`; admin UI source filters
   and badges cover the new channels; `/pos` counter screen live.
+
+### 2026-10-14: Log sanitiser is now one shared module
+- **Decision**: All untrusted values reach loggers through a single
+  `sanitizeForLog` (`apps/web/src/lib/logging/safe-log.ts`), not per-route copies.
+  It strips `\n|\r` (the CWE-117 vector), ANSI escapes, C0/C1 controls and
+  U+2028/U+2029, and bounds length; it accepts `unknown` so optional/error fields
+  need no narrowing.
+- **Rationale**: The identical 3-line helper had been copy-pasted into four
+  routes, and a fifth sink (GrabFood `submit-order`) had none at all — which is
+  exactly how CodeQL alert #57 was missed. Duplication was the root cause.
+- **Impact**: CodeQL reports 0 log-injection alerts on the fixing branch. Any new
+  call site must import the shared helper; do not inline a private copy.
+- **Note**: A webhook signature check is *not* log-injection protection. The
+  signed-partner path is authenticated but still attacker-shaped.
+
+### 2026-10-14: GrabFood work dropped by the #399 squash — recovered
+- **Decision**: Recovered the 19 commits that were stacked on
+  `feat/pos-canonical-orders` (squash-merged as `4dd43f2`) but never merged.
+  Printing/hubbo went over in #418; the GrabFood remainder is PR #420.
+- **How to tell squash-loss from ancestry noise** (important): `git cherry` and
+  `git merge-base --is-ancestor` are *useless* after a squash — a squash never
+  makes source commits ancestors, so every stacked commit shows `+`. Compare
+  **content** instead. Master's `lib/grabfood/` is byte-identical to the
+  `pos-canonical` tip `9f12691`, which proved the squash captured the base
+  branch *fully* and the loss was confined to the 19 stacked commits.
+- **Highest-impact item**: `d680699` — accept the order on Grab after import.
+  Master had no `acceptOrder` call at all, and Grab auto-cancels unaccepted orders.
 
 ---
 
@@ -196,6 +223,21 @@ supabase/
 - Never add a floor-style Dependabot `ignore` (e.g. `versions: [">=X"]`). A floor suppresses
   every future CVE fix for that package, because Dependabot can never raise the floor. This is
   what left the critical Next.js RCE alerts open — see `.github/dependabot.yml`
+- **Never blindly re-run `supabase db push`.** Migration `053_channel_menu_mapping` is
+  **already applied** to project `oxtauhhixztusjlxcipo` (recorded as `version=053
+  name=channel_menu_mapping`, verified via `information_schema`), but its file was missing
+  from master until PR #420. Its SQL is **not idempotent** (`CREATE TABLE` / `ADD COLUMN` /
+  `CREATE POLICY`), so a re-push fails — the same trap already hit once with 048–053. A file
+  present in the repo does not mean a migration still needs applying.
+- **Local `npm run typecheck` / one vitest failure are not code bugs.** `package-lock.json`
+  pins stripe 23.0.0 but `node_modules` has 22.6.2, so typecheck reports 13 errors
+  (`allowed_payment_method_types`, the `2026-09-30.endive` API version) and
+  `lib/stripe/__tests__/api-version.test.ts` fails — all identical on pristine master. Run
+  `npm ci`, do not "fix" the code. CI passes because it runs `npm ci`.
+- `.next/dev/types/validator.ts` is a stale generated artifact whose errors track *missing
+  routes*; a typecheck error count that moves on its own is this file, not your change.
+- Store secrets/logs via `sanitizeForLog` (see the 2026-10-14 decision above). Never inline a
+  private copy of a sanitiser — that duplication is what caused CodeQL alert #57.
 
 ---
 

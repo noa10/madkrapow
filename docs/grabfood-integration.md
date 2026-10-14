@@ -26,17 +26,17 @@ Outbound (staff actions):
   admin [Cancel]    ──► /api/integrations/grabfood/orders/[id]/cancel
                         PUT /partner/v1/order/cancel first, then local mirror
 
-Menu sync (admin action, /admin/grabfood):
-  POST /api/integrations/grabfood/menu/sync
-                        channel_products + menu_items → throttled batch push
-                        (PUT /partner/v1/batch/menu, entries of <= 200
-                        menuEntities spaced at 1 req/s, backoff on 429/5xx,
-                        resumable progress on permanent failure)
-                        + POST /partner/v1/merchant/menu/notification
-  GET  /api/integrations/grabfood/menu/trace   last sync outcome on Grab's side
+Menu (admin action, /admin/grabfood):
   POST/DELETE /api/integrations/grabfood/menu/snooze   time-based sold-out
+                        per-item PUT /partner/v1/menu (same-day snoozes push
+                        UNAVAILABLETODAY; longer/hard ones UNAVAILABLE +
+                        maxStock 0); availability is computed at read time
+  GET  /api/integrations/grabfood/menu/trace   last sync outcome on Grab's side
   PATCH/POST/DELETE /api/integrations/grabfood/menu/mapping   mapping CRUD
   GET/POST /api/integrations/grabfood/store/pause   store pause toggle
+
+The full-menu batch push (PUT /partner/v1/batch/menu) was descoped on
+2026-10-14 — see "Known gaps" below.
 ```
 
 Order acceptance (closes the auto-cancel gap):
@@ -149,7 +149,7 @@ reject every request. The unverified bypass exists only for an explicit
    signature header/algorithm and set `GRABFOOD_WEBHOOK_*` env vars.
 3. Map the menu: create `channel_products` rows (external_item_id per Grab item).
 4. Staging: use Grab's menu/order simulators — test submit-order, states,
-   mark-ready, cancel, menu sync, duplicate replays.
+   mark-ready, cancel, snooze, duplicate replays.
 5. Production pilot: one low-traffic outlet, monitor `integration_events` and
    reconciliation, then expand.
 
@@ -174,13 +174,16 @@ payloads, or a product decision):
   `price.basketPromo` and `price.tax` are read per the public reference;
   confirm the exact split (and whether `price.subtotal` is tax-inclusive)
   against a real onboarding payload before trusting `total_cents` for P&L.
-- ~~**Menu sync is unthrottled.**~~ CLOSED: the push runner spaces batches at
-  Grab's documented 1 req/s, retries 429/5xx with exponential backoff, and
-  reports resumable progress. NOTE: the batch wire shape was corrected to
-  Grab's actual spec — `[{merchantID, field, menuEntities: [...]}]` with up to
-  200 entities per entry; the groundwork PR's flat record array would have
-  been rejected. Confirm exact semantics against a staging payload at
-  onboarding.
+- **Full-menu push was descoped (2026-10-14).** The throttled
+  `PUT /partner/v1/batch/menu` runner (`lib/grabfood/push.ts`) landed via #420
+  with an unresolved "is this still wanted?" question, and has now been removed
+  along with `POST /menu/sync` and its dead scaffolding. Rationale: the menu is
+  set up on Grab's side during onboarding, so the only menu writes this
+  integration needs are per-item availability changes (`PUT /partner/v1/menu`,
+  used by snooze) and the order lifecycle. Re-add a batch runner only if bulk
+  price/catalogue sync becomes a requirement. The batch wire-shape findings
+  from 2026-10-11 (`[{merchantID, field, menuEntities: [...]}]`, ≤ 200 entities
+  per entry) are kept in the decision log should that change.
 - **Counter QR Pay badge.** The admin/customer order queries do not join
   `payments`, so a counter order paid by QR Pay currently renders the generic
   Cash badge. Join `payments(method)` (or denormalise the method) to display
@@ -188,14 +191,14 @@ payloads, or a product decision):
 
 ## Related analysis
 
-The Hubbo POS (Aliments) app was reverse-engineered to inform the full-menu push,
+The Hubbo POS (Aliments) app was reverse-engineered to inform the
 snooze/availability, accept-order and printing work: see
 [docs/hubbo-re-findings.md](./hubbo-re-findings.md). Key outcome: the Hubbo app
 holds no GrabFood credentials — GrabFood is mediated by Hubbo's backend — so the
 interim pre-onboarding path is the `lib/hubbo-merchant/` adapter (menu pull +
 snooze push against `api.aliments.my`), not a GrabFood session proxy.
 
-## Full menu push, snooze and mapping UI (this branch)
+## Snooze and mapping UI
 
 - **Snooze (time-based sold-out)** — `channel_products.snooze_till` /
   `menu_items.snooze_till` (migration 053). Effective availability is computed
@@ -206,7 +209,7 @@ snooze push against `api.aliments.my`), not a GrabFood session proxy.
   with `maxStock: 0` as Grab requires.
 - **Mapping admin** — `/admin/grabfood`: unmapped-item warnings, inline
   mapping (POST), external id / price override / availability edits (PATCH),
-  unmap (DELETE), snooze presets (30/60/120 min) + restore, sync + trace, and
+  unmap (DELETE), snooze presets (30/60/120 min) + restore, trace, and
   the store pause toggle.
 - **Store controls** — pause/reopen via `PUT /partner/v1/merchant/pause`,
   status via `GET /partner/v1/merchants/{id}/store/status`.

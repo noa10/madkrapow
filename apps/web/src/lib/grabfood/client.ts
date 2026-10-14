@@ -15,8 +15,6 @@
  *   PUT  /partner/v1/order/readytime     update promised ready time
  *   GET  /partner/v1/orders              list orders (<= 30 days)
  *   PUT  /partner/v1/menu                update menu record
- *   PUT  /partner/v1/batch/menu          batch update menu records (<= 200)
- *   POST /partner/v1/merchant/menu/notification  notify menu changed
  *   GET  /partner/v1/merchant/menu/trace last menu sync on Grab's side
  *   PUT  /partner/v1/merchant/pause      pause/unpause the store
  *   GET  /partner/v1/merchants/{id}/store/status  store open state
@@ -25,7 +23,6 @@
 import { env } from '@/lib/validators/env'
 import { getAccessToken, clearGrabFoodTokenCache, isGrabFoodConfigured } from './auth'
 import type {
-  GrabBatchMenuEntry,
   GrabListOrdersResponse,
   GrabMenuRecordUpdate,
   GrabMenuSyncTrace,
@@ -166,25 +163,6 @@ export class GrabFoodClient {
   /** PUT /partner/v1/menu — price/availability of a single item or modifier. */
   async updateMenuRecord(record: GrabMenuRecordUpdate): Promise<void> {
     await this.request({ method: 'PUT', path: '/partner/v1/menu', body: record })
-  }
-
-  /**
-   * PUT /partner/v1/batch/menu — one HTTP call per batch entry, each entry
-   * carrying up to 200 menuEntities of one record type. Entries are wrapped
-   * via toBatchMenuEntries() — the endpoint rejects flat record arrays.
-   * Rate limit: 1 req/s (callers must space batches).
-   */
-  async batchUpdateMenuRecords(entries: GrabBatchMenuEntry[]): Promise<void> {
-    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: entries })
-  }
-
-  /** POST /partner/v1/merchant/menu/notification — tell Grab to pull the menu. */
-  async notifyMenuUpdated(merchantId: string): Promise<void> {
-    await this.request({
-      method: 'POST',
-      path: '/partner/v1/merchant/menu/notification',
-      body: { merchantID: merchantId },
-    })
   }
 
   /** GET /partner/v1/merchant/menu/trace — inspect the last menu sync on Grab's side. */

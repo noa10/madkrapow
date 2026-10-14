@@ -6,7 +6,6 @@ import {
   grabAvailableStatusFor,
   buildMenuRecordUpdates,
   buildSingleItemUpdate,
-  toBatchMenuEntries,
 } from '../menu'
 import type { GrabMenuMappingRow } from '../menu'
 
@@ -149,41 +148,3 @@ describe('buildMenuRecordUpdates', () => {
   })
 })
 
-describe('toBatchMenuEntries', () => {
-  const record = (id: string, merchantID = 'mch') => ({
-    merchantID,
-    field: 'ITEM' as const,
-    id,
-    price: 1000,
-    availableStatus: 'AVAILABLE' as const,
-  })
-
-  it('wraps flat records into entries and keeps entities intact', () => {
-    const entries = toBatchMenuEntries([record('a'), record('b')], 200)
-    expect(entries).toHaveLength(1)
-    expect(entries[0]).toEqual({
-      merchantID: 'mch',
-      field: 'ITEM',
-      menuEntities: [
-        { id: 'a', price: 1000, availableStatus: 'AVAILABLE' },
-        { id: 'b', price: 1000, availableStatus: 'AVAILABLE' },
-      ],
-    })
-  })
-
-  it('chunks at batchSize entities per entry', () => {
-    const records = Array.from({ length: 250 }, (_, i) => record(`item-${i}`))
-    const entries = toBatchMenuEntries(records, 200)
-    expect(entries).toHaveLength(2)
-    expect(entries[0].menuEntities).toHaveLength(200)
-    expect(entries[1].menuEntities).toHaveLength(50)
-  })
-
-  it('drops undefined optional fields from entities', () => {
-    const entries = toBatchMenuEntries(
-      [{ merchantID: 'mch', field: 'ITEM', id: 'a' }],
-      200
-    )
-    expect(entries[0].menuEntities[0]).toEqual({ id: 'a' })
-  })
-})

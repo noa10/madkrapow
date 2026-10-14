@@ -3,8 +3,7 @@
  *
  * channel_products holds the per-channel mapping (external_item_id, channel
  * price override, availability, snooze). This module builds the record updates
- * Grab's API consumes (PUT /partner/v1/menu, PUT /partner/v1/batch/menu) and
- * surfaces mapping gaps for the admin UI.
+ * Grab's API consumes (PUT /partner/v1/menu) and surfaces mapping gaps.
  *
  * Grab semantics (per the official OpenAPI models):
  *   - availableStatus: AVAILABLE | UNAVAILABLE | UNAVAILABLETODAY
@@ -18,12 +17,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type {
-  GrabAvailableStatus,
-  GrabBatchMenuEntry,
-  GrabMenuEntity,
-  GrabMenuRecordUpdate,
-} from './types'
+import type { GrabAvailableStatus, GrabMenuRecordUpdate } from './types'
 
 /** Malaysia never observes DST: MYT is a fixed UTC+8 offset. */
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000
@@ -42,72 +36,6 @@ export interface GrabMenuMappingRow {
   channel_price_cents: number | null
   channel_is_available: boolean
   channel_snooze_till: string | null
-}
-
-export async function fetchGrabMenuMappings(
-  supabase: SupabaseClient
-): Promise<{ mappings: GrabMenuMappingRow[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from('channel_products')
-    .select(
-      `
-      id,
-      external_item_id,
-      external_name,
-      price_cents,
-      is_available,
-      snooze_till,
-      menu_items (
-        id,
-        name,
-        price_cents,
-        is_available,
-        snooze_till,
-        category_id
-      )
-    `
-    )
-    .eq('channel', 'grabfood')
-
-  if (error) return { mappings: [], error: error.message }
-
-  const mappings: GrabMenuMappingRow[] = (data ?? []).map((row) => {
-    const raw = row.menu_items as
-      | {
-          id: string
-          name: string
-          price_cents: number
-          is_available: boolean
-          snooze_till: string | null
-          category_id: string | null
-        }
-      | Array<{
-          id: string
-          name: string
-          price_cents: number
-          is_available: boolean
-          snooze_till: string | null
-          category_id: string | null
-        }>
-      | null
-    const item = Array.isArray(raw) ? raw[0] : raw
-    return {
-      channel_product_id: row.id,
-      menu_item_id: item?.id ?? '',
-      menu_item_name: item?.name ?? '(deleted item)',
-      menu_item_price_cents: item?.price_cents ?? 0,
-      menu_item_is_available: item?.is_available ?? false,
-      menu_item_snooze_till: item?.snooze_till ?? null,
-      menu_item_category_id: item?.category_id ?? null,
-      external_category_id: null,
-      external_item_id: row.external_item_id,
-      external_name: row.external_name,
-      channel_price_cents: row.price_cents,
-      channel_is_available: row.is_available,
-      channel_snooze_till: row.snooze_till ?? null,
-    }
-  })
-  return { mappings, error: null }
 }
 
 export interface ChannelCategoryMappingRow {
@@ -262,30 +190,3 @@ export function buildSingleItemUpdate(
   return buildMenuRecordUpdates([mapping], merchantId, now)[0] ?? null
 }
 
-/**
- * Wrap flat records into the batch endpoint's entry shape:
- * [{merchantID, field: 'ITEM', menuEntities: [...]}], chunked to `batchSize`
- * entities per entry (Grab's documented limit is 200).
- */
-export function toBatchMenuEntries(
-  records: GrabMenuRecordUpdate[],
-  batchSize = 200
-): GrabBatchMenuEntry[] {
-  const groups = new Map<string, GrabBatchMenuEntry>()
-  const entries: GrabBatchMenuEntry[] = []
-  for (const record of records) {
-    const key = `${record.merchantID}|${record.field}`
-    let entry = groups.get(key)
-    if (!entry || entry.menuEntities.length >= batchSize) {
-      entry = { merchantID: record.merchantID, field: 'ITEM', menuEntities: [] }
-      groups.set(key, entry)
-      entries.push(entry)
-    }
-    const entity: GrabMenuEntity = { id: record.id }
-    if (record.price !== undefined) entity.price = record.price
-    if (record.availableStatus !== undefined) entity.availableStatus = record.availableStatus
-    if (record.maxStock !== undefined) entity.maxStock = record.maxStock
-    entry.menuEntities.push(entity)
-  }
-  return entries
-}

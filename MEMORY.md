@@ -61,7 +61,7 @@ This file contains curated memories, decisions, and learnings that persist acros
   reconciled to the sen, idempotent (re-run skips all), raw rows in
   `legacy_import_records`. Refunds are `refunds` rows, never negative orders.
 - **GrabFood**: `lib/grabfood/` + webhook routes (submit-order, order-state) +
-  mark-ready/cancel/menu-sync admin routes + reconciliation cron. Mock transport
+  mark-ready/cancel/menu mapping+snooze+trace admin routes + reconciliation cron. Mock transport
   (`GRABFOOD_ENV=mock`) allows full local testing without Grab credentials.
 - **Key semantics**: money = integer sen everywhere (Grab MYR exponent 2
   compatible); GrabFood order revenue = subtotal − merchant-funded promos
@@ -82,12 +82,13 @@ This file contains curated memories, decisions, and learnings that persist acros
   SDK): batch/menu is `[{merchantID, field, menuEntities: [...]}]` ≤ 200
   entities/entry (flat arrays are rejected); `UNAVAILABLE` requires
   `maxStock: 0`; `UNAVAILABLETODAY` auto-restores at Grab's next business day.
-  Push runner throttles at 1 req/s with backoff + resumable cursor. Accept
+  The batch push runner (1 req/s, backoff, resumable cursor) was **descoped** on
+  2026-10-14 — see the entry below. Accept
   order (`POST /partner/v1/order/prepare`) now fires inside submit-order after
   a successful import (closes pre-launch gap #1).
 - **Snooze**: `snooze_till` (migration 053) computed at read time; same-day
   snoozes push `UNAVAILABLETODAY`, longer ones push `UNAVAILABLE`+maxStock 0.
-  Admin page `/admin/grabfood` covers mapping, snooze presets, sync+trace,
+  Admin page `/admin/grabfood` covers mapping, snooze presets, trace,
   store pause.
 - **Printing**: pure ESC/POS generator (`lib/printing/escpos.ts`, 32/42/48
   cols) + job builders; delivery via `scripts/print-bridge/` Node agent on the
@@ -97,6 +98,21 @@ This file contains curated memories, decisions, and learnings that persist acros
 - **Interim Hubbo adapter**: `lib/hubbo-merchant/` (UNOFFICIAL, env-gated,
   default off) pulls the full menu and pushes sold-out before official Grab
   onboarding; needs a one-time apiKey capture from a real POS device.
+
+### 2026-10-14: GrabFood full-menu push consciously descoped
+- **Decision**: Removed the throttled full-menu batch runner
+  (`lib/grabfood/push.ts`), `POST /api/integrations/grabfood/menu/sync`, and the
+  code only they reached (`fetchGrabMenuMappings`, `toBatchMenuEntries`,
+  `GrabFoodClient.batchUpdateMenuRecords`/`notifyMenuUpdated`,
+  `GrabBatchMenuEntry`/`GrabMenuEntity`) plus the admin "Sync menu" button.
+- **Why**: the push landed via #420 with an open "is this still wanted?"
+  question (raised in that PR's review ask, never answered). It is now
+  *consciously* descoped rather than accidentally dropped: the menu is set up on
+  Grab's side at onboarding, so the only menu writes needed are per-item
+  availability (`PUT /partner/v1/menu`, used by snooze) and the order
+  lifecycle.
+- **Kept**: mapping CRUD, snooze, the read-only menu trace, store pause, and the
+  single-item push used by snooze — all independent of the batch runner.
 
 ### 2026-10-14: Log sanitiser is now one shared module
 - **Decision**: All untrusted values reach loggers through a single

@@ -11,7 +11,6 @@ import {
   Loader2,
   PauseCircle,
   PlayCircle,
-  RefreshCw,
   ScanSearch,
   Timer,
   TimerOff,
@@ -19,8 +18,8 @@ import {
 
 /**
  * GrabFood channel admin: local↔Grab item mapping, sold-out (snooze), menu
- * sync with trace, and the store pause toggle. Everything degrades gracefully
- * while the integration runs in mock mode (GRABFOOD_ENV=mock).
+ * trace and the store pause toggle. Everything degrades gracefully while the
+ * integration runs in mock mode (GRABFOOD_ENV=mock).
  */
 
 interface MappingRow {
@@ -56,7 +55,6 @@ export default function GrabFoodAdminPage() {
   const [mappings, setMappings] = useState<MappingRow[]>([])
   const [unmapped, setUnmapped] = useState<UnmappedItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
   const [storeOpened, setStoreOpened] = useState<boolean | null>(null)
   const [togglingPause, setTogglingPause] = useState(false)
   const [mappingDraft, setMappingDraft] = useState<Record<string, string>>({})
@@ -165,35 +163,6 @@ export default function GrabFoodAdminPage() {
       setTogglingPause(false)
     }
   }, [storeOpened, getToken, addToast])
-
-  const syncMenu = useCallback(async () => {
-    setSyncing(true)
-    try {
-      const res = await fetch('/api/integrations/grabfood/menu/sync', {
-        method: 'POST',
-        headers: await (async () => ({ authorization: `Bearer ${await getToken()}` }))(),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        addToast({
-          type: 'error',
-          title: 'Menu sync failed',
-          description: data?.detail ?? data?.error,
-        })
-        return
-      }
-      addToast({
-        type: 'success',
-        title: `Pushed ${data.pushed_records} records to GrabFood`,
-        description:
-          data.unmapped_products?.length > 0
-            ? `${data.unmapped_products.length} item(s) unmapped — map them below`
-            : 'Grab was notified to pull the menu',
-      })
-    } finally {
-      setSyncing(false)
-    }
-  }, [getToken, addToast])
 
   const showTrace = useCallback(async () => {
     const res = await fetch('/api/integrations/grabfood/menu/trace', {
@@ -334,16 +303,12 @@ export default function GrabFoodAdminPage() {
       <div>
         <h1 className="text-2xl font-bold">GrabFood Channel</h1>
         <p className="text-sm text-muted-foreground">
-          Mapping, sold-out (snooze), menu sync and store controls. Environment:{' '}
+          Mapping, sold-out (snooze), menu trace and store controls. Environment:{' '}
           <Badge variant="outline">mock or live per GRABFOOD_ENV</Badge>
         </p>
       </div>
 
       <section className="flex flex-wrap items-center gap-3">
-        <Button onClick={syncMenu} disabled={syncing}>
-          {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Sync menu to GrabFood
-        </Button>
         <Button variant="outline" onClick={showTrace}>
           <ScanSearch className="h-4 w-4 mr-2" />
           Check sync trace

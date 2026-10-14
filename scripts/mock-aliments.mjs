@@ -81,28 +81,6 @@ export const MOCK_MENU = {
   ],
 }
 
-/**
- * Strip control characters so caller-supplied values cannot forge extra log
- * lines, then bound the length.
- */
-function safeLogValue(value) {
-  const str = String(value ?? '')
-  // eslint-disable-next-line no-control-regex
-  const stripped = str.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?')
-  return stripped.length > 64 ? `${stripped.slice(0, 61)}...` : stripped
-}
-
-/**
- * Log only a fingerprint of a credential. The header name already says it is a
- * key, so echoing a little of it is enough to confirm the client sent one —
- * printing the value itself would leak a secret into logs.
- */
-function maskSecret(value) {
-  const str = String(value ?? '')
-  if (str.length <= 8) return '***'
-  return `${str.slice(0, 4)}…${str.slice(-4)}`
-}
-
 function handleRequest(req, res) {
   const { method, url } = req
   const apiKey = req.headers['apikey']
@@ -111,10 +89,22 @@ function handleRequest(req, res) {
   // Consume any request body so the client never sees a stuck connection.
   req.on('data', () => {})
 
+  // Log only values this harness controls (or coarse booleans) — never the
+  // request's own strings. Echoing the caller's path/headers would let a crafted
+  // request forge log lines (CWE-117), and the `apiKey` header is a credential
+  // (CWE-532), so both are reduced to a fixed label / presence flag here. The
+  // raw headers are still available to tests and callers via `req.headers`.
+  const route = url?.startsWith('/api/merchant/menu')
+    ? '/api/merchant/menu'
+    : url?.startsWith('/api/merchant/login')
+      ? '/api/merchant/login'
+      : url?.startsWith('/api/merchant/snoozeMenu')
+        ? '/api/merchant/snoozeMenu'
+        : '(unmatched)'
   console.log(
-    `[mock] ${safeLogValue(method)} ${safeLogValue(url)}  ` +
-      `apiKey=${apiKey ? maskSecret(apiKey) : '(none)'}  ` +
-      `X-Request-Id=${safeLogValue(requestId ?? '(none)')}`
+    `[mock] ${method === 'GET' ? 'GET' : method === 'POST' ? 'POST' : 'OTHER'} ${route}  ` +
+      `apiKey=${apiKey ? 'present' : 'absent'}  ` +
+      `X-Request-Id=${requestId ? 'present' : 'absent'}`
   )
 
   res.setHeader('Content-Type', 'application/json')

@@ -65,15 +65,21 @@ export function decodeClaimResponse(payload) {
     .map((job) => ({ jobId: job.job_id ?? `${job.order_id}:${job.type}`, type: job.type, bytes: job.bytes }))
 }
 
+const PRINT_TYPES = ['kitchen_docket', 'receipt', 'grabfood_ticket']
+
 /**
- * Strip control characters from anything logged that originates outside this
- * process (claim payloads, printer errors, HTTP status text) so a crafted value
- * cannot forge extra log lines, then bound the length.
+ * Reduce a claim/job identifier to a strictly-validated, known-shape string
+ * before it is ever logged. Job ids come from the app's claim payload, so
+ * echoing them verbatim would let a crafted id forge log lines (CWE-117).
+ * Anything that does not match the expected `<uuid>:<job-type>` shape (or a
+ * plain uuid) is replaced with a constant.
  */
-function safeLogValue(value) {
+export function safeJobId(value) {
   const str = String(value ?? '')
-  const stripped = str.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?')
-  return stripped.length > 200 ? `${stripped.slice(0, 197)}...` : stripped
+  const match = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?::([a-z_]+))?$/i.exec(str)
+  if (!match) return '(unrecognised job)'
+  const type = match[2]
+  return type && PRINT_TYPES.includes(type) ? `${match[1]}:${type}` : match[1]
 }
 
 /**
@@ -102,7 +108,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
     await printer(new Uint8Array(bytes), config)
     lastPrintAt = new Date().toISOString()
     printedCount += 1
-    log(`printed ${safeLogValue(task.jobId)} (${bytes.length} bytes)`)
+    log(`printed ${safeJobId(task.jobId)} (${bytes.length} bytes)`)
   }
 
   async function withRetry(task) {
@@ -111,10 +117,10 @@ export function startBridge(configOverrides = {}, deps = {}) {
     } catch (err) {
       task.attempts = (task.attempts ?? 0) + 1
       if (task.attempts >= 5) {
-        logError(`giving up on ${safeLogValue(task.jobId)} after ${task.attempts} attempts:`, safeLogValue(err.message))
+        logError(`giving up on ${safeJobId(task.jobId)} after ${task.attempts} attempts`)
         return
       }
-      logError(`print failed for ${safeLogValue(task.jobId)} (attempt ${task.attempts}), will retry:`, safeLogValue(err.message))
+      logError(`print failed for ${safeJobId(task.jobId)} (attempt ${task.attempts}), will retry`)
       retryQueue.push(task)
     }
   }
@@ -132,7 +138,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
       }
       payload = await res.json()
     } catch (err) {
-      logError('claim unreachable:', safeLogValue(err.message))
+      logError('claim unreachable (network/config error)')
       return
     }
     const tasks = decodeClaimResponse(payload)
@@ -225,7 +231,7 @@ export function startBridge(configOverrides = {}, deps = {}) {
           await printer(new Uint8Array(bytes), config)
           lastPrintAt = new Date().toISOString()
           printedCount += 1
-          log(`printed ${safeLogValue(orderId)}:${safeLogValue(type)} (${bytes.length} bytes)`)
+          log(`printed ${safeJobId(`${orderId}:${type}`)} (${bytes.length} bytes)`)
           res.writeHead(200, { 'Content-Type': 'application/json', ...cors })
           res.end(JSON.stringify({ ok: true, type: rendered.type, order_number: rendered.order_number }))
         } catch (err) {

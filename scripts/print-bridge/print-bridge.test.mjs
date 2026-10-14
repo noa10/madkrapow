@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { startBridge, decodeClaimResponse, printBytes } from './print-bridge.mjs'
+import { startBridge, decodeClaimResponse, printBytes, safeJobId } from './print-bridge.mjs'
 
 const CONFIG = {
   appUrl: 'https://app.test',
@@ -185,12 +185,24 @@ describe('bridge HTTP surface', () => {
 })
 
 describe('log injection hardening', () => {
-  it('strips control characters from externally-supplied job ids and errors', async () => {
+  it('reduces job ids to a validated shape before logging', () => {
+    expect(safeJobId('9f1c1b1e-3a2b-4c5d-8e7f-0a1b2c3d4e5f:kitchen_docket')).toBe(
+      '9f1c1b1e-3a2b-4c5d-8e7f-0a1b2c3d4e5f:kitchen_docket'
+    )
+    // Unknown types and anything off-shape collapse to a constant — so a crafted
+    // id can never reach the log (CWE-117).
+    expect(safeJobId('9f1c1b1e-3a2b-4c5d-8e7f-0a1b2c3d4e5f:bogus')).toBe(
+      '9f1c1b1e-3a2b-4c5d-8e7f-0a1b2c3d4e5f'
+    )
+    expect(safeJobId('order-1\n[print-bridge] FORGED')).toBe('(unrecognised job)')
+    expect(safeJobId(undefined)).toBe('(unrecognised job)')
+  })
+
+  it('never logs externally-supplied ids or error text verbatim', async () => {
     const logged = []
     const errors = []
     const hostile = {
       ...JOB,
-      // Real newlines here would forge extra log lines (CodeQL: log injection).
       job_id: 'order-1\n[print-bridge] FORGED ERROR LINE',
     }
     const bridge = startBridge(
@@ -210,13 +222,9 @@ describe('log injection hardening', () => {
     await bridge.pollOnce()
 
     const output = [...logged, ...errors].join('\n')
-    // The payload text survives, but it can no longer start a line of its own —
-    // the injected "\n[print-bridge] ..." is neutralised to "?[print-bridge] ...".
-    expect(output).toContain('order-1?[print-bridge] FORGED ERROR LINE')
-    expect(output).toContain('boom?[print-bridge] FORGED FROM PRINTER ERROR')
-    // One log line per call: no forged extras from the embedded newlines.
-    expect(logged).toHaveLength(0)
-    expect(errors).toHaveLength(1)
-    expect(errors[0]).not.toContain('\n')
+    expect(output).not.toContain('FORGED')
+    expect(output).toContain('(unrecognised job)')
+    // One log line per call — no forged extras from embedded newlines.
+    for (const line of [...logged, ...errors]) expect(line).not.toContain('\n')
   })
 })

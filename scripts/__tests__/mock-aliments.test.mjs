@@ -46,7 +46,7 @@ describe('mock alimentsBackend harness', () => {
     expect(lastHeaders['x-request-id']).toBe('req-1')
   })
 
-  it('never logs the apiKey in clear text (CodeQL: clear-text logging)', async () => {
+  it('never logs the apiKey value, only its presence (CodeQL: clear-text logging)', async () => {
     const logged = []
     const spy = vi.spyOn(console, 'log').mockImplementation((...args) => logged.push(args.join(' ')))
     try {
@@ -58,10 +58,28 @@ describe('mock alimentsBackend harness', () => {
     }
 
     const output = logged.join('\n')
-    // Identity stays visible for debugging, but the credential must not.
     expect(output).not.toContain('super-secret-credential-value')
-    expect(output).toContain('supe…alue')
-    expect(output).toContain('X-Request-Id=req-2')
+    // Enough to confirm a client sent credentials, without recording them.
+    expect(output).toContain('apiKey=present')
+    expect(output).toContain('/api/merchant/menu')
+  })
+
+  it('does not echo caller-controlled strings into logs (CodeQL: log injection)', async () => {
+    const logged = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => logged.push(args.join(' ')))
+    try {
+      // A newline in the request target would otherwise forge an extra log line.
+      await fetch(`${baseUrl}/api/merchant/menu%0A%5Bmock%5D%20FORGED`, {
+        headers: { apiKey: 'k'.repeat(20) },
+      }).catch(() => {})
+    } finally {
+      spy.mockRestore()
+    }
+
+    const output = logged.join('\n')
+    expect(output).not.toContain('FORGED')
+    // One line per request, whatever the caller sent.
+    for (const line of logged) expect(line).not.toContain('\n')
   })
 
   it('exposes a menu whose shape matches the live wire format', async () => {

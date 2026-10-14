@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 import { startOfDay, endOfDay } from "date-fns"
 import { getBrowserClient } from "@/lib/supabase/client"
 import type { Order } from "@/types/orders"
 
 export function useTodayAsapOrdersQuery() {
-  const [orders, setOrders] = useState<Order[]>([])
+  const [allOrders, setAllOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
@@ -30,7 +30,7 @@ export function useTodayAsapOrdersQuery() {
 
         if (dbError) throw dbError
         if (!cancelled) {
-          setOrders((data ?? []) as Order[])
+          setAllOrders((data ?? []) as Order[])
           setError(null)
         }
       } catch (err) {
@@ -67,5 +67,13 @@ export function useTodayAsapOrdersQuery() {
     }
   }, [])
 
-  return { orders, isLoading, error }
+  // "Total Sales Today" must not count cancelled orders. The sole caller
+  // (`admin/orders/page.tsx`) sums `orders`, so cancelled rows are filtered
+  // out here; the full set stays available as `allOrders` for any future caller.
+  const orders = useMemo(
+    () => allOrders.filter((o) => o.status !== "cancelled"),
+    [allOrders]
+  )
+
+  return { orders, allOrders, isLoading, error }
 }

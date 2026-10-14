@@ -226,6 +226,47 @@ describe('POST /api/integrations/grabfood/webhooks/submit-order', () => {
     expect(body.error).toBe('Processing failed')
   })
 
+  it('does not let an unmapped item name forge log lines (CWE-117, alert #57)', async () => {
+    // The unmapped detail embeds payload-controlled item identifiers
+    // (mapper.ts: `unmapped.push(item.merchantItemID ?? ... ?? item.name)`),
+    // and the route logs it. A newline here would otherwise forge a log line.
+    const client = buildMockClient({ mappingRows: [] })
+    serviceClientMock.mockReturnValue(client)
+
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(' '))
+    })
+    let status: number
+    try {
+      const hostile = {
+        ...VALID_PAYLOAD,
+        items: [
+          {
+            itemID: 'g1',
+            merchantItemID: 'GF-ITEM-1\n[GrabFood] FORGED: order accepted, no action needed',
+            name: 'Set Krapow Daging',
+            quantity: 1,
+            price: 1300,
+          },
+        ],
+      }
+      status = (await POST(makeRequest(hostile) as never)).status
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(status).toBe(500)
+    // The invariant is "one log line per event", not "the word FORGED is
+    // absent": the attacker text may remain as inert content, but it must not
+    // start a line of its own and be mistaken for a separate log entry.
+    const lines = errors.join('\n').split('\n')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('submit-order failed')
+    expect(lines[0]).toContain('GF-ITEM-1')
+    expect(lines.some((line) => line.startsWith('[GrabFood] FORGED'))).toBe(false)
+  })
+
   it('rejects payloads missing orderID with 400', async () => {
     const res = await POST(makeRequest({ merchantID: 'm' }) as never)
     expect(res.status).toBe(400)

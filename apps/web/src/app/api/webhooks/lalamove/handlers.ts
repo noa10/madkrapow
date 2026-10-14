@@ -2,15 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { createLalamoveClient } from '@/lib/lalamove/client'
 import { mapV3StatusToDispatch, mapDispatchToOrderStatus, isValidStatusTransition } from '@/lib/lalamove/status-mapper'
 import type { ShipmentDispatchStatus } from '@/lib/lalamove/types'
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 
 // Lalamove webhook event handlers extracted from route.ts so they can be unit
 // tested in isolation. Next.js 16 enforces a strict route export allowlist
 // (GET/POST/etc.), so any helper that needs to be imported by tests must live
 // outside route.ts.
-
-function sanitizeForLog(value: string): string {
-  return value.replace(/\n|\r/g, '')
-}
 
 export async function handleStatusChange(
   supabase: ReturnType<typeof createServerClient>,

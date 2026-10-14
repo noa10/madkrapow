@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { getSignatureHeaderName, verifyWebhookSignature } from '@/lib/grabfood/verify'
 import { handleSubmitOrder } from '../handlers'
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 import type { GrabSubmitOrderPayload } from '@/lib/grabfood/types'
 
 /**
@@ -36,7 +37,9 @@ export async function POST(req: NextRequest) {
   if (result.status === 'error' || result.status === 'unmapped') {
     // 5xx => Grab retries the delivery (mapping fixes land on retry).
     // Keep the detail server-side: it can contain PostgREST errors/item ids.
-    console.error('[GrabFood] submit-order failed:', result.detail)
+    // Item ids come from the payload, so strip line breaks before logging —
+    // an unmapped item name could otherwise forge a log line (CWE-117).
+    console.error('[GrabFood] submit-order failed:', sanitizeForLog(result.detail))
     return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
   }
 

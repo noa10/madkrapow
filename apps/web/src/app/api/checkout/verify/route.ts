@@ -4,10 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
-
-function sanitizeForLog(value: string): string {
-  return value.replace(/\n|\r/g, '')
-}
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 
 interface VerifyResponse {
   success: true

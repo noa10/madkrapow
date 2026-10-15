@@ -26,6 +26,11 @@ graph TB
         A[Next.js App - RSC + Client Components]
     end
 
+    subgraph "Native Mobile Apps (Flutter)"
+        N1["Customer app<br/>apps/mobile"]
+        N2["Merchant app<br/>apps/merchant"]
+    end
+
     subgraph "Vercel Edge Network"
         B[Next.js App Router]
         C[API Routes /api/*]
@@ -64,6 +69,13 @@ graph TB
     J -->|checkout.session.completed| C
     K -->|ORDER_STATUS_CHANGED| C
     G -->|postgres_changes| A
+
+    N1 -->|Anon Client| F
+    N1 -->|WebSocket| G
+    N1 -->|"HTTPS: checkout, quotes, profile"| C
+    N2 -->|Anon Client| F
+    N2 -->|WebSocket| G
+    N2 -->|"HTTPS: admin writes, analytics"| C
 ```
 
 ---
@@ -93,6 +105,51 @@ graph TB
 
 ---
 
+## Native Mobile Apps (Flutter)
+
+Two Flutter apps ship alongside the web app. They are **clients of the same backend** — there is no
+separate mobile API. Both live in `apps/` and share the `packages/madkrapow_orders` contract.
+
+| App | Path | Audience | Purpose |
+|---|---|---|---|
+| **Customer** | `apps/mobile` | Diners | Browse the menu, order, pay, track delivery |
+| **Merchant** | `apps/merchant` | Store staff | Orders, kitchen display, menu, employees, promos, analytics, settings |
+
+### Shared order-status contract
+
+`packages/madkrapow_orders/order_status.json` is the machine source of truth for the order state
+machine. It generates `apps/web/src/lib/orders/status.ts` and the Dart constants in
+`packages/madkrapow_orders/lib/order_status.g.dart`. `npm run lint:parity` fails CI if the JSON
+spec, the TypeScript module, the Dart package, and the SQL `CHECK` constraint disagree. See
+[`docs/order-status-spec.md`](order-status-spec.md) for the human-facing version.
+
+### Data access pattern
+
+Both apps use a **hybrid** read/write split, applied consistently except where noted in the audit:
+
+- **Reads** go directly to Supabase with the user's JWT, relying on RLS (`service_role` is never
+  used client-side).
+- **Writes** that need server-side validation or an audit trail go through the web API
+  (`/api/admin/**`, `/api/checkout/**`) using `WEB_API_URL`.
+- **Realtime** uses Supabase `postgres_changes` channels, with polling as a fallback on
+  order-tracking screens.
+
+### Android release
+
+Releases are tag-driven: pushing `mobile-v*` or `merchant-v*` triggers
+`.github/workflows/android-release.yml`, which builds a signed AAB + APK and opens a draft GitHub
+release. Both apps also carry an in-app GitHub APK updater. See
+[`docs/android-release.md`](android-release.md).
+
+### Caveat: generated models
+
+The `lib/generated/` table models in both apps come from `supabase_codegen` and are **not**
+regenerated automatically. They were last generated on 2026-04-11 and are behind the migration
+history — see the 2026-10-15 audit in [`docs/audits/`](audits/) for the current gap and its
+consequences.
+
+---
+
 ## Codemap
 
 ```
@@ -105,23 +162,49 @@ mad-krapow/
 │   └── documentation.md       # Milestone status + decisions + troubleshooting
 │
 ├── apps/
-│   └── web/
-│       ├── src/                        # Next.js application source
-│       ├── public/                     # Static assets
-│       ├── middleware.ts               # Next.js middleware entrypoint
-│       ├── next.config.ts
-│       ├── tailwind.config.ts
-│       ├── postcss.config.mjs
-│       ├── tsconfig.json
-│       ├── next-env.d.ts
-│       ├── package.json
-│       └── .env.local.example
+│   ├── web/
+│   │   ├── src/                        # Next.js application source
+│   │   ├── public/                     # Static assets
+│   │   ├── middleware.ts               # Next.js middleware entrypoint
+│   │   ├── next.config.ts
+│   │   ├── tailwind.config.ts
+│   │   ├── postcss.config.mjs
+│   │   ├── tsconfig.json
+│   │   ├── next-env.d.ts
+│   │   ├── package.json
+│   │   └── .env.local.example
+│   │
+│   ├── mobile/                         # Flutter customer app (Android/iOS)
+│   │   ├── lib/
+│   │   │   ├── features/               # auth, menu, cart, checkout, orders, profile
+│   │   │   ├── core/                   # shell, widgets, updater, utils
+│   │   │   ├── config/                 # routes, theme, env (envied)
+│   │   │   └── generated/              # supabase_codegen table models
+│   │   ├── android/ · ios/             # platform shells
+│   │   ├── test/
+│   │   └── pubspec.yaml
+│   │
+│   └── merchant/                       # Flutter store-staff app (Android/iOS)
+│       ├── lib/
+│       │   ├── features/               # orders, kitchen, menu, employees, promos,
+│       │   │                           #   analytics, settings, notifications
+│       │   ├── core/                   # shell, roles, updater, utils
+│       │   ├── config/                 # routes, theme, env (envied)
+│       │   └── generated/              # supabase_codegen table models
+│       ├── android/ · ios/             # platform shells
+│       ├── test/
+│       └── pubspec.yaml
 │
 ├── packages/
-│   └── shared-types/
-│       ├── package.json
-│       └── typescript/
-│           └── db.ts                   # Generated Supabase database types
+│   ├── shared-types/
+│   │   ├── package.json
+│   │   └── typescript/
+│   │       └── db.ts                   # Generated Supabase database types
+│   │
+│   └── madkrapow_orders/               # Canonical order-status contract, shared by
+│       ├── order_status.json           #   web + both Flutter apps. Generated from
+│       ├── lib/order_status.g.dart     #   the JSON spec; `npm run lint:parity` fails
+│       └── tool/generate.dart          #   CI if any platform drifts from it
 │
 ├── supabase/
 │   ├── migrations/

@@ -5,15 +5,21 @@
 **Baseline:** `apps/web` (the canonical POS since 2026-10-13)
 **Method:** full code read of both apps + web parity diff + live Android emulator test run
 
+> This is a **point-in-time snapshot**, not living documentation. The day counts, dependency
+> versions and line references below were accurate on 2026-10-15 against `master` @ `1d23ea5`.
+> Re-verify before acting on them later.
+
 ---
 
 ## Summary
 
-Both Flutter apps are **healthy and working**. They build, install, and run on Android with all
-50 tests passing. The problem is not breakage — it is that the web app became the canonical
-multi-channel POS on 2026-10-13/14 and the two Flutter apps have **not moved since May and June**.
+Both Flutter apps **build, install, run on Android, and pass all 50 tests** — but they have
+**functionally drifted**. The web app became the canonical multi-channel POS on 2026-10-13/14 and
+the two Flutter apps have not moved since May and June. Every order channel, printing path, and
+dashboard capability added since then exists only on web, and neither app can see the orders those
+channels produce.
 
-Every order channel, printing path, and dashboard capability added since then exists only on web.
+The apps are not broken; they are behind, and two defects in them are live today (§3.1, §3.2).
 
 | Measure | Value |
 |---|---|
@@ -26,10 +32,13 @@ Every order channel, printing path, and dashboard capability added since then ex
 
 ### Why it drifted
 
-The Flutter apps are absent from the project's own architecture record. `docs/architecture.md`
-describes the customer surface only as "Mobile Browser / PWA" and never places the Flutter apps in
-the system diagram; `docs/documentation.md` does not mention them at all. They appear only in
-`README.md` (release process) and `docs/order-status-spec.md`.
+The Flutter apps were absent from the project's own architecture record.
+`docs/architecture.md` described the customer surface only as "Mobile Browser / PWA" and never
+placed the Flutter apps in the system diagram or codemap; `docs/documentation.md` did not mention
+them at all. They appeared only in `README.md` (release process) and `docs/order-status-spec.md`.
+
+**This PR closes that gap** — see the "Flutter apps" section and codemap entries now added to
+`docs/architecture.md`.
 
 ---
 
@@ -121,34 +130,53 @@ Merchant app — driven through the sign-in form
 ✗ Firebase fails to initialise — see finding 3.2
 ```
 
-### Unplanned behaviour worth knowing
-
-On its **first launch**, the customer app's in-app updater found `mobile-v0.1.2` on GitHub,
-auto-downloaded the release APK, and raised Android's "Allow this app to install other apps"
-system dialog — covering the app before the user had done anything.
-
-This is by design (`UpdateAction.autoDownloading`, fired 3 s after first frame), but it means a
-debug build hijacks its own launch flow, and it is the first thing a fresh install shows.
-
 ---
 
 ## 3. Fix first — correctness and security
 
-Five defects, confirmed by reading the code and, where possible, by running it.
+**Four defects confirmed by code read and/or runtime; one open pending the server contract.**
 
-### 3.1 Kitchen tickets overcharge every order — CONFIRMED
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| 3.1 | Kitchen tickets add the delivery fee twice, then drop the cents | **High** — wrong money on every order | Confirmed |
+| 3.2 | Push notifications dead in the merchant app | **High** — no order alerts | Reproduced on device |
+| 3.3 | Promo writes bypass the server | Medium — validation/audit gap | Confirmed |
+| 3.4 | `/more/settings` reachable without signing in | Low — exposes settings/updater to a guest | Confirmed |
+| 3.5 | Stripe WebView has no host allowlist | Medium — needs server context | Open |
+| 3.6 | First-launch updater hijacks the app | Low — permission surface + first-run UX | Confirmed |
 
-`kitchen_display_screen.dart:52` prints `total_cents + delivery_fee_cents`. But `total_cents` is
+### 3.1 Kitchen tickets add the delivery fee twice, then drop the cents — HIGH, CONFIRMED
+
+`kitchen_display_screen.dart:52` computes `total_cents + delivery_fee_cents`, but `total_cents` is
 **already fee-inclusive** — the web's own money module documents this and warns against exactly
-this addition. A RM 12.50 + RM 4.00 order shows the kitchen RM 20.50 instead of RM 16.50.
+this addition.
+
+The rendered figure also differs from what the web docstring implies, because `_formatTotal` uses
+`toStringAsFixed(0)`: it shows whole ringgit. For a RM 12.50 + RM 4.00 order (`total_cents` 1650,
+`delivery_fee_cents` 400):
+
+| | Value | Kitchen card shows |
+|---|---|---|
+| Today | `(1650 + 400) / 100 = 20.5` | **RM 21** |
+| Removing only the addition | `1650 / 100 = 16.5` | **RM 17** — still wrong |
+| Correct | `1650 / 100` via `formatPrice` | **RM 16.50** |
+
+So the fix is **two parts**, not one line: drop `+ deliveryFeeCents`, and render through the
+existing `formatPrice` helper (`lib/core/utils/price_formatter.dart`, `NumberFormat('#,##0.00')`)
+so the card matches web's two-decimal `formatMoney`.
 
 Every other money path in both apps was checked: this is the **only** place the fee is added twice.
-One-line fix.
 
-- `apps/merchant/lib/features/orders/presentation/screens/kitchen_display_screen.dart:52`
-- Contract: `apps/web/src/lib/orders/money.ts` → `orderTotalCents()`
+Related, same file: `kitchenOrdersProvider` fetches `['paid', 'accepted', 'preparing', 'ready']`,
+but `_statusColors` / `_statusLabels` have no `accepted` entry — such an order renders as a grey
+card with a raw `accepted` label. The maps also carry a stale `delivering` key, which is not one of
+the canonical eight statuses (the real one is `picked_up`) and so never matches. Only
+`preparing → ready` is wired as a transition.
 
-### 3.2 Push notifications are dead in the merchant app — REPRODUCED ON DEVICE
+- `apps/merchant/lib/features/orders/presentation/screens/kitchen_display_screen.dart:18-38, 51-54, 186-188`
+- Contract: `apps/web/src/lib/orders/money.ts` → `orderTotalCents()`, `formatMoney()`
+
+### 3.2 Push notifications are dead in the merchant app — HIGH, REPRODUCED ON DEVICE
 
 No `google-services.json`, no `GoogleService-Info.plist`, no `firebase_options.dart`, and the
 `com.google.gms.google-services` Gradle plugin is not applied. `Firebase.initializeApp()` throws and
@@ -171,7 +199,7 @@ Kitchen staff get no new-order alert on the device; the app silently falls back 
 The customer app has **no FCM at all** — no `firebase_core`/`firebase_messaging` in its pubspec.
 Order progress is only visible while the app is open.
 
-### 3.3 Promo writes bypass the server — CONFIRMED
+### 3.3 Promo writes bypass the server — MEDIUM, CONFIRMED
 
 The merchant app writes promo create/update/delete straight to `promo_codes` and `promo_items` from
 the mobile client. Every other write path in the same app goes through the web API —
@@ -183,15 +211,19 @@ and it means promo rules are enforced in one place on web and another on mobile.
 - `apps/merchant/lib/features/promos/data/promo_repository.dart:114,163,175,179,198,212`
 - Contrast: `apps/merchant/lib/features/menu/data/menu_repository.dart:6-8`
 
-### 3.4 A settings route is reachable without signing in — CONFIRMED
+### 3.4 `/more/settings` is reachable without signing in — LOW, CONFIRMED
 
 The customer app's route guard only prefix-matches routes containing a `:` parameter; everything
-else needs an exact match. `/more` is listed, `/more/settings` is not — so app settings and the
-updater screen can be deep-linked by an unauthenticated user.
+else needs an exact match. `/more` is listed, `/more/settings` is not — so the app settings and
+updater screen can be deep-linked by an unauthenticated user. The legacy `/profile/settings`
+redirect lands on the same unguarded route.
+
+Severity is low because guest mode already exists and only the settings/updater screen is exposed —
+not order data or checkout.
 
 - `apps/mobile/lib/app.dart:51-60` — `_isProtectedRoute()`
 
-### 3.5 The Stripe WebView will load any URL it is handed — NEEDS SERVER CONTEXT
+### 3.5 The Stripe WebView will load any URL it is handed — MEDIUM, OPEN
 
 The checkout WebView runs with unrestricted JavaScript and no host allowlist. Its URL comes from the
 API response and from a `checkout_url` query parameter, so a compromised or misconfigured API
@@ -202,6 +234,19 @@ Confirm against the checkout API before fixing client-side.
 
 - `apps/mobile/lib/features/checkout/presentation/screens/stripe_checkout_screen.dart:25-41,46-84`
 - `apps/mobile/lib/app.dart:162-164`
+
+### 3.6 First-launch updater hijacks the app — LOW, CONFIRMED
+
+On its **first launch**, the customer app's in-app updater found `mobile-v0.1.2` on GitHub,
+auto-downloaded the release APK, and raised Android's "Allow this app to install other apps"
+system dialog — covering the app before the user had done anything.
+
+This is by design (`UpdateAction.autoDownloading`, fired 3 s after first frame), but it means a
+debug build hijacks its own launch flow, it is the first thing a fresh install shows, and it
+depends on `REQUEST_INSTALL_PACKAGES` — a permission worth being deliberate about.
+
+- `apps/mobile/lib/core/services/update/update_lifecycle_observer.dart:31-36`
+- `apps/mobile/android/app/src/main/AndroidManifest.xml` — `REQUEST_INSTALL_PACKAGES`
 
 ---
 
@@ -214,7 +259,8 @@ counterpart. This is the bulk of the "stale repo" problem.
 
 Migrations 041–053 have no Dart representation. Until the models are regenerated, no channel feature
 can be built. Note there is **no `build.yaml`** in either app, so the regeneration path itself needs
-documenting. `supabase_codegen` is pinned at 1.4.0 with 3.0.1 available.
+documenting. `supabase_codegen` is declared as `^1.0.0` and currently locks to **1.4.0**, with 3.0.1
+available.
 
 ### 4.2 Order channel awareness in the merchant app — MISSING ENTIRELY
 
@@ -295,15 +341,18 @@ failure stayed invisible.
 
 ### 5.2 Dependency majors behind
 
-| Package | Pinned | Current | Apps |
-|---|---|---|---|
-| fl_chart | 0.69.0 | 1.2.0 | merchant |
-| go_router | 15.1.2 | 18.1.0 | both |
-| flutter_riverpod | 2.6.1 | 3.4.3 | both |
-| google_sign_in | 6.2.1 | 7.2.0 | both |
-| permission_handler | 11.3.1 | 13.0.2 | both |
-| share_plus | 10.1.4 | 13.3.1 | merchant |
-| supabase_codegen | 1.0.0 | 3.0.1 | both |
+`Constraint` is what `pubspec.yaml` declares; `Locked` is what `pubspec.lock` resolved on
+2026-10-15; `Latest` is the newest published at that date.
+
+| Package | Constraint | Locked | Latest | Apps |
+|---|---|---|---|---|
+| fl_chart | `^0.69.0` | 0.69.2 | 1.2.0 | merchant |
+| go_router | `^15.1.2` | 15.1.3 | 18.1.0 | both |
+| flutter_riverpod | `^2.6.1` | 2.6.1 | 3.4.3 | both |
+| google_sign_in | `^6.2.1` | 6.3.0 | 7.2.0 | both |
+| permission_handler | `^11.3.1` | 11.4.0 | 13.0.2 | both |
+| share_plus | `^10.1.4` | 10.1.4 | 13.3.1 | merchant |
+| supabase_codegen | `^1.0.0` | 1.4.0 | 3.0.1 | both |
 
 `fl_chart` is the riskiest — a two-major jump that gets harder to take the longer it waits.
 
@@ -313,8 +362,9 @@ failure stayed invisible.
   contradicts the one in `env.dart`.
 - `apps/merchant/.../placeholder_analytics_screen.dart` — dead code; the route points at the real
   analytics screen.
-- `geolocator` — a direct dependency with zero references in `lib/`, adding native code and
-  permission surface for nothing.
+- `geolocator` — declared in the **customer app** (`apps/mobile/pubspec.yaml:34`) with zero
+  references in `lib/`, adding native code and permission surface for nothing. It is not in the
+  merchant app.
 - `apps/merchant/.../placeholder_more_screen.dart` — despite the name this **is** the live More tab;
   rename it.
 - Unused `availableTabIndices` / `availableTabLabels` in the merchant app contradict the real shell
@@ -348,22 +398,24 @@ Ordered so each phase is independently shippable and the cheap correctness wins 
 
 | Phase | Work | Why here |
 |---|---|---|
-| **Now** | Kitchen fee fix · Firebase config · promo writes via API · protect `/more/settings` | Four small, isolated changes. Two are money/correctness, one is a silent dead feature. |
+| **Now** | Kitchen total (both parts) · Firebase config · promo writes via API · protect `/more/settings` | Small, isolated changes. 3.1 is wrong money; 3.2 is a silent dead feature. |
 | **Next** | Regenerate Dart models · document the codegen command · align CI Flutter with local | The models unblock every channel feature; the CI pin is why the local build broke. |
 | **Then** | Order channel awareness in merchant orders + kitchen · store-closed enforcement · reorder re-validation | First user-visible parity. Staff stop being blind to GrabFood and counter orders. |
 | **Later** | Kitchen printing · orders dashboard parity · customer-app push notifications | Larger, self-contained features. Push needs the Firebase project set up properly. |
 | **Backlog** | GrabFood admin · counter POS · dashboard · dependency majors · Android toolchain upgrade · dead-code sweep · test coverage | Real work, no urgency, and each gets cheaper once the models are current. |
 
-> **If you only do one thing:** fix the kitchen ticket total. It is one line, it is wrong on every
-> single order, and it misprices food that staff hand to customers.
+> **If you only do one thing:** fix the kitchen total. It is wrong on every single order, and it
+> misprices food that staff hand to customers. Note it is **two** changes, not one — drop the added
+> delivery fee *and* render through `formatPrice` so the cents stop being rounded away.
 
 ---
 
 ## Method and limits
 
-**Verified myself** (not taken from a survey): the kitchen total against `money.ts`, the Firebase
-config files and the runtime log, the generated `OrdersRow` fields, the route guard, and the promo
-write path. Then built, installed, and drove both apps on a live Android emulator.
+**Checked against `master` @ `1d23ea5`:** the kitchen total against `money.ts` and the
+`toStringAsFixed(0)` rendering, the Firebase config files and the runtime log, the generated
+`OrdersRow` fields, the route guard, and the promo write path. Both apps were then built, installed,
+and driven on a live Android emulator.
 
 **Not verified:** nothing was signed in to, so authenticated screens (orders, kitchen, menu
 management, analytics) were not exercised at runtime — their assessment is from code. Payment and

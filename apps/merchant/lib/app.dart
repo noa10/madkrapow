@@ -298,17 +298,20 @@ class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
   }
 
   void _setupTokenManagement() {
-    ref.listenManual(authStateProvider, (_, _) {
+    ref.listenManual(authStateProvider, (_, _) async {
       if (!mounted) return;
       try {
         final user = ref.read(currentUserProvider);
         final staffRole = ref.read(staffRoleProvider);
-        // Register FCM for all authenticated staff; server filters by role
+        // Register FCM for all authenticated staff; server filters by role.
+        //
+        // Deletion is deliberately not handled here: by the time this listener
+        // observes a sign-out, auth.currentUser is already null and
+        // FcmRepository.deleteToken() would no-op. AdminSignInNotifier.signOut()
+        // deletes while the session is still valid.
         if (user != null && staffRole != null) {
-          ref.read(fcmRepositoryProvider).registerToken();
+          await ref.read(fcmRepositoryProvider).registerToken();
           ref.read(fcmRepositoryProvider).setupTokenRefresh();
-        } else {
-          ref.read(fcmRepositoryProvider).deleteToken();
         }
       } catch (e) {
         // Guard: sign-out triggers GoRouter redirect which may dispose this

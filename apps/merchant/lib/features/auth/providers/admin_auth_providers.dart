@@ -6,6 +6,7 @@ import '../data/admin_auth_repository.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/utils/auth_exceptions.dart';
 import '../../../core/constants/roles.dart';
+import '../../notifications/providers/notification_providers.dart';
 
 /// Provides the AdminAuthRepository instance.
 final adminAuthRepositoryProvider = Provider<AdminAuthRepository>((ref) {
@@ -126,6 +127,17 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('remembered_email');
+
+    // Delete this device's FCM token BEFORE ending the session. Once signOut()
+    // clears auth.currentUser, FcmRepository.deleteToken() can no longer
+    // identify the row to remove and returns early — leaving the device
+    // subscribed to the signed-out staff member's order pushes.
+    try {
+      await ref.read(fcmRepositoryProvider).deleteToken();
+    } catch (e) {
+      debugPrint('AdminSignIn: FCM token cleanup failed — $e');
+    }
+
     final repo = ref.read(adminAuthRepositoryProvider);
     await repo.signOut();
   }

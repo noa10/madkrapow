@@ -2,11 +2,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:madkrapow_merchant/core/constants/roles.dart';
 import 'package:madkrapow_merchant/core/providers/supabase_provider.dart';
+import 'package:madkrapow_merchant/features/auth/data/admin_auth_repository.dart';
 import 'package:madkrapow_merchant/features/auth/providers/admin_auth_providers.dart';
+import 'package:madkrapow_merchant/features/notifications/data/fcm_repository.dart';
+import 'package:madkrapow_merchant/features/notifications/providers/notification_providers.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MockUser extends Mock implements User {}
+
+class MockAdminAuthRepository extends Mock implements AdminAuthRepository {}
+
+class MockFcmRepository extends Mock implements FcmRepository {}
 
 /// Stands in for [currentUserProvider], which in production watches the
 /// Supabase auth stream. Driving it from a StateProvider lets a test move the
@@ -103,6 +111,55 @@ void main() {
 
       container.read(userState.notifier).state = _userWithRole('admin');
       expect(container.read(isAdminProvider), isTrue);
+    });
+  });
+
+  group('AdminSignInNotifier.signOut', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    ProviderContainer containerWith({
+      required AdminAuthRepository authRepo,
+      required FcmRepository fcmRepo,
+    }) {
+      final container = ProviderContainer(
+        overrides: [
+          adminAuthRepositoryProvider.overrideWithValue(authRepo),
+          fcmRepositoryProvider.overrideWithValue(fcmRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('deletes the FCM token before ending the session', () async {
+      final authRepo = MockAdminAuthRepository();
+      final fcmRepo = MockFcmRepository();
+      when(() => fcmRepo.deleteToken()).thenAnswer((_) async {});
+      when(() => authRepo.signOut()).thenAnswer((_) async {});
+
+      final container = containerWith(authRepo: authRepo, fcmRepo: fcmRepo);
+
+      await container.read(adminSignInProvider.notifier).signOut();
+
+      // Order matters: after signOut() the session is gone and
+      // FcmRepository.deleteToken() can no longer identify the row to remove.
+      verifyInOrder([
+        () => fcmRepo.deleteToken(),
+        () => authRepo.signOut(),
+      ]);
+    });
+
+    test('still signs out when FCM cleanup fails', () async {
+      final authRepo = MockAdminAuthRepository();
+      final fcmRepo = MockFcmRepository();
+      when(() => fcmRepo.deleteToken()).thenThrow(Exception('network down'));
+      when(() => authRepo.signOut()).thenAnswer((_) async {});
+
+      final container = containerWith(authRepo: authRepo, fcmRepo: fcmRepo);
+
+      await container.read(adminSignInProvider.notifier).signOut();
+
+      verify(() => authRepo.signOut()).called(1);
     });
   });
 }

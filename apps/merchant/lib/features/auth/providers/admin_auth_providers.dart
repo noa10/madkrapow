@@ -6,6 +6,7 @@ import '../data/admin_auth_repository.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/utils/auth_exceptions.dart';
 import '../../../core/constants/roles.dart';
+import '../../notifications/providers/notification_providers.dart';
 
 /// Provides the AdminAuthRepository instance.
 final adminAuthRepositoryProvider = Provider<AdminAuthRepository>((ref) {
@@ -14,9 +15,14 @@ final adminAuthRepositoryProvider = Provider<AdminAuthRepository>((ref) {
 });
 
 /// The current user's role from app_metadata, or null if not authenticated.
+///
+/// Derived from [currentUserProvider], which watches the Supabase auth stream.
+/// Reading the role off the repository's client instead would evaluate once
+/// while signed out and cache null forever, so the GoRouter redirect would
+/// bounce a freshly signed-in staff member back to /signin.
 final currentRoleProvider = Provider<String?>((ref) {
-  final repo = ref.watch(adminAuthRepositoryProvider);
-  return repo.currentRole;
+  final user = ref.watch(currentUserProvider);
+  return user?.appMetadata['role'] as String?;
 });
 
 /// The current user's parsed [StaffRole], or null if not authenticated / unknown.
@@ -37,14 +43,15 @@ final isAdminProvider = Provider<bool>((ref) {
 /// A family provider that checks if the current user has any of the allowed roles.
 /// Returns false if not authenticated.
 final roleGuardProvider = Provider.family<bool, List<String>>((ref, allowedRoles) {
-  final repo = ref.watch(adminAuthRepositoryProvider);
-  return repo.hasAnyRole(allowedRoles);
+  final role = ref.watch(currentRoleProvider);
+  if (role == null) return false;
+  return allowedRoles.contains(role);
 });
 
 /// Whether the current user can manage staff (admin or manager).
 final canManageStaffProvider = Provider<bool>((ref) {
-  final repo = ref.watch(adminAuthRepositoryProvider);
-  return repo.canManageStaff;
+  final role = ref.watch(staffRoleProvider);
+  return role?.canManageStaff ?? false;
 });
 
 /// Admin sign-in controller (AsyncNotifier pattern).
@@ -120,6 +127,17 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('remembered_email');
+
+    // Delete this device's FCM token BEFORE ending the session. Once signOut()
+    // clears auth.currentUser, FcmRepository.deleteToken() can no longer
+    // identify the row to remove and returns early — leaving the device
+    // subscribed to the signed-out staff member's order pushes.
+    try {
+      await ref.read(fcmRepositoryProvider).deleteToken();
+    } catch (e) {
+      debugPrint('AdminSignIn: FCM token cleanup failed — $e');
+    }
+
     final repo = ref.read(adminAuthRepositoryProvider);
     await repo.signOut();
   }

@@ -3,7 +3,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../config/env.dart';
-import '../../../core/constants/roles.dart';
 
 /// Thrown when Google Sign-In completes but Supabase cannot accept the
 /// returned id/access token pair.
@@ -32,46 +31,15 @@ class AdminAuthRepository {
   final SupabaseClient _client;
   final GoogleSignIn _googleSignIn;
 
-  User? get currentUser => _client.auth.currentUser;
-
-  /// The current user's role from app_metadata, or null if not set.
-  String? get currentRole {
-    final user = currentUser;
-    if (user == null) return null;
-    return user.appMetadata['role'] as String?;
-  }
-
-  /// Whether the current user has a specific role.
-  bool hasRole(String role) {
-    final user = currentUser;
-    if (user == null) return false;
-    return user.appMetadata['role'] == role;
-  }
-
-  /// Whether the current user has any of the given roles.
-  bool hasAnyRole(List<String> roles) {
-    final user = currentUser;
-    if (user == null) return false;
-    final role = user.appMetadata['role'] as String?;
-    if (role == null) return false;
-    return roles.contains(role);
-  }
-
-  /// Whether the current user can manage staff (admin or manager).
-  bool get canManageStaff {
-    final role = currentRole;
-    if (role == null) return false;
-    final staffRole = StaffRoleExtension.fromString(role);
-    return staffRole?.canManageStaff ?? false;
-  }
-
-  /// Whether the current user has admin role in app_metadata.
-  /// Kept for backward compatibility.
-  bool get isAdmin {
-    final user = currentUser;
-    if (user == null) return false;
-    return user.appMetadata['role'] == 'admin';
-  }
+  // Role and permission reads deliberately do NOT live here.
+  //
+  // They used to (`currentUser`, `currentRole`, `hasRole`, `hasAnyRole`,
+  // `canManageStaff`, `isAdmin`), reading `_client.auth.currentUser` on demand.
+  // Because the Supabase client is a stable object, anything deriving from
+  // those reads had no reactive dependency on auth state: Riverpod computed it
+  // once while signed out and cached null forever, which silently broke
+  // sign-in (see the role providers in `admin_auth_providers.dart`). Role is
+  // now derived from `currentUserProvider`, which watches the auth stream.
 
   /// Sign in with email and password.
   Future<AuthResponse> signInWithEmail({

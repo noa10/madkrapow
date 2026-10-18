@@ -107,9 +107,26 @@
 4. Item page → **Back to Menu**; also hard-refresh an item URL in a new tab → Back must go to `/menu`, never leave the app.
 5. `/admin` → `/admin/orders` → `/admin/analytics`: no full-page spinner after the first load; analytics charts load lazily; confirm `EXPLAIN` uses the new indexes on a production-like dataset.
 
-## 6. Browser smoke test (production build, mocked backend)
+## 6. Browser smoke tests
 
-No live staging credentials were available in this environment (the supplied `.env` archive contains only the repo's `.env.example` placeholders, and Docker is unavailable for a local Supabase stack). To still exercise the real UI, the app was built and served with `next start` against a local mock of Supabase Auth/PostgREST and a Playwright-intercepted `/api/delivery/quote`, then driven with Chromium in a real browser. The **same suite was run against pristine `master`** to prove it reproduces the reported bugs.
+### 6a. Live staging run (real Supabase + real Lalamove sandbox) — PASS 13/13
+
+Run against `next start` with the project's real staging `.env.local` and a throwaway, email-confirmed test user created through the Supabase admin API and deleted immediately after the run. `/api/delivery/quote` hit the **real Lalamove sandbox** (no interception); no Pay click, so no order was created.
+
+| Check | Result |
+|---|---|
+| Home 200 + renders | PASS — 634 ms |
+| Home makes no client menu queries | PASS — 0 |
+| Menu renders real items | PASS — `/item/set-krapow-daging-dengan-minuman` |
+| Item page Back → `/menu` / fresh-tab deep link Back stays in app | PASS / PASS |
+| Test user signs in, checkout reachable | PASS / PASS |
+| Real delivery quote renders | PASS — RM 5.00 item + RM 4.00 fee = **Pay RM 9.00**, no stuck state |
+| **Delivery → Pickup → Delivery ×3 (real API)** | **PASS** — re-quoted every cycle; exactly **4** quote requests (1 initial + 3 switches) |
+| No permanent “Calculating delivery fee…”, no quote error | PASS |
+
+### 6b. Baseline reproduction (production build, mocked backend) — `master` FAILS
+
+Staging credentials were not available for the first pass, so the same suite was also run against a local mock of Supabase Auth/PostgREST with an intercepted quote API, and **against pristine `master`** to prove it reproduces the bugs.
 
 | Check | `master` | This branch |
 |---|---|---|
@@ -124,7 +141,7 @@ No live staging credentials were available in this environment (the supplied `.e
 | No permanent “Calculating delivery fee…” | **FAIL** | **PASS** |
 | No duplicate quote requests | **FAIL** | **PASS** |
 
-Harness lives outside the repo at `/home/ubuntu/repos/perf-audit/smoke/` (`mock-supabase.mjs`, `smoke.mjs`); offer to promote it to `e2e/` if wanted.
+Harness lives outside the repo at `/home/ubuntu/repos/perf-audit/smoke/` (`mock-supabase.mjs`, `smoke.mjs`, `smoke-staging.mjs`); offer to promote it to `e2e/` if wanted.
 
 ## 7. Known residuals / follow-ups (not changed here)
 

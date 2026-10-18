@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { getBrowserClient } from '@/lib/supabase/client'
-import { MenuItemForm } from '@/components/admin/MenuItemForm'
+import { MenuItemFormLoader } from '../MenuItemFormLoader'
 import type { MenuItem } from '@/lib/queries/menu'
 import { Loader2 } from 'lucide-react'
 
@@ -77,7 +77,7 @@ export default function EditMenuItemPage() {
         </p>
       </div>
       
-      <MenuItemForm menuItem={menuItem} />
+      <MenuItemFormLoader menuItem={menuItem} />
     </div>
   )
 }

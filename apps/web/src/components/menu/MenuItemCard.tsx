@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Card } from '@/components/ui/card'
@@ -38,6 +38,15 @@ function PlaceholderImage() {
 }
 
 export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, quickAddEnabled = false }: MenuItemCardProps) {
+  const [justAdded, setJustAdded] = useState(false)
+  const addedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (addedTimeoutRef.current) clearTimeout(addedTimeoutRef.current)
+    }
+  }, [])
+
   const descriptionSnippet = item.description
     ? item.description.length > 80
       ? item.description.slice(0, 80) + '...'
@@ -69,6 +78,9 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
       type: 'success',
       title: `${item.name} added to cart`,
     })
+    setJustAdded(true)
+    if (addedTimeoutRef.current) clearTimeout(addedTimeoutRef.current)
+    addedTimeoutRef.current = setTimeout(() => setJustAdded(false), 1200)
   }
 
   const imageBlock = (
@@ -179,13 +191,21 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
             {textBlock}
           </Link>
           <div className="hidden sm:flex flex-col items-end justify-center flex-shrink-0">
+            <span className="sr-only" aria-live="polite">
+              {justAdded ? `${item.name} added to cart` : ''}
+            </span>
             <button
               type="button"
               aria-label={`Add ${item.name} to cart`}
               onClick={handleQuickAdd}
-              className="inline-flex items-center rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className={cn(
+                "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                justAdded
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+              )}
             >
-              Add +
+              {justAdded ? 'Added ✓' : 'Add +'}
             </button>
           </div>
         </div>

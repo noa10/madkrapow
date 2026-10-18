@@ -1,3 +1,6 @@
+'use client'
+
+import { memo } from 'react'
 import { MenuItemCard } from './MenuItemCard'
 import type { CategoryWithMenuItems } from '@/lib/queries/menu'
 import type { PromoPreview } from './MenuItemCard'
@@ -8,7 +11,7 @@ interface MenuSectionProps {
   quickAddEnabled?: boolean
 }
 
-export function MenuSection({ category, promoPreviews, quickAddEnabled = false }: MenuSectionProps) {
+export const MenuSection = memo(function MenuSection({ category, promoPreviews, quickAddEnabled = false }: MenuSectionProps) {
   if (category.menu_items.length === 0) return null
 
   return (
@@ -29,4 +32,4 @@ export function MenuSection({ category, promoPreviews, quickAddEnabled = false }
       </div>
     </section>
   )
-}
+})

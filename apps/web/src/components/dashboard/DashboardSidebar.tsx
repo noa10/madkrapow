@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { Home, ShoppingBag, LogOut, Store } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client"
+import { useClientUser } from "@/lib/auth/client-user"
 import { cn } from "@/lib/utils"
 import { ResponsiveSidebar } from "@/components/layout/ResponsiveSidebar"
 import { SidebarHeader } from "@/components/layout/SidebarHeader"
@@ -26,28 +26,11 @@ const sidebarNavItems = [
 export function DashboardSidebar({ mobileOpen, onMobileClose, collapsed = false, onToggleCollapsed }: DashboardSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userInitial, setUserInitial] = useState<string>("?")
-  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
+  const user = useClientUser()
+  const userEmail = user?.email ?? null
+  const userInitial = user?.email?.[0]?.toUpperCase() ?? "?"
+  const userAvatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? null
   const supabase = getBrowserClient()
-
-  useEffect(() => {
-    const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setUserEmail(user.email ?? null)
-        setUserInitial(user.email?.[0]?.toUpperCase() ?? "?")
-        setUserAvatarUrl(user.user_metadata?.avatar_url ?? null)
-      }
-    }
-    loadUser()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      loadUser()
-    })
-
-    return () => subscription.unsubscribe()
-  }, [supabase])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()

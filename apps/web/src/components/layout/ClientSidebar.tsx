@@ -12,10 +12,9 @@ import {
   LogOut,
   User,
 } from "lucide-react"
-import { useState, useEffect } from "react"
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
 import { getBrowserClient } from "@/lib/supabase/client"
-import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles"
+import { isAdminUser } from "@/lib/auth/roles"
+import { useClientUser } from "@/lib/auth/client-user"
 import { useCartStore } from "@/stores/cart"
 import { cn } from "@/lib/utils"
 import { ResponsiveSidebar } from "@/components/layout/ResponsiveSidebar"
@@ -53,24 +52,10 @@ export function ClientSidebar({
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
   const openDrawer = useCartStore((state) => state.openDrawer)
 
-  const [user, setUser] = useState<RoleAwareUser | null>(null)
+  const user = useClientUser()
   const supabase = getBrowserClient()
   const isAdmin = isAdminUser(user)
   const pathname = usePathname()
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-    }
-    checkAuth()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
-        setUser(session?.user ?? null)
-      }
-    )
-    return () => { subscription.unsubscribe() }
-  }, [supabase])
 
   const isActive = (href: string) => {
     if (activeHref) return activeHref === href
@@ -182,7 +167,6 @@ export function ClientSidebar({
               <button
                 onClick={async () => {
                   await supabase.auth.signOut()
-                  setUser(null)
                   onMobileClose()
                   window.location.href = "/"
                 }}

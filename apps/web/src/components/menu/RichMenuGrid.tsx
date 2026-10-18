@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { CategoryWithMenuItems } from "@/lib/queries/menu";
 import { RichMenuCard } from "./RichMenuCard";
 
@@ -7,7 +8,7 @@ interface RichMenuGridProps {
   categories: CategoryWithMenuItems[];
 }
 
-export function RichMenuGrid({ categories }: RichMenuGridProps) {
+export const RichMenuGrid = memo(function RichMenuGrid({ categories }: RichMenuGridProps) {
   return (
     <>
       {categories.map((category) => {
@@ -38,4 +39,4 @@ export function RichMenuGrid({ categories }: RichMenuGridProps) {
       })}
     </>
   );
-}
+});

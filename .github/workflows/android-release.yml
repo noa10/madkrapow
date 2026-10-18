@@ -142,26 +142,52 @@ jobs:
           GOOGLE_WEB_CLIENT_ID_MERCHANT: ${{ secrets.GOOGLE_WEB_CLIENT_ID_MERCHANT }}
           GOOGLE_ANDROID_CLIENT_ID_MERCHANT: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID_MERCHANT }}
           FCM_SENDER_ID_MERCHANT: ${{ secrets.FCM_SENDER_ID_MERCHANT }}
+        shell: bash
         run: |
           set -euo pipefail
-          cp .env.example .env
 
-          # Inject secrets from GitHub Actions
           if [[ "$APP" == "mobile" ]]; then
-            {
-              echo "SUPABASE_URL=$SUPABASE_URL_MOBILE"
-              echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MOBILE"
-              echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MOBILE"
-              echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MOBILE"
-            } >> .env
+            SUPABASE_URL="$SUPABASE_URL_MOBILE"
+            SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_MOBILE"
+            GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID_MOBILE"
+            GOOGLE_ANDROID_CLIENT_ID="$GOOGLE_ANDROID_CLIENT_ID_MOBILE"
+            FCM_SENDER_ID=""
           else
-            {
-              echo "SUPABASE_URL=$SUPABASE_URL_MERCHANT"
-              echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_MERCHANT"
-              echo "GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_MERCHANT"
-              echo "GOOGLE_ANDROID_CLIENT_ID=$GOOGLE_ANDROID_CLIENT_ID_MERCHANT"
-              echo "FCM_SENDER_ID=$FCM_SENDER_ID_MERCHANT"
-            } >> .env
+            SUPABASE_URL="$SUPABASE_URL_MERCHANT"
+            SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_MERCHANT"
+            GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID_MERCHANT"
+            GOOGLE_ANDROID_CLIENT_ID="$GOOGLE_ANDROID_CLIENT_ID_MERCHANT"
+            FCM_SENDER_ID="$FCM_SENDER_ID_MERCHANT"
+          fi
+
+          # Fail the release instead of shipping an APK that cannot sign in.
+          missing=0
+          for name in SUPABASE_URL SUPABASE_ANON_KEY GOOGLE_WEB_CLIENT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret for app=${APP}: ${name}"
+              missing=1
+            fi
+          done
+          if (( missing )); then
+            exit 1
+          fi
+
+          # Write .env from scratch. Never seed it from .env.example:
+          # Envied keeps the FIRST value when a key is duplicated, so appending
+          # real secrets after the example placeholders silently drops them.
+          {
+            echo "SUPABASE_URL=${SUPABASE_URL}"
+            echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+            echo "WEB_API_URL=https://www.madkrapow.com"
+            echo "GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}"
+            echo "GOOGLE_ANDROID_CLIENT_ID=${GOOGLE_ANDROID_CLIENT_ID}"
+            echo "FCM_SENDER_ID=${FCM_SENDER_ID}"
+          } > .env
+
+          # Regression guard: a placeholder here means a broken release.
+          if grep -qE 'your-project\.supabase\.co|your-anon-key-here|your-google-(web|android)-client-id-here|YOUR_FCM_SENDER_ID' .env; then
+            echo "::error::Placeholder credentials found in .env for app=${APP}"
+            exit 1
           fi
 
       - name: Generate code

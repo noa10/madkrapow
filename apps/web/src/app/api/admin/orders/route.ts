@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/admin/require-role';
+import { ADMIN_ORDER_LIST_SELECT } from '@/lib/admin/order-select';
 import { z } from 'zod';
 
 const ordersQuerySchema = z.object({
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from('orders')
-      .select('*, order_items(quantity), source, customer_id')
+      .select(ADMIN_ORDER_LIST_SELECT)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 

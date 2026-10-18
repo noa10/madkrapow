@@ -19,24 +19,32 @@ function isValidRedirect(redirect: string): boolean {
 export async function middleware(request: NextRequest) {
   const { supabase, response } = await refreshSession(request)
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
   const pathname = request.nextUrl.pathname
   const isAdminRoute = pathname.startsWith('/admin')
   const isAuthRoute = pathname.startsWith('/auth')
   const isApiRoute = pathname.startsWith('/api')
+  const isOrdersRoute = pathname.startsWith('/orders')
+  const isCheckoutRoute = pathname.startsWith('/checkout')
+
+  // Only routes with access rules need the user. Public pages and API routes
+  // skip the Supabase Auth network round-trip; refreshSession still refreshes
+  // the cookie/token state above.
+  const needsUser = isAdminRoute || isOrdersRoute || isCheckoutRoute || isAuthRoute
+  if (!needsUser) {
+    return response
+  }
+
+  // Fetch the user exactly once and reuse it for the role checks below.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthRoute && !isApiRoute) {
-    const isProtectedRoute =
-      pathname.startsWith('/orders') ||
-      pathname.startsWith('/checkout') ||
-      isAdminRoute
+    const isProtectedRoute = isOrdersRoute || isCheckoutRoute || isAdminRoute
     if (isProtectedRoute) {
       const url = request.nextUrl.clone()
-      url.pathname = pathname.startsWith('/checkout') ? '/auth/signup' : '/auth'
+      url.pathname = isCheckoutRoute ? '/auth/signup' : '/auth'
       url.searchParams.set('redirect', pathname)
       return Response.redirect(url)
     }

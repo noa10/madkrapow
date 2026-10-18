@@ -22,6 +22,13 @@ import { getBrowserClient } from '@/lib/supabase/client'
 import { DeliveryAddressInput } from '@/components/checkout/DeliveryAddressInput'
 import { SavedAddressSelector, SavedContactSelector } from '@/components/checkout/SavedSelectors'
 import { useGoogleMaps } from '@/hooks/useGoogleMaps'
+import {
+  decideQuoteNeed,
+  quoteAddressKey,
+  quoteKey,
+  DELIVERY_QUOTE_TIMEOUT_MS,
+  type QuoteStatus,
+} from '@/lib/checkout/delivery-quote'
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
@@ -187,7 +194,6 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const quoteExpiresAt = useCheckoutStore((state) => state.quote_expires_at)
   const priceBreakdown = useCheckoutStore((state) => state.price_breakdown)
   const isQuoteExpired = useCheckoutStore((state) => state.isQuoteExpired)
-  const clearShippingQuote = useCheckoutStore((state) => state.clearShippingQuote)
 
   const { isLoaded: gmapsLoaded } = useGoogleMaps()
 
@@ -200,6 +206,17 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const [showContactInput, setShowContactInput] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('idle')
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [quoteExpiryReached, setQuoteExpiryReached] = useState(false)
+
+  // Quote request lifecycle. The store owns the quote; these refs only track
+  // which request/address is current so stale responses can be ignored.
+  const quoteStatusRef = useRef<QuoteStatus>('idle')
+  const activeQuoteKeyRef = useRef<string | null>(null)
+  const activeAddressKeyRef = useRef<string | null>(null)
+  const requestTokenRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const [profileAddresses, setProfileAddresses] = useState<Array<{
     id: string
@@ -232,7 +249,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     : lalamoveFeeCents
   const total = subtotal + deliveryFee - promoDiscount
 
-  const isDeliveryFeeLoading = deliveryType === 'delivery' && !deliveryQuote && !priceBreakdown
+  const isDeliveryFeeLoading = deliveryType === 'delivery' && quoteStatus === 'loading'
 
   const itemIdsKey = useMemo(
     () => [...new Set(items.map((i) => i.menu_item_id))].sort().join(','),
@@ -307,7 +324,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     fetchAutoPromos()
   }, [deliveryFee, getOriginalSubtotal, subtotal])
 
-  const quoteExpired = deliveryType === 'delivery' && quoteExpiresAt && isQuoteExpired()
+  const quoteExpired = deliveryType === 'delivery' && Boolean(quoteExpiresAt) && quoteExpiryReached
 
   const menuItemMap = useMemo(() => {
     return menuItems.reduce((acc, item) => {
@@ -349,7 +366,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     async function fetchData() {
       try {
         const [menuData] = await Promise.all([
-          getMenuItems(),
+          // Checkout displays the money: always re-read prices/availability
+          // instead of serving them from the short-lived client cache.
+          getMenuItems({ maxAgeMs: 0 }),
         ])
         setMenuItems(menuData)
       } catch (err) {
@@ -386,74 +405,162 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     fetchSettings()
   }, [])
 
-  const handleRefreshQuote = useCallback(async () => {
-    if (!deliveryAddress) return
+  const updateQuoteStatus = useCallback((status: QuoteStatus) => {
+    quoteStatusRef.current = status
+    setQuoteStatus(status)
+  }, [setQuoteStatus])
 
-    let lat = deliveryAddress.latitude
-    let lng = deliveryAddress.longitude
-    const addressString = formatAddress(deliveryAddress)
+  const cancelQuoteRequest = useCallback(() => {
+    requestTokenRef.current += 1
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+  }, [])
 
-    if (!lat || !lng) {
-      if (!addressString.trim()) {
-        console.error('[Checkout] Address is empty, cannot geocode')
-        return
+  const requestDeliveryQuote = useCallback(async () => {
+    const address = useCheckoutStore.getState().delivery_address
+    if (!address) return
+    if (useCheckoutStore.getState().delivery_type !== 'delivery') return
+
+    const token = requestTokenRef.current + 1
+    requestTokenRef.current = token
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // This request owns the current address, even before it has coordinates.
+    // Without this, a second keyword-less address would look like the same
+    // "in-flight" geocode and the first response could overwrite it.
+    activeAddressKeyRef.current = quoteAddressKey(address)
+
+    updateQuoteStatus('loading')
+    setQuoteError(null)
+
+    let lat = address.latitude
+    let lng = address.longitude
+    const addressString = formatAddress(address)
+
+    // A stalled geocoder or Lalamove quote must not leave the UI on
+    // "Calculating delivery fee..." forever: fail into the retryable error
+    // state after DELIVERY_QUOTE_TIMEOUT_MS.
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+      // The abort only interrupts signal-aware awaits (Nominatim, the quote
+      // request). The Google geocoder callback and `getSession()` cannot be
+      // aborted, so leave the loading state here too — otherwise an
+      // unabortable await would hold the UI on "Calculating delivery fee…".
+      if (token === requestTokenRef.current) {
+        updateQuoteStatus('error')
+        setQuoteError('Delivery quote timed out. Please retry.')
       }
-      console.log('[Checkout] No coords, geocoding:', addressString, '| gmapsLoaded:', gmapsLoaded)
-      try {
-        // Try Google Maps Geocoder first, fall through to Nominatim on failure
-        if (gmapsLoaded && window.google?.maps) {
-          try {
-            const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
-            const geocoder = new Geocoder()
-            const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-              geocoder.geocode(
-                { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
-                (results, status) => {
-                  if (status === 'OK' && results) resolve(results)
-                  else reject(new Error(`Geocoder status: ${status}`))
-                }
-              )
-            })
-            if (result.length > 0) {
-              lat = result[0].geometry.location.lat()
-              lng = result[0].geometry.location.lng()
-              useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
-              console.log('[Checkout] Geocoded (Google) to:', lat, lng)
+    }, DELIVERY_QUOTE_TIMEOUT_MS)
+
+    const isStale = () => (
+      token !== requestTokenRef.current ||
+      // A timeout abort is a failure, not a superseded request: report it.
+      (!timedOut && controller.signal.aborted) ||
+      useCheckoutStore.getState().delivery_type !== 'delivery'
+    )
+
+    try {
+      if (quoteKey(address) === null) {
+        // This request now owns the "needs geocoding" key. Register it before
+        // awaiting so the address update after geocoding cannot trigger a
+        // second, duplicate quote request.
+        activeQuoteKeyRef.current = null
+
+        if (!addressString.trim()) {
+          updateQuoteStatus('error')
+          setQuoteError('Please enter a complete delivery address.')
+          return
+        }
+
+        try {
+          // Try Google Maps Geocoder first, fall through to Nominatim on failure
+          if (gmapsLoaded && window.google?.maps) {
+            try {
+              const { Geocoder } = await google.maps.importLibrary('geocoding') as google.maps.GeocodingLibrary
+              const geocoder = new Geocoder()
+              const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+                geocoder.geocode(
+                  { address: addressString + ', Malaysia', componentRestrictions: { country: 'my' } },
+                  (result, status) => {
+                    if (status === 'OK' && result) resolve(result)
+                    else reject(new Error(`Geocoder status: ${status}`))
+                  }
+                )
+              })
+              if (isStale()) return
+              if (results.length > 0) {
+                lat = results[0].geometry.location.lat()
+                lng = results[0].geometry.location.lng()
+              }
+            } catch (gmapsErr) {
+              console.warn('[Checkout] Google geocoder failed, trying Nominatim:', gmapsErr)
             }
-          } catch (gmapsErr) {
-            console.warn('[Checkout] Google geocoder failed, trying Nominatim:', gmapsErr)
           }
+
+          if (isStale()) return
+
+          // Nominatim fallback when Google Maps failed or wasn't loaded
+          if (lat == null || lng == null) {
+            const geoRes = await fetch(
+              `https://nominatim.openstreetmap.org/search?` +
+              new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),
+              { headers: { 'User-Agent': 'MadKrapow/1.0' }, signal: controller.signal }
+            )
+            if (!geoRes.ok) throw new Error(`Geocoder HTTP ${geoRes.status}`)
+            const geoData = await geoRes.json()
+            if (isStale()) return
+            if (geoData.length > 0) {
+              lat = parseFloat(geoData[0].lat)
+              lng = parseFloat(geoData[0].lon)
+            } else {
+              updateQuoteStatus('error')
+              setQuoteError('We could not locate this delivery address. Please check it and try again.')
+              return
+            }
+          }
+        } catch (err) {
+          if (isStale()) return
+          console.error('[Checkout] Geocoding failed:', err)
+          updateQuoteStatus('error')
+          setQuoteError('We could not locate this delivery address. Please check it and try again.')
+          return
         }
 
-        // Nominatim fallback when Google Maps failed or wasn't loaded
-        if (!lat || !lng) {
-          const geoRes = await fetch(
-            `https://nominatim.openstreetmap.org/search?` +
-            new URLSearchParams({ format: 'json', q: addressString + ', Malaysia', limit: '1', countrycodes: 'my' }),
-            { headers: { 'User-Agent': 'MadKrapow/1.0' } }
-          )
-          const geoData = await geoRes.json()
-          if (geoData.length > 0) {
-            lat = parseFloat(geoData[0].lat)
-            lng = parseFloat(geoData[0].lon)
-            useCheckoutStore.getState().setDeliveryAddress({ ...deliveryAddress, latitude: lat, longitude: lng })
-            console.log('[Checkout] Geocoded (Nominatim) to:', lat, lng)
-          } else {
-            console.error('[Checkout] Geocoding returned no results for:', addressString)
-            return
-          }
+        if (isStale()) return
+        if (lat == null || lng == null) {
+          updateQuoteStatus('error')
+          setQuoteError('We could not locate this delivery address. Please check it and try again.')
+          return
         }
-      } catch (err) {
-        console.error('[Checkout] Geocoding failed:', err)
-        return
+
+        // Remember the new coords before the store update re-runs the effect.
+        // Merge into the latest address rather than the snapshot captured at
+        // request start: the customer may have changed their name/phone while
+        // geocoding was in flight, and that newer data must not be overwritten.
+        const latestAddress = useCheckoutStore.getState().delivery_address
+        if (!latestAddress) {
+          updateQuoteStatus('idle')
+          return
+        }
+        activeQuoteKeyRef.current = quoteKey({ latitude: lat, longitude: lng })
+        useCheckoutStore.getState().setDeliveryAddress({ ...latestAddress, latitude: lat, longitude: lng })
+      } else {
+        const currentKey = quoteKey(address)
+        activeQuoteKeyRef.current = currentKey
       }
+    } finally {
+      // Geocode early-returns must not leave the quote timeout armed.
+      window.clearTimeout(timeoutId)
     }
-
-    clearShippingQuote()
 
     try {
       const supabase = getBrowserClient()
       const { data: { session } } = await supabase.auth.getSession()
+      if (isStale()) return
 
       const res = await fetch('/api/delivery/quote', {
         method: 'POST',
@@ -468,66 +575,175 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
             address: addressString,
           },
         }),
+        signal: controller.signal,
       })
 
       const data = await res.json()
-      console.log('[Checkout] Quote response:', data)
-
-      if (data.success) {
-        useCheckoutStore.getState().setShippingQuote({
-          quotation_id: data.quotationId,
-          service_type: data.serviceType,
-          stop_ids: data.stopIds,
-          quote_expires_at: data.expiresAt,
-          price_breakdown: data.priceBreakdown,
-          fee_cents: data.feeCents,
-        })
-        console.log('[Checkout] Quote stored, fee:', data.feeCents)
-      } else {
-        console.error('[Checkout] Quote failed:', data.error)
-      }
-    } catch (err) {
-      console.error('[Checkout] Quote fetch error:', err)
-    }
-  }, [deliveryAddress, clearShippingQuote, gmapsLoaded])
-
-  const lastQuotedCoords = useRef<{ lat: number; lng: number } | null>(null)
-
-  useEffect(() => {
-    if (deliveryType !== 'delivery') return
-    if (!deliveryAddress) return
-    if (!deliveryAddress.address_line1) return
-
-    // If coords exist, check for duplicate requests
-    if (deliveryAddress.latitude && deliveryAddress.longitude) {
-      const currentCoords = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
-      const sameCoords = lastQuotedCoords.current
-        && lastQuotedCoords.current.lat === currentCoords.lat
-        && lastQuotedCoords.current.lng === currentCoords.lng
-
-      if (sameCoords) return
-
-      if (deliveryQuote && !isQuoteExpired()) {
-        lastQuotedCoords.current = currentCoords
+      if (timedOut) {
+        if (token === requestTokenRef.current) {
+          updateQuoteStatus('error')
+          setQuoteError('Delivery quote timed out. Please retry.')
+        }
         return
       }
+      if (isStale()) return
+
+      if (!res.ok || !data.success) {
+        console.error('[Checkout] Quote failed:', data.error ?? `HTTP ${res.status}`)
+        updateQuoteStatus('error')
+        setQuoteError(
+          data.code === 'OUT_OF_ZONE'
+            ? 'Delivery quote failed — address may be outside service area'
+            : data.error || 'Unable to get a delivery quote. Please try again.'
+        )
+        return
+      }
+
+      useCheckoutStore.getState().setShippingQuote({
+        quotation_id: data.quotationId,
+        service_type: data.serviceType,
+        stop_ids: data.stopIds,
+        quote_expires_at: data.expiresAt,
+        price_breakdown: data.priceBreakdown,
+        fee_cents: data.feeCents,
+      })
+      setQuoteExpiryReached(false)
+      updateQuoteStatus('ready')
+    } catch (err) {
+      if (timedOut) {
+        if (token === requestTokenRef.current) {
+          updateQuoteStatus('error')
+          setQuoteError('Delivery quote timed out. Please retry.')
+        }
+        return
+      }
+      if (isStale()) return
+      console.error('[Checkout] Quote fetch error:', err)
+      updateQuoteStatus('error')
+      setQuoteError('Unable to get a delivery quote. Please try again.')
+    } finally {
+      window.clearTimeout(timeoutId)
+      if (token === requestTokenRef.current) {
+        abortControllerRef.current = null
+      }
+    }
+  }, [gmapsLoaded, updateQuoteStatus, setQuoteError, setQuoteExpiryReached])
+
+  const handleRefreshQuote = useCallback(() => {
+    void requestDeliveryQuote()
+  }, [requestDeliveryQuote])
+
+  // Switching to pickup must cancel any pending quote so a late response can
+  // never write a delivery quote into pickup mode.
+  useEffect(() => {
+    if (deliveryType !== 'self_pickup') return
+    cancelQuoteRequest()
+    updateQuoteStatus('idle')
+    setQuoteError(null)
+  }, [deliveryType, cancelQuoteRequest, updateQuoteStatus])
+
+  // `isQuoteExpired()` is not reactive: arm one timer for the exact expiry
+  // moment (plus a small skew allowance) and re-check on focus/visibility for
+  // tabs that were asleep. Only write state when the boolean actually flips.
+  useEffect(() => {
+    if (deliveryType !== 'delivery' || !quoteExpiresAt) {
+      setQuoteExpiryReached((previous) => (previous ? false : previous))
+      return
     }
 
-    // No coords (will geocode) or new coords needing a quote
-    if (deliveryAddress.latitude && deliveryAddress.longitude) {
-      lastQuotedCoords.current = { lat: deliveryAddress.latitude, lng: deliveryAddress.longitude }
+    const expiresAtMs = new Date(quoteExpiresAt).getTime()
+    if (!Number.isFinite(expiresAtMs)) {
+      // An unparseable expiry must not leave Pay enabled.
+      setQuoteExpiryReached(true)
+      return
     }
-    handleRefreshQuote()
-  }, [deliveryAddress?.latitude, deliveryAddress?.longitude, deliveryAddress?.address_line1, deliveryAddress?.city, deliveryType, deliveryQuote, handleRefreshQuote, isQuoteExpired, gmapsLoaded])
+
+    const evaluateExpiry = () => {
+      const next = isQuoteExpired()
+      setQuoteExpiryReached((previous) => (previous === next ? previous : next))
+    }
+
+    let timerId: number
+    const armExpiryTimer = () => {
+      // Timers can fire a hair early; re-arm for the remainder rather than
+      // falling back to a polling interval.
+      const remainingMs = expiresAtMs - Date.now() + 100
+      timerId = window.setTimeout(() => {
+        evaluateExpiry()
+        if (expiresAtMs > Date.now()) armExpiryTimer()
+      }, Math.max(0, remainingMs))
+    }
+
+    evaluateExpiry()
+    armExpiryTimer()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') evaluateExpiry()
+    }
+    window.addEventListener('focus', evaluateExpiry)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearTimeout(timerId)
+      window.removeEventListener('focus', evaluateExpiry)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [deliveryType, quoteExpiresAt, isQuoteExpired])
+
+  // Abort the in-flight request when the page unmounts. In development this
+  // also runs between StrictMode effect setups; resetting the ref lets the
+  // remount start a fresh request instead of trusting an aborted "loading" one.
+  useEffect(() => {
+    return () => {
+      requestTokenRef.current += 1
+      quoteStatusRef.current = 'idle'
+      abortControllerRef.current?.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!deliveryAddress) return
+
+    const currentKey = quoteKey(deliveryAddress)
+    const currentAddressKey = quoteAddressKey(deliveryAddress)
+
+    // A persisted quote is already associated with the saved address/coords on
+    // mount. Track both identities so the effect can tell later changes apart.
+    if (deliveryQuote && !quoteExpired) {
+      if (activeQuoteKeyRef.current === null && currentKey) {
+        activeQuoteKeyRef.current = currentKey
+      }
+      if (activeAddressKeyRef.current === null) {
+        activeAddressKeyRef.current = currentAddressKey
+      }
+    }
+
+    const decision = decideQuoteNeed({
+      deliveryType,
+      hasAddressLine1: Boolean(deliveryAddress.address_line1?.trim()),
+      addressKey: currentAddressKey,
+      coordsKey: currentKey,
+      hasQuote: Boolean(deliveryQuote || priceBreakdown),
+      quoteExpired,
+      activeAddressKey: activeAddressKeyRef.current,
+      activeKey: activeQuoteKeyRef.current,
+      status: quoteStatusRef.current,
+    })
+
+    if (decision.action === 'fetch') {
+      void requestDeliveryQuote()
+    }
+  }, [deliveryAddress, deliveryType, deliveryQuote, priceBreakdown, quoteExpired, requestDeliveryQuote])
 
   const isCartEmpty = items.length === 0
   const hasDeliveryAddress = !!deliveryAddress
-  const quoteFailed = deliveryType === 'delivery' && hasDeliveryAddress && !deliveryQuote && !priceBreakdown && !isDeliveryFeeLoading
+  const quoteFailed = deliveryType === 'delivery' && quoteStatus === 'error'
 
   const needsDeliveryAddress = deliveryType === 'delivery'
   const needsScheduledTime = fulfillmentType === 'scheduled'
   const hasScheduledTime = !!scheduledWindow
   const needsScheduleSelection = needsScheduledTime && !hasScheduledTime
+  const hasUsableDeliveryQuote = !needsDeliveryAddress || Boolean(deliveryQuote || priceBreakdown)
 
   const canCheckout =
     !isCartEmpty &&
@@ -535,8 +751,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     !needsScheduleSelection &&
     !quoteExpired &&
     !quoteFailed &&
-    !(needsDeliveryAddress && isDeliveryFeeLoading) &&
-    !(needsDeliveryAddress && !deliveryQuote && !priceBreakdown)
+    !isDeliveryFeeLoading &&
+    hasUsableDeliveryQuote
 
   const currentStep = needsDeliveryAddress && !hasDeliveryAddress ? 1
     : needsScheduleSelection ? 1
@@ -546,7 +762,11 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const handlePayNow = async () => {
     if (!canCheckout || isProcessing) return
 
-    if (quoteExpired) {
+    // Check the live store value, not just the `quoteExpired` snapshot: the
+    // state is only as fresh as the expiry timer, and an expired quote must
+    // never reach Stripe (the create route trusts the client quotation).
+    if (deliveryType === 'delivery' && useCheckoutStore.getState().isQuoteExpired()) {
+      setQuoteExpiryReached(true)
       setError('Your delivery quote has expired. Please refresh the quote.')
       return
     }
@@ -1140,11 +1360,13 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                       </div>
                     )}
                     {quoteFailed && (
-                      <div className="p-2 bg-destructive/10 rounded-lg text-sm flex items-center justify-between">
-                        <span className="text-destructive">Delivery quote failed — address may be outside service area</span>
+                      <div className="p-2 bg-destructive/10 rounded-lg text-sm flex items-center justify-between gap-2">
+                        <span className="text-destructive">
+                          {quoteError ?? 'Delivery quote failed — address may be outside service area'}
+                        </span>
                         <button
                           onClick={handleRefreshQuote}
-                          className="text-destructive hover:text-destructive/80 font-medium underline"
+                          className="text-destructive hover:text-destructive/80 font-medium underline whitespace-nowrap"
                         >
                           Retry
                         </button>
@@ -1199,6 +1421,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Calculating delivery fee...
                     </>
+                  ) : quoteFailed ? (
+                    'Delivery quote unavailable'
                   ) : needsDeliveryAddress && !deliveryQuote && !priceBreakdown ? (
                     'Waiting for delivery quote'
                   ) : (

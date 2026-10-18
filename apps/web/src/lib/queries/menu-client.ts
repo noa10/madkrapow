@@ -2,6 +2,16 @@ import { getBrowserClient } from '@/lib/supabase/client'
 
 const supabase = getBrowserClient()
 
+const MENU_ITEMS_CACHE_TTL_MS = 5 * 60 * 1000
+
+const MENU_ITEM_COLUMNS =
+  'id, category_id, name, slug, description, price_cents, image_url, is_available, sort_order, created_at, updated_at'
+const MENU_ITEM_MODIFIER_GROUP_COLUMNS = 'menu_item_id, modifier_group_id, is_required'
+const MODIFIER_GROUP_COLUMNS =
+  'id, name, description, min_selections, max_selections, sort_order, created_at, updated_at'
+const MODIFIER_COLUMNS =
+  'id, modifier_group_id, name, price_delta_cents, is_default, is_available, sort_order, created_at, updated_at'
+
 export type Category = {
   id: string
   name: string
@@ -58,18 +68,36 @@ export type FullMenuItem = MenuItem & {
   modifier_groups: (ModifierGroup & { is_required: boolean; modifiers: Modifier[] })[]
 }
 
-export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
-  const { data: menuItems, error } = await supabase
-    .from('menu_items')
-    .select('*')
-    .order('sort_order', { ascending: true })
+interface MenuItemsCacheEntry {
+  items: MenuItemWithModifierGroups[]
+  expiresAt: number
+}
+
+let menuItemsCache: MenuItemsCacheEntry | null = null
+let menuItemsInFlight: Promise<MenuItemWithModifierGroups[]> | null = null
+let menuItemsCacheGeneration = 0
+
+export function invalidateMenuItemsCache(): void {
+  menuItemsCacheGeneration += 1
+  menuItemsCache = null
+  menuItemsInFlight = null
+}
+
+async function fetchMenuItems(): Promise<MenuItemWithModifierGroups[]> {
+  const [
+    { data: menuItems, error },
+    { data: menuItemModifierGroups, error: migError },
+  ] = await Promise.all([
+    supabase
+      .from('menu_items')
+      .select(MENU_ITEM_COLUMNS)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('menu_item_modifier_groups')
+      .select(MENU_ITEM_MODIFIER_GROUP_COLUMNS),
+  ])
 
   if (error) throw error
-
-  const { data: menuItemModifierGroups, error: migError } = await supabase
-    .from('menu_item_modifier_groups')
-    .select('*')
-
   if (migError) throw migError
 
   const modifierGroupIds = [...new Set(menuItemModifierGroups.map((m: { modifier_group_id: string }) => m.modifier_group_id))]
@@ -80,7 +108,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
 
   const { data: modifierGroups, error: mgError } = await supabase
     .from('modifier_groups')
-    .select('*')
+    .select(MODIFIER_GROUP_COLUMNS)
     .in('id', modifierGroupIds)
     .order('sort_order', { ascending: true })
 
@@ -90,7 +118,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
 
   const { data: modifiers, error: modError } = await supabase
     .from('modifiers')
-    .select('*')
+    .select(MODIFIER_COLUMNS)
     .in('modifier_group_id', modifierGroupIdList)
     .eq('is_available', true)
     .order('sort_order', { ascending: true })
@@ -120,4 +148,34 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
     ...item,
     modifier_groups: modifierGroupsByMenuItem[item.id] || [],
   }))
+}
+
+export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
+  if (menuItemsCache && menuItemsCache.expiresAt > Date.now()) {
+    return menuItemsCache.items
+  }
+
+  if (menuItemsInFlight) {
+    return menuItemsInFlight
+  }
+
+  const requestGeneration = menuItemsCacheGeneration
+  const request = fetchMenuItems()
+    .then((items) => {
+      if (requestGeneration === menuItemsCacheGeneration) {
+        menuItemsCache = {
+          items,
+          expiresAt: Date.now() + MENU_ITEMS_CACHE_TTL_MS,
+        }
+      }
+      return items
+    })
+    .finally(() => {
+      if (menuItemsInFlight === request) {
+        menuItemsInFlight = null
+      }
+    })
+
+  menuItemsInFlight = request
+  return request
 }

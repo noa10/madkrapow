@@ -12,6 +12,25 @@ interface MenuListViewProps {
   quickAddEnabled?: boolean;
 }
 
+// Session-level cache: navigating away and back should not re-fetch the same
+// promo previews. Failures are never cached so a later mount can retry.
+const promoPreviewCache = new Map<string, PromoPreview | null>();
+
+function readCachedPromoPreviews(
+  itemIds: string[]
+): Map<string, PromoPreview | null> | null {
+  const cached = new Map<string, PromoPreview | null>();
+  for (const itemId of itemIds) {
+    if (!promoPreviewCache.has(itemId)) return null;
+    cached.set(itemId, promoPreviewCache.get(itemId) ?? null);
+  }
+  return cached;
+}
+
+function getMenuItemIds(categories: CategoryWithMenuItems[]): string[] {
+  return [...new Set(categories.flatMap((c) => c.menu_items.map((item) => item.id)))];
+}
+
 function slugifyCategoryName(name: string): string {
   return name
     .toLowerCase()
@@ -25,7 +44,9 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [promoPreviews, setPromoPreviews] = useState<Map<string, PromoPreview | null>>(new Map());
+  const [promoPreviews, setPromoPreviews] = useState<Map<string, PromoPreview | null>>(
+    () => readCachedPromoPreviews(getMenuItemIds(categories)) ?? new Map()
+  );
   const observerRef = useRef<IntersectionObserver | null>(null);
   const didInitialScrollRef = useRef(false);
 
@@ -34,36 +55,50 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
 
   useEffect(() => {
     let cancelled = false;
-    const allItems = categories.flatMap((c) => c.menu_items);
-    const uniqueIds = [...new Set(allItems.map((i) => i.id))];
+    const uniqueIds = getMenuItemIds(categories);
     if (uniqueIds.length === 0) return;
+    if (uniqueIds.every((itemId) => promoPreviews.has(itemId))) return;
 
-    Promise.all(
-      uniqueIds.map(async (itemId) => {
-        try {
-          const res = await fetch('/api/promos/preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ itemId, cartSubtotalCents: 0 }),
-          });
-          const data = await res.json();
-          const preview = data.previews?.[0] as PromoPreview | undefined;
-          return { itemId, preview: preview ?? null };
-        } catch {
-          return { itemId, preview: null };
+    (async () => {
+      let previews: Map<string, PromoPreview | null> | null = null;
+
+      try {
+        const res = await fetch('/api/promos/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemIds: uniqueIds, cartSubtotalCents: 0 }),
+        });
+        if (!res.ok) throw new Error(`Promo preview request failed: ${res.status}`);
+
+        const data = (await res.json()) as {
+          previewsByItem?: Record<string, PromoPreview[] | undefined>;
+        };
+
+        previews = new Map<string, PromoPreview | null>();
+        for (const itemId of uniqueIds) {
+          const preview = data.previewsByItem?.[itemId]?.[0] ?? null;
+          previews.set(itemId, preview);
+          promoPreviewCache.set(itemId, preview);
         }
-      })
-    ).then((responses) => {
-      if (cancelled) return;
-      const map = new Map<string, PromoPreview | null>();
-      for (const { itemId, preview } of responses) {
-        map.set(itemId, preview);
+      } catch {
+        previews = null;
       }
-      setPromoPreviews(map);
-    });
+
+      if (cancelled) return;
+
+      if (previews) {
+        setPromoPreviews(previews);
+      } else {
+        // Batch failed: keep each item's fallback (no promo badge) rather than
+        // leaving the whole map unset.
+        const fallback = new Map<string, PromoPreview | null>();
+        for (const itemId of uniqueIds) fallback.set(itemId, null);
+        setPromoPreviews(fallback);
+      }
+    })();
 
     return () => { cancelled = true; };
-  }, [categories]);
+  }, [categories, promoPreviews]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

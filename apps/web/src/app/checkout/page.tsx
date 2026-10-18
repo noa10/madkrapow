@@ -26,6 +26,7 @@ import {
   decideQuoteNeed,
   quoteAddressKey,
   quoteKey,
+  DELIVERY_QUOTE_TIMEOUT_MS,
   type QuoteStatus,
 } from '@/lib/checkout/delivery-quote'
 
@@ -435,9 +436,20 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     let lat = address.latitude
     let lng = address.longitude
     const addressString = formatAddress(address)
+
+    // A stalled geocoder or Lalamove quote must not leave the UI on
+    // "Calculating delivery fee..." forever: fail into the retryable error
+    // state after DELIVERY_QUOTE_TIMEOUT_MS.
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, DELIVERY_QUOTE_TIMEOUT_MS)
+
     const isStale = () => (
       token !== requestTokenRef.current ||
-      controller.signal.aborted ||
+      // A timeout abort is a failure, not a superseded request: report it.
+      (!timedOut && controller.signal.aborted) ||
       useCheckoutStore.getState().delivery_type !== 'delivery'
     )
 
@@ -552,6 +564,13 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       })
 
       const data = await res.json()
+      if (timedOut) {
+        if (token === requestTokenRef.current) {
+          updateQuoteStatus('error')
+          setQuoteError('Delivery quote timed out. Please retry.')
+        }
+        return
+      }
       if (isStale()) return
 
       if (!res.ok || !data.success) {
@@ -576,11 +595,19 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       setQuoteExpiryReached(false)
       updateQuoteStatus('ready')
     } catch (err) {
+      if (timedOut) {
+        if (token === requestTokenRef.current) {
+          updateQuoteStatus('error')
+          setQuoteError('Delivery quote timed out. Please retry.')
+        }
+        return
+      }
       if (isStale()) return
       console.error('[Checkout] Quote fetch error:', err)
       updateQuoteStatus('error')
       setQuoteError('Unable to get a delivery quote. Please try again.')
     } finally {
+      window.clearTimeout(timeoutId)
       if (token === requestTokenRef.current) {
         abortControllerRef.current = null
       }

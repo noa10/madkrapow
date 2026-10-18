@@ -1,5 +1,13 @@
 export type QuoteStatus = 'idle' | 'loading' | 'ready' | 'error'
 
+/**
+ * Upper bound for one quote request (geocode + Lalamove quote). Neither the
+ * route nor the Lalamove transport enforces a timeout, so the client must:
+ * otherwise a stalled upstream leaves the checkout stuck on "Calculating
+ * delivery fee..." forever. On expiry the page shows the retryable error state.
+ */
+export const DELIVERY_QUOTE_TIMEOUT_MS = 15_000
+
 export type QuoteFetchReason =
   | 'no-quote'
   | 'coords-changed'

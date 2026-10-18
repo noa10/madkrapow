@@ -3,6 +3,26 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../generated/database.dart';
 import 'merchant_api_client.dart';
 
+/// PostgREST carries an `in.(...)` filter in the request URL, so an id list
+/// built from data can outgrow proxy URL limits. Batching keeps every request
+/// comfortably small; because the filter is by `order_item_id`, all modifiers
+/// for a given item still land in the same batch, so per-item ordering holds.
+const _idBatchSize = 150;
+
+/// Splits [ids] into consecutive batches of at most [size] entries.
+///
+/// Order and contents are preserved, so concatenating the results of a batched
+/// query yields the same rows as one unbounded query would have.
+List<List<T>> batchIds<T>(List<T> ids, int size) {
+  assert(size > 0, 'batch size must be positive');
+
+  final batches = <List<T>>[];
+  for (var start = 0; start < ids.length; start += size) {
+    batches.add(ids.sublist(start, (start + size).clamp(0, ids.length)));
+  }
+  return batches;
+}
+
 /// An order item together with its selected modifiers/addons.
 class OrderItemWithModifiers {
   final OrderItemsRow item;
@@ -12,6 +32,34 @@ class OrderItemWithModifiers {
     required this.item,
     required this.modifiers,
   });
+}
+
+/// Groups flat `order_items` and `order_item_modifiers` rows by order.
+///
+/// Both inputs are expected to arrive ordered by `created_at`, and that order is
+/// preserved: modifiers keep their relative order within an item, and items keep
+/// theirs within an order. Modifiers whose item is absent from [items] are
+/// dropped rather than creating a phantom entry.
+Map<String, List<OrderItemWithModifiers>> groupItemsAndModifiers(
+  List<OrderItemsRow> items,
+  List<OrderItemModifiersRow> modifiers,
+) {
+  final modifiersByItemId = <String, List<OrderItemModifiersRow>>{};
+  for (final modifier in modifiers) {
+    modifiersByItemId.putIfAbsent(modifier.orderItemId, () => []).add(modifier);
+  }
+
+  final byOrderId = <String, List<OrderItemWithModifiers>>{};
+  for (final item in items) {
+    byOrderId.putIfAbsent(item.orderId, () => []).add(
+          OrderItemWithModifiers(
+            item: item,
+            modifiers: modifiersByItemId[item.id] ?? const [],
+          ),
+        );
+  }
+
+  return byOrderId;
 }
 
 /// Hybrid order repository:
@@ -97,17 +145,8 @@ class MerchantOrderRepository {
     }
 
     // Group modifiers by order_item_id
-    final modifiersByItemId = <String, List<OrderItemModifiersRow>>{};
-    for (final m in modifiers) {
-      modifiersByItemId.putIfAbsent(m.orderItemId, () => []).add(m);
-    }
-
-    final itemsWithModifiers = items
-        .map((item) => OrderItemWithModifiers(
-              item: item,
-              modifiers: modifiersByItemId[item.id] ?? [],
-            ))
-        .toList();
+    final itemsWithModifiers =
+        groupItemsAndModifiers(items, modifiers)[orderId] ?? const [];
 
     final eventsRes = await _supabase
         .from('order_events')
@@ -135,6 +174,47 @@ class MerchantOrderRepository {
         items: itemsWithModifiers,
         events: events,
         shipment: shipment);
+  }
+
+  /// Fetch items (with their modifiers) for many orders at once.
+  ///
+  /// Costs a small, bounded number of queries regardless of how many orders are
+  /// requested, so list screens don't pay a query per row. Grouped by
+  /// `order_id`; orders with no items are absent from the map rather than
+  /// present with an empty list.
+  ///
+  /// [orderIds] is expected to be a page of orders (the caller's own limit
+  /// bounds the first filter). Item ids are batched — see [_idBatchSize].
+  Future<Map<String, List<OrderItemWithModifiers>>> fetchItemsForOrders(
+    List<String> orderIds,
+  ) async {
+    if (orderIds.isEmpty) return const {};
+
+    final itemsRes = await _supabase
+        .from('order_items')
+        .select()
+        .inFilter('order_id', orderIds)
+        .order('created_at');
+
+    final items = itemsRes.map((json) => OrderItemsRow.fromJson(json)).toList();
+    if (items.isEmpty) return const {};
+
+    final itemIds = items.map((item) => item.id).toList();
+    final modifiers = <OrderItemModifiersRow>[];
+
+    for (final batch in batchIds(itemIds, _idBatchSize)) {
+      final modifiersRes = await _supabase
+          .from('order_item_modifiers')
+          .select()
+          .inFilter('order_item_id', batch)
+          .order('created_at');
+
+      modifiers.addAll(
+        modifiersRes.map((json) => OrderItemModifiersRow.fromJson(json)),
+      );
+    }
+
+    return groupItemsAndModifiers(items, modifiers);
   }
 
   /// Advance order status via the API route (server-side validation).

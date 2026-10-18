@@ -4,8 +4,15 @@
 /// "2d ago", etc. Returns an empty string if [date] is null.
 String formatRelativeTime(DateTime? date) {
   if (date == null) return '';
+  return formatRelativeTimeAt(date, DateTime.now());
+}
 
-  final now = DateTime.now();
+/// Formats how long ago [date] was relative to [now].
+///
+/// Same ladder as [formatRelativeTime], but with an injectable clock so callers
+/// that already know the current time — or that need a fixed point in a test —
+/// don't have to re-read the wall clock.
+String formatRelativeTimeAt(DateTime date, DateTime now) {
   final diff = now.difference(date);
 
   if (diff.inSeconds < 5) {

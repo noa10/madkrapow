@@ -1,57 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import '../../../../generated/tables/orders.dart';
+import '../widgets/kitchen_order_card.dart';
 
-/// Provider that fetches active kitchen orders.
-final kitchenOrdersProvider = FutureProvider<List<OrdersRow>>((ref) async {
-  final repo = ref.watch(merchantOrderRepositoryProvider);
-  return repo.fetchOrders(
-    statuses: ['paid', 'accepted', 'preparing', 'ready'],
-    fulfillmentType: 'asap',
-  );
-});
-
-const _statusColors = {
-  'paid': Color(0xFF0EA5E9),
-  'preparing': Color(0xFFF97316),
-  'ready': Color(0xFF10B981),
-  'delivering': Color(0xFF6366F1),
-};
-
-const _statusLabels = {
-  'paid': 'Paid',
-  'preparing': 'Preparing',
-  'ready': 'Ready',
-  'delivering': 'Delivering',
-};
-
+/// The only status the kitchen itself drives: once cooking is done, the order
+/// is ready to leave the pass.
 const _kitchenTransitions = {
   'preparing': 'ready',
 };
-
-const _transitionConfig = {
-  'preparing': ('Mark Ready', Icons.inventory_2_outlined),
-};
-
-String _getAddress(Map<String, dynamic>? json) {
-  if (json == null) return 'No address';
-  final parts = [
-    json['address_line1'],
-    json['address_line2'],
-    json['city'],
-    json['state'],
-  ].where((p) => p != null && p.toString().isNotEmpty).toList();
-  return parts.isEmpty ? 'No address' : parts.join(', ');
-}
-
-String _formatTotal(OrdersRow order) {
-  final total = (order.totalCents + order.deliveryFeeCents) / 100;
-  return 'RM ${total.toStringAsFixed(0)}';
-}
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -84,7 +44,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     _realtimeChannel = repo.subscribeToNewOrders(
       onNewOrder: () {
         if (!mounted) return;
-        ref.invalidate(kitchenOrdersProvider);
+        ref.invalidate(kitchenOrderCardsProvider);
       },
     );
   }
@@ -96,7 +56,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       await repo.updateOrderStatus(order.id, nextStatus);
-      ref.invalidate(kitchenOrdersProvider);
+      if (!mounted) return;
+      ref.invalidate(kitchenOrderCardsProvider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,7 +69,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ordersAsync = ref.watch(kitchenOrdersProvider);
+    final ordersAsync = ref.watch(kitchenOrderCardsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Kitchen Display')),
@@ -120,268 +81,96 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
           return RefreshIndicator(
             onRefresh: () async {
-              ref.invalidate(kitchenOrdersProvider);
+              ref.invalidate(kitchenOrderCardsProvider);
             },
             child: LayoutBuilder(
-              builder: (context, constraints) {
-                final crossAxisCount = constraints.maxWidth < 600
-                    ? 1
-                    : constraints.maxWidth < 900
-                    ? 2
-                    : 3;
-
-                return CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.only(top: 8),
-                      sliver: SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: Text(
-                            '${orders.length} active order${orders.length != 1 ? 's' : ''}',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.75,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => _orderCard(order: orders[index]),
-                          childCount: orders.length,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+              builder: (context, constraints) => _ticketBoard(
+                context,
+                orders,
+                constraints.maxWidth,
+              ),
             ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => _ErrorState(
           message: err.toString(),
-          onRetry: () => ref.invalidate(kitchenOrdersProvider),
+          onRetry: () => ref.invalidate(kitchenOrderCardsProvider),
         ),
       ),
     );
   }
 
-  Widget _orderCard({required OrdersRow order}) {
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
-    final statusLabel = _statusLabels[order.status] ?? order.status;
-    final transition = _transitionConfig[order.status];
-    final shortId = order.id.length > 8 ? order.id.substring(0, 8) : order.id;
+  /// Lays tickets out in 1/2/3 columns, each card at its natural height so no
+  /// item or addon is ever hidden behind an inner scroll.
+  Widget _ticketBoard(
+    BuildContext context,
+    List<KitchenOrderCardData> orders,
+    double maxWidth,
+  ) {
+    const horizontalPadding = 16.0;
+    const spacing = 16.0;
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header
-          Container(
-            color: statusColor.withAlpha(30),
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '#$shortId',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    final crossAxisCount = maxWidth < 600
+        ? 1
+        : maxWidth < 900
+        ? 2
+        : 3;
 
-          // Created time
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.access_time,
-                  size: 16,
+    final cardWidth =
+        (maxWidth -
+            (horizontalPadding * 2) -
+            (spacing * (crossAxisCount - 1))) /
+        crossAxisCount;
+
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 8),
+          sliver: SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: 8,
+              ),
+              child: Text(
+                '${orders.length} active order${orders.length != 1 ? 's' : ''}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  DateFormat('h:mm a').format(order.createdAt),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            16,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (final ticket in orders)
+                  SizedBox(
+                    width: cardWidth,
+                    child: KitchenOrderCard(
+                      order: ticket.order,
+                      items: ticket.items,
+                      onMarkReady:
+                          _kitchenTransitions.containsKey(ticket.order.status)
+                          ? () => _advanceStatus(ticket.order)
+                          : null,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-
-          // Body
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Customer name
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                order.customerName ?? 'Guest Customer',
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              if (order.customerPhone != null &&
-                                  order.customerPhone!.isNotEmpty)
-                                Text(
-                                  order.customerPhone!,
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Delivery address
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Delivery Address',
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              Text(
-                                _getAddress(order.deliveryAddressJson),
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Total
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest.withAlpha(128),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _formatTotal(order),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Transition button
-          if (transition != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: () => _advanceStatus(order),
-                  icon: Icon(transition.$2, size: 24),
-                  label: Text(
-                    transition.$1,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

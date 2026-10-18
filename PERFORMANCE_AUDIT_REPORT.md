@@ -90,11 +90,11 @@
 
 ## 4. Deployment notes
 
-1. **Apply the migration** before measuring admin performance:
-   ```
-   supabase db push        # or your migration runner
-   ```
-   `054` is additive only (`CREATE INDEX IF NOT EXISTS`, no data change). It uses plain `CREATE INDEX`, so writes on `orders` are briefly locked during creation — run in a low-traffic window or convert to `CONCURRENTLY` out-of-band.
+1. **Migration `054` is applied** to project `oxtauhhixztusjlxcipo` (`mad-krapow`, ap-northeast-1) — applied via the Supabase Management API (Hermes Supabase connector), since no DB password was required that way. Verified afterwards:
+   - `supabase_migrations.schema_migrations` contains `054 / orders_perf_indexes` (4 statements), immediately after `053`.
+   - `pg_indexes` lists all four new indexes with the intended definitions.
+   - With `enable_seqscan=off`, the preparing/ready admin query plans as `Bitmap Index Scan on idx_orders_status_created_at` — the index is usable; on the current 71-row table the planner still (correctly) prefers a seq scan, so the win shows up as the table grows.
+   - `supabase db push` will now report nothing pending for `054`.
 2. No new dependencies; no environment-variable changes.
 3. `staleTimes.dynamic = 30` means back/forward can serve a client Router Cache entry up to 30 s old (server data is still authoritative on hard loads/mutations). Tune to `0` if strict freshness is required.
 4. Client caches to be aware of: menu/modifiers 5 min (`invalidateMenuItemsCache()` exported), branding 5 min, admin role 5 min (server/RLS still enforce on every request).

@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
+import {
+  getNavigationSteps,
+  shouldGoBack,
+} from "@/lib/navigation/back"
 
 interface BackButtonProps {
   label?: string
@@ -17,7 +21,7 @@ export function BackButton({
   const router = useRouter()
 
   const handleClick = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
+    if (shouldGoBack(getNavigationSteps())) {
       router.back()
     } else {
       router.push(fallbackHref)

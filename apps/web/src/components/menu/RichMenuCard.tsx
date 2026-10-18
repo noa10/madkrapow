@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { buildItemHref } from "@/lib/item-url";
@@ -18,15 +19,15 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`;
 }
 
-export function RichMenuCard({ item }: RichMenuCardProps) {
+export const RichMenuCard = memo(function RichMenuCard({ item }: RichMenuCardProps) {
   const href = buildItemHref(item.slug, item.name);
   const unavailable = !item.is_available;
 
   return (
     <article
       className={cn(
-        "group flex h-full flex-col overflow-hidden rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] backdrop-blur-sm transition",
-        unavailable ? "opacity-60" : "hover:border-[var(--line-strong)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
+        "group flex h-full flex-col overflow-hidden rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] transition",
+        unavailable ? "opacity-60" : "hover:border-[var(--line-strong)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
       )}
     >
       <Link
@@ -96,4 +97,4 @@ export function RichMenuCard({ item }: RichMenuCardProps) {
       </div>
     </article>
   );
-}
+});

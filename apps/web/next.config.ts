@@ -4,6 +4,8 @@ let nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
   images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 2592000,
     remotePatterns: [
       {
         protocol: "https",
@@ -38,6 +40,10 @@ let nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', '@supabase/ssr'],
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
   },
 };
 

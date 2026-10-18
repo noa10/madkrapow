@@ -55,12 +55,13 @@ const getModifierKey = (modifiers: SelectedModifier[]): string => {
 }
 
 const findItemIndex = (items: CartItem[], menuItemId: string, modifierIds: string[]): number => {
+  const targetKey = getModifierKey(
+    modifierIds.map((id) => ({ id, name: '', price_delta_cents: 0 }))
+  )
   return items.findIndex(
     (item) =>
       item.menu_item_id === menuItemId &&
-      getModifierKey(item.selected_modifiers) === getModifierKey(
-        modifierIds.map((id) => ({ id, name: '', price_delta_cents: 0 }))
-      )
+      getModifierKey(item.selected_modifiers) === targetKey
   )
 }
 
@@ -99,12 +100,12 @@ export const useCartStore = create<CartState>()(
       },
 
       removeItem: (menuItemId, modifierIds) => {
-        set((state) => ({
-          items: state.items.filter(
-            (item, index) =>
-              index !== findItemIndex(state.items, menuItemId, modifierIds)
-          ),
-        }))
+        set((state) => {
+          const index = findItemIndex(state.items, menuItemId, modifierIds)
+          return {
+            items: state.items.filter((_, itemIndex) => itemIndex !== index),
+          }
+        })
       },
 
       updateQuantity: (menuItemId, modifierIds, quantity) => {

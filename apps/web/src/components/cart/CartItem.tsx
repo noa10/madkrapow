@@ -1,22 +1,23 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { Trash2, GripVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuantitySelector } from '@/components/menu/QuantitySelector'
-import { useCartStore, type CartItem } from '@/stores/cart'
+import { useCartStore, type CartItem as StoreCartItem } from '@/stores/cart'
 
 interface CartItemProps {
-  item: CartItem
+  item: StoreCartItem
   itemName: string
   imageUrl?: string | null
 }
 
 const SWIPE_THRESHOLD = 100
 
-export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
-  const { updateQuantity, removeItem } = useCartStore()
+export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: CartItemProps) {
+  const updateQuantity = useCartStore((s) => s.updateQuantity)
+  const removeItem = useCartStore((s) => s.removeItem)
   const [isDeleting, setIsDeleting] = useState(false)
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [touchCurrent, setTouchCurrent] = useState<number | null>(null)
@@ -174,4 +175,4 @@ export function CartItem({ item, itemName, imageUrl }: CartItemProps) {
       </div>
     </div>
   )
-}
+})

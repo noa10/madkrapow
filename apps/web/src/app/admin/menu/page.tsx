@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -31,6 +31,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+
+const MENU_ITEM_SELECT =
+  "id, category_id, name, description, price_cents, image_url, is_available, sort_order, spice_level, ingredients, is_signature";
+const CATEGORY_SELECT =
+  "id, name, description, sort_order, is_active, created_at, updated_at";
+const MODIFIER_GROUP_SELECT =
+  "id, name, description, min_selections, max_selections, sort_order, created_at, updated_at";
+const MODIFIER_SELECT =
+  "id, modifier_group_id, name, price_delta_cents, is_default, is_available, sort_order, created_at, updated_at";
 
 interface Category {
   id: string;
@@ -413,15 +422,15 @@ export default function AdminMenuPage() {
       const [menuItemsRes, categoriesRes, groupsRes] = await Promise.all([
         supabase
           .from("menu_items")
-          .select("*")
+          .select(MENU_ITEM_SELECT)
           .order("sort_order", { ascending: true }),
         supabase
           .from("categories")
-          .select("*")
+          .select(CATEGORY_SELECT)
           .order("sort_order", { ascending: true }),
         supabase
           .from("modifier_groups")
-          .select("*")
+          .select(MODIFIER_GROUP_SELECT)
           .order("sort_order", { ascending: true }),
       ]);
 
@@ -440,7 +449,7 @@ export default function AdminMenuPage() {
         const groupIds = groupsData.map((group) => group.id);
         const { data: modifiers } = await supabase
           .from("modifiers")
-          .select("*")
+          .select(MODIFIER_SELECT)
           .in("modifier_group_id", groupIds)
           .order("sort_order", { ascending: true });
 
@@ -458,20 +467,52 @@ export default function AdminMenuPage() {
     fetchData();
   }, []);
 
-  const getCategoryName = (categoryId: string) => {
-    const category = categories.find((c) => c.id === categoryId);
-    return category?.name || "Uncategorized";
-  };
+  const categoryNames = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories]
+  );
 
-  const filteredAndSortedItems = menuItems.filter((item) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
-    const matchesCategory =
-      categoryFilter === "all" || item.category_id === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
+  const getCategoryName = (categoryId: string) =>
+    categoryNames.get(categoryId) || "Uncategorized";
+
+  const filteredAndSortedItems = useMemo(() => {
+    const needle = searchQuery.toLowerCase();
+    return menuItems.filter((item) => {
+      const matchesSearch =
+        searchQuery === "" ||
+        item.name.toLowerCase().includes(needle) ||
+        (item.description?.toLowerCase().includes(needle) ?? false);
+      const matchesCategory =
+        categoryFilter === "all" || item.category_id === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [menuItems, searchQuery, categoryFilter]);
+
+  // Group/sort once per filter change rather than re-filtering every category
+  // on every render (drag state, dialogs, typing in unrelated fields, ...).
+  const itemsByCategory = useMemo(() => {
+    const grouped = new Map<string, MenuItem[]>();
+    for (const item of filteredAndSortedItems) {
+      const group = grouped.get(item.category_id);
+      if (group) {
+        group.push(item);
+      } else {
+        grouped.set(item.category_id, [item]);
+      }
+    }
+    for (const group of grouped.values()) {
+      group.sort((a, b) => a.sort_order - b.sort_order);
+    }
+    return grouped;
+  }, [filteredAndSortedItems]);
+
+  const categoryItemCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of menuItems) {
+      counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [menuItems]);
 
   // Category management functions
   const openCreateForm = () => {
@@ -529,7 +570,7 @@ export default function AdminMenuPage() {
 
       const categoriesRes = await supabase
         .from("categories")
-        .select("*")
+        .select(CATEGORY_SELECT)
         .order("sort_order", { ascending: true });
       setCategories(categoriesRes.data || []);
       closeForm();
@@ -556,8 +597,8 @@ export default function AdminMenuPage() {
       if (error) throw error;
 
       const [menuItemsRes, categoriesRes] = await Promise.all([
-        supabase.from("menu_items").select("*").order("sort_order", { ascending: true }),
-        supabase.from("categories").select("*").order("sort_order", { ascending: true }),
+        supabase.from("menu_items").select(MENU_ITEM_SELECT).order("sort_order", { ascending: true }),
+        supabase.from("categories").select(CATEGORY_SELECT).order("sort_order", { ascending: true }),
       ]);
       setMenuItems(menuItemsRes.data || []);
       setCategories(categoriesRes.data || []);
@@ -586,7 +627,7 @@ export default function AdminMenuPage() {
 
       const menuItemsRes = await supabase
         .from("menu_items")
-        .select("*")
+        .select(MENU_ITEM_SELECT)
         .order("sort_order", { ascending: true });
 
       setMenuItems(menuItemsRes.data || []);
@@ -624,13 +665,26 @@ export default function AdminMenuPage() {
         throw new Error(body.error || `Failed to update: ${res.status}`);
       }
 
-      // Re-fetch to guarantee server state
-      const supabase = getBrowserClient();
-      const menuItemsRes = await supabase
-        .from("menu_items")
-        .select("*")
-        .order("sort_order", { ascending: true });
-      setMenuItems(menuItemsRes.data || []);
+      // The PATCH response carries the updated row; apply it instead of
+      // re-fetching the entire menu.
+      const body = (await res.json().catch(() => null)) as {
+        data?: MenuItem;
+      } | null;
+      if (body?.data) {
+        const updatedItem = body.data;
+        setMenuItems((prev) =>
+          prev.map((item) =>
+            item.id === updatedItem.id ? { ...item, ...updatedItem } : item
+          )
+        );
+      } else {
+        const supabase = getBrowserClient();
+        const menuItemsRes = await supabase
+          .from("menu_items")
+          .select(MENU_ITEM_SELECT)
+          .order("sort_order", { ascending: true });
+        setMenuItems(menuItemsRes.data || []);
+      }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to update availability";
       setError(errorMessage);
@@ -676,7 +730,7 @@ export default function AdminMenuPage() {
 
       const res = await supabase
         .from("menu_items")
-        .select("*")
+        .select(MENU_ITEM_SELECT)
         .order("sort_order", { ascending: true });
       setMenuItems(res.data || []);
     } catch (err: any) {
@@ -701,7 +755,7 @@ export default function AdminMenuPage() {
 
       const categoriesRes = await supabase
         .from("categories")
-        .select("*")
+        .select(CATEGORY_SELECT)
         .order("sort_order", { ascending: true });
       setCategories(categoriesRes.data || []);
     } catch (err: unknown) {
@@ -731,7 +785,7 @@ export default function AdminMenuPage() {
 
       const res = await supabase
         .from("menu_items")
-        .select("*")
+        .select(MENU_ITEM_SELECT)
         .order("sort_order", { ascending: true });
       setMenuItems(res.data || []);
     } catch (err: any) {
@@ -789,7 +843,7 @@ export default function AdminMenuPage() {
     const supabase = getBrowserClient();
     const { data: groups } = await supabase
       .from("modifier_groups")
-      .select("*")
+      .select(MODIFIER_GROUP_SELECT)
       .order("sort_order", { ascending: true });
 
     const groupsData: ModifierGroup[] = groups ?? [];
@@ -798,7 +852,7 @@ export default function AdminMenuPage() {
       const groupIds = groupsData.map((group) => group.id);
       const { data: modifiers } = await supabase
         .from("modifiers")
-        .select("*")
+        .select(MODIFIER_SELECT)
         .in("modifier_group_id", groupIds)
         .order("sort_order", { ascending: true });
 
@@ -1243,18 +1297,12 @@ export default function AdminMenuPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {categories
-                .filter((cat) =>
-                  filteredAndSortedItems.some((item) => item.category_id === cat.id)
-                )
-                .map((cat) => {
-                  const catItems = filteredAndSortedItems
-                    .filter((item) => item.category_id === cat.id)
-                    .sort((a, b) => a.sort_order - b.sort_order);
+              {categories.map((cat) => {
+                const catItems = itemsByCategory.get(cat.id) ?? [];
 
-                  if (catItems.length === 0) return null;
+                if (catItems.length === 0) return null;
 
-                  return (
+                return (
                     <div key={cat.id}>
                       <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
                         <Tag className="h-3 w-3" />
@@ -1341,9 +1389,7 @@ export default function AdminMenuPage() {
           ) : (
             <div className="space-y-2">
               {categories.map((category, index) => {
-                const itemCount = menuItems.filter(
-                  (item) => item.category_id === category.id
-                ).length;
+                const itemCount = categoryItemCounts.get(category.id) ?? 0;
                 return (
                   <div
                     key={category.id}

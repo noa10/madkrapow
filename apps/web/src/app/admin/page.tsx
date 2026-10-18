@@ -23,14 +23,17 @@ export default async function AdminDashboard() {
   today.setHours(0, 0, 0, 0);
   const todayISO = today.toISOString();
 
+  // Only the two values the summary derives: the sum and the row count.
+  // Cancelled orders are intentionally not filtered here — this matches the
+  // dashboard's existing revenue/count semantics (see report note).
   const { data: todayOrders } = await supabase
     .from("orders")
-    .select("*")
+    .select("total_cents")
     .gte("created_at", todayISO);
 
   const { count: pendingOrders } = await supabase
     .from("orders")
-    .select("*", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true })
     .eq("status", "pending");
 
   const todayRevenue = todayOrders?.reduce((sum, order) => {

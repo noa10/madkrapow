@@ -194,6 +194,18 @@ Customer pays → Stripe webhook → Verify signature → Update order (PAID)
 - **Webhook testing**: Use Stripe CLI to forward webhooks locally
 - **Lalamove sandbox**: Test full flow against sandbox before production
 
+### Release Pipeline / Envied Secrets
+- **CI must never seed `.env` from `.env.example`.** Envied keeps the **first**
+  value when a key is duplicated (`putIfAbsent` in its parser), so the release
+  workflow's old `cp .env.example .env` + append-secrets pattern silently shipped
+  the example placeholders (`your-project.supabase.co`,
+  `your-google-web-client-id-here`). Merchant v0.1.4 could not sign in: email
+  login failed with `Failed host lookup: 'your-project.supabase.co'`, and Google
+  Sign-In returned `PlatformException(sign_in_failed, ... 10)` (DEVELOPER_ERROR).
+  Fixed in `.github/workflows/android-release.yml` by writing `.env` from
+  scratch and failing the build on missing or placeholder values. Any mobile or
+  merchant release built before 2026-10-18 has the same defect.
+
 ### Money / Order Totals
 - **`orders.total_cents` is inclusive of the delivery fee** and net of discount. Every
   writer stores `subtotal_cents + delivery_fee_cents - discount_cents`, and Stripe is

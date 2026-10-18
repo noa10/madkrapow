@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { QuantitySelector } from './QuantitySelector'
 import { ModifierGroup } from './ModifierGroup'
 import { SpecialInstructions } from './SpecialInstructions'
@@ -22,7 +21,6 @@ function formatPrice(priceCents: number): string {
 }
 
 export function ItemDetailClient({ item }: ItemDetailClientProps) {
-  const router = useRouter()
   const addItem = useCartStore((state) => state.addItem)
   const openDrawer = useCartStore((state) => state.openDrawer)
   const addToast = useToastStore((state) => state.addToast)
@@ -125,7 +123,6 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
       description: `${quantity}x ${item.name} — ${formatPrice(totalPriceCents)}`,
     })
     openDrawer()
-    router.back()
   }
 
   const isUnavailable = !item.is_available

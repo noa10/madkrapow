@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { LogOut, Menu, X, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isAdminUser, type RoleAwareUser } from "@/lib/auth/roles";
+import { isAdminUser } from "@/lib/auth/roles";
+import { useClientUser } from "@/lib/auth/client-user";
 import { cn } from "@/lib/utils";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/stores/cart";
@@ -20,7 +20,7 @@ export function Header({ className }: HeaderProps) {
   const items = useCartStore((state) => state.items);
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState<RoleAwareUser | null>(null);
+  const user = useClientUser();
   const supabase = getBrowserClient();
 
   const openDrawer = useCartStore((state) => state.openDrawer);
@@ -41,31 +41,9 @@ export function Header({ className }: HeaderProps) {
       console.error("Sign out failed:", error.message);
       return;
     }
-    setUser(null);
     setIsMobileMenuOpen(false);
     window.location.href = "/";
   };
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-    };
-
-    checkAuth();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [supabase]);
 
   const navLinks = ["Menu", "About", "Order"];
 

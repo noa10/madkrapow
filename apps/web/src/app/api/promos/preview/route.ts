@@ -23,8 +23,8 @@ interface PromoPreview {
 
 const PreviewRequestSchema = z
   .object({
-    itemId: z.string().min(1).optional(),
-    itemIds: z.array(z.string().min(1)).max(100).optional(),
+    itemId: z.string().uuid().optional(),
+    itemIds: z.array(z.string().uuid()).max(100).optional(),
     cartSubtotalCents: z.number().int().nonnegative().optional().default(0),
   })
   .refine(
@@ -166,6 +166,14 @@ export async function POST(req: NextRequest) {
 
     const { data: targetedPromosData, error: targetedError } = targetedResult
     const { data: globalPromosData, error: globalError } = globalResult
+
+    // A promo query failure must not look like "no active promotions".
+    if (targetedError) {
+      console.error('[API] promos/preview targeted query failed:', targetedError.message)
+    }
+    if (globalError) {
+      console.error('[API] promos/preview global query failed:', globalError.message)
+    }
 
     // Map each targeted promo to the requested items it actually targets.
     const targetedByItem = new Map<string, PromoWithItems[]>()

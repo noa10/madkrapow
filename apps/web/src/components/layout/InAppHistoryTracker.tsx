@@ -1,6 +1,7 @@
 "use client"
 
-import { useInAppHistory } from "@/lib/navigation/back"
+import { useEffect } from "react"
+import { resetNavigationSteps, useInAppHistory } from "@/lib/navigation/back"
 
 /**
  * Persistent (root-layout) tracker for in-app navigation.
@@ -12,5 +13,14 @@ import { useInAppHistory } from "@/lib/navigation/back"
  */
 export function InAppHistoryTracker() {
   useInAppHistory()
+
+  useEffect(() => {
+    // This component only mounts as part of a full document load (initial
+    // visit, external link, typed URL, hard reload). That is an entry point,
+    // not in-app navigation, so start a fresh count — otherwise a tab that
+    // navigated earlier could let Back leave the app from a deep link.
+    resetNavigationSteps()
+  }, [])
+
   return null
 }

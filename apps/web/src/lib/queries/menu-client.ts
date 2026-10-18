@@ -75,13 +75,6 @@ interface MenuItemsCacheEntry {
 
 let menuItemsCache: MenuItemsCacheEntry | null = null
 let menuItemsInFlight: Promise<MenuItemWithModifierGroups[]> | null = null
-let menuItemsCacheGeneration = 0
-
-export function invalidateMenuItemsCache(): void {
-  menuItemsCacheGeneration += 1
-  menuItemsCache = null
-  menuItemsInFlight = null
-}
 
 async function fetchMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const [
@@ -150,8 +143,21 @@ async function fetchMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   }))
 }
 
-export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
-  if (menuItemsCache && menuItemsCache.expiresAt > Date.now()) {
+export interface GetMenuItemsOptions {
+  /**
+   * How long a cached result may be reused (defaults to the short menu TTL).
+   * Pass `0` on money-displaying surfaces such as checkout so prices and
+   * availability are re-read from the database rather than served from cache.
+   */
+  maxAgeMs?: number
+}
+
+export async function getMenuItems(
+  options: GetMenuItemsOptions = {}
+): Promise<MenuItemWithModifierGroups[]> {
+  const maxAgeMs = options.maxAgeMs ?? MENU_ITEMS_CACHE_TTL_MS
+
+  if (maxAgeMs > 0 && menuItemsCache && menuItemsCache.expiresAt > Date.now()) {
     return menuItemsCache.items
   }
 
@@ -159,14 +165,12 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
     return menuItemsInFlight
   }
 
-  const requestGeneration = menuItemsCacheGeneration
   const request = fetchMenuItems()
     .then((items) => {
-      if (requestGeneration === menuItemsCacheGeneration) {
-        menuItemsCache = {
-          items,
-          expiresAt: Date.now() + MENU_ITEMS_CACHE_TTL_MS,
-        }
+      // Even a forced read refreshes the shared cache for the next consumer.
+      menuItemsCache = {
+        items,
+        expiresAt: Date.now() + MENU_ITEMS_CACHE_TTL_MS,
       }
       return items
     })

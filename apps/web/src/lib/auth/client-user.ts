@@ -66,7 +66,14 @@ export async function getCachedClientUser(): Promise<RoleAwareUser | null> {
       const supabase = getBrowserClient();
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
+
+      // `getUser()` resolves (rather than throws) for network/auth API
+      // failures. Treating that as a signed-out user would pin the header to
+      // "signed out" for the whole session, so leave the cache unset and let
+      // the next subscriber retry.
+      if (error) return currentUser;
 
       const nextUser = user ?? null;
       // An auth event landed while this request was in flight; it is newer

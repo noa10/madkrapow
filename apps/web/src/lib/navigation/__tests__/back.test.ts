@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getNavigationSteps, recordNavigation, shouldGoBack } from '../back'
+import { getNavigationSteps, recordNavigation, resetNavigationSteps, shouldGoBack } from '../back'
 
 const NAV_STEPS_KEY = 'mkp:nav-steps'
 
@@ -63,6 +63,23 @@ describe('in-app navigation counter', () => {
     storage.setItem(NAV_STEPS_KEY, '3')
 
     expect(getNavigationSteps()).toBe(3)
+  })
+
+  it('resets the counter for a fresh document load', () => {
+    recordNavigation()
+    recordNavigation()
+    expect(getNavigationSteps()).toBe(2)
+
+    resetNavigationSteps()
+
+    expect(getNavigationSteps()).toBe(0)
+    expect(storage.getItem(NAV_STEPS_KEY)).toBe('0')
+  })
+
+  it('reset degrades silently when storage is unavailable', () => {
+    vi.stubGlobal('window', undefined)
+    expect(() => resetNavigationSteps()).not.toThrow()
+    expect(getNavigationSteps()).toBe(0)
   })
 
   it('supports a bare sessionStorage global outside a window', () => {

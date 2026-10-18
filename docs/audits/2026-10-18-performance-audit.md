@@ -1,9 +1,9 @@
 # Performance Audit & Bug-Fix Report — noa10/madkrapow
 
-**Branch:** `perf/audit-2026-10-18` (13 commits)
-**Base:** `master` @ `10907a5`
+**Branch:** `perf/audit-2026-10-18` (updated with `master` on 2026-10-18)
+**Base:** `master` @ `e89ee60`
 **Date:** 2026-10-18
-**Scope:** the five reported checkout/app performance bugs, plus defects found by an independent verification pass.
+**Scope:** the five reported checkout/app performance bugs, plus defects found by an independent verification pass and the PR review.
 
 ---
 
@@ -106,6 +106,17 @@
 3. Add items from the menu and from an item page: instant drawer/toast, no navigation away from the item page.
 4. Item page → **Back to Menu**; also hard-refresh an item URL in a new tab → Back must go to `/menu`, never leave the app.
 5. `/admin` → `/admin/orders` → `/admin/analytics`: no full-page spinner after the first load; analytics charts load lazily; confirm `EXPLAIN` uses the new indexes on a production-like dataset.
+6. `staleTimes.dynamic = 30` is global: after completing an order (the Stripe redirect is a full document load, so `/orders` should be fresh) and after sign-in/sign-out, confirm no server-rendered state lags. The header/sidebar identity is client-rendered from the shared auth cache, so Router Cache staleness does not apply to it.
+
+## 5a. Post-review changes
+
+- **Quote expiry:** `handlePayNow` now checks the live store (`isQuoteExpired()`) instead of only the polled snapshot, so an expired quote can never reach the create route/Stripe; the 30 s poll was replaced with a single timer armed for the exact expiry (re-armed on early fire), with focus/visibility re-checks for sleeping tabs.
+- **Quote timeout:** the timer now also forces the error state, covering unabortable awaits (Google geocoder, `getSession()`), and the geocode block clears it through a `finally` so early returns cannot leave it armed.
+- **Auth cache:** a `getUser()` error is no longer published/cached as "signed out"; the next subscriber retries.
+- **Menu cache:** `getMenuItems({ maxAgeMs })` — checkout forces a fresh read (money surface); the unused `invalidateMenuItemsCache` export was removed.
+- **Promo preview:** `itemId`/`itemIds` must be UUIDs (400 instead of a batch-wide 500), and promo query errors are logged instead of looking like "no promotions".
+- **Back navigation:** the tab counter is reset on each full document load, so a deep link/typed URL can no longer `router.back()` out of the app.
+- **Middleware:** dropped the unused `/profile` auth round-trip.
 
 ## 6. Browser smoke tests
 

@@ -25,13 +25,11 @@ export async function middleware(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api')
   const isOrdersRoute = pathname.startsWith('/orders')
   const isCheckoutRoute = pathname.startsWith('/checkout')
-  const isProfileRoute = pathname.startsWith('/profile')
 
   // Only routes with access rules need the user. Public pages and API routes
   // skip the Supabase Auth network round-trip; refreshSession still refreshes
   // the cookie/token state above.
-  const needsUser =
-    isAdminRoute || isOrdersRoute || isCheckoutRoute || isProfileRoute || isAuthRoute
+  const needsUser = isAdminRoute || isOrdersRoute || isCheckoutRoute || isAuthRoute
   if (!needsUser) {
     return response
   }

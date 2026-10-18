@@ -59,6 +59,24 @@ export function recordNavigation(): number {
 }
 
 /**
+ * Reset the counter for the current tab.
+ *
+ * Called by the root-layout tracker on mount: a full document load (typed URL,
+ * external link, hard reload) is a new entry point, so navigation from before
+ * it must not be treated as in-app history. The trade-off is that a hard
+ * reload mid-session falls back to `fallbackHref` instead of `router.back()`.
+ */
+export function resetNavigationSteps(): void {
+  const storage = getSessionStorage()
+  if (!storage) return
+  try {
+    storage.setItem(NAV_STEPS_KEY, '0')
+  } catch {
+    // Storage can be unavailable (private mode); falling back still works.
+  }
+}
+
+/**
  * Track in-app history for as long as the calling component is mounted.
  *
  * The initial pathname is the tab's entry point and is deliberately not

@@ -24,6 +24,7 @@ import { SavedAddressSelector, SavedContactSelector } from '@/components/checkou
 import { useGoogleMaps } from '@/hooks/useGoogleMaps'
 import {
   decideQuoteNeed,
+  quoteAddressKey,
   quoteKey,
   type QuoteStatus,
 } from '@/lib/checkout/delivery-quote'
@@ -209,9 +210,10 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const [quoteExpiryReached, setQuoteExpiryReached] = useState(false)
 
   // Quote request lifecycle. The store owns the quote; these refs only track
-  // which request/coords is current so stale responses can be ignored.
+  // which request/address is current so stale responses can be ignored.
   const quoteStatusRef = useRef<QuoteStatus>('idle')
   const activeQuoteKeyRef = useRef<string | null>(null)
+  const activeAddressKeyRef = useRef<string | null>(null)
   const requestTokenRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -422,6 +424,11 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     const controller = new AbortController()
     abortControllerRef.current = controller
 
+    // This request owns the current address, even before it has coordinates.
+    // Without this, a second keyword-less address would look like the same
+    // "in-flight" geocode and the first response could overwrite it.
+    activeAddressKeyRef.current = quoteAddressKey(address)
+
     updateQuoteStatus('loading')
     setQuoteError(null)
 
@@ -508,8 +515,16 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       }
 
       // Remember the new coords before the store update re-runs the effect.
+      // Merge into the latest address rather than the snapshot captured at
+      // request start: the customer may have changed their name/phone while
+      // geocoding was in flight, and that newer data must not be overwritten.
+      const latestAddress = useCheckoutStore.getState().delivery_address
+      if (!latestAddress) {
+        updateQuoteStatus('idle')
+        return
+      }
       activeQuoteKeyRef.current = quoteKey({ latitude: lat, longitude: lng })
-      useCheckoutStore.getState().setDeliveryAddress({ ...address, latitude: lat, longitude: lng })
+      useCheckoutStore.getState().setDeliveryAddress({ ...latestAddress, latitude: lat, longitude: lng })
     } else {
       const currentKey = quoteKey(address)
       activeQuoteKeyRef.current = currentKey
@@ -629,18 +644,27 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     if (!deliveryAddress) return
 
     const currentKey = quoteKey(deliveryAddress)
+    const currentAddressKey = quoteAddressKey(deliveryAddress)
 
-    // A persisted quote is already associated with the saved coords on mount.
-    if (currentKey && activeQuoteKeyRef.current === null && deliveryQuote && !quoteExpired) {
-      activeQuoteKeyRef.current = currentKey
+    // A persisted quote is already associated with the saved address/coords on
+    // mount. Track both identities so the effect can tell later changes apart.
+    if (deliveryQuote && !quoteExpired) {
+      if (activeQuoteKeyRef.current === null && currentKey) {
+        activeQuoteKeyRef.current = currentKey
+      }
+      if (activeAddressKeyRef.current === null) {
+        activeAddressKeyRef.current = currentAddressKey
+      }
     }
 
     const decision = decideQuoteNeed({
       deliveryType,
       hasAddressLine1: Boolean(deliveryAddress.address_line1?.trim()),
+      addressKey: currentAddressKey,
       coordsKey: currentKey,
       hasQuote: Boolean(deliveryQuote || priceBreakdown),
       quoteExpired,
+      activeAddressKey: activeAddressKeyRef.current,
       activeKey: activeQuoteKeyRef.current,
       status: quoteStatusRef.current,
     })

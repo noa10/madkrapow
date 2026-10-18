@@ -2,24 +2,47 @@ import { describe, expect, it } from 'vitest'
 
 import {
   decideQuoteNeed,
+  quoteAddressKey,
   quoteKey,
   type DecideQuoteNeedInput,
 } from '../delivery-quote'
 
 const COORDS_KEY = '3.0738,101.5183'
+const ADDRESS_KEY = '12 jalan ampang||kl city|kuala lumpur|50450'
 
 function decisionInput(overrides: Partial<DecideQuoteNeedInput> = {}): DecideQuoteNeedInput {
   return {
     deliveryType: 'delivery',
     hasAddressLine1: true,
+    addressKey: ADDRESS_KEY,
     coordsKey: COORDS_KEY,
     hasQuote: true,
     quoteExpired: false,
+    activeAddressKey: ADDRESS_KEY,
     activeKey: COORDS_KEY,
     status: 'ready',
     ...overrides,
   }
 }
+
+describe('quoteAddressKey', () => {
+  it('normalises the address fields that are sent to the geocoder', () => {
+    expect(quoteAddressKey({
+      address_line1: '  12 Jalan Ampang ',
+      address_line2: '',
+      city: 'KL City',
+      state: 'Kuala Lumpur',
+      postal_code: '50450',
+    })).toBe(ADDRESS_KEY)
+  })
+
+  it('treats missing fields as empty and keeps different addresses distinct', () => {
+    expect(quoteAddressKey({})).toBe('||||')
+    expect(quoteAddressKey({ address_line1: '1 A' })).not.toBe(
+      quoteAddressKey({ address_line1: '2 B' })
+    )
+  })
+})
 
 describe('quoteKey', () => {
   it('builds a stable key from valid coordinates', () => {
@@ -129,5 +152,44 @@ describe('decideQuoteNeed', () => {
       hasQuote: false,
       status: 'error',
     }))).toEqual({ action: 'fetch', reason: 'quote-cleared' })
+  })
+
+  it('skips while the same address is still being geocoded', () => {
+    expect(decideQuoteNeed(decisionInput({
+      coordsKey: null,
+      hasQuote: false,
+      activeAddressKey: ADDRESS_KEY,
+      activeKey: null,
+      status: 'loading',
+    }))).toEqual({ action: 'skip', reason: 'in-flight' })
+  })
+
+  it('fetches a new quote when the address changes while geocoding the old one', () => {
+    // Both addresses have no coordinates yet, so `coordsKey`/`activeKey` are
+    // null for both. Without the address key the old geocode would be treated
+    // as an in-flight request for the new address and its response could
+    // overwrite the newer delivery address.
+    expect(decideQuoteNeed(decisionInput({
+      addressKey: '99 other road||shah alam|selangor|40150',
+      coordsKey: null,
+      hasQuote: false,
+      activeAddressKey: ADDRESS_KEY,
+      activeKey: null,
+      status: 'loading',
+    }))).toEqual({ action: 'fetch', reason: 'address-changed' })
+  })
+
+  it('fetches a fresh quote when the address text changes for the same coords', () => {
+    expect(decideQuoteNeed(decisionInput({
+      addressKey: '99 other road||kl city|kuala lumpur|50450',
+      activeAddressKey: ADDRESS_KEY,
+    }))).toEqual({ action: 'fetch', reason: 'address-changed' })
+  })
+
+  it('trusts a persisted quote while the active address key is unknown', () => {
+    expect(decideQuoteNeed(decisionInput({ activeAddressKey: null }))).toEqual({
+      action: 'skip',
+      reason: 'quote-fresh',
+    })
   })
 })

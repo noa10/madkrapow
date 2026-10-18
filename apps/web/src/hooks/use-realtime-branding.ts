@@ -28,7 +28,9 @@ let brandingState: BrandingState = DEFAULT_STATE;
 let fetchPromise: Promise<void> | null = null;
 let lastFetchedAt = 0;
 let hasFetched = false;
+let forceAfterFetch = false;
 let channel: RealtimeChannel | null = null;
+let channelCleanupTimer: ReturnType<typeof setTimeout> | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const listeners = new Set<() => void>();
@@ -61,7 +63,12 @@ function loadBranding(force = false): Promise<void> {
   if (!force && hasFetched && now - lastFetchedAt < BRANDING_CACHE_TTL_MS) {
     return Promise.resolve();
   }
-  if (fetchPromise) return fetchPromise;
+  if (fetchPromise) {
+    // A realtime event that lands while a fetch is in flight must not be
+    // lost: run one follow-up fetch after the current one settles.
+    if (force) forceAfterFetch = true;
+    return fetchPromise;
+  }
 
   if (!hasFetched && !brandingState.loading) {
     brandingState = { ...brandingState, loading: true };
@@ -77,7 +84,9 @@ function loadBranding(force = false): Promise<void> {
         loading: false,
         error: result.error,
       };
-      hasFetched = true;
+      // Only cache successful reads; a transient DB error should be retried by
+      // the next subscriber instead of being pinned for the full TTL.
+      hasFetched = result.error === null;
       lastFetchedAt = Date.now();
     })
     .catch((error: unknown) => {
@@ -91,12 +100,20 @@ function loadBranding(force = false): Promise<void> {
     .finally(() => {
       fetchPromise = null;
       emit();
+      if (forceAfterFetch) {
+        forceAfterFetch = false;
+        void loadBranding(true);
+      }
     });
 
   return fetchPromise;
 }
 
 function ensureBrandingChannel(): void {
+  if (channelCleanupTimer) {
+    clearTimeout(channelCleanupTimer);
+    channelCleanupTimer = null;
+  }
   if (channel || typeof window === "undefined") return;
 
   const supabase = getBrowserClient();
@@ -127,6 +144,23 @@ function subscribe(listener: () => void): () => void {
 
   return () => {
     listeners.delete(listener);
+    // Unmount/remount of a shell happens in the same commit; wait a tick so a
+    // new subscriber can reuse the existing channel instead of racing
+    // `removeChannel()` and subscribing to the channel being torn down.
+    if (listeners.size === 0 && channel && !channelCleanupTimer) {
+      channelCleanupTimer = setTimeout(() => {
+        channelCleanupTimer = null;
+        if (listeners.size > 0 || !channel) return;
+
+        const currentChannel = channel;
+        channel = null;
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          debounceTimer = null;
+        }
+        void getBrowserClient().removeChannel(currentChannel);
+      }, 0);
+    }
   };
 }
 

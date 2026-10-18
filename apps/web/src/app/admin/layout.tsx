@@ -18,6 +18,7 @@ import { type StaffRole } from "@/lib/auth/roles";
 import {
   getAdminAuth,
   getCachedAdminAuth,
+  subscribeAdminAuth,
   type AdminAuthSnapshot,
 } from "@/lib/admin/role-cache";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
@@ -75,14 +76,10 @@ export default function AdminLayout({
   useEffect(() => {
     let cancelled = false;
 
-    // The initial state was seeded from the cache, so a fresh cache means the
-    // page can render immediately without another auth round-trip.
-    if (getCachedAdminAuth()) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
+    // `getAdminAuth()` resolves synchronously from the shared cache when it is
+    // warm, so this is safe to call unconditionally. Returning early based on
+    // `getCachedAdminAuth()` could leave `isChecking` true if another caller
+    // populated the cache between the initial render and this effect.
     getAdminAuth()
       .then((snapshot) => {
         if (!cancelled) setAuth(snapshot);
@@ -95,8 +92,15 @@ export default function AdminLayout({
         if (!cancelled) setIsChecking(false);
       });
 
+    // Keep the shell in sync with sign-out/sign-in and role updates instead of
+    // serving a stale cached role until the next hard navigation.
+    const unsubscribe = subscribeAdminAuth((snapshot) => {
+      if (!cancelled) setAuth(snapshot);
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [supabase]);
 

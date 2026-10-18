@@ -107,7 +107,26 @@
 4. Item page → **Back to Menu**; also hard-refresh an item URL in a new tab → Back must go to `/menu`, never leave the app.
 5. `/admin` → `/admin/orders` → `/admin/analytics`: no full-page spinner after the first load; analytics charts load lazily; confirm `EXPLAIN` uses the new indexes on a production-like dataset.
 
-## 6. Known residuals / follow-ups (not changed here)
+## 6. Browser smoke test (production build, mocked backend)
+
+No live staging credentials were available in this environment (the supplied `.env` archive contains only the repo's `.env.example` placeholders, and Docker is unavailable for a local Supabase stack). To still exercise the real UI, the app was built and served with `next start` against a local mock of Supabase Auth/PostgREST and a Playwright-intercepted `/api/delivery/quote`, then driven with Chromium in a real browser. The **same suite was run against pristine `master`** to prove it reproduces the reported bugs.
+
+| Check | `master` | This branch |
+|---|---|---|
+| Home renders | PASS (1,011 ms; 1 menu query fired by the mounted drawer) | **PASS (511 ms; 0 menu queries)** |
+| Cart drawer fetches menu only on open | **FAIL** (menu fetch on mount) | **PASS** (0 → 1 on open) |
+| Menu renders items | PASS | PASS |
+| Item page “Back to Menu” (same tab) | PASS | PASS |
+| Fresh-tab deep link → Back stays in app | **FAIL** (went to `about:blank`) | **PASS** (`/menu`) |
+| Sign-in + checkout reachable | PASS | PASS |
+| Delivery fee on first load / Pay enabled | PASS (RM 8.50 / RM 24.50) | PASS (RM 8.50 / RM 24.50) |
+| **Delivery → Pickup → Delivery ×3** | **FAIL on all 3** — `requoted=false stuck=true pay=disabled`, 1 quote call total | **PASS** — fee returns every cycle, Pay re-enables, exactly 4 quote calls |
+| No permanent “Calculating delivery fee…” | **FAIL** | **PASS** |
+| No duplicate quote requests | **FAIL** | **PASS** |
+
+Harness lives outside the repo at `/home/ubuntu/repos/perf-audit/smoke/` (`mock-supabase.mjs`, `smoke.mjs`); offer to promote it to `e2e/` if wanted.
+
+## 7. Known residuals / follow-ups (not changed here)
 
 - `select("*")` remains in admin surfaces outside this scope: `hooks/useAdminOrders.ts`, `hooks/use-promos.ts`, `components/admin/MenuItemForm.tsx`, `api/admin/employees/route.ts`, `api/admin/sales-reports/route.ts`.
 - `useRealtimeOrderUpdates` DELETE does not invalidate tab counts; today-ASAP DELETE events cannot refresh from the payload (PK-only `old` record).

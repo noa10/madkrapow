@@ -23,13 +23,22 @@ export function CartDrawer() {
   const removePromo = useCartStore((state) => state.removePromo)
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const menuItemsRequestedRef = useRef(false)
   const touchStartX = useRef<number | null>(null)
 
+  // Menu data is only needed once the drawer is opened. The client query cache
+  // makes subsequent opens free and concurrent mounts share one request.
   useEffect(() => {
+    if (!isOpen || menuItemsRequestedRef.current) return
+
+    menuItemsRequestedRef.current = true
     getMenuItems()
       .then(setMenuItems)
-      .catch((err) => console.error('Failed to fetch menu items:', err))
-  }, [])
+      .catch((err) => {
+        menuItemsRequestedRef.current = false
+        console.error('Failed to fetch menu items:', err)
+      })
+  }, [isOpen])
 
   const menuItemMap = useMemo(
     () => Object.fromEntries(menuItems.map((item) => [item.id, item])),

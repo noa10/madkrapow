@@ -1,4 +1,4 @@
-import { MenuItemForm } from '@/components/admin/MenuItemForm'
+import { MenuItemFormLoader } from '../MenuItemFormLoader'
 
 export default function NewMenuItemPage() {
   return (
@@ -10,7 +10,7 @@ export default function NewMenuItemPage() {
         </p>
       </div>
       
-      <MenuItemForm isNew />
+      <MenuItemFormLoader isNew />
     </div>
   )
 }

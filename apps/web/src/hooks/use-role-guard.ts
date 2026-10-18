@@ -1,54 +1,53 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { hasAnyRole } from "@/lib/auth/roles";
-import { getBrowserClient } from "@/lib/supabase/client";
+import {
+  getAdminAuth,
+  getCachedAdminAuth,
+  subscribeAdminAuth,
+  type AdminAuthSnapshot,
+} from "@/lib/admin/role-cache";
+
+const DENIED_SNAPSHOT: AdminAuthSnapshot = { user: null, role: null };
 
 export function useRoleGuard(allowedRoles: string[]) {
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Seed from the shared cache so an admin navigation inside the TTL resolves
+  // synchronously (no spinner, no repeat getUser round-trip).
+  const [auth, setAuth] = useState<AdminAuthSnapshot | null>(() => getCachedAdminAuth());
   const router = useRouter();
-  const supabase = getBrowserClient();
 
   const rolesKey = useMemo(() => allowedRoles.join(","), [allowedRoles]);
 
   useEffect(() => {
-    const checkRole = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+    let cancelled = false;
 
-        if (!user) {
-          setHasAccess(false);
-          return;
-        }
-
-        setHasAccess(hasAnyRole(user, allowedRoles));
-      } catch (error) {
-        console.error("Role guard check failed:", error);
-        setHasAccess(false);
-      } finally {
-        setIsLoading(false);
-      }
+    const apply = (snapshot: AdminAuthSnapshot) => {
+      if (!cancelled) setAuth(snapshot);
     };
 
-    checkRole();
+    const cached = getCachedAdminAuth();
+    if (cached) apply(cached);
 
-    // Subscribe to auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      setHasAccess(hasAnyRole(session?.user, allowedRoles));
-    });
+    getAdminAuth()
+      .then(apply)
+      .catch((error) => {
+        console.error("Role guard check failed:", error);
+        apply(DENIED_SNAPSHOT);
+      });
+
+    // Auth changes update the shared snapshot and every mounted guard.
+    const unsubscribe = subscribeAdminAuth(apply);
 
     return () => {
-      subscription.unsubscribe();
+      cancelled = true;
+      unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, rolesKey]);
+  }, [rolesKey]);
+
+  const hasAccess = auth === null ? null : hasAnyRole(auth.user, allowedRoles);
+  const isLoading = auth === null;
 
   useEffect(() => {
     if (!isLoading && hasAccess === false) {

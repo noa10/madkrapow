@@ -6,13 +6,8 @@ import { HeroView } from "@/components/home/HeroView";
 import { HowToOrderSection } from "@/components/home/HowToOrderSection";
 import { HowItWorksSection } from "@/components/home/HowItWorksSection";
 import { HalalCommitmentSection } from "@/components/home/HalalCommitmentSection";
-import type { CategoryWithMenuItems } from "@/lib/queries/menu";
 
-interface PageSwitcherProps {
-  categories: CategoryWithMenuItems[];
-}
-
-export function PageSwitcher({ categories: _categories }: PageSwitcherProps) {
+export function PageSwitcher() {
   const router = useRouter();
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { CategoryWithMenuItems } from "@/lib/queries/menu";
 import { SignatureHero } from "./SignatureHero";
@@ -26,23 +26,40 @@ export function MenuCatalogView({ categories }: MenuCatalogViewProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const allItems = categories.flatMap((c) => c.menu_items);
-  const signatureItems = allItems.filter((i) => i.is_signature).slice(0, 2);
-  const signatureIds = new Set(signatureItems.map((i) => i.id));
-  const nonSignatureByCategory: CategoryWithMenuItems[] = categories.map((c) => ({
-    ...c,
-    menu_items: c.menu_items.filter((i) => !signatureIds.has(i.id)),
-  }));
+  const { signatureItems, nonSignatureByCategory } = useMemo(() => {
+    const allItems = categories.flatMap((c) => c.menu_items);
+    const featured = allItems.filter((i) => i.is_signature).slice(0, 2);
+    const signatureIds = new Set(featured.map((i) => i.id));
+    return {
+      signatureItems: featured,
+      nonSignatureByCategory: categories.map((c) => ({
+        ...c,
+        menu_items: c.menu_items.filter((i) => !signatureIds.has(i.id)),
+      })),
+    };
+  }, [categories]);
+
+  const menuGrid = useMemo(
+    () => <RichMenuGrid categories={nonSignatureByCategory} />,
+    [nonSignatureByCategory]
+  );
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting);
-        if (visible.length > 0) {
-          const sorted = visible.sort(
-            (a, b) => b.boundingClientRect.top - a.boundingClientRect.top
-          );
-          setActiveId(sorted[0].target.id);
+        let topmost: IntersectionObserverEntry | null = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (
+            !topmost ||
+            entry.boundingClientRect.top > topmost.boundingClientRect.top
+          ) {
+            topmost = entry;
+          }
+        }
+        if (topmost) {
+          const nextId = topmost.target.id;
+          setActiveId((prev) => (prev === nextId ? prev : nextId));
         }
       },
       { rootMargin: "-100px 0px -60% 0px", threshold: 0 }
@@ -110,7 +127,7 @@ export function MenuCatalogView({ categories }: MenuCatalogViewProps) {
         )}
 
         {categories.length > 0 ? (
-          <RichMenuGrid categories={nonSignatureByCategory} />
+          menuGrid
         ) : (
           <div className="mx-auto max-w-7xl px-4 py-12 text-center">
             <p className="text-[#d8d1c6]">No menu items available at the moment.</p>

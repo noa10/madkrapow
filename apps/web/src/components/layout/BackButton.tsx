@@ -2,6 +2,11 @@
 
 import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
+import {
+  getNavigationSteps,
+  shouldGoBack,
+  useInAppHistory,
+} from "@/lib/navigation/back"
 
 interface BackButtonProps {
   label?: string
@@ -15,9 +20,10 @@ export function BackButton({
   className = "mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors",
 }: BackButtonProps) {
   const router = useRouter()
+  useInAppHistory()
 
   const handleClick = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
+    if (shouldGoBack(getNavigationSteps())) {
       router.back()
     } else {
       router.push(fallbackHref)

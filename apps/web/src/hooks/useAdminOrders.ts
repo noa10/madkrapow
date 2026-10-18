@@ -17,6 +17,10 @@ export interface AdminOrder {
   delivery_type: string;
   fulfillment_type: string;
   scheduled_for: string | null;
+  /** Free-text note the customer left for the whole order. */
+  notes: string | null;
+  /** Whether the kitchen should pack cutlery. */
+  include_cutlery: boolean;
   source: import("@/types/orders").OrderSource;
 }
 

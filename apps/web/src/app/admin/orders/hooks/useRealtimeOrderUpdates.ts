@@ -5,14 +5,55 @@ import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import { triggerNewOrderAlert } from "@/components/admin/NewOrderAlert"
-import type { Order } from "@/types/orders"
+import type { Order, OrderTab } from "@/types/orders"
 import { determineAffectedTabs } from "../utils/determineAffectedTabs"
+
+const ALL_TABS: readonly OrderTab[] = ["preparing", "ready", "upcoming", "history"]
+
+/** One refetch per tab per realtime burst window. */
+const INVALIDATION_DEBOUNCE_MS = 500
 
 export function useRealtimeOrderUpdates() {
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   useEffect(() => {
     const supabase = getBrowserClient()
+    const pendingTabs = new Set<OrderTab>()
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
+    let disposed = false
+
+    const flush = () => {
+      flushTimer = null
+      if (disposed || document.hidden) return
+
+      const tabs = Array.from(pendingTabs)
+      pendingTabs.clear()
+      if (tabs.length === 0) return
+
+      const store = useAdminOrdersStore.getState()
+      if (tabs.length === ALL_TABS.length) {
+        store.invalidateAllTabs()
+      } else {
+        tabs.forEach((tab) => store.invalidateTab(tab))
+      }
+    }
+
+    const scheduleInvalidation = (tabs: readonly OrderTab[]) => {
+      if (disposed) return
+      tabs.forEach((tab) => pendingTabs.add(tab))
+
+      // No timer while hidden: events are queued cheaply and flushed once when
+      // the tab becomes visible again (see the visibility listener below).
+      if (document.hidden || flushTimer !== null) return
+      flushTimer = setTimeout(flush, INVALIDATION_DEBOUNCE_MS)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || flushTimer !== null || pendingTabs.size === 0) return
+      flushTimer = setTimeout(flush, 0)
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     const channel = supabase
       .channel("admin-orders-feed")
@@ -20,9 +61,10 @@ export function useRealtimeOrderUpdates() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "orders" },
         (_payload: RealtimePostgresChangesPayload<Order>) => {
-          const store = useAdminOrdersStore.getState()
-          store.invalidateAllTabs()
+          // The alert is intentionally immediate; only the cache refresh is
+          // coalesced so a burst of inserts cannot storm the DB.
           triggerNewOrderAlert()
+          scheduleInvalidation(ALL_TABS)
         }
       )
       .on(
@@ -38,9 +80,9 @@ export function useRealtimeOrderUpdates() {
           const oldTabs = assignments.get(oldRecord.id) ?? determineAffectedTabs(oldRecord)
           const newTabs = determineAffectedTabs(newRecord)
 
-          // Invalidate union of old and new tab assignments
-          const tabsToInvalidate = new Set([...oldTabs, ...newTabs])
-          tabsToInvalidate.forEach((t) => store.invalidateTab(t))
+          // Invalidate union of old and new tab assignments, coalesced so a
+          // burst of status updates produces at most one refetch per tab.
+          scheduleInvalidation([...new Set([...oldTabs, ...newTabs])])
 
           // Update the map with new assignments
           const nextAssignments = new Map(assignments)
@@ -84,10 +126,9 @@ export function useRealtimeOrderUpdates() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "lalamove_shipments" },
-        (payload: RealtimePostgresChangesPayload<{ order_id: string }>) => {
-          // Delivery fee or driver info changed — invalidate all tabs to refresh
-          const store = useAdminOrdersStore.getState()
-          store.invalidateAllTabs()
+        (_payload: RealtimePostgresChangesPayload<{ order_id: string }>) => {
+          // Delivery fee or driver info changed — refresh all tabs, once per burst.
+          scheduleInvalidation(ALL_TABS)
         }
       )
       .subscribe((status: string) => {
@@ -99,6 +140,9 @@ export function useRealtimeOrderUpdates() {
       })
 
     return () => {
+      disposed = true
+      if (flushTimer !== null) clearTimeout(flushTimer)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       supabase.removeChannel(channel)
     }
   }, [])

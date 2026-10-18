@@ -15,6 +15,11 @@ import {
 } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client";
 import { type StaffRole } from "@/lib/auth/roles";
+import {
+  getAdminAuth,
+  getCachedAdminAuth,
+  type AdminAuthSnapshot,
+} from "@/lib/admin/role-cache";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminBottomNav } from "@/components/layout/AdminBottomNav";
 import { Button } from "@/components/ui/button";
@@ -45,12 +50,16 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasAccess, setHasAccess] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [auth, setAuth] = useState<AdminAuthSnapshot | null>(() => getCachedAdminAuth());
+  const [isChecking, setIsChecking] = useState(() => getCachedAdminAuth() === null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const supabase = getBrowserClient();
+
+  const staffRoles: StaffRole[] = ["admin", "manager", "cashier", "kitchen"];
+  const hasAccess = auth !== null && staffRoles.includes(auth.role as StaffRole);
+  const userRole = auth?.role ?? null;
+  const isLoading = isChecking;
 
   useEffect(() => {
     const stored = localStorage.getItem("sidebar:admin");
@@ -64,31 +73,31 @@ export default function AdminLayout({
   }, [collapsed]);
 
   useEffect(() => {
-    const checkRole = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+    let cancelled = false;
 
-        if (!user) {
-          setHasAccess(false);
-          return;
-        }
+    // The initial state was seeded from the cache, so a fresh cache means the
+    // page can render immediately without another auth round-trip.
+    if (getCachedAdminAuth()) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
-        const role = (user.app_metadata?.role as string) || null;
-        setUserRole(role);
-
-        const staffRoles: StaffRole[] = ["admin", "manager", "cashier", "kitchen"];
-        setHasAccess(staffRoles.includes(role as StaffRole));
-      } catch (error) {
+    getAdminAuth()
+      .then((snapshot) => {
+        if (!cancelled) setAuth(snapshot);
+      })
+      .catch((error) => {
         console.error("Role check failed:", error);
-        setHasAccess(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+        if (!cancelled) setAuth({ user: null, role: null });
+      })
+      .finally(() => {
+        if (!cancelled) setIsChecking(false);
+      });
 
-    checkRole();
+    return () => {
+      cancelled = true;
+    };
   }, [supabase]);
 
   useEffect(() => {

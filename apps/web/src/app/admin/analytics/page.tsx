@@ -1,26 +1,43 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+import { ChartSkeleton } from "@/components/admin/analytics/ChartSkeleton";
 import { format, subDays, startOfDay, endOfDay, eachDayOfInterval } from "date-fns";
 import { DollarSign, Package, ShoppingCart, TrendingUp, Calendar } from "lucide-react";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+
+// Recharts is fetched only when these chart sections render, not with every
+// admin page's initial JS.
+const RevenueCharts = dynamic(
+  () =>
+    import("@/components/admin/analytics/RevenueCharts").then(
+      (mod) => mod.RevenueCharts
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid gap-4 md:grid-cols-2">
+        <ChartSkeleton />
+        <ChartSkeleton />
+      </div>
+    ),
+  }
+);
+
+const OrdersBySourceChart = dynamic(
+  () =>
+    import("@/components/admin/analytics/OrdersBySourceChart").then(
+      (mod) => mod.OrdersBySourceChart
+    ),
+  {
+    ssr: false,
+    loading: () => <ChartSkeleton chartHeight={200} />,
+  }
+);
 
 interface TopSellingItem {
   name: string;
@@ -42,9 +59,6 @@ interface AnalyticsOrderItem {
 }
 
 type DateRange = "7d" | "30d" | "90d" | "custom";
-
-const COLORS = ["hsl(38 60% 55%)", "hsl(192 80% 50%)"];
-const SOURCE_COLORS = ["hsl(200 80% 55%)", "hsl(220 80% 60%)", "hsl(150 70% 45%)", "hsl(270 70% 60%)"];
 
 export default function AnalyticsPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin"]);
@@ -94,14 +108,14 @@ export default function AnalyticsPage() {
     const [ordersRes, itemsRes] = await Promise.all([
       supabase
         .from("orders")
-        .select("*")
+        .select("created_at, customer_id, total_cents, source")
         .gte("created_at", startISO)
         .lte("created_at", endISO)
         .in("status", ["paid", "accepted", "preparing", "ready", "picked_up", "delivered"]),
 
       supabase
         .from("order_items")
-        .select("*")
+        .select("menu_item_name, quantity, line_total_cents")
         .order("created_at", { ascending: false })
         .limit(1000),
     ]);
@@ -295,61 +309,7 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="bg-card border-border shadow-sm rounded-xl">
-          <CardHeader>
-            <CardTitle className="font-display">Revenue & Orders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={salesData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={12} />
-                <YAxis yAxisId="left" fontSize={12} />
-                <YAxis yAxisId="right" orientation="right" fontSize={12} />
-                <Tooltip
-                  formatter={(value, name) => {
-                    const numValue = typeof value === "number" ? value : 0;
-                    const strName = typeof name === "string" ? name : "";
-                    return [
-                      strName === "revenue" ? formatCurrency(numValue * 100) : numValue,
-                      strName === "revenue" ? "Revenue" : "Orders",
-                    ];
-                  }}
-                />
-                <Bar yAxisId="left" dataKey="revenue" fill="hsl(38 60% 55%)" name="revenue" />
-                <Bar yAxisId="right" dataKey="orders" fill="hsl(192 80% 50%)" name="orders" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm rounded-xl">
-          <CardHeader>
-            <CardTitle className="font-display">Revenue Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={salesData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={12} />
-                <YAxis fontSize={12} />
-                <Tooltip formatter={(value) => {
-                  const numValue = typeof value === "number" ? value : 0;
-                  return [formatCurrency(numValue * 100), "Revenue"];
-                }} />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="hsl(38 60% 55%)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+      <RevenueCharts salesData={salesData} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="bg-card border-border shadow-sm rounded-xl">
@@ -381,40 +341,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border shadow-sm rounded-xl">
-          <CardHeader>
-            <CardTitle className="font-display">Orders by Source</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={sourceData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, value }) => `${name}: ${value}`}
-                >
-                  {sourceData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex justify-center gap-4 mt-4 flex-wrap">
-              {sourceData.map((entry, index) => (
-                <div key={entry.name} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SOURCE_COLORS[index % SOURCE_COLORS.length] }} />
-                  <span className="text-sm">{entry.name}: {entry.value}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <OrdersBySourceChart sourceData={sourceData} />
       </div>
     </div>
   );

@@ -65,7 +65,7 @@ function statusCountQuery(
 ) {
   let query = supabase
     .from("orders")
-    .select("*", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true })
     .in("status", [...statuses])
     .eq("fulfillment_type", fulfillmentType)
 
@@ -85,7 +85,7 @@ function upcomingCountQuery(
   // mirror the tab query's post-merge filter.
   let query = supabase
     .from("orders")
-    .select("*", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true })
     .or(upcomingOrFilter(filter))
     .not("status", "in", upcomingExcludedStatusFilter(filter))
 
@@ -146,10 +146,18 @@ export function useOrderTabCounts(): OrderTabCountsResult {
 
   useEffect(() => {
     let cancelled = false
-    const delay = isFirstRun.current ? 0 : 500
-    isFirstRun.current = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let skippedWhileHidden = false
 
-    const timer = setTimeout(() => {
+    const run = () => {
+      if (cancelled) return
+      if (document.hidden) {
+        // Do not touch the DB for a background admin tab; resume on visibility.
+        skippedWhileHidden = true
+        return
+      }
+
+      skippedWhileHidden = false
       setIsLoading(true)
       const supabase = getBrowserClient()
       fetchCounts(supabase, sourceFilter)
@@ -164,11 +172,28 @@ export function useOrderTabCounts(): OrderTabCountsResult {
         .finally(() => {
           if (!cancelled) setIsLoading(false)
         })
+    }
+
+    const delay = isFirstRun.current ? 0 : 500
+    isFirstRun.current = false
+    timer = setTimeout(() => {
+      timer = null
+      run()
     }, delay)
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || !skippedWhileHidden || timer !== null) return
+      timer = setTimeout(() => {
+        timer = null
+        run()
+      }, 0)
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       cancelled = true
-      clearTimeout(timer)
+      if (timer !== null) clearTimeout(timer)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
   }, [refetchTriggers, sourceFilter])
 

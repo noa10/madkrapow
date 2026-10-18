@@ -5,8 +5,15 @@ import { getBrowserClient } from "@/lib/supabase/client"
 import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import type { Order, OrderTab } from "@/types/orders"
 import { ADMIN_TAB_FILTERS } from "@/lib/orders/tab-filters"
+import {
+  ADMIN_ORDER_LIST_SELECT,
+  withOrderItemCount,
+  type AdminOrderListRow,
+} from "@/lib/admin/order-select"
 
-const ORDER_SELECT = "*, order_items(quantity), source, customer_id"
+function withItemCount(rows: AdminOrderListRow[]): Order[] {
+  return rows.map(withOrderItemCount)
+}
 
 export function useOrderTabQuery(tab: OrderTab) {
   const dateRange = useAdminOrdersStore((s) => s.dateRange)
@@ -21,14 +28,6 @@ export function useOrderTabQuery(tab: OrderTab) {
     const supabase = getBrowserClient()
 
     const fetchTabOrders = async () => {
-      function withItemCount(orders: Order[]): Order[] {
-        return orders.map((o: Order) => {
-          const any = o as any
-          const items = (any.order_items as { quantity: number }[] | undefined) ?? []
-          const { order_items, ...rest } = any
-          return { ...rest, item_count: items.reduce((s, i) => s + i.quantity, 0) } as Order
-        })
-      }
       setTabLoading(tab, true)
 
       try {
@@ -46,7 +45,7 @@ export function useOrderTabQuery(tab: OrderTab) {
         if (filter.kind === "statuses") {
           let query = supabase
             .from("orders")
-            .select(ORDER_SELECT)
+            .select(ADMIN_ORDER_LIST_SELECT)
             .in("status", [...filter.statuses])
             .eq("fulfillment_type", filter.fulfillmentType)
             .order("created_at", { ascending: false })
@@ -55,13 +54,13 @@ export function useOrderTabQuery(tab: OrderTab) {
           const { data, error } = await query
 
           if (error) throw error
-          orders = withItemCount((data ?? []) as Order[])
+          orders = withItemCount((data ?? []) as AdminOrderListRow[])
         } else if (filter.kind === "bulk-or-scheduled") {
           const [bulkRes, scheduledRes] = await Promise.all([
             applySourceFilter(
               supabase
                 .from("orders")
-                .select(ORDER_SELECT)
+                .select(ADMIN_ORDER_LIST_SELECT)
                 .in("order_kind", [...filter.orderKinds])
                 .order("created_at", { ascending: false })
                 .limit(200)
@@ -69,7 +68,7 @@ export function useOrderTabQuery(tab: OrderTab) {
             applySourceFilter(
               supabase
                 .from("orders")
-                .select(ORDER_SELECT)
+                .select(ADMIN_ORDER_LIST_SELECT)
                 .eq("fulfillment_type", filter.fulfillmentType)
                 .order("created_at", { ascending: false })
                 .limit(200)
@@ -80,7 +79,10 @@ export function useOrderTabQuery(tab: OrderTab) {
           if (scheduledRes.error) throw scheduledRes.error
 
           const merged = new Map<string, Order>()
-          for (const o of withItemCount([...(bulkRes.data ?? []), ...(scheduledRes.data ?? [])] as Order[])) {
+          for (const o of withItemCount([
+            ...(bulkRes.data ?? []),
+            ...(scheduledRes.data ?? []),
+          ] as AdminOrderListRow[])) {
             merged.set(o.id, o)
           }
 
@@ -95,7 +97,7 @@ export function useOrderTabQuery(tab: OrderTab) {
           } else {
             let query = supabase
               .from("orders")
-              .select(ORDER_SELECT)
+              .select(ADMIN_ORDER_LIST_SELECT)
               .in("status", [...filter.statuses])
               .gte("created_at", start)
               .lte("created_at", end)
@@ -105,7 +107,7 @@ export function useOrderTabQuery(tab: OrderTab) {
             const { data, error } = await query
 
             if (error) throw error
-            orders = withItemCount((data ?? []) as Order[])
+            orders = withItemCount((data ?? []) as AdminOrderListRow[])
           }
         }
 

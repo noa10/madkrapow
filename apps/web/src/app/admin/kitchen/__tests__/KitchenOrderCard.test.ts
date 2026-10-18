@@ -55,7 +55,7 @@ function makeItem(overrides: Partial<KitchenItem> = {}): KitchenItem {
 function render(
   order: AdminOrder,
   items: KitchenItem[] = [],
-  options: { itemsUnavailable?: boolean } = {}
+  options: { itemsUnavailable?: boolean; itemsLoading?: boolean } = {}
 ): string {
   return renderToStaticMarkup(
     createElement(KitchenOrderCard, { order, items, now: NOW, ...options })
@@ -176,5 +176,26 @@ describe('KitchenOrderCard', () => {
     const empty = render(makeOrder(), [])
     expect(empty).toContain('No items recorded')
     expect(empty).not.toContain('Items unavailable')
+  })
+
+  it('says items are loading rather than empty before the first fetch lands', () => {
+    const html = render(makeOrder(), [], { itemsLoading: true })
+    expect(html).toContain('Loading items…')
+    expect(html).not.toContain('No items recorded')
+  })
+
+  it('omits the ITEMS header entirely when there are no items', () => {
+    // The app renders only the empty-state line, no "ITEMS (0)" above it.
+    const html = render(makeOrder(), [])
+    expect(html).not.toContain('ITEMS (0)')
+    expect(html).toContain('No items recorded')
+  })
+
+  it('does not render a blank phone row for an empty phone', () => {
+    const withoutPhone = render(makeOrder({ customer_phone: '' }))
+    expect(withoutPhone).not.toContain('font-medium"></div>')
+
+    const withPhone = render(makeOrder({ customer_phone: '012-3456789' }))
+    expect(withPhone).toContain('012-3456789')
   })
 })

@@ -31,7 +31,7 @@ export default function KitchenDisplayPage() {
     () => filteredOrders.map((order) => order.id),
     [filteredOrders]
   );
-  const { itemsByOrderId, error: itemsError } =
+  const { itemsByOrderId, error: itemsError, loading: itemsLoading } =
     useKitchenOrderItems(activeOrderIds);
 
   if (isAccessLoading || loading) {
@@ -112,6 +112,7 @@ export default function KitchenDisplayPage() {
                 order={order}
                 items={itemsByOrderId[order.id] ?? []}
                 itemsUnavailable={Boolean(itemsError)}
+                itemsLoading={itemsLoading}
               />
             ))}
           </div>

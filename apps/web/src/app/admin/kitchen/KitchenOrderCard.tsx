@@ -74,6 +74,8 @@ interface KitchenOrderCardProps {
   items: KitchenItem[];
   /** Items failed to load — say so rather than implying the order is empty. */
   itemsUnavailable?: boolean;
+  /** First items fetch for this board is still in flight. */
+  itemsLoading?: boolean;
   /** Injectable clock so the elapsed label is deterministic in tests. */
   now?: Date;
 }
@@ -90,6 +92,7 @@ export function KitchenOrderCard({
   order,
   items,
   itemsUnavailable = false,
+  itemsLoading = false,
   now,
 }: KitchenOrderCardProps) {
   const statusConfig = statusConfigFor(order.status);
@@ -147,9 +150,9 @@ export function KitchenOrderCard({
               <div className="font-semibold text-foreground">
                 {order.customer_name || 'Guest Customer'}
               </div>
-              {order.customer_phone && (
+              {order.customer_phone?.trim() && (
                 <div className="text-muted-foreground font-medium">
-                  {order.customer_phone}
+                  {order.customer_phone.trim()}
                 </div>
               )}
             </div>
@@ -178,43 +181,49 @@ export function KitchenOrderCard({
           <div className="border-t border-border" />
 
           <div>
-            <div className="text-sm font-bold tracking-wide text-muted-foreground">
-              ITEMS ({dishCount})
-            </div>
             {items.length === 0 ? (
-              <p className="mt-2 text-base italic text-muted-foreground">
-                {itemsUnavailable ? 'Items unavailable' : 'No items recorded'}
+              <p className="text-base italic text-muted-foreground">
+                {itemsLoading
+                  ? 'Loading items…'
+                  : itemsUnavailable
+                    ? 'Items unavailable'
+                    : 'No items recorded'}
               </p>
             ) : (
-              <ul className="mt-2 space-y-3">
-                {items.map((item) => (
-                  <li key={item.id} className="flex items-start gap-3">
-                    <span className="rounded bg-primary/15 px-2 py-0.5 text-sm font-bold text-primary">
-                      {item.quantity}x
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-base font-semibold text-foreground">
-                        {item.name}
+              <>
+                <div className="text-sm font-bold tracking-wide text-muted-foreground">
+                  ITEMS ({dishCount})
+                </div>
+                <ul className="mt-2 space-y-3">
+                  {items.map((item) => (
+                    <li key={item.id} className="flex items-start gap-3">
+                      <span className="rounded bg-primary/15 px-2 py-0.5 text-sm font-bold text-primary">
+                        {item.quantity}x
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-base font-semibold text-foreground">
+                          {item.name}
+                        </div>
+                        {item.modifiers.map((modifier, index) => (
+                          <div
+                            key={`${item.id}-mod-${index}`}
+                            className="mt-0.5 flex items-start gap-1.5 text-base text-muted-foreground"
+                          >
+                            <PlusCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
+                            <span>{modifier}</span>
+                          </div>
+                        ))}
+                        {item.notes?.trim() && (
+                          <div className="mt-1 flex items-start gap-1.5 text-base italic text-muted-foreground">
+                            <StickyNote className="mt-1 h-3.5 w-3.5 shrink-0" />
+                            <span>Note: {item.notes.trim()}</span>
+                          </div>
+                        )}
                       </div>
-                      {item.modifiers.map((modifier, index) => (
-                        <div
-                          key={`${item.id}-mod-${index}`}
-                          className="mt-0.5 flex items-start gap-1.5 text-base text-muted-foreground"
-                        >
-                          <PlusCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
-                          <span>{modifier}</span>
-                        </div>
-                      ))}
-                      {item.notes?.trim() && (
-                        <div className="mt-1 flex items-start gap-1.5 text-base italic text-muted-foreground">
-                          <StickyNote className="mt-1 h-3.5 w-3.5 shrink-0" />
-                          <span>Note: {item.notes.trim()}</span>
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
 

@@ -35,9 +35,11 @@ const ITEM_SELECT =
 /**
  * Groups embedded item rows by their order id, preserving row order.
  *
- * Order is significant on a kitchen ticket — it is the order the dishes were
- * added — so this never re-sorts. Orders with no items are absent from the
- * result rather than present with an empty array.
+ * Row order is significant on a kitchen ticket — it is the order the dishes
+ * were added — so this never re-sorts; the caller's `.order('created_at')` on
+ * the outer query is what establishes it. Note that addon order *within* an
+ * item is whatever the embed returns: they share one insert timestamp, so no
+ * ordering is reliably derivable.
  */
 export function groupItemsByOrderId(
   rows: RawKitchenItemRow[]
@@ -71,6 +73,9 @@ export function useKitchenOrderItems(orderIds: string[]) {
     Record<string, KitchenItem[]>
   >({});
   const [error, setError] = useState<string | null>(null);
+  // Which id set the current data belongs to. Derived rather than a `loading`
+  // flag so the effect body never calls setState synchronously.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   // Key on the *set* of ids, not array identity: the caller rebuilds the array
   // on every realtime order event, which would otherwise refetch constantly.
@@ -90,6 +95,8 @@ export function useKitchenOrderItems(orderIds: string[]) {
         .order("created_at", { ascending: true });
 
       if (cancelled) return;
+
+      setLoadedKey(idsKey);
 
       if (queryError) {
         setError(queryError.message);
@@ -114,5 +121,8 @@ export function useKitchenOrderItems(orderIds: string[]) {
   return {
     itemsByOrderId: idsKey ? itemsByOrderId : {},
     error: idsKey ? error : null,
+    // True until the first fetch for the current id set resolves, so a card can
+    // say "loading" rather than the alarming "no items recorded" on first paint.
+    loading: Boolean(idsKey) && loadedKey !== idsKey,
   };
 }

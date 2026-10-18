@@ -44,6 +44,26 @@ gh secret list | grep -E 'ANDROID_(KEYSTORE|KEY)_'
 
 You should see all 8 entries.
 
+### App configuration secrets
+
+The workflow also injects the runtime configuration that Envied embeds into
+`lib/config/env.g.dart`. A release fails if a required value is missing or still
+matches a `.env.example` placeholder:
+
+| Secret | Applies to | Required |
+|---|---|---|
+| `SUPABASE_URL_MOBILE` / `SUPABASE_URL_MERCHANT` | both apps | yes |
+| `SUPABASE_ANON_KEY_MOBILE` / `SUPABASE_ANON_KEY_MERCHANT` | both apps | yes |
+| `GOOGLE_WEB_CLIENT_ID_MOBILE` / `GOOGLE_WEB_CLIENT_ID_MERCHANT` | both apps | yes |
+| `GOOGLE_ANDROID_CLIENT_ID_MOBILE` / `GOOGLE_ANDROID_CLIENT_ID_MERCHANT` | both apps | injected, unused by Envied |
+| `FCM_SENDER_ID_MERCHANT` | merchant | no |
+
+The workflow writes `apps/<app>/.env` **from scratch**. Never seed it from
+`.env.example` first: Envied keeps the **first** value when a key is duplicated,
+so appending real secrets after the example placeholders silently drops them and
+ships an APK that cannot sign in (`your-project.supabase.co`, Google Sign-In
+error 10).
+
 ---
 
 ## Rotate passwords

@@ -1,42 +1,116 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Mad Krapow — brand token system (OpenDesign "Fiery Wok & Delivery" spec).
+   Volcanic near-black canvas · chili-crimson actions · ember price/heat ·
+   sesame focus · herb trust accents · pill-first geometry.
+
+   To switch the brand accent (e.g. back to the legacy gold), edit ONLY the
+   --accent / --accent-hover / --accent-soft / --grad-cta block below.
+--------------------------------------------------------------------------- */
+:root {
+  --bg: oklch(16% 0.0042 285.92);
+  --surface: oklch(21.03% 0.0059 285.89);
+  --surface-2: oklch(25.82% 0.0093 285.73);
+  --surface-3: oklch(34% 0.012 285.7);
+  --surface-sunk: oklch(14.57% 0.0043 285.86);
+  --fg: oklch(96.74% 0.0013 286.38);
+  --muted: oklch(71.18% 0.0129 286.07);
+  --border: oklch(100% 0 0 / 0.09);
+  --border-2: oklch(100% 0 0 / 0.16);
+  --topbar-h: 56px;
+  --catbar-h: 56px;
+
+  /* brand accent — chili crimson */
+  --accent: oklch(58.58% 0.222 17.58);
+  --accent-hover: oklch(53.72% 0.2025 17.38);
+  --accent-soft: oklch(58.58% 0.222 17.58 / 0.16);
+  --on-accent: #ffffff;
+  --grad-cta: linear-gradient(135deg, #d91b41, #c2410c);
+
+  /* supporting colors */
+  --ember: oklch(64.61% 0.1943 41.12);
+  --ember-text: oklch(67.51% 0.1982 41.13);
+  --ember-soft: oklch(67.51% 0.1982 41.13 / 0.14);
+  --sesame: oklch(83.69% 0.1644 84.43);
+  --sesame-soft: oklch(83.69% 0.1644 84.43 / 0.14);
+  --herb: oklch(69.59% 0.1491 162.48);
+  --herb-text: oklch(77.29% 0.1535 163.22);
+  --herb-soft: oklch(69.59% 0.1491 162.48 / 0.13);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --topbar-h: 68px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --topbar-h: 72px;
+  }
+}
+
 @theme {
-  --color-border: hsl(0 0% 20%);
-  --color-input: hsl(0 0% 20%);
-  --color-ring: hsl(38 60% 55%);
-  --color-background: hsl(0 0% 8%);
-  --color-foreground: hsl(0 0% 95%);
-  --color-primary: hsl(38 60% 55%);
-  --color-primary-foreground: hsl(0 0% 8%);
-  --color-secondary: hsl(0 0% 15%);
-  --color-secondary-foreground: hsl(0 0% 95%);
+  /* surfaces & text */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-border: var(--border);
+  --color-border-2: var(--border-2);
+  --color-input: oklch(100% 0 0 / 0.14);
+  --color-ring: var(--sesame);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-surface-elevated: var(--surface-2);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--muted);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--fg);
+
+  /* brand accent roles */
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--on-accent);
   --color-destructive: hsl(0 62.8% 50.6%);
   --color-destructive-foreground: hsl(0 0% 95%);
-  --color-muted: hsl(0 0% 15%);
-  --color-muted-foreground: hsl(0 0% 65%);
-  --color-accent: hsl(38 60% 55%);
-  --color-accent-foreground: hsl(0 0% 8%);
-  --color-popover: hsl(0 0% 12%);
-  --color-popover-foreground: hsl(0 0% 95%);
-  --color-card: hsl(0 0% 12%);
-  --color-card-foreground: hsl(0 0% 95%);
-  --color-surface: hsl(0 0% 10%);
-  --color-surface-elevated: hsl(0 0% 14%);
-  --color-gold: hsl(38 60% 55%);
-  --color-gold-muted: hsl(38 45% 40%);
-  --color-gold-glow: rgba(210, 176, 123, 0.15);
-  --color-gold-subtle: rgba(210, 176, 123, 0.08);
-  --shadow-gold: 0 0 20px rgba(210, 176, 123, 0.15);
-  --radius-lg: 0.5rem;
-  --radius-md: calc(0.5rem - 2px);
-  --radius-sm: calc(0.5rem - 4px);
+
+  /* supporting palette */
+  --color-ember: var(--ember);
+  --color-ember-text: var(--ember-text);
+  --color-sesame: var(--sesame);
+  --color-herb: var(--herb);
+  --color-herb-text: var(--herb-text);
+
+  /* legacy “gold” aliases remapped onto the new brand roles */
+  --color-gold: var(--ember-text);
+  --color-gold-muted: var(--ember);
+  --color-gold-glow: oklch(58.58% 0.222 17.58 / 0.18);
+  --color-gold-subtle: oklch(58.58% 0.222 17.58 / 0.08);
+  --shadow-gold: 0 0 20px oklch(58.58% 0.222 17.58 / 0.2);
+  --line-strong: var(--border-2);
+  --gold-strong: var(--ember-text);
+  --text-gradient-gold: linear-gradient(135deg, oklch(96.74% 0.0013 286.38) 0%, oklch(71.18% 0.0129 286.07) 100%);
+
+  /* geometry */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  /* type */
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
-  --font-heading: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --line-strong: rgba(210, 176, 123, 0.5);
-  --gold-strong: #d4b896;
-  --text-gradient-gold: linear-gradient(135deg, #f1d7aa 0%, #c59661 100%);
 }
 
 @layer base {
@@ -49,6 +123,10 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: var(--accent);
+    color: #fff;
   }
 }
 

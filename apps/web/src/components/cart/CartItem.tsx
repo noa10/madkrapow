@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
-import { Trash2, GripVertical } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuantitySelector } from '@/components/menu/QuantitySelector'
 import { useCartStore, type CartItem as StoreCartItem } from '@/stores/cart'
@@ -46,6 +46,7 @@ export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: Car
   )
   const discount = item.discount_per_unit_cents ?? 0
   const itemTotal = item.quantity * (item.unit_price - discount + modifierTotal)
+  const modifierSummary = item.selected_modifiers.map((m) => m.name).join(' · ')
 
   const formatPrice = (cents: number) => {
     return `RM${(cents / 100).toFixed(2)}`
@@ -91,7 +92,7 @@ export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: Car
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border bg-card transition-all duration-300 ${
+      className={`relative overflow-hidden rounded-2xl border border-border bg-surface transition-all duration-300 ${
         isDeleting ? 'opacity-0 -translate-x-4 max-h-0 border-0 py-0 my-0' : 'py-0 my-0'
       }`}
     >
@@ -102,7 +103,6 @@ export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: Car
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground/40" />
         {imageUrl ? (
           <Image
             src={imageUrl}
@@ -110,49 +110,45 @@ export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: Car
             width={56}
             height={56}
             sizes="56px"
-            className="h-14 w-14 rounded-lg object-cover flex-shrink-0"
+            className="h-14 w-14 flex-shrink-0 rounded-xl object-cover"
           />
         ) : (
-          <div className="h-14 w-14 rounded-lg bg-muted flex-shrink-0" />
+          <div className="h-14 w-14 flex-shrink-0 rounded-xl bg-surface-2" />
         )}
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h4 className="font-medium text-sm">{itemName}</h4>
-              {item.selected_modifiers.length > 0 && (
-                <div className="mt-0.5">
-                  {item.selected_modifiers.map((m) => (
-                    <p key={m.id} className="text-xs text-muted-foreground leading-relaxed">
-                      {m.name}{m.price_delta_cents > 0 ? ` (+${formatPrice(m.price_delta_cents)})` : ''}
-                    </p>
-                  ))}
-                </div>
+              <h4 className="text-sm font-bold">{itemName}</h4>
+              {modifierSummary && (
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  {modifierSummary}
+                </p>
               )}
               {item.special_instructions && (
-                <p className="text-xs text-muted-foreground italic">
+                <p className="text-xs italic text-muted-foreground">
                   &ldquo;{item.special_instructions}&rdquo;
                 </p>
               )}
             </div>
-            <div className="text-right flex-shrink-0">
+            <div className="flex-shrink-0 text-right">
               {discount > 0 ? (
                 <div>
-                  <span className="text-xs text-muted-foreground line-through block">
+                  <span className="block text-xs text-muted-foreground line-through">
                     {formatPrice(item.quantity * (item.unit_price + modifierTotal))}
                   </span>
-                  <span className="font-medium text-sm text-primary block">
+                  <span className="block text-[15px] font-extrabold tabular-nums text-herb-text">
                     {formatPrice(itemTotal)}
                   </span>
                 </div>
               ) : (
-                <span className="font-medium text-sm whitespace-nowrap">
+                <span className="whitespace-nowrap text-[15px] font-extrabold tabular-nums text-ember-text">
                   {formatPrice(itemTotal)}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex items-center justify-between mt-2">
-            <div className="min-h-[44px] flex items-center">
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex min-h-[44px] items-center">
               <QuantitySelector
                 quantity={item.quantity}
                 onChange={handleQuantityChange}
@@ -165,7 +161,7 @@ export const CartItem = memo(function CartItem({ item, itemName, imageUrl }: Car
               variant="ghost"
               size="icon"
               onClick={handleRemove}
-              className="h-11 w-11 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              className="h-11 w-11 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               aria-label="Remove item"
             >
               <Trash2 className="h-4 w-4" />

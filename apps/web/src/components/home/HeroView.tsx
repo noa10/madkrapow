@@ -1,12 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import { CheckCircle2, Clock, Flame, Leaf, MapPin, ShieldCheck } from "lucide-react";
 import { useRealtimeBranding } from "@/hooks/use-realtime-branding";
 
-const proofChips = [
-  "Freshly cooked to order",
-  "Local delivery in Kampung Subang Baru",
-  "Bold Thai street-food flavor",
+const trustChips = [
+  { label: "Freshly cooked to order", icon: CheckCircle2, color: "text-sesame" },
+  { label: "Bold Thai street-food flavour", icon: Flame, color: "text-ember" },
+  { label: "Locally sourced ingredients", icon: Leaf, color: "text-herb-text" },
 ];
 
 interface HeroViewProps {
@@ -15,78 +16,94 @@ interface HeroViewProps {
 
 export function HeroView({ onNavigateToMenu }: HeroViewProps) {
   const { heroImageUrl, storeName } = useRealtimeBranding();
-  const fallbackHero = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80";
+
   return (
-    <section className="relative min-h-screen overflow-hidden px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pb-20 lg:pt-8">
-      <div className="container mx-auto">
-        <div className="relative overflow-hidden rounded-[2rem] border border-white/8 bg-black/30 shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
-          <div className="absolute inset-0">
-            <Image
-              src={heroImageUrl ?? fallbackHero}
-              alt={`${storeName} kitchen with warm ambience`}
-              fill
-              className="object-cover opacity-40"
-              priority
-              sizes="100vw"
-              unoptimized={!!heroImageUrl}
-            />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(90deg,rgba(8,8,8,0.92)_10%,rgba(8,8,8,0.68)_48%,rgba(8,8,8,0.9)_100%)]" />
-          </div>
+    <section
+      className="relative isolate bg-background md:flex md:min-h-[clamp(376px,44vw,452px)] md:items-end"
+      aria-labelledby="store-name"
+    >
+      {/* Media */}
+      <div className="relative h-[clamp(168px,44vw,236px)] overflow-hidden md:absolute md:inset-0 md:h-auto">
+        <Image
+          src={heroImageUrl || "/hero-wok-kra-pao.jpg"}
+          alt={`Wok-fired Phad Kra Phao at ${storeName || "Mad Krapow"} — Thai holy basil stir-fry with bird's eye chilli and a crisp-edged fried egg.`}
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[50%_42%] md:opacity-60"
+          unoptimized={!!heroImageUrl}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-background from-1% via-background/40 via-52% to-background/5 md:hidden" />
+        <div className="absolute inset-0 hidden bg-gradient-to-t from-background from-2% via-background/80 via-48% to-background/12 md:block" />
+        <div className="absolute inset-0 hidden bg-gradient-to-r from-surface-sunk/95 via-surface-sunk/30 via-58% to-transparent md:block" />
+      </div>
 
-          <div className="relative grid gap-12 px-6 py-12 sm:px-10 md:px-12 lg:grid-cols-[1.15fr_0.85fr] lg:px-16 lg:py-18 xl:px-20">
-            <div className="max-w-3xl">
-              <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-[var(--line-strong)] bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-[var(--gold-strong)]">
-                <span className="h-2 w-2 rounded-full bg-[var(--gold-strong)]" />
-                Since February 2023 · Kampung Subang Baru, Shah Alam
-              </div>
+      {/* Body */}
+      <div className="relative z-10 mx-auto flex w-full max-w-[1280px] flex-col gap-3.5 px-4 pb-7 pt-4 sm:px-6 md:gap-4 md:px-8 md:pb-10 md:pt-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-sunk/80 px-2.5 py-1.5 text-[11px] font-bold leading-tight text-sesame backdrop-blur-sm">
+            <MapPin className="h-3.5 w-3.5" />
+            Since February 2023 · Kampung Subang Baru, Shah Alam
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-herb/30 bg-herb/13 px-2.5 py-1.5 text-[11px] font-semibold leading-tight text-herb-text">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            No pork, no lard
+          </span>
+        </div>
 
-              <h1 className="max-w-4xl font-display text-5xl tracking-tight leading-[1.1] text-white sm:text-6xl lg:text-7xl xl:text-[5.8rem] animate-fade-in-up">
-                Hot, Fiery Phad Kra Phao.
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#f1d7aa] to-[#c59661]"> 100% Halal Ingredients.</span>
-              </h1>
+        <h1
+          id="store-name"
+          className="max-w-[22ch] font-display text-[clamp(1.875rem,1.2rem+2.6vw,3.25rem)] font-extrabold leading-[1.05] tracking-[-0.03em] text-foreground"
+        >
+          Hot, Fiery Phad Kra Phao.
+        </h1>
 
-              <p className="mt-6 max-w-2xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
-                Craving bold Thai flavors? Mad Krapow serves fiery, flavorful plates of this iconic dish in Kampung Subang Baru, Shah Alam — wok-fired fresh to order and delivered fast.
-              </p>
+        <p className="max-w-[62ch] text-sm leading-6 text-muted-foreground md:text-[15px]">
+          Craving bold Thai flavours? Mad Krapow serves fiery, flavourful plates of this iconic dish —
+          wok-fired fresh to order and delivered fast from Kampung Subang Baru, Shah Alam.
+        </p>
 
-              <div className="mt-10 flex flex-wrap items-center gap-4">
-                <button
-                  onClick={onNavigateToMenu}
-                  className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-sm font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.01] cursor-pointer"
-                >
-                  Order Now
-                </button>
-                <button
-                  onClick={onNavigateToMenu}
-                  className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)] cursor-pointer"
-                >
-                  Explore Menu
-                </button>
-              </div>
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-semibold text-foreground">
+          <li className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-ember-text" />
+            Open daily 11:00–22:00 · Fri &amp; Sat till 23:00
+          </li>
+          <li className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-ember-text" />
+            Kampung Subang Baru, Shah Alam
+          </li>
+        </ul>
 
-              <div className="mt-6 flex flex-wrap gap-2">
-                {["No Pork, No Lard", "Halal-Sourced Chicken, Beef & Seafood", "Muslim-Friendly Kitchen"].map((badge) => (
-                  <span
-                    key={badge}
-                    className="rounded-full border border-[var(--line-strong)] bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-[var(--gold-strong)]"
-                  >
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            </div>
+        <ul className="scrollbar-hide flex items-center gap-2.5 overflow-x-auto pb-0.5">
+          {trustChips.map((chip) => {
+            const Icon = chip.icon;
+            return (
+              <li
+                key={chip.label}
+                className="flex flex-none items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-muted-foreground"
+              >
+                <Icon className={`h-4 w-4 ${chip.color}`} />
+                {chip.label}
+              </li>
+            );
+          })}
+        </ul>
 
-            <div className="flex flex-col gap-3 self-end">
-              {proofChips.map((chip) => (
-                <div
-                  key={chip}
-                  className="rounded-full border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-5 py-3 text-xs uppercase tracking-[0.28em] text-[#d8d1c6] backdrop-blur-sm"
-                >
-                  {chip}
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onNavigateToMenu}
+            className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full bg-[image:var(--grad-cta)] px-6 text-sm font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] transition hover:brightness-110 active:translate-y-px"
+          >
+            Order now
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateToMenu}
+            className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full border border-border-2 px-6 text-sm font-bold text-foreground transition hover:bg-surface-2"
+          >
+            Explore menu
+          </button>
         </div>
       </div>
     </section>

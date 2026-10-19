@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Menu, LogOut, Loader2 } from "lucide-react"
+import { LogOut, Loader2 } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client"
-import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
-import { DashboardPageContainer } from "@/components/dashboard/DashboardPageContainer"
+import { ClientPageShell } from "@/components/layout/ClientPageShell"
 import { DashboardStats } from "@/components/dashboard/DashboardStats"
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import { AddressManager } from "@/components/profile/AddressManager"
@@ -62,8 +61,6 @@ export default function ProfilePage() {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -118,50 +115,38 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </main>
+      <ClientPageShell activeHref="/profile">
+        <main className="flex min-h-[60vh] items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+      </ClientPageShell>
     )
   }
 
   if (error && !customer) {
     return (
-      <main className="min-h-screen bg-background">
-        <DashboardPageContainer>
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center max-w-sm">
-              <p className="text-red-400 mb-4 text-sm">{error}</p>
-              <Button onClick={fetchData}>Try Again</Button>
+      <ClientPageShell activeHref="/profile">
+        <main className="min-h-screen bg-background">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center max-w-sm">
+                <p className="text-red-400 mb-4 text-sm">{error}</p>
+                <Button onClick={fetchData}>Try Again</Button>
+              </div>
             </div>
           </div>
-        </DashboardPageContainer>
-      </main>
+        </main>
+      </ClientPageShell>
     )
   }
 
   return (
-    <>
-      <DashboardSidebar
-        mobileOpen={mobileMenuOpen}
-        onMobileClose={() => setMobileMenuOpen(false)}
-        collapsed={sidebarCollapsed}
-        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
-      />
-
-      <DashboardPageContainer collapsed={sidebarCollapsed}>
-        {/* Top bar */}
+    <ClientPageShell activeHref="/profile">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3 lg:hidden">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <h1 className="text-lg font-semibold font-heading text-foreground">Profile</h1>
-          </div>
-          <div className="hidden lg:block">
-            <h1 className="text-xl font-semibold font-heading text-foreground">Profile</h1>
+          <div>
+            <h1 className="font-display text-2xl font-extrabold tracking-[-0.02em] text-foreground">Profile</h1>
             {customer?.email && (
               <p className="text-sm text-muted-foreground mt-0.5">{customer.email}</p>
             )}
@@ -202,7 +187,7 @@ export default function ProfilePage() {
             />
           </div>
         </div>
-      </DashboardPageContainer>
-    </>
+      </div>
+    </ClientPageShell>
   )
 }

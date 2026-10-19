@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Clock } from 'lucide-react';
 import { OperatingHours, StoreStatus, isStoreOpen, formatNextOpenTime } from '@/lib/utils/operating-hours';
 
 interface StoreClosedBannerProps {
@@ -26,18 +27,16 @@ export function StoreClosedBanner({ operatingHours }: StoreClosedBannerProps) {
   }
 
   return (
-    <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
-      <div className="max-w-md mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-amber-600 text-lg">⏰</span>
-          <div>
-            <p className="font-medium text-amber-800">Currently Closed</p>
-            {storeStatus.nextOpen && (
-              <p className="text-sm text-amber-700">
-                Opens {formatNextOpenTime(storeStatus.nextOpen)}
-              </p>
-            )}
-          </div>
+    <div className="border-b border-border bg-surface-sunk px-4 py-3">
+      <div className="mx-auto flex max-w-md items-center gap-2.5">
+        <Clock className="h-4 w-4 flex-none text-ember-text" aria-hidden />
+        <div>
+          <p className="text-[13px] font-bold text-foreground">Currently closed</p>
+          {storeStatus.nextOpen && (
+            <p className="text-xs text-muted-foreground">
+              Opens {formatNextOpenTime(storeStatus.nextOpen)}
+            </p>
+          )}
         </div>
       </div>
     </div>

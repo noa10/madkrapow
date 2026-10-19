@@ -1,5 +1,6 @@
 'use client'
 
+import { Box, CupSoda, Flame, Leaf, Scale, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Modifier, ModifierGroup } from '@/lib/queries/menu'
 
@@ -14,6 +15,16 @@ function formatPriceDelta(priceCents: number): string {
   return `+RM ${(priceCents / 100).toFixed(2)}`
 }
 
+function iconForGroup(name: string) {
+  const n = name.toLowerCase()
+  if (n.includes('pedas') || n.includes('spice')) return { Icon: Flame, filled: true }
+  if (n.includes('minuman') || n.includes('drink')) return { Icon: CupSoda, filled: false }
+  if (n.includes('basil') || n.includes('daun')) return { Icon: Leaf, filled: false }
+  if (n.includes('berat') || n.includes('portion')) return { Icon: Scale, filled: false }
+  if (n.includes('bekas') || n.includes('container')) return { Icon: Box, filled: false }
+  return { Icon: SlidersHorizontal, filled: false }
+}
+
 export function ModifierGroup({
   group,
   selectedModifiers,
@@ -21,6 +32,14 @@ export function ModifierGroup({
 }: ModifierGroupProps) {
   const isSingleSelection = group.max_selections === 1
   const isRequired = group.min_selections > 0
+  const { Icon: GroupIcon, filled } = iconForGroup(group.name)
+
+  const scopeLabel = isSingleSelection
+    ? '1 choice'
+    : group.max_selections > 1
+      ? `Up to ${group.max_selections} choices`
+      : null
+  const tag = [isRequired ? 'Required' : 'Optional', scopeLabel].filter(Boolean).join(' · ')
 
   const handleModifierToggle = (modifierId: string, _priceDelta: number) => {
     let newSelected: string[]
@@ -46,70 +65,40 @@ export function ModifierGroup({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h3 className="font-medium text-foreground">{group.name}</h3>
-        {isRequired && (
-          <span className="text-xs text-destructive">(Required)</span>
-        )}
-        {group.max_selections > 1 && (
-          <span className="text-xs text-muted-foreground">
-            (Select up to {group.max_selections})
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col gap-2.5">
+      <p className="flex items-center gap-2 text-[13px] font-extrabold text-foreground">
+        <GroupIcon className={cn('h-4 w-4 text-ember', filled && 'fill-ember/30')} aria-hidden />
+        {group.name}
+        <small className="ml-auto text-[11px] font-semibold text-muted-foreground">{tag}</small>
+      </p>
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         {group.modifiers.map((modifier) => {
           const isSelected = selectedModifiers.includes(modifier.id)
           const priceDeltaStr = formatPriceDelta(modifier.price_delta_cents)
-
-          if (isSingleSelection) {
-            return (
-              <label
-                key={modifier.id}
-                className={cn(
-                  'flex items-center gap-3 p-3 min-h-11 rounded-md border cursor-pointer',
-                  'hover:bg-muted/50 transition-colors',
-                  isSelected && 'border-primary ring-1 ring-primary bg-primary/5'
-                )}
-              >
-                <input
-                  type="radio"
-                  name={group.id}
-                  value={modifier.id}
-                  checked={isSelected}
-                  onChange={() => handleModifierToggle(modifier.id, modifier.price_delta_cents)}
-                  className="w-4 h-4 text-primary accent-primary"
-                />
-                <span className="flex-1 text-foreground">{modifier.name}</span>
-                {priceDeltaStr && (
-                  <span className="text-sm text-muted-foreground">{priceDeltaStr}</span>
-                )}
-              </label>
-            )
-          }
 
           return (
             <label
               key={modifier.id}
               className={cn(
-                'flex items-center gap-3 p-3 min-h-11 rounded-md border cursor-pointer',
-                'hover:bg-muted/50 transition-colors',
-                isSelected && 'border-primary ring-1 ring-primary bg-primary/5'
+                'flex min-h-12 cursor-pointer items-center gap-2.5 rounded-xl border border-border-2 bg-surface-2 px-3.5 py-2.5 transition-colors hover:bg-surface-3',
+                isSelected && 'border-primary bg-accent/16 hover:bg-accent/16'
               )}
             >
               <input
-                type="checkbox"
+                type={isSingleSelection ? 'radio' : 'checkbox'}
+                name={isSingleSelection ? group.id : undefined}
                 value={modifier.id}
                 checked={isSelected}
                 onChange={() => handleModifierToggle(modifier.id, modifier.price_delta_cents)}
-                className="w-4 h-4 text-primary accent-primary rounded"
+                className="h-[18px] w-[18px] flex-none accent-primary"
               />
-              <span className="flex-1 text-foreground">{modifier.name}</span>
-              {priceDeltaStr && (
-                <span className="text-sm text-muted-foreground">{priceDeltaStr}</span>
-              )}
+              <span className="text-[13px] font-bold text-foreground">{modifier.name}</span>
+              {priceDeltaStr ? (
+                <span className="ml-auto text-[11px] font-bold text-sesame">{priceDeltaStr}</span>
+              ) : modifier.is_default ? (
+                <span className="ml-auto text-[11px] font-bold text-sesame">Default</span>
+              ) : null}
             </label>
           )
         })}

@@ -143,6 +143,76 @@ export const getCategories = unstable_cache(
   { revalidate: 60 }
 )
 
+export type ModifierGroupsByMenuItem = Record<string, FullMenuItem['modifier_groups']>
+
+async function fetchModifierGroupsByMenuItem(): Promise<ModifierGroupsByMenuItem> {
+  const supabase = createPublicClient()
+
+  const { data: menuItemModifierGroups, error: migError } = await supabase
+    .from('menu_item_modifier_groups')
+    .select('*')
+
+  if (migError) throw migError
+
+  const menuItemModifierGroupRows: MenuItemModifierGroup[] = menuItemModifierGroups ?? []
+
+  const modifierGroupIds = [
+    ...new Set(menuItemModifierGroupRows.map((m) => m.modifier_group_id)),
+  ]
+
+  if (modifierGroupIds.length === 0) return {}
+
+  const { data: modifierGroups, error: mgError } = await supabase
+    .from('modifier_groups')
+    .select('*')
+    .in('id', modifierGroupIds)
+    .order('sort_order', { ascending: true })
+
+  if (mgError) throw mgError
+
+  const { data: modifiers, error: modError } = await supabase
+    .from('modifiers')
+    .select('*')
+    .in('modifier_group_id', modifierGroupIds)
+    .eq('is_available', true)
+    .order('sort_order', { ascending: true })
+
+  if (modError) throw modError
+
+  const modifierGroupRows: ModifierGroup[] = modifierGroups ?? []
+  const modifierRows: Modifier[] = modifiers ?? []
+
+  const modifiersByGroup = modifierRows.reduce((acc, mod) => {
+    if (!acc[mod.modifier_group_id]) acc[mod.modifier_group_id] = []
+    acc[mod.modifier_group_id].push(mod)
+    return acc
+  }, {} as Record<string, Modifier[]>)
+
+  return menuItemModifierGroupRows.reduce((acc, mig) => {
+    if (!acc[mig.menu_item_id]) acc[mig.menu_item_id] = []
+    const group = modifierGroupRows.find((g) => g.id === mig.modifier_group_id)
+    if (group) {
+      acc[mig.menu_item_id].push({
+        ...group,
+        is_required: mig.is_required,
+        modifiers: modifiersByGroup[mig.modifier_group_id] || [],
+      })
+    }
+    return acc
+  }, {} as ModifierGroupsByMenuItem)
+}
+
+/**
+ * Modifier groups (with their available modifiers) keyed by menu item id —
+ * lets the menu quick-view dialog render customization options without a
+ * per-item round trip when a card is opened.
+ */
+export const getModifierGroupsByItem = unstable_cache(
+  fetchModifierGroupsByMenuItem,
+  ['modifier-groups-by-item'],
+  { revalidate: 60 }
+)
+
 export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const supabase = await getClient()
 

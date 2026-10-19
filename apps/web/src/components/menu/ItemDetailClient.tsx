@@ -1,16 +1,14 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
 import { QuantitySelector } from './QuantitySelector'
 import { ModifierGroup } from './ModifierGroup'
 import { SpecialInstructions } from './SpecialInstructions'
 import { ItemImagePreview } from './ItemImagePreview'
 import { BackButton } from '@/components/layout/BackButton'
 import { Button } from '@/components/ui/button'
-import { useCartStore, type SelectedModifier } from '@/stores/cart'
-import { useToastStore } from '@/stores/toast'
+import { useItemOrder } from './useItemOrder'
 import { cn } from '@/lib/utils'
-import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
+import type { FullMenuItem } from '@/lib/queries/menu'
 
 interface ItemDetailClientProps {
   item: FullMenuItem
@@ -21,111 +19,19 @@ function formatPrice(priceCents: number): string {
 }
 
 export function ItemDetailClient({ item }: ItemDetailClientProps) {
-  const addItem = useCartStore((state) => state.addItem)
-  const openDrawer = useCartStore((state) => state.openDrawer)
-  const addToast = useToastStore((state) => state.addToast)
-
-  const [quantity, setQuantity] = useState(1)
-  const [specialInstructions, setSpecialInstructions] = useState('')
-  const [selectedModifierIds, setSelectedModifierIds] = useState<Record<string, string[]>>({})
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar:client') === 'true'
-    }
-    return false
-  })
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      setSidebarCollapsed((e as CustomEvent).detail.collapsed)
-    }
-    window.addEventListener('sidebar-toggle', handler)
-    return () => window.removeEventListener('sidebar-toggle', handler)
-  }, [])
-
-  const allModifiers = useMemo(() => {
-    const modifiers: Modifier[] = []
-    item.modifier_groups.forEach((group) => {
-      group.modifiers.forEach((mod) => {
-        modifiers.push(mod)
-      })
-    })
-    return modifiers
-  }, [item.modifier_groups])
-
-  const modifierTotalCents = useMemo(() => {
-    let total = 0
-    Object.values(selectedModifierIds).forEach((ids) => {
-      ids.forEach((id) => {
-        const modifier = allModifiers.find((m) => m.id === id)
-        if (modifier) {
-          total += modifier.price_delta_cents
-        }
-      })
-    })
-    return total
-  }, [selectedModifierIds, allModifiers])
-
-  const totalPriceCents = (item.price_cents + modifierTotalCents) * quantity
-
-  const allRequiredGroupsSatisfied = useMemo(() => {
-    return item.modifier_groups.every((group) => {
-      if (!group.is_required) return true
-      const selected = selectedModifierIds[group.id] || []
-      return selected.length >= group.min_selections
-    })
-  }, [item.modifier_groups, selectedModifierIds])
-
-  const unsatisfiedRequiredGroupNames = useMemo(() => {
-    return item.modifier_groups
-      .filter((group) => {
-        if (!group.is_required) return false
-        const selected = selectedModifierIds[group.id] || []
-        return selected.length < group.min_selections
-      })
-      .map((group) => group.name)
-  }, [item.modifier_groups, selectedModifierIds])
-
-  const handleModifierChange = (groupId: string, modifierIds: string[], _priceDelta: number) => {
-    setSelectedModifierIds((prev) => ({
-      ...prev,
-      [groupId]: modifierIds,
-    }))
-  }
-
-  const handleAddToCart = () => {
-    const selectedModifiers: SelectedModifier[] = []
-
-    Object.entries(selectedModifierIds).forEach(([_groupId, modifierIds]) => {
-      modifierIds.forEach((id) => {
-        const modifier = allModifiers.find((m) => m.id === id)
-        if (modifier) {
-          selectedModifiers.push({
-            id: modifier.id,
-            name: modifier.name,
-            price_delta_cents: modifier.price_delta_cents,
-          })
-        }
-      })
-    })
-
-    addItem({
-      menu_item_id: item.id,
-      quantity,
-      selected_modifiers: selectedModifiers,
-      special_instructions: specialInstructions,
-      unit_price: item.price_cents,
-    })
-
-    addToast({
-      type: 'success',
-      title: 'Added to cart',
-      description: `${quantity}x ${item.name} — ${formatPrice(totalPriceCents)}`,
-    })
-    openDrawer()
-  }
-
-  const isUnavailable = !item.is_available
+  const {
+    quantity,
+    setQuantity,
+    specialInstructions,
+    setSpecialInstructions,
+    selectedModifierIds,
+    handleModifierChange,
+    allRequiredGroupsSatisfied,
+    unsatisfiedRequiredGroupNames,
+    totalPriceCents,
+    handlePrimaryAction,
+    isUnavailable,
+  } = useItemOrder(item)
 
   return (
     <div className={cn("min-h-screen bg-background pb-28", isUnavailable && "opacity-75")}>
@@ -138,8 +44,10 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
 
           <section className="rounded-2xl border bg-card p-5 sm:p-6 animate-fade-in-up" data-testid="item-detail-content-panel">
             <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-1">{item.category.name}</p>
-              <h1 className="text-3xl font-bold">{item.name}</h1>
+              <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.11em] text-ember-text">
+                {item.category.name}
+              </p>
+              <h1 className="font-display text-3xl font-extrabold tracking-[-0.02em] sm:text-4xl">{item.name}</h1>
             </div>
 
             {isUnavailable && (
@@ -149,12 +57,12 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
             )}
 
             {item.description && (
-              <p className="text-muted-foreground mb-6">{item.description}</p>
+              <p className="mb-6 text-[15px] leading-6 text-muted-foreground">{item.description}</p>
             )}
 
             {item.modifier_groups.length > 0 && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold">Customize Your Order</h2>
+              <div className="space-y-[18px]">
+                <h2 className="text-[15px] font-extrabold tracking-[-0.01em]">Customize Your Order</h2>
                 {item.modifier_groups.map((group) => (
                   <ModifierGroup
                     key={group.id}
@@ -166,9 +74,9 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between py-4 border-t">
+            <div className="flex items-center justify-between border-t py-4">
               <div>
-                <p className="text-sm text-muted-foreground">Quantity</p>
+                <p className="text-[13px] font-extrabold text-foreground">Quantity</p>
                 <QuantitySelector quantity={quantity} onChange={setQuantity} disabled={isUnavailable} />
               </div>
             </div>
@@ -185,37 +93,26 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
       </div>
 
       {/* Full-width fixed bottom bar — outside max-w-6xl, inside <main> */}
-      <div
-        className={cn(
-          "fixed bottom-0 right-0 left-0 border-t bg-card/95 backdrop-blur-sm p-4 z-30 transition-all duration-300 ease-in-out",
-          sidebarCollapsed ? "lg:left-[72px]" : "lg:left-[260px]"
-        )}
-      >
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 p-4 backdrop-blur-sm">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {isUnavailable ? (
             <Button
               size="lg"
               disabled
-              className="w-full bg-muted text-muted-foreground cursor-not-allowed"
+              className="min-h-[54px] w-full cursor-not-allowed rounded-full bg-surface-2 text-muted-foreground"
             >
               Unavailable
             </Button>
           ) : (
             <Button
               size="lg"
-              onClick={!allRequiredGroupsSatisfied ? () => {
-                addToast({
-                  type: 'error',
-                  title: 'Required options missing',
-                  description: `Please select: ${unsatisfiedRequiredGroupNames.join(', ')}`,
-                })
-              } : handleAddToCart}
+              onClick={handlePrimaryAction}
               disabled={false}
               className={cn(
-                "w-full shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform",
+                "min-h-[54px] w-full rounded-full text-[15px] font-bold transition",
                 allRequiredGroupsSatisfied
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-destructive/90 text-destructive-foreground border border-destructive"
+                  ? "bg-[image:var(--grad-cta)] text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110 active:translate-y-px"
+                  : "border border-destructive bg-destructive/90 text-destructive-foreground"
               )}
             >
               {allRequiredGroupsSatisfied

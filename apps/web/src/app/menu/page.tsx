@@ -1,4 +1,9 @@
-import { getCategories, type CategoryWithMenuItems } from '@/lib/queries/menu'
+import {
+  getCategories,
+  getModifierGroupsByItem,
+  type CategoryWithMenuItems,
+  type ModifierGroupsByMenuItem,
+} from '@/lib/queries/menu'
 import { ClientPageShell } from '@/components/layout/ClientPageShell'
 import { MenuCatalogView } from '@/components/menu/MenuCatalogView'
 import { MenuListView } from '@/components/menu/MenuListView'
@@ -14,13 +19,26 @@ async function getMenuData(): Promise<CategoryWithMenuItems[]> {
   }
 }
 
+async function getModifiersData(): Promise<ModifierGroupsByMenuItem> {
+  if (!RICH_MENU_ENABLED) return {}
+  try {
+    return await getModifierGroupsByItem()
+  } catch (error) {
+    console.error('Failed to fetch menu modifiers:', error)
+    return {}
+  }
+}
+
 export default async function MenuPage() {
-  const categories = await getMenuData()
+  const [categories, modifierGroupsByItem] = await Promise.all([
+    getMenuData(),
+    getModifiersData(),
+  ])
 
   return (
     <ClientPageShell activeHref="/menu">
       {RICH_MENU_ENABLED
-        ? <MenuCatalogView categories={categories} />
+        ? <MenuCatalogView categories={categories} modifierGroupsByItem={modifierGroupsByItem} />
         : <MenuListView categories={categories} />}
     </ClientPageShell>
   )

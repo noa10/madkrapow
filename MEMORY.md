@@ -2,7 +2,7 @@
 
 This file contains curated memories, decisions, and learnings that persist across sessions. This is your long-term memory — the distilled essence of what matters.
 
-**Last Updated**: 2026-10-14
+**Last Updated**: 2026-10-20
 
 ---
 
@@ -277,6 +277,32 @@ This file contains curated memories, decisions, and learnings that persist acros
   overlay writing `document.body.style.overflow` directly — when nested
   overlays (dialog → lightbox / dialog → drawer) each own the value, closing
   the inner one re-enables page scroll behind the outer one.
+- **Menu moved onto the home page** (2026-10-20, user request): `/` is the
+  single-page storefront from the original design — hero → menu (search /
+  categories / dishes / quick view) → how-to-order → how-it-works. The
+  `/menu` route is a config-level 307 → `/` (`next.config.ts` `redirects()`;
+  runs before rendering, forwards query params; the old page file is gone).
+  Topbar nav pills are gone entirely (logo + account + cart only); About
+  lives in the footer and the mobile account sheet; hero CTAs scroll to
+  `#menu`; footer category links use `/?category=…`; anchor targets carry
+  `scroll-mt-[var(--topbar-h)]` and `globals.css` has a reduced-motion-aware
+  `scroll-behavior: smooth`. `PageSwitcher` / `HomePageLayout` and the
+  `activeHref` shell prop were deleted; `BackButton` falls back to `/`.
+- **Gotcha learned (3) — `useSearchParams` without a Suspense boundary
+  deopts the whole route.** With the catalog on `/`, the prerendered HTML
+  contained only the root loading skeleton: a client `useSearchParams()` with
+  no Suspense boundary above it opts the entire page into client-side
+  rendering (warning only, no build error — check the built HTML, not the
+  exit code). The `?category=` deep-link reader now lives in
+  `MenuDeepLinkScroller`, wrapped in its own `<Suspense>` inside the catalog,
+  so the storefront (hero, dishes, sections, footer) stays server-rendered.
+  Any future search-param consumer must follow the same pattern.
+- **Gotcha learned (4) — `redirect()` inside a page becomes a client-side
+  redirect when a `loading.tsx` boundary flushes first.** The old
+  `/menu` page variant returned 200 + a redirecting RSC payload (no 307) for
+  document requests; use a `next.config.ts` `redirects()` entry for route
+  moves instead. Verified with a local `next start`: `/menu?category=x` →
+  307 → `/?category=x`, `/menu/` → 308 → `/menu`.
 
 ---
 

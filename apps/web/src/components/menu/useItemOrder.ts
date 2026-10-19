@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useCartStore, type SelectedModifier } from '@/stores/cart'
 import { useToastStore } from '@/stores/toast'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
+import { getUnsatisfiedRequiredGroupNames } from '@/lib/menu/required-options'
 
 function formatPrice(priceCents: number): string {
   return (priceCents / 100).toFixed(2)
@@ -47,15 +48,10 @@ export function useItemOrder(item: FullMenuItem) {
 
   const totalPriceCents = (item.price_cents + modifierTotalCents) * quantity
 
-  const unsatisfiedRequiredGroupNames = useMemo(() => {
-    return item.modifier_groups
-      .filter((group) => {
-        if (!group.is_required) return false
-        const selected = selectedModifierIds[group.id] || []
-        return selected.length < group.min_selections
-      })
-      .map((group) => group.name)
-  }, [item.modifier_groups, selectedModifierIds])
+  const unsatisfiedRequiredGroupNames = useMemo(
+    () => getUnsatisfiedRequiredGroupNames(item.modifier_groups, selectedModifierIds),
+    [item.modifier_groups, selectedModifierIds]
+  )
 
   const allRequiredGroupsSatisfied = unsatisfiedRequiredGroupNames.length === 0
 

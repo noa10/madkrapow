@@ -2,6 +2,7 @@
 
 import { Box, CupSoda, Flame, Leaf, Scale, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isModifierGroupRequired } from '@/lib/menu/required-options'
 import type { Modifier, ModifierGroup } from '@/lib/queries/menu'
 
 interface ModifierGroupProps {
@@ -31,7 +32,7 @@ export function ModifierGroup({
   onChange,
 }: ModifierGroupProps) {
   const isSingleSelection = group.max_selections === 1
-  const isRequired = group.min_selections > 0
+  const isRequired = isModifierGroupRequired(group)
   const { Icon: GroupIcon, filled } = iconForGroup(group.name)
 
   const scopeLabel = isSingleSelection

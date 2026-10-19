@@ -10,6 +10,10 @@ function formatPrice(priceCents: number): string {
   return (priceCents / 100).toFixed(2)
 }
 
+/** Quantity bounds shared by the item page and the quick-view dialog. */
+export const MIN_QUANTITY = 1
+export const MAX_QUANTITY = 10
+
 /**
  * Ordering state for a single menu item — shared by the item detail page
  * and the menu quick-view dialog so pricing, required-option validation
@@ -55,7 +59,7 @@ export function useItemOrder(item: FullMenuItem) {
 
   const allRequiredGroupsSatisfied = unsatisfiedRequiredGroupNames.length === 0
 
-  const handleModifierChange = (groupId: string, modifierIds: string[], _priceDelta: number) => {
+  const handleModifierChange = (groupId: string, modifierIds: string[]) => {
     setSelectedModifierIds((prev) => ({
       ...prev,
       [groupId]: modifierIds,
@@ -65,7 +69,7 @@ export function useItemOrder(item: FullMenuItem) {
   const addToCart = () => {
     const selectedModifiers: SelectedModifier[] = []
 
-    Object.entries(selectedModifierIds).forEach(([_groupId, modifierIds]) => {
+    Object.values(selectedModifierIds).forEach((modifierIds) => {
       modifierIds.forEach((id) => {
         const modifier = allModifiers.find((m) => m.id === id)
         if (modifier) {

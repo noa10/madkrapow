@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { FullMenuItem } from '@/lib/queries/menu'
 import {
+  getUnsatisfiedRequiredGroups,
   getUnsatisfiedRequiredGroupNames,
   isModifierGroupRequired,
+  requiredSelectionCount,
 } from '@/lib/menu/required-options'
 
 type ItemModifierGroup = FullMenuItem['modifier_groups'][number]
@@ -34,6 +36,38 @@ describe('isModifierGroupRequired', () => {
 
   it('treats a group as optional when neither source says required', () => {
     expect(isModifierGroupRequired({ is_required: false, min_selections: 0 })).toBe(false)
+  })
+})
+
+describe('requiredSelectionCount', () => {
+  it('needs at least one pick when only the item link says required', () => {
+    expect(requiredSelectionCount({ is_required: true, min_selections: 0 })).toBe(1)
+  })
+
+  it('needs the group minimum when it is higher', () => {
+    expect(requiredSelectionCount({ is_required: true, min_selections: 2 })).toBe(2)
+    expect(requiredSelectionCount({ is_required: false, min_selections: 2 })).toBe(2)
+  })
+})
+
+describe('getUnsatisfiedRequiredGroups', () => {
+  const spice = { id: 'spice', name: 'Tahap Kepedasan', is_required: false, min_selections: 1 }
+  const berat = { id: 'berat', name: 'Berat', is_required: true, min_selections: 0 }
+
+  it('counts picks per group, not across the whole item', () => {
+    // Two picks in `berat` must not satisfy the spice group.
+    expect(
+      getUnsatisfiedRequiredGroups([spice, berat], { berat: 2 }).map((group) => group.name)
+    ).toEqual(['Tahap Kepedasan'])
+  })
+
+  it('satisfies link-required groups with a single pick', () => {
+    expect(getUnsatisfiedRequiredGroups([berat], { berat: 1 })).toEqual([])
+  })
+
+  it('ignores optional groups entirely', () => {
+    const drinks = { id: 'drinks', name: 'Minuman', is_required: false, min_selections: 0 }
+    expect(getUnsatisfiedRequiredGroups([drinks], {})).toEqual([])
   })
 })
 

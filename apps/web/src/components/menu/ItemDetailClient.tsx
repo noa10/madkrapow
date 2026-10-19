@@ -6,7 +6,7 @@ import { SpecialInstructions } from './SpecialInstructions'
 import { ItemImagePreview } from './ItemImagePreview'
 import { BackButton } from '@/components/layout/BackButton'
 import { Button } from '@/components/ui/button'
-import { useItemOrder } from './useItemOrder'
+import { useItemOrder, MAX_QUANTITY, MIN_QUANTITY } from './useItemOrder'
 import { cn } from '@/lib/utils'
 import type { FullMenuItem } from '@/lib/queries/menu'
 
@@ -68,7 +68,7 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
                     key={group.id}
                     group={group}
                     selectedModifiers={selectedModifierIds[group.id] || []}
-                    onChange={(ids, priceDelta) => handleModifierChange(group.id, ids, priceDelta)}
+                    onChange={(ids) => handleModifierChange(group.id, ids)}
                   />
                 ))}
               </div>
@@ -77,7 +77,13 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
             <div className="flex items-center justify-between border-t py-4">
               <div>
                 <p className="text-[13px] font-extrabold text-foreground">Quantity</p>
-                <QuantitySelector quantity={quantity} onChange={setQuantity} disabled={isUnavailable} />
+                <QuantitySelector
+                  quantity={quantity}
+                  onChange={setQuantity}
+                  min={MIN_QUANTITY}
+                  max={MAX_QUANTITY}
+                  disabled={isUnavailable}
+                />
               </div>
             </div>
 

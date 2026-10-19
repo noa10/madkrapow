@@ -19,13 +19,16 @@ async function getMenuData(): Promise<CategoryWithMenuItems[]> {
   }
 }
 
-async function getModifiersData(): Promise<ModifierGroupsByMenuItem> {
+async function getModifiersData(): Promise<ModifierGroupsByMenuItem | null> {
   if (!RICH_MENU_ENABLED) return {}
   try {
     return await getModifierGroupsByItem()
   } catch (error) {
     console.error('Failed to fetch menu modifiers:', error)
-    return {}
+    // `null` (not `{}`): the catalog must not treat failed modifier data as
+    // "item has no options", which would bypass required-option validation.
+    // Items that need modifiers fall back to their item page instead.
+    return null
   }
 }
 

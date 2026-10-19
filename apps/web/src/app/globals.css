@@ -118,6 +118,11 @@
     width: 100%;
     max-width: 100vw;
   }
+  html {
+    /* Locking body scroll for overlays hides the scrollbar; reserving the
+       gutter keeps the topbar and content from shifting horizontally. */
+    scrollbar-gutter: stable;
+  }
   * {
     @apply border-border;
   }

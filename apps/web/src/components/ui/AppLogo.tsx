@@ -9,8 +9,10 @@ interface AppLogoProps {
 export function AppLogo({ className }: AppLogoProps) {
   return (
     <img
-      src="/madkrapow-logo.svg"
+      src="/madkrapow-logo.webp"
       alt="Mad Krapow"
+      width={128}
+      height={128}
       className={cn("shrink-0 object-contain", className)}
     />
   )

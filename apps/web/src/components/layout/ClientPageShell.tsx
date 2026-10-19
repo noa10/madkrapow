@@ -9,6 +9,7 @@ import { getBrowserClient } from "@/lib/supabase/client"
 import { isAdminUser } from "@/lib/auth/roles"
 import { useClientUser } from "@/lib/auth/client-user"
 import { useCartStore } from "@/stores/cart"
+import { useIsClient } from "@/hooks/useIsClient"
 import { cn } from "@/lib/utils"
 import { ClientFooter } from "./ClientFooter"
 
@@ -24,9 +25,17 @@ const navLinks = [
 ]
 
 export function ClientPageShell({ children, activeHref }: ClientPageShellProps) {
-  const items = useCartStore((state) => state.items)
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
-  const subtotalCents = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0)
+  // Both totals come from the same store helpers the cart drawer uses, so
+  // modifier deltas and discounts are included and the header cannot drift.
+  const totalItems = useCartStore((state) => state.getTotalItems())
+  const subtotalCents = useCartStore((state) =>
+    Math.max(0, state.getSubtotal() - state.getDiscountTotal())
+  )
+  const isClient = useIsClient()
+  // The cart is persisted in localStorage; render zero until hydration so the
+  // server HTML and the first client render match.
+  const displayTotalItems = isClient ? totalItems : 0
+  const displaySubtotalCents = isClient ? subtotalCents : 0
   const openDrawer = useCartStore((state) => state.openDrawer)
   const user = useClientUser()
   const supabase = getBrowserClient()
@@ -58,14 +67,13 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
         <div className="mx-auto flex h-[var(--topbar-h)] w-full max-w-[1280px] items-center gap-3 px-4 sm:px-6 md:gap-3.5 lg:px-8">
           <Link href="/" className="flex shrink-0 items-center" aria-label="Mad Krapow — home">
             <Image
-              src="/madkrapow-logo.svg"
+              src="/madkrapow-logo.webp"
               alt="Mad Krapow"
-              width={0}
-              height={0}
+              width={128}
+              height={128}
               className="h-12 w-12 shrink-0 md:h-14 md:w-14"
               sizes="112px"
               priority
-              unoptimized
             />
           </Link>
 
@@ -128,14 +136,14 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
               type="button"
               onClick={openDrawer}
               className="inline-flex min-h-11 items-center gap-2.5 rounded-full bg-primary py-1.5 pl-3.5 pr-2 text-[13px] font-bold text-primary-foreground shadow-[0_10px_24px_-12px_var(--accent)] transition hover:bg-[var(--accent-hover)]"
-              aria-label={`Cart, ${totalItems} item${totalItems === 1 ? "" : "s"}`}
+              aria-label={`Cart, ${displayTotalItems} item${displayTotalItems === 1 ? "" : "s"}`}
             >
               <ShoppingBag className="h-[18px] w-[18px]" />
               <span className="grid h-6 min-w-6 place-items-center rounded-full bg-black/30 px-1.5 text-[11px] font-extrabold tabular-nums">
-                {totalItems}
+                {displayTotalItems}
               </span>
-              {totalItems > 0 && (
-                <span className="hidden tabular-nums lg:inline">RM {(subtotalCents / 100).toFixed(2)}</span>
+              {displayTotalItems > 0 && (
+                <span className="hidden tabular-nums lg:inline">RM {(displaySubtotalCents / 100).toFixed(2)}</span>
               )}
             </button>
 

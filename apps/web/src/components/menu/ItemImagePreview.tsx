@@ -5,6 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useDialogFocus } from '@/hooks/useDialogFocus'
 import { cn } from '@/lib/utils'
 
 interface ItemImagePreviewProps {
@@ -33,21 +34,27 @@ export function ItemImagePreview({ imageUrl, itemName, variant = 'default' }: It
   const [isDragging, setIsDragging] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
+  const modalPanelRef = useRef<HTMLDivElement | null>(null)
+  const backdropPointerDownRef = useRef(false)
 
   useEffect(() => {
     if (!isOpen) return
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false)
-      }
+      if (event.key !== 'Escape') return
+      // Capture phase + stopImmediatePropagation: this lightbox can open on
+      // top of the quick-view dialog, and Escape must close only the topmost
+      // overlay (the quick view listens for Escape in the bubble phase).
+      event.stopImmediatePropagation()
+      setIsOpen(false)
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [isOpen])
 
   useBodyScrollLock(isOpen)
+  useDialogFocus(modalPanelRef, isOpen)
 
   const openModal = () => {
     setIsZoomed(false)
@@ -102,15 +109,25 @@ export function ItemImagePreview({ imageUrl, itemName, variant = 'default' }: It
   const modal = (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4"
-      onClick={() => setIsOpen(false)}
       data-testid="item-image-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${itemName} image zoom dialog`}
+      onPointerDown={(event) => {
+        // Close only when the press itself started on the backdrop, so a
+        // drag that begins inside the panel and ends outside does not close.
+        backdropPointerDownRef.current = event.target === event.currentTarget
+      }}
+      onClick={(event) => {
+        if (backdropPointerDownRef.current && event.target === event.currentTarget) {
+          setIsOpen(false)
+        }
+      }}
     >
       <div
-        className="relative w-full max-w-4xl rounded-3xl border border-border bg-surface p-4 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+        ref={modalPanelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${itemName} image zoom dialog`}
+        className="relative w-full max-w-4xl rounded-3xl border border-border bg-surface p-4 shadow-2xl outline-none"
       >
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">

@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronRight, Minus, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useDialogFocus } from '@/hooks/useDialogFocus'
 import { ItemImagePreview } from './ItemImagePreview'
 import { ModifierGroup } from './ModifierGroup'
 import { SpecialInstructions } from './SpecialInstructions'
-import { useItemOrder } from './useItemOrder'
+import { useItemOrder, MAX_QUANTITY, MIN_QUANTITY } from './useItemOrder'
 import { cn } from '@/lib/utils'
 import type { FullMenuItem } from '@/lib/queries/menu'
 
@@ -16,9 +17,6 @@ interface ItemQuickViewProps {
   item: FullMenuItem
   onClose: () => void
 }
-
-const MIN_QUANTITY = 1
-const MAX_QUANTITY = 10
 
 function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
@@ -34,17 +32,18 @@ function formatPrice(priceCents: number): string {
 export function ItemQuickView({ item, onClose }: ItemQuickViewProps) {
   const order = useItemOrder(item)
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const backdropPointerDownRef = useRef(false)
+  const titleId = useId()
 
   useBodyScrollLock(true)
+  useDialogFocus(panelRef)
 
   useEffect(() => {
-    panelRef.current?.focus()
-
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // When the image zoom lightbox is open on top, Esc belongs to it.
-      if (document.querySelector('[data-testid="item-image-modal"]')) return
-      onClose()
+      // Nested overlays (the image zoom lightbox) consume Escape in the
+      // capture phase, so this bubble-phase listener only fires when the
+      // quick view itself is the topmost overlay.
+      if (event.key === 'Escape') onClose()
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -60,16 +59,25 @@ export function ItemQuickView({ item, onClose }: ItemQuickViewProps) {
   const dialog = (
     <div
       className="fixed inset-0 z-[35] flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
-      onClick={onClose}
       data-testid="item-quick-view"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${item.name} options`}
+      onPointerDown={(event) => {
+        // Only a press that starts on the backdrop may close the dialog;
+        // releasing a text selection from inside the panel over the
+        // backdrop must not throw the typed instructions away.
+        backdropPointerDownRef.current = event.target === event.currentTarget
+      }}
+      onClick={(event) => {
+        if (backdropPointerDownRef.current && event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
     >
       <div
         ref={panelRef}
         tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="relative flex max-h-[92dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-t-xl border border-border bg-surface shadow-2xl outline-none sm:max-h-[88vh] sm:rounded-xl"
       >
         <button
@@ -85,7 +93,10 @@ export function ItemQuickView({ item, onClose }: ItemQuickViewProps) {
           <ItemImagePreview imageUrl={item.image_url} itemName={item.name} variant="banner" />
 
           <div className="px-5 py-5 sm:px-6">
-            <h2 className="font-display text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-foreground">
+            <h2
+              id={titleId}
+              className="font-display text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-foreground"
+            >
               {item.name}
             </h2>
 
@@ -106,7 +117,7 @@ export function ItemQuickView({ item, onClose }: ItemQuickViewProps) {
                     key={group.id}
                     group={group}
                     selectedModifiers={order.selectedModifierIds[group.id] || []}
-                    onChange={(ids, priceDelta) => order.handleModifierChange(group.id, ids, priceDelta)}
+                    onChange={(ids) => order.handleModifierChange(group.id, ids)}
                   />
                 ))}
               </div>

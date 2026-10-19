@@ -27,13 +27,12 @@ export function ClientFooter() {
         <div className="grid grid-cols-1 gap-[30px] sm:grid-cols-2 sm:gap-8 lg:grid-cols-[1.4fr_repeat(3,1fr)] lg:gap-10">
           <div className="flex min-w-0 flex-col gap-[9px]">
             <Image
-              src="/madkrapow-logo.svg"
+              src="/madkrapow-logo.webp"
               alt="Mad Krapow"
-              width={0}
-              height={0}
+              width={128}
+              height={128}
               className="h-10 w-10 md:h-[46px] md:w-[46px]"
               sizes="46px"
-              unoptimized
             />
             <p className="max-w-[34ch] text-[13px] leading-5 text-muted-foreground">
               Hot, bold Phad Kra Phao from Kampung Subang Baru, Shah Alam. Locally sourced

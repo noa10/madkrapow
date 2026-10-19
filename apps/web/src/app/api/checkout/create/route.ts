@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import { moneyStringToCents } from '@/lib/lalamove/quote'
+import { getUnsatisfiedRequiredGroups, requiredSelectionCount } from '@/lib/menu/required-options'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
 
 const CheckoutItemSchema = z.object({
@@ -191,7 +192,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       modifierIds.length > 0
         ? supabase
             .from('modifiers')
-            .select('id, name, price_delta_cents, is_available')
+            .select('id, name, price_delta_cents, modifier_group_id, is_available')
             .in('id', modifierIds)
         : Promise.resolve({ data: [], error: null }),
     ])
@@ -225,51 +226,54 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }
 
     // ── Validate required modifier groups have selections ──────────
-    const modifierGroupIds = [...new Set(
-      (await supabase
-        .from('menu_item_modifier_groups')
-        .select('modifier_group_id, menu_item_id, is_required')
-        .in('menu_item_id', menuItemIds))
-        .data?.filter(r => r.is_required)
-        .map(r => r.modifier_group_id) ?? []
-    )]
+    // Required-ness comes from the per-item link (`is_required`) OR the
+    // group minimum (`min_selections`) — the same shared helper the
+    // storefront uses, so client and server can never disagree. Picks are
+    // counted per group: a selection in one group cannot satisfy another.
+    const { data: attachedJunctions } = await supabase
+      .from('menu_item_modifier_groups')
+      .select('menu_item_id, modifier_group_id, is_required')
+      .in('menu_item_id', menuItemIds)
 
-    if (modifierGroupIds.length > 0) {
-      const { data: requiredGroups } = await supabase
+    const attachedGroupIds = [...new Set((attachedJunctions ?? []).map(j => j.modifier_group_id))]
+    const { data: attachedGroups } = attachedGroupIds.length > 0
+      ? await supabase
         .from('modifier_groups')
         .select('id, name, min_selections')
-        .in('id', modifierGroupIds)
+        .in('id', attachedGroupIds)
+      : { data: [] }
 
-      const { data: requiredJunctions } = await supabase
-        .from('menu_item_modifier_groups')
-        .select('menu_item_id, modifier_group_id, is_required')
-        .in('modifier_group_id', modifierGroupIds)
-        .eq('is_required', true)
+    const groupsById = new Map((attachedGroups ?? []).map(g => [g.id, g]))
 
-      if (requiredGroups && requiredJunctions) {
-        for (const item of items) {
-          const itemRequiredGroups = requiredJunctions
-            .filter(j => j.menu_item_id === item.id)
-            .map(j => requiredGroups.find(g => g.id === j.modifier_group_id))
-            .filter(Boolean) as { id: string; name: string; min_selections: number }[]
+    if (attachedJunctions && attachedJunctions.length > 0) {
+      for (const item of items) {
+        const itemGroups = attachedJunctions
+          .filter(j => j.menu_item_id === item.id)
+          .flatMap(j => {
+            const group = groupsById.get(j.modifier_group_id)
+            return group ? [{ ...group, is_required: j.is_required }] : []
+          })
 
-          for (const group of itemRequiredGroups) {
-            const selectedInGroup = item.modifiers.filter(m => {
-              return dbModifiers?.some(d => d.id === m.id)
-            }).length
+        const selectedCountByGroup: Record<string, number> = {}
+        for (const selected of item.modifiers) {
+          const dbModifier = dbModifiers?.find(d => d.id === selected.id)
+          if (!dbModifier) continue // unknown ids fail the price validation below
+          selectedCountByGroup[dbModifier.modifier_group_id] =
+            (selectedCountByGroup[dbModifier.modifier_group_id] ?? 0) + 1
+        }
 
-            if (selectedInGroup < group.min_selections) {
-              const dbItem = dbItems.find(d => d.id === item.id)
-              return NextResponse.json(
-                {
-                  success: false,
-                  error: `${dbItem?.name ?? 'Item'} requires selecting at least ${group.min_selections} option(s) from "${group.name}"`,
-                  code: 'REQUIRED_MODIFIER_MISSING',
-                },
-                { status: 400 }
-              )
-            }
-          }
+        const missingGroups = getUnsatisfiedRequiredGroups(itemGroups, selectedCountByGroup)
+        if (missingGroups.length > 0) {
+          const dbItem = dbItems.find(d => d.id === item.id)
+          const group = missingGroups[0]
+          return NextResponse.json(
+            {
+              success: false,
+              error: `${dbItem?.name ?? 'Item'} requires selecting at least ${requiredSelectionCount(group)} option(s) from "${group.name}"`,
+              code: 'REQUIRED_MODIFIER_MISSING',
+            },
+            { status: 400 }
+          )
         }
       }
     }

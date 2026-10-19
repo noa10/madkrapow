@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   CategoryWithMenuItems,
   MenuItemWithModifiers,
@@ -15,7 +15,12 @@ import { cn } from "@/lib/utils";
 
 interface MenuCatalogViewProps {
   categories: CategoryWithMenuItems[];
-  modifierGroupsByItem: ModifierGroupsByMenuItem;
+  /**
+   * Prefetched modifier groups per item. `null` means the fetch failed —
+   * items that have modifiers must then fall back to their item page
+   * (which loads groups uncached) so required options can't be skipped.
+   */
+  modifierGroupsByItem: ModifierGroupsByMenuItem | null;
 }
 
 function slugifyCategoryName(name: string): string {
@@ -28,6 +33,7 @@ function slugifyCategoryName(name: string): string {
 
 export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalogViewProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -36,6 +42,7 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
   const catbarRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const initialCategoryRef = useRef<string | null>(searchParams.get("category"));
+  const didDeepLinkScrollRef = useRef(false);
 
   const normalizedQuery = query.trim().toLowerCase();
   const isSearching = normalizedQuery.length > 0;
@@ -74,9 +81,20 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
     [visibleCategories]
   );
 
-  const handleSelectItem = useCallback((item: MenuItemWithModifiers) => {
-    setQuickViewItem(item);
-  }, []);
+  const handleSelectItem = useCallback(
+    (item: MenuItemWithModifiers) => {
+      // Modifier data missing for an item that has options (fetch failure or
+      // an unexpected gap): open its item page, which loads groups directly.
+      // The quick view must never render such an item with no groups — that
+      // would enable "Add item" without the required choices.
+      if (item.has_modifiers && !modifierGroupsByItem?.[item.id]) {
+        router.push(`/item/${item.slug}`);
+        return;
+      }
+      setQuickViewItem(item);
+    },
+    [modifierGroupsByItem, router]
+  );
 
   const closeQuickView = useCallback(() => {
     setQuickViewItem(null);
@@ -92,7 +110,7 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
         id: quickViewItem.category_id,
         name: categories.find((category) => category.id === quickViewItem.category_id)?.name ?? "",
       },
-      modifier_groups: modifierGroupsByItem[quickViewItem.id] ?? [],
+      modifier_groups: modifierGroupsByItem?.[quickViewItem.id] ?? [],
     };
   }, [quickViewItem, categories, modifierGroupsByItem]);
 
@@ -138,14 +156,21 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
     };
   }, [navCategories]);
 
-  // Deep link: land on the ?category= section on first load
+  // Deep link: land on the ?category= section on first load. Runs once —
+  // a later `categories` identity (router.refresh) must not yank the user
+  // back to the initial section while they are browsing.
   useEffect(() => {
+    if (didDeepLinkScrollRef.current) return;
     const slug = initialCategoryRef.current;
-    if (!slug) return;
+    if (!slug) {
+      didDeepLinkScrollRef.current = true;
+      return;
+    }
     const match = categories.find((c) => slugifyCategoryName(c.name) === slug);
     if (!match) return;
     const el = document.getElementById(`category-${match.id}`);
     if (el) {
+      didDeepLinkScrollRef.current = true;
       requestAnimationFrame(() => el.scrollIntoView({ block: "start" }));
     }
   }, [categories]);

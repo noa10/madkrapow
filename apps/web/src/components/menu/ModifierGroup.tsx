@@ -8,7 +8,7 @@ import type { Modifier, ModifierGroup } from '@/lib/queries/menu'
 interface ModifierGroupProps {
   group: ModifierGroup & { is_required: boolean; modifiers: Modifier[] }
   selectedModifiers: string[]
-  onChange: (modifierIds: string[], totalPriceDelta: number) => void
+  onChange: (modifierIds: string[]) => void
 }
 
 function formatPriceDelta(priceCents: number): string {
@@ -42,7 +42,7 @@ export function ModifierGroup({
       : null
   const tag = [isRequired ? 'Required' : 'Optional', scopeLabel].filter(Boolean).join(' · ')
 
-  const handleModifierToggle = (modifierId: string, _priceDelta: number) => {
+  const handleModifierToggle = (modifierId: string) => {
     let newSelected: string[]
 
     if (isSingleSelection) {
@@ -58,11 +58,7 @@ export function ModifierGroup({
       }
     }
 
-    const totalPriceDelta = group.modifiers
-      .filter((m) => newSelected.includes(m.id))
-      .reduce((sum, m) => sum + m.price_delta_cents, 0)
-
-    onChange(newSelected, totalPriceDelta)
+    onChange(newSelected)
   }
 
   return (
@@ -91,7 +87,7 @@ export function ModifierGroup({
                 name={isSingleSelection ? group.id : undefined}
                 value={modifier.id}
                 checked={isSelected}
-                onChange={() => handleModifierToggle(modifier.id, modifier.price_delta_cents)}
+                onChange={() => handleModifierToggle(modifier.id)}
                 className="h-[18px] w-[18px] flex-none accent-primary"
               />
               <span className="text-[13px] font-bold text-foreground">{modifier.name}</span>

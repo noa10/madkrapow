@@ -8,18 +8,23 @@ import { useEffect } from 'react'
 // scrolling behind an outer one. Reference counting is module-level because
 // overlays mount as independent component trees (portals included).
 let lockCount = 0
+let previousBodyOverflow = ''
 
 export function useBodyScrollLock(active: boolean) {
   useEffect(() => {
     if (!active) return
 
+    if (lockCount === 0) {
+      previousBodyOverflow = document.body.style.overflow
+    }
     lockCount += 1
     document.body.style.overflow = 'hidden'
 
     return () => {
       lockCount = Math.max(0, lockCount - 1)
       if (lockCount === 0) {
-        document.body.style.overflow = ''
+        // Restore whatever was set before the first lock, not just ''.
+        document.body.style.overflow = previousBodyOverflow
       }
     }
   }, [active])

@@ -150,7 +150,7 @@ This file contains curated memories, decisions, and learnings that persist acros
 - **Highest-impact item**: `d680699` — accept the order on Grab after import.
   Master had no `acceptOrder` call at all, and Grab auto-cancels unaccepted orders.
 
-### 2026-10-19: Storefront design system port ("Fiery Wok" crimson) — awaiting review
+### 2026-10-19: Storefront design system port ("Fiery Wok" crimson) — shipped in PR #450
 - **Decision**: Ported the approved OpenDesign artifact into `apps/web` as the
   storefront visual system: crimson default accent, ember/sesame/herb support
   colors, Plus Jakarta Sans, topbar shell (replaces the client sidebar), design
@@ -160,8 +160,10 @@ This file contains curated memories, decisions, and learnings that persist acros
   Legacy token names (`bg-primary`, `text-gold`, `var(--gold-strong)`,
   `var(--line-strong)`) were remapped, so swapping back to app gold is a
   one-block edit in `globals.css`.
-- **Uncommitted on purpose**: left in the working tree for the user's visual
-  review (expect small follow-up tweaks). Base commit `c11577e`.
+- **Committed on request** as `f0cbe2b` (base `c11577e`) on
+  `feat/fiery-wok-storefront-redesign`; PR #450. Follow-ups: `7656e58`
+  (required options), `50d7a83` (required CTA overflow), then the
+  review-pass fixes (hydration gate, dialog semantics/focus, logo WebP).
 - **Dead files**: `AboutView` / `OrderView` / `Hero` / `ClientSidebar` /
   `Header` / `Footer` / `ProfileDropdown` are unused — not restyled.
 - Checks at hand-off: typecheck clean; lint 33 warnings / 0 errors (baseline);

@@ -4,6 +4,7 @@ import { memo } from "react";
 import Image from "next/image";
 import { Plus } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
+import { useIsClient } from "@/hooks/useIsClient";
 import type { MenuItemWithModifiers } from "@/lib/queries/menu";
 import { SpiceLevel } from "./SpiceLevel";
 import { ModifierSummary } from "./ModifierSummary";
@@ -29,6 +30,11 @@ export const RichMenuCard = memo(function RichMenuCard({ item, onSelect }: RichM
       0
     )
   );
+  // Gate on hydration: the cart comes from localStorage, so rendering the
+  // count in the first client pass would mismatch the server HTML on every
+  // card for a returning customer.
+  const isClient = useIsClient();
+  const displayQuantity = isClient ? cartQuantity : 0;
 
   return (
     // `isolate`: contains the card's internal z-indexes (stretched trigger
@@ -47,8 +53,8 @@ export const RichMenuCard = memo(function RichMenuCard({ item, onSelect }: RichM
           type="button"
           onClick={() => onSelect(item)}
           aria-label={
-            cartQuantity > 0
-              ? `View details for ${item.name}, ${cartQuantity} in cart`
+            displayQuantity > 0
+              ? `View details for ${item.name}, ${displayQuantity} in cart`
               : `View details for ${item.name}`
           }
           aria-haspopup="dialog"
@@ -97,12 +103,12 @@ export const RichMenuCard = memo(function RichMenuCard({ item, onSelect }: RichM
             aria-hidden
             className={cn(
               "pointer-events-none absolute bottom-2.5 right-2.5 z-20 grid h-9 w-9 place-items-center rounded-full shadow-[0_10px_24px_-10px_rgba(0,0,0,0.8)] ring-1 ring-black/10 sm:h-10 sm:w-10",
-              cartQuantity > 0
+              displayQuantity > 0
                 ? "bg-primary text-[13px] font-extrabold tabular-nums text-primary-foreground"
                 : "bg-foreground text-background"
             )}
           >
-            {cartQuantity > 0 ? cartQuantity : <Plus className="h-4 w-4" />}
+            {displayQuantity > 0 ? displayQuantity : <Plus className="h-4 w-4" />}
           </span>
         )}
 

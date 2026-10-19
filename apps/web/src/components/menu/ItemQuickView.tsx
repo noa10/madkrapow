@@ -164,12 +164,19 @@ export function ItemQuickView({ item, onClose }: ItemQuickViewProps) {
             <Button
               size="lg"
               onClick={handleAddToCart}
-              className="h-12 flex-1 justify-between gap-2 rounded-lg bg-primary px-5 text-[15px] font-bold text-primary-foreground shadow-none transition hover:bg-[var(--accent-hover)] active:translate-y-px"
+              className="h-12 min-w-0 flex-1 justify-between gap-2 rounded-lg bg-primary px-5 text-[15px] font-bold text-primary-foreground shadow-none transition hover:bg-[var(--accent-hover)] active:translate-y-px"
             >
-              <span className="min-w-0 truncate">
+              <span
+                className="min-w-0 truncate"
+                title={
+                  order.allRequiredGroupsSatisfied
+                    ? undefined
+                    : order.unsatisfiedRequiredGroupNames.join(', ')
+                }
+              >
                 {order.allRequiredGroupsSatisfied
                   ? 'Add item'
-                  : `Select required: ${order.unsatisfiedRequiredGroupNames.join(', ')}`}
+                  : `Select required options (${order.unsatisfiedRequiredGroupNames.length})`}
               </span>
               <span className="ml-auto flex items-center gap-1.5">
                 {order.allRequiredGroupsSatisfied && (

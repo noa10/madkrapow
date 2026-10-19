@@ -117,7 +117,7 @@ export function ItemDetailClient({ item }: ItemDetailClientProps) {
             >
               {allRequiredGroupsSatisfied
                 ? `add to basket - ${formatPrice(totalPriceCents)} (Incl. tax)`
-                : `Select required: ${unsatisfiedRequiredGroupNames.join(', ')}`
+                : `Select required options (${unsatisfiedRequiredGroupNames.length})`
                 }
             </Button>
           )}

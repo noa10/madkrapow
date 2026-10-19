@@ -90,7 +90,7 @@ function OrdersContent() {
   }, [supabase, fetchOrders])
 
   return (
-    <ClientPageShell activeHref="/orders">
+    <ClientPageShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

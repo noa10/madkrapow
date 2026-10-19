@@ -123,6 +123,15 @@
        gutter keeps the topbar and content from shifting horizontally. */
     scrollbar-gutter: stable;
   }
+
+  /* Anchor jumps (hero "Order now" → #menu, footer links) glide instead of
+     snapping; Next.js disables this during route transitions and users who
+     prefer reduced motion keep instant jumps. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
   * {
     @apply border-border;
   }

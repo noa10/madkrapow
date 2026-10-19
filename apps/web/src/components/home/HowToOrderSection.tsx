@@ -7,7 +7,7 @@ const GRABFOOD_URL = process.env.NEXT_PUBLIC_GRABFOOD_URL || "#";
 
 export function HowToOrderSection() {
   return (
-    <section id="how_to_order" className="relative px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <section id="how_to_order" className="relative scroll-mt-[var(--topbar-h)] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mx-auto max-w-6xl">
         <div className="mb-[18px]">
           <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ember-text">Choose your channel</p>
@@ -51,7 +51,7 @@ export function HowToOrderSection() {
               checkout, and the minimum order is RM 20.00.
             </p>
             <Link
-              href="/menu"
+              href="#menu"
               className="mt-1 inline-flex min-h-11 w-fit items-center gap-2 rounded-full border border-border-2 px-5 text-[13px] font-bold text-foreground transition hover:bg-surface-2"
             >
               <UtensilsCrossed className="h-4 w-4" aria-hidden />

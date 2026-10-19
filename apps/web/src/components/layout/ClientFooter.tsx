@@ -3,10 +3,10 @@ import Link from "next/link"
 import { Bike, Leaf } from "lucide-react"
 
 const menuLinks = [
-  { href: "/menu?category=set-krapow", label: "Set Krapow" },
-  { href: "/menu?category=lauk-sahaja", label: "Lauk Sahaja" },
-  { href: "/menu?category=minuman", label: "Minuman" },
-  { href: "/menu?category=bazar-ramadan-ttdi-jaya", label: "Bazar Ramadan TTDI Jaya" },
+  { href: "/?category=set-krapow", label: "Set Krapow" },
+  { href: "/?category=lauk-sahaja", label: "Lauk Sahaja" },
+  { href: "/?category=minuman", label: "Minuman" },
+  { href: "/?category=bazar-ramadan-ttdi-jaya", label: "Bazar Ramadan TTDI Jaya" },
 ]
 
 const orderingLinks = [
@@ -38,6 +38,9 @@ export function ClientFooter() {
               Hot, bold Phad Kra Phao from Kampung Subang Baru, Shah Alam. Locally sourced
               ingredients, cooked fresh and delivered fast.
             </p>
+            <Link href="/about" className={colLink}>
+              About
+            </Link>
           </div>
 
           <div className="flex min-w-0 flex-col gap-[9px]">

@@ -13,7 +13,7 @@ const promiseList = [
 
 export default function AboutPage() {
   return (
-    <ClientPageShell activeHref="/about">
+    <ClientPageShell>
       <div className="relative min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl py-12 sm:py-20">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.11em] text-foreground">
@@ -76,7 +76,7 @@ export default function AboutPage() {
                 Order on GrabFood
               </a>
               <Link
-                href="/menu"
+                href="/#menu"
                 className="inline-flex min-h-12 items-center justify-center rounded-full border border-border-2 px-6 text-sm font-bold text-foreground transition hover:bg-surface-2"
               >
                 Order Direct

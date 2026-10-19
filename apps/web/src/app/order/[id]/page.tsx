@@ -326,7 +326,7 @@ export default function OrderTrackingPage() {
 
   if (authChecking || loading) {
     return (
-      <ClientPageShell activeHref="/orders">
+      <ClientPageShell>
         <main className="flex min-h-[60vh] items-center justify-center bg-background">
           <PageContainer size="narrow">
             <div className="text-center">
@@ -341,7 +341,7 @@ export default function OrderTrackingPage() {
 
   if (!isAuthenticated) {
     return (
-      <ClientPageShell activeHref="/orders">
+      <ClientPageShell>
         <main className="min-h-[60vh] bg-background">
           <PageContainer size="narrow">
             <div className="py-8">
@@ -362,7 +362,7 @@ export default function OrderTrackingPage() {
 
   if (error || !order) {
     return (
-      <ClientPageShell activeHref="/orders">
+      <ClientPageShell>
         <main className="min-h-[60vh] bg-background">
           <PageContainer size="narrow">
             <div className="py-8">
@@ -397,7 +397,7 @@ export default function OrderTrackingPage() {
   const currentStepIndex = getStepIndex(order.status)
 
   return (
-    <ClientPageShell activeHref="/orders">
+    <ClientPageShell>
       <main className="w-full">
         <PageContainer>
           <div className="py-6 md:py-10">

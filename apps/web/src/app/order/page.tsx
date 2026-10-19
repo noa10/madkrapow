@@ -15,7 +15,7 @@ export default async function OrderPage() {
   const categories = await getMenuData()
 
   return (
-    <ClientPageShell activeHref="/order">
+    <ClientPageShell>
       <div className="bg-background">
         <div className="mx-auto max-w-7xl px-4 pt-8 pb-2 sm:px-6 sm:pt-10 lg:px-8">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.11em] text-foreground">

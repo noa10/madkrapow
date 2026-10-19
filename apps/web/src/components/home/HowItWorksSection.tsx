@@ -31,7 +31,7 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section id="how_it_works" className="relative px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <section id="how_it_works" className="relative scroll-mt-[var(--topbar-h)] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mx-auto max-w-6xl">
         <div className="mb-[18px]">
           <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ember-text">Fast &amp; frictionless</p>

@@ -10,11 +10,7 @@ const trustChips = [
   { label: "Locally sourced ingredients", icon: Leaf, color: "text-herb-text" },
 ];
 
-interface HeroViewProps {
-  onNavigateToMenu: () => void;
-}
-
-export function HeroView({ onNavigateToMenu }: HeroViewProps) {
+export function HeroView() {
   const { heroImageUrl, storeName } = useRealtimeBranding();
 
   return (
@@ -90,20 +86,20 @@ export function HeroView({ onNavigateToMenu }: HeroViewProps) {
         </ul>
 
         <div className="mt-1 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onNavigateToMenu}
+          {/* The menu lives right below the hero — scroll to it instead of
+              navigating (the old /menu route only redirects back here). */}
+          <a
+            href="#menu"
             className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full bg-[image:var(--grad-cta)] px-6 text-sm font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] transition hover:brightness-110 active:translate-y-px"
           >
             Order now
-          </button>
-          <button
-            type="button"
-            onClick={onNavigateToMenu}
+          </a>
+          <a
+            href="#menu"
             className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full border border-border-2 px-6 text-sm font-bold text-foreground transition hover:bg-surface-2"
           >
             Explore menu
-          </button>
+          </a>
         </div>
       </div>
     </section>

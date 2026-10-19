@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type {
   CategoryWithMenuItems,
   MenuItemWithModifiers,
@@ -11,6 +11,7 @@ import { SignatureHero } from "./SignatureHero";
 import { RichMenuGrid } from "./RichMenuGrid";
 import { MenuSearchInput } from "./MenuSearchInput";
 import { ItemQuickView } from "./ItemQuickView";
+import { MenuDeepLinkScroller } from "./MenuDeepLinkScroller";
 import { cn } from "@/lib/utils";
 
 interface MenuCatalogViewProps {
@@ -34,15 +35,12 @@ function slugifyCategoryName(name: string): string {
 export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalogViewProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [quickViewItem, setQuickViewItem] = useState<MenuItemWithModifiers | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const catbarRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
-  const initialCategoryRef = useRef<string | null>(searchParams.get("category"));
-  const didDeepLinkScrollRef = useRef(false);
 
   const normalizedQuery = query.trim().toLowerCase();
   const isSearching = normalizedQuery.length > 0;
@@ -79,6 +77,16 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
   const navCategories = useMemo(
     () => visibleCategories.filter((category) => category.menu_items.length > 0),
     [visibleCategories]
+  );
+
+  // ?category=<slug> → the section element that deep link should land on.
+  const deepLinkTargets = useMemo(
+    () =>
+      categories.map((category) => ({
+        slug: slugifyCategoryName(category.name),
+        elementId: `category-${category.id}`,
+      })),
+    [categories]
   );
 
   const handleSelectItem = useCallback(
@@ -156,25 +164,6 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
     };
   }, [navCategories]);
 
-  // Deep link: land on the ?category= section on first load. Runs once —
-  // a later `categories` identity (router.refresh) must not yank the user
-  // back to the initial section while they are browsing.
-  useEffect(() => {
-    if (didDeepLinkScrollRef.current) return;
-    const slug = initialCategoryRef.current;
-    if (!slug) {
-      didDeepLinkScrollRef.current = true;
-      return;
-    }
-    const match = categories.find((c) => slugifyCategoryName(c.name) === slug);
-    if (!match) return;
-    const el = document.getElementById(`category-${match.id}`);
-    if (el) {
-      didDeepLinkScrollRef.current = true;
-      requestAnimationFrame(() => el.scrollIntoView({ block: "start" }));
-    }
-  }, [categories]);
-
   // Keep the active pill visible in the mobile category bar as sections scroll by
   useEffect(() => {
     if (!activeId) return;
@@ -219,16 +208,16 @@ export function MenuCatalogView({ categories, modifierGroupsByItem }: MenuCatalo
   };
 
   return (
-    <div className="relative min-h-screen bg-background">
-      <div className="px-4 pt-8 sm:px-6 lg:px-8 lg:pt-10">
+    <div id="menu" className="relative min-h-screen scroll-mt-[var(--topbar-h)] bg-background">
+      {/* Deep links (?category=...) — isolated in its own boundary so this
+          search-param hook can't deopt the storefront to client rendering. */}
+      <Suspense fallback={null}>
+        <MenuDeepLinkScroller targets={deepLinkTargets} />
+      </Suspense>
+
+      <div className="px-4 pt-7 sm:px-6 lg:hidden">
         <div className="mx-auto max-w-7xl">
-          <h1 className="font-display text-[clamp(1.875rem,1.2rem+2.6vw,3.25rem)] font-extrabold leading-[1.05] tracking-[-0.03em] text-foreground">
-            Our <span className="text-ember-text">Menu</span>
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
-            Wok-fired Thai street food. Every plate cooked to order.
-          </p>
-          <MenuSearchInput value={query} onChange={setQuery} className="mt-5 lg:hidden" />
+          <MenuSearchInput value={query} onChange={setQuery} />
         </div>
       </div>
 

@@ -3,28 +3,20 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { LogOut, Menu, ShoppingBag, Store, User, X } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client"
 import { isAdminUser } from "@/lib/auth/roles"
 import { useClientUser } from "@/lib/auth/client-user"
 import { useCartStore } from "@/stores/cart"
 import { useIsClient } from "@/hooks/useIsClient"
-import { cn } from "@/lib/utils"
 import { ClientFooter } from "./ClientFooter"
 
 interface ClientPageShellProps {
   children: React.ReactNode
-  activeHref?: string
 }
 
-const navLinks = [
-  { href: "/menu", label: "Menu" },
-  { href: "/about", label: "About" },
-  { href: "/#how_to_order", label: "How to order" },
-]
-
-export function ClientPageShell({ children, activeHref }: ClientPageShellProps) {
+export function ClientPageShell({ children }: ClientPageShellProps) {
   // Both totals come from the same store helpers the cart drawer uses, so
   // modifier deltas and discounts are included and the header cannot drift.
   const totalItems = useCartStore((state) => state.getTotalItems())
@@ -40,16 +32,8 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
   const user = useClientUser()
   const supabase = getBrowserClient()
   const isAdmin = isAdminUser(user)
-  const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
-
-  const isActive = (href: string) => {
-    if (href.includes("#")) return false
-    if (activeHref) return activeHref === href
-    if (href === "/") return pathname === "/"
-    return pathname.startsWith(href)
-  }
 
   const closeMobile = () => setMobileOpen(false)
 
@@ -62,7 +46,8 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Topbar */}
+      {/* Topbar — brand + account + cart only: the storefront is the single
+          ordering surface, so there are no section nav links any more. */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/92 backdrop-blur-xl">
         <div className="mx-auto flex h-[var(--topbar-h)] w-full max-w-[1280px] items-center gap-3 px-4 sm:px-6 md:gap-3.5 lg:px-8">
           <Link href="/" className="flex shrink-0 items-center" aria-label="Mad Krapow — home">
@@ -76,23 +61,6 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
               priority
             />
           </Link>
-
-          <nav className="ml-1.5 hidden items-center gap-1 md:flex" aria-label="Primary">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "rounded-full px-3.5 py-2.5 text-[13px] font-semibold transition-colors",
-                  isActive(link.href)
-                    ? "bg-white/10 text-foreground"
-                    : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {user ? (
@@ -159,26 +127,10 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
           </div>
         </div>
 
-        {/* Mobile navigation */}
+        {/* Mobile account sheet */}
         {mobileOpen && (
           <div className="border-t border-border bg-background/95 backdrop-blur-xl md:hidden">
             <nav className="mx-auto flex w-full max-w-[1280px] flex-col gap-1 px-4 py-3 sm:px-6" aria-label="Mobile">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={closeMobile}
-                  className={cn(
-                    "rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-                    isActive(link.href)
-                      ? "bg-white/10 text-foreground"
-                      : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              ))}
-              <div className="my-2 h-px bg-border" />
               {user ? (
                 <>
                   {isAdmin && (
@@ -207,6 +159,14 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
                     <User className="h-4 w-4" />
                     Profile
                   </Link>
+                  <Link
+                    href="/about"
+                    onClick={closeMobile}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <Store className="h-4 w-4" />
+                    About
+                  </Link>
                   <button
                     type="button"
                     onClick={handleSignOut}
@@ -217,14 +177,24 @@ export function ClientPageShell({ children, activeHref }: ClientPageShellProps) 
                   </button>
                 </>
               ) : (
-                <Link
-                  href="/auth"
-                  onClick={closeMobile}
-                  className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-                >
-                  <User className="h-4 w-4" />
-                  Login / Sign up
-                </Link>
+                <>
+                  <Link
+                    href="/auth"
+                    onClick={closeMobile}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <User className="h-4 w-4" />
+                    Login / Sign up
+                  </Link>
+                  <Link
+                    href="/about"
+                    onClick={closeMobile}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <Store className="h-4 w-4" />
+                    About
+                  </Link>
+                </>
               )}
             </nav>
           </div>

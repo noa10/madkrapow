@@ -115,7 +115,7 @@ export default function ProfilePage() {
 
   if (isLoading) {
     return (
-      <ClientPageShell activeHref="/profile">
+      <ClientPageShell>
         <main className="flex min-h-[60vh] items-center justify-center bg-background">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </main>
@@ -125,7 +125,7 @@ export default function ProfilePage() {
 
   if (error && !customer) {
     return (
-      <ClientPageShell activeHref="/profile">
+      <ClientPageShell>
         <main className="min-h-screen bg-background">
           <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex items-center justify-center min-h-[60vh]">
@@ -141,7 +141,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <ClientPageShell activeHref="/profile">
+    <ClientPageShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

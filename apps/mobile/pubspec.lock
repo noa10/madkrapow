@@ -935,6 +935,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  madkrapow_ui:
+    dependency: "direct main"
+    description:
+      path: "../../packages/madkrapow_ui"
+      relative: true
+    source: path
+    version: "0.1.0"
   matcher:
     dependency: transitive
     description:
@@ -1782,4 +1789,4 @@ packages:
     version: "2.1.0"
 sdks:
   dart: ">=3.11.1 <4.0.0"
-  flutter: ">=3.38.4"
+  flutter: ">=3.41.0"

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../config/routes.dart';
 import '../../../../core/utils/price_formatter.dart';
@@ -142,9 +143,7 @@ class _CartItemTile extends StatelessWidget {
                     Text(
                       item.selectedModifiers.map((m) => m.name).join(', '),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.5,
-                        ),
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -154,9 +153,7 @@ class _CartItemTile extends StatelessWidget {
                       '"${item.specialInstructions}"',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontStyle: FontStyle.italic,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.5,
-                        ),
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -167,7 +164,7 @@ class _CartItemTile extends StatelessWidget {
                       Text(
                         formatPrice(item.lineTotalCents),
                         style: theme.textTheme.titleSmall?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: AppColors.emberText,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -206,7 +203,7 @@ class _CartItemTile extends StatelessWidget {
   Widget _quantityControls() {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

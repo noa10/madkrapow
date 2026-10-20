@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/widgets/async_value_widget.dart';
@@ -102,16 +103,14 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
               Text(
                 formatPrice(promo.discountedCents),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: AppColors.emberText,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 formatPrice(priceCents),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(
-                    alpha: 0.5,
-                  ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   decoration: TextDecoration.lineThrough,
                 ),
               ),
@@ -121,7 +120,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
         return Text(
           formatPrice(priceCents),
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
+            color: AppColors.emberText,
             fontWeight: FontWeight.bold,
           ),
         );
@@ -129,14 +128,14 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
       loading: () => Text(
         formatPrice(priceCents),
         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
+          color: AppColors.emberText,
           fontWeight: FontWeight.bold,
         ),
       ),
       error: (err, st) => Text(
         formatPrice(priceCents),
         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
+          color: AppColors.emberText,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -169,14 +168,20 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                     if (!_allRequiredGroupsSatisfied)
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.error.withValues(alpha: 0.1),
                         child: Text(
                           'Please select required options: ${_unsatisfiedRequiredGroupNames.join(', ')}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -227,7 +232,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                 // Image
                 SliverToBoxAdapter(
                   child:
-                      item.item.imageUrl != null && item.item.imageUrl!.isNotEmpty
+                      item.item.imageUrl != null &&
+                          item.item.imageUrl!.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: item.item.imageUrl!,
                           height: 260,
@@ -253,21 +259,29 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                         const SizedBox(height: 4),
                         Text(
                           item.category.name,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.5),
+                              ),
                         ),
                         if (isUnavailable) ...[
                           const SizedBox(height: 12),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.error.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.error.withValues(alpha: 0.3),
                               ),
                             ),
                             child: Row(
@@ -280,10 +294,13 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                                 const SizedBox(width: 8),
                                 Text(
                                   'This item is currently unavailable',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
                               ],
                             ),
@@ -298,7 +315,11 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                           ),
                         ],
                         const SizedBox(height: 16),
-                        _buildItemPrice(context, item.item.id, item.item.priceCents),
+                        _buildItemPrice(
+                          context,
+                          item.item.id,
+                          item.item.priceCents,
+                        ),
                       ],
                     ),
                   ),
@@ -308,7 +329,8 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
                   (group) => SliverToBoxAdapter(
                     child: _ModifierGroupSection(
                       group: group,
-                      selectedModifiers: _selectedModifiers[group.group.id] ?? [],
+                      selectedModifiers:
+                          _selectedModifiers[group.group.id] ?? [],
                       enabled: !isUnavailable,
                       onToggle: isUnavailable
                           ? (_) {}
@@ -384,7 +406,9 @@ class _ModifierGroupSection extends StatelessWidget {
                 group.group.name,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  color: enabled
+                      ? null
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
               if (group.isRequired) ...[
@@ -392,7 +416,9 @@ class _ModifierGroupSection extends StatelessWidget {
                 Text(
                   '*Required',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: enabled ? theme.colorScheme.error : theme.colorScheme.error.withValues(alpha: 0.4),
+                    color: enabled
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.error.withValues(alpha: 0.4),
                   ),
                 ),
               ],
@@ -454,10 +480,7 @@ class _ModifierTile extends StatelessWidget {
               RadioGroup<bool>(
                 groupValue: isSelected,
                 onChanged: enabled ? (_) => onTap() : (_) {},
-                child: Radio<bool>(
-                  value: true,
-                  enabled: enabled,
-                ),
+                child: Radio<bool>(value: true, enabled: enabled),
               )
             else
               IgnorePointer(
@@ -472,7 +495,11 @@ class _ModifierTile extends StatelessWidget {
               child: Text(
                 modifier.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: enabled ? null : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                  color: enabled
+                      ? null
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
             ),
@@ -483,8 +510,10 @@ class _ModifierTile extends StatelessWidget {
                     : '-${formatPrice(modifier.priceDeltaCents.abs())}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: enabled
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                      ? AppColors.emberText
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.3),
                 ),
               ),
           ],
@@ -516,12 +545,16 @@ class _QuantitySelector extends StatelessWidget {
             'Quantity',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+              color: enabled
+                  ? null
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.4),
             ),
           ),
           const Spacer(),
           IconButton.outlined(
-            onPressed: enabled && quantity > 1 ? () => onChanged(quantity - 1) : null,
+            onPressed: enabled && quantity > 1
+                ? () => onChanged(quantity - 1)
+                : null,
             icon: const Icon(Icons.remove),
           ),
           Padding(
@@ -530,7 +563,9 @@ class _QuantitySelector extends StatelessWidget {
               '$quantity',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: enabled ? null : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                color: enabled
+                    ? null
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.4),
               ),
             ),
           ),
@@ -575,7 +610,11 @@ class _SpecialInstructionsField extends StatelessWidget {
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.totalCents, this.isEnabled = true, required this.onAddToCart});
+  const _BottomBar({
+    required this.totalCents,
+    this.isEnabled = true,
+    required this.onAddToCart,
+  });
 
   final int totalCents;
   final bool isEnabled;
@@ -592,7 +631,9 @@ class _BottomBar extends StatelessWidget {
             minimumSize: const Size(double.infinity, 52),
             disabledBackgroundColor: isEnabled
                 ? null
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+                : Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.12),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -603,7 +644,9 @@ class _BottomBar extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: isEnabled
                       ? null
-                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
               if (isEnabled) ...[
@@ -631,7 +674,9 @@ class _UnavailableBottomBar extends StatelessWidget {
           onPressed: null,
           style: FilledButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
-            disabledBackgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+            disabledBackgroundColor: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.1),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

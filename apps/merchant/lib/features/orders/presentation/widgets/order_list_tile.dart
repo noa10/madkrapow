@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../generated/tables/orders.dart';
 import '../../../../core/utils/price_formatter.dart';
@@ -15,7 +16,6 @@ class OrderListTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statusColor = _statusColor(order.status);
     final canMarkReady = order.status == 'preparing';
 
     return ListTile(
@@ -28,21 +28,7 @@ class OrderListTile extends ConsumerWidget {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              order.status.toUpperCase(),
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: statusColor,
-              ),
-            ),
-          ),
+          StatusPill(status: order.status, dense: true),
         ],
       ),
       subtitle: Column(
@@ -69,7 +55,10 @@ class OrderListTile extends ConsumerWidget {
             children: [
               Text(
                 formatPrice(order.totalCents),
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.emberText,
+                ),
               ),
               const SizedBox(width: 8),
               if (order.orderKind == 'bulk') ...[
@@ -81,7 +70,9 @@ class OrderListTile extends ConsumerWidget {
               Icon(
                 Icons.flatware,
                 size: 16,
-                color: order.includeCutlery ? Colors.green : Colors.grey,
+                color: order.includeCutlery
+                    ? AppColors.herbText
+                    : AppColors.muted,
               ),
             ],
           ),
@@ -100,7 +91,10 @@ class OrderListTile extends ConsumerWidget {
                 label: const Text('Mark as Ready'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -121,30 +115,24 @@ class OrderListTile extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     }
-  }
-
-  Color _statusColor(String status) {
-    return switch (status) {
-      'pending' => Colors.yellow.shade700,
-      'paid' => Colors.orange,
-      'preparing' => Colors.amber,
-      'ready' => Colors.green,
-      'picked_up' => Colors.teal,
-      'delivered' => Colors.green.shade700,
-      'cancelled' => Colors.red,
-      _ => Colors.grey,
-    };
   }
 
   String _formatTime(DateTime dt) {
     final h = dt.hour;
     final m = dt.minute.toString().padLeft(2, '0');
     final ampm = h >= 12 ? 'PM' : 'AM';
-    final h12 = h > 12 ? h - 12 : h == 0 ? 12 : h;
+    final h12 = h > 12
+        ? h - 12
+        : h == 0
+        ? 12
+        : h;
     return '${dt.day}/${dt.month} $h12:$m $ampm';
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../core/widgets/error_banner.dart';
@@ -49,11 +50,7 @@ class _ModifierManagementScreenState
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          _ModifierGroupsTab(),
-          _ModifiersTab(),
-          _BindingsTab(),
-        ],
+        children: const [_ModifierGroupsTab(), _ModifiersTab(), _BindingsTab()],
       ),
     );
   }
@@ -65,8 +62,7 @@ class _ModifierGroupsTab extends ConsumerStatefulWidget {
   const _ModifierGroupsTab();
 
   @override
-  ConsumerState<_ModifierGroupsTab> createState() =>
-      _ModifierGroupsTabState();
+  ConsumerState<_ModifierGroupsTab> createState() => _ModifierGroupsTabState();
 }
 
 class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
@@ -78,20 +74,13 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
       value: groupsAsync,
       data: (groups) {
         if (groups.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.extension, size: 64, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text('No modifier groups yet'),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: () => _showGroupForm(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Group'),
-                ),
-              ],
+          return AppEmptyState(
+            icon: Icons.extension,
+            title: 'No modifier groups yet',
+            action: FilledButton.icon(
+              onPressed: () => _showGroupForm(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Group'),
             ),
           );
         }
@@ -111,10 +100,7 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
     );
   }
 
-  void _showGroupForm(
-    BuildContext context, {
-    ModifierGroupsRow? group,
-  }) {
+  void _showGroupForm(BuildContext context, {ModifierGroupsRow? group}) {
     showDialog(
       context: context,
       builder: (ctx) => _ModifierGroupFormDialog(group: group),
@@ -139,7 +125,7 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -158,7 +144,7 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete group: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
             ),
           );
         }
@@ -207,21 +193,21 @@ class _ModifierGroupCard extends StatelessWidget {
                           group.description!.isNotEmpty)
                         Text(
                           group.description!,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 13,
-                            color: Colors.grey.shade600,
+                            color: AppColors.muted,
                           ),
                         ),
                     ],
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: isRadio
-                        ? Colors.blue.withValues(alpha: 0.15)
-                        : Colors.green.withValues(alpha: 0.15),
+                    color: isRadio ? AppColors.infoSoft : AppColors.successSoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -229,26 +215,27 @@ class _ModifierGroupCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color:
-                          isRadio ? Colors.blue.shade800 : Colors.green.shade800,
+                      color: isRadio ? AppColors.info : AppColors.herbText,
                     ),
                   ),
                 ),
                 if (isRequired)
                   Container(
                     margin: const EdgeInsets.only(left: 6),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.15),
+                      color: AppColors.sesameSoft,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
+                    child: const Text(
                       'Required',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.orange.shade800,
+                        color: AppColors.sesame,
                       ),
                     ),
                   ),
@@ -257,7 +244,7 @@ class _ModifierGroupCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Min: ${group.minSelections}  \u2022  Max: ${group.maxSelections}  \u2022  Sort: ${group.sortOrder}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
             ),
             const Divider(height: 20),
             Row(
@@ -270,10 +257,14 @@ class _ModifierGroupCard extends StatelessWidget {
                 ),
                 TextButton.icon(
                   onPressed: onDelete,
-                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                  icon: const Icon(
+                    Icons.delete,
+                    size: 18,
+                    color: AppColors.dangerText,
+                  ),
                   label: const Text(
                     'Delete',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.dangerText),
                   ),
                 ),
               ],
@@ -305,8 +296,7 @@ class _ModifierGroupFormDialogState
   @override
   void initState() {
     super.initState();
-    _nameController =
-        TextEditingController(text: widget.group?.name ?? '');
+    _nameController = TextEditingController(text: widget.group?.name ?? '');
     _maxSelections = widget.group?.maxSelections ?? 1;
     _sortOrder = widget.group?.sortOrder ?? 0;
   }
@@ -346,7 +336,7 @@ class _ModifierGroupFormDialogState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -409,10 +399,7 @@ class _ModifierGroupFormDialogState
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
       ],
     );
   }
@@ -445,8 +432,9 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
 
         _selectedGroupId ??= groups.first.id;
 
-        final modifiersAsync =
-            ref.watch(modifiersForGroupProvider(_selectedGroupId!));
+        final modifiersAsync = ref.watch(
+          modifiersForGroupProvider(_selectedGroupId!),
+        );
 
         return Column(
           children: [
@@ -460,10 +448,9 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                 ),
                 isExpanded: true,
                 items: groups
-                    .map((g) => DropdownMenuItem(
-                          value: g.id,
-                          child: Text(g.name),
-                        ))
+                    .map(
+                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
+                    )
                     .toList(),
                 onChanged: (v) {
                   if (v != null) {
@@ -481,7 +468,8 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                   data: (modifiers) {
                     if (modifiers.isEmpty) {
                       return const Center(
-                          child: Text('No modifiers in this group'));
+                        child: Text('No modifiers in this group'),
+                      );
                     }
                     return ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -492,8 +480,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                           modifier: mod,
                           onEdit: () =>
                               _showModifierForm(context, modifier: mod),
-                          onDelete: () =>
-                              _confirmDeleteModifier(context, mod),
+                          onDelete: () => _confirmDeleteModifier(context, mod),
                         );
                       },
                     );
@@ -503,9 +490,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       child: SizedBox(
                         height: constraints.maxHeight,
-                        child: const Center(
-                          child: CircularProgressIndicator(),
-                        ),
+                        child: const Center(child: CircularProgressIndicator()),
                       ),
                     ),
                   ),
@@ -532,17 +517,12 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
     );
   }
 
-  void _showModifierForm(
-    BuildContext context, {
-    ModifiersRow? modifier,
-  }) {
+  void _showModifierForm(BuildContext context, {ModifiersRow? modifier}) {
     if (_selectedGroupId == null) return;
     showDialog(
       context: context,
-      builder: (ctx) => _ModifierFormDialog(
-        modifier: modifier,
-        groupId: _selectedGroupId!,
-      ),
+      builder: (ctx) =>
+          _ModifierFormDialog(modifier: modifier, groupId: _selectedGroupId!),
     );
   }
 
@@ -562,7 +542,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -582,7 +562,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete modifier: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
             ),
           );
         }
@@ -610,17 +590,14 @@ class _ModifierCard extends StatelessWidget {
         title: Row(
           children: [
             Flexible(
-              child: Text(
-                modifier.name,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(modifier.name, overflow: TextOverflow.ellipsis),
             ),
             if (modifier.isDefault)
               Container(
                 margin: const EdgeInsets.only(left: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.purple.withValues(alpha: 0.15),
+                  color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -628,7 +605,7 @@ class _ModifierCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Colors.purple,
+                    color: AppColors.accent,
                   ),
                 ),
               ),
@@ -637,7 +614,7 @@ class _ModifierCard extends StatelessWidget {
                 margin: const EdgeInsets.only(left: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.15),
+                  color: AppColors.surface3,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -645,7 +622,7 @@ class _ModifierCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Colors.grey,
+                    color: AppColors.muted,
                   ),
                 ),
               ),
@@ -657,12 +634,9 @@ class _ModifierCard extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(icon: const Icon(Icons.edit), onPressed: onEdit),
             IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: onEdit,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
+              icon: const Icon(Icons.delete, color: AppColors.dangerText),
               onPressed: onDelete,
             ),
           ],
@@ -692,8 +666,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController =
-        TextEditingController(text: widget.modifier?.name ?? '');
+    _nameController = TextEditingController(text: widget.modifier?.name ?? '');
     _priceDeltaCents = widget.modifier?.priceDeltaCents ?? 0;
     _sortOrder = widget.modifier?.sortOrder ?? 0;
   }
@@ -735,7 +708,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -745,8 +718,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
-          widget.modifier != null ? 'Edit Modifier' : 'New Modifier'),
+      title: Text(widget.modifier != null ? 'Edit Modifier' : 'New Modifier'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -799,10 +771,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
       ],
     );
   }
@@ -850,10 +819,12 @@ class _BindingsTabState extends ConsumerState<_BindingsTab> {
                     value: null,
                     child: Text('Choose a menu item...'),
                   ),
-                  ...items.map((item) => DropdownMenuItem(
-                        value: item.id,
-                        child: Text(item.name),
-                      )),
+                  ...items.map(
+                    (item) => DropdownMenuItem(
+                      value: item.id,
+                      child: Text(item.name),
+                    ),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _selectedItemId = v),
               ),
@@ -872,7 +843,8 @@ class _BindingsTabState extends ConsumerState<_BindingsTab> {
               const Expanded(
                 child: Center(
                   child: Text(
-                      'Select a menu item to manage its modifier groups'),
+                    'Select a menu item to manage its modifier groups',
+                  ),
                 ),
               ),
           ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 class StoreClosedBanner extends StatelessWidget {
   const StoreClosedBanner({super.key});
@@ -10,13 +11,13 @@ class StoreClosedBanner extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.15),
+        color: AppColors.sesameSoft,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+        border: Border.all(color: const Color(0x66FBBF24)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.schedule, color: Colors.orange),
+          const Icon(Icons.schedule, color: AppColors.sesame),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -25,7 +26,7 @@ class StoreClosedBanner extends StatelessWidget {
                 Text(
                   'Currently Closed',
                   style: theme.textTheme.titleSmall?.copyWith(
-                    color: Colors.orange,
+                    color: AppColors.sesame,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -33,7 +34,7 @@ class StoreClosedBanner extends StatelessWidget {
                 Text(
                   'You can still browse the menu. Checkout will be available when we open.',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.orange.withValues(alpha: 0.8),
+                    color: AppColors.sesame.withValues(alpha: 0.8),
                   ),
                 ),
               ],

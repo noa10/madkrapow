@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../data/analytics_models.dart';
 
@@ -23,13 +24,13 @@ class DailyPulseCard extends StatelessWidget {
                   icon: Icons.receipt_long_outlined,
                   label: 'Total Orders',
                   value: '${totals.orderCount}',
-                  color: Colors.blue,
+                  color: AppColors.info,
                 ),
                 _RangeStat(
                   icon: Icons.attach_money_outlined,
                   label: 'Total Revenue',
                   value: formatCents(totals.revenueCents),
-                  color: Colors.green,
+                  color: AppColors.herbText,
                 ),
                 _RangeStat(
                   icon: Icons.account_balance_wallet_outlined,
@@ -37,7 +38,7 @@ class DailyPulseCard extends StatelessWidget {
                   value: totals.orderCount > 0
                       ? formatCents(totals.revenueCents ~/ totals.orderCount)
                       : formatCents(0),
-                  color: Colors.orange,
+                  color: AppColors.emberText,
                 ),
               ],
             ),
@@ -48,8 +49,8 @@ class DailyPulseCard extends StatelessWidget {
               child: Text(
                 'Today',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
             const SizedBox(height: 4),
@@ -57,8 +58,14 @@ class DailyPulseCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _TodayStat(label: 'Orders', value: '${pulse.orderCount}'),
-                _TodayStat(label: 'Revenue', value: formatCents(pulse.revenueCents)),
-                _TodayStat(label: 'Avg', value: formatCents(pulse.avgOrderCents)),
+                _TodayStat(
+                  label: 'Revenue',
+                  value: formatCents(pulse.revenueCents),
+                ),
+                _TodayStat(
+                  label: 'Avg',
+                  value: formatCents(pulse.avgOrderCents),
+                ),
                 _TodayStat(label: 'Delivery', value: '${pulse.deliveryCount}'),
                 _TodayStat(label: 'Pickup', value: '${pulse.pickupCount}'),
               ],
@@ -91,9 +98,9 @@ class _RangeStat extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           value,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 2),
         Text(
@@ -118,16 +125,16 @@ class _TodayStat extends StatelessWidget {
       children: [
         Text(
           value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         Text(
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.outline,
-                fontSize: 10,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 10,
+          ),
         ),
       ],
     );

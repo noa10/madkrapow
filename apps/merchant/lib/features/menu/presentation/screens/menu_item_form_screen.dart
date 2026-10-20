@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/services/image_upload_service.dart';
 import '../../../../core/utils/price_formatter.dart';
@@ -46,8 +47,9 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.item?.name ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.item?.description ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.item?.description ?? '',
+    );
     _priceController = TextEditingController(
       text: widget.item != null
           ? formatPriceNumber(widget.item!.priceCents)
@@ -55,7 +57,8 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     );
     _currentImageUrl = widget.item?.imageUrl;
     _isAvailable = widget.item?.isAvailable ?? true;
-    _selectedCategoryId = widget.item?.categoryId ?? widget.initialCategoryId ?? '';
+    _selectedCategoryId =
+        widget.item?.categoryId ?? widget.initialCategoryId ?? '';
     _sortOrder = widget.item?.sortOrder ?? 0;
   }
 
@@ -89,9 +92,13 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       }
       if (_selectedCategoryId.isEmpty && _categories.isNotEmpty) {
         _selectedCategoryId = _categories.first.id;
-        debugPrint('DEBUG: set _selectedCategoryId from first category: "$_selectedCategoryId"');
+        debugPrint(
+          'DEBUG: set _selectedCategoryId from first category: "$_selectedCategoryId"',
+        );
       }
-      debugPrint('DEBUG: _selectedCategoryId after load: "$_selectedCategoryId"');
+      debugPrint(
+        'DEBUG: _selectedCategoryId after load: "$_selectedCategoryId"',
+      );
       if (mounted) {
         setState(() => _isLoadingCategories = false);
       }
@@ -132,7 +139,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to pick image: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -147,14 +154,16 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     setState(() => _isUploadingImage = true);
 
     try {
-      final url = await _imageUploadService.uploadMenuItemImage(_selectedImageFile!);
+      final url = await _imageUploadService.uploadMenuItemImage(
+        _selectedImageFile!,
+      );
       return url;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to upload image: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -180,7 +189,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a category'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.danger,
         ),
       );
       return;
@@ -191,7 +200,9 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
       caseSensitive: false,
     );
-    debugPrint('DEBUG: _selectedCategoryId before submit = "$_selectedCategoryId"');
+    debugPrint(
+      'DEBUG: _selectedCategoryId before submit = "$_selectedCategoryId"',
+    );
     if (!uuidRegex.hasMatch(_selectedCategoryId)) {
       debugPrint('DEBUG: _selectedCategoryId failed UUID validation!');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -200,7 +211,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
             'Invalid category ID ("$_selectedCategoryId"). '
             'Please re-select a category and try again.',
           ),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.danger,
         ),
       );
       return;
@@ -211,7 +222,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid price'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.danger,
         ),
       );
       return;
@@ -270,7 +281,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save item: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -294,7 +305,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -315,7 +326,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete item: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
             ),
           );
         }
@@ -324,7 +335,8 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   }
 
   Widget _buildImageSection() {
-    final hasImage = _selectedImageFile != null ||
+    final hasImage =
+        _selectedImageFile != null ||
         (_currentImageUrl != null && _currentImageUrl!.isNotEmpty);
 
     return Column(
@@ -338,7 +350,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(color: AppColors.border),
             borderRadius: BorderRadius.circular(12),
           ),
           child: ClipRRect(
@@ -400,11 +412,11 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           errorBuilder: (context, error, stackTrace) => Container(
             width: double.infinity,
             height: 200,
-            color: Colors.grey.shade200,
+            color: AppColors.surface2,
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                Icon(Icons.broken_image, size: 48, color: AppColors.muted),
                 SizedBox(height: 8),
                 Text('Failed to load image'),
               ],
@@ -424,7 +436,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
               _ImageActionButton(
                 icon: Icons.delete,
                 onTap: onRemove,
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.danger,
               ),
             ],
           ),
@@ -439,30 +451,27 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       child: Container(
         width: double.infinity,
         height: 160,
-        color: Colors.grey.shade50,
-        child: Column(
+        color: AppColors.surface2,
+        child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.add_photo_alternate_outlined,
               size: 48,
-              color: Colors.grey.shade400,
+              color: AppColors.muted,
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
               'Tap to add an image',
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: AppColors.foreground,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Text(
               'Gallery or Camera',
-              style: TextStyle(
-                color: Colors.grey.shade400,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
             ),
           ],
         ),
@@ -503,18 +512,14 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   Widget build(BuildContext context) {
     if (_isLoadingCategories) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Loading...'),
-        ),
+        appBar: AppBar(title: const Text('Loading...')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_categories.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('New Item'),
-        ),
+        appBar: AppBar(title: const Text('New Item')),
         body: const Center(
           child: Text('No categories available. Create a category first.'),
         ),
@@ -527,7 +532,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         actions: _isEditing
             ? [
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
+                  icon: const Icon(Icons.delete, color: AppColors.dangerText),
                   tooltip: 'Delete Item',
                   onPressed: _confirmDelete,
                 ),
@@ -571,8 +576,9 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                         prefixText: 'RM ',
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) {
                           return 'Price is required';
@@ -587,16 +593,17 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
               _buildImageSection(),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                initialValue: _selectedCategoryId.isNotEmpty ? _selectedCategoryId : null,
+                initialValue: _selectedCategoryId.isNotEmpty
+                    ? _selectedCategoryId
+                    : null,
                 decoration: const InputDecoration(
                   labelText: 'Category',
                   border: OutlineInputBorder(),
                 ),
                 items: _categories
-                    .map((c) => DropdownMenuItem(
-                          value: c.id,
-                          child: Text(c.name),
-                        ))
+                    .map(
+                      (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    )
                     .toList(),
                 onChanged: (v) {
                   if (v != null) {
@@ -630,12 +637,9 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
+                const Text(
                   'Assign modifier groups that customers can select when ordering this item.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppColors.muted),
                 ),
                 const SizedBox(height: 12),
                 ModifierBindingsEditor(
@@ -650,7 +654,9 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
               ],
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: (_isSubmitting || _isUploadingImage) ? null : _submit,
+                onPressed: (_isSubmitting || _isUploadingImage)
+                    ? null
+                    : _submit,
                 icon: _isSubmitting
                     ? const SizedBox(
                         width: 20,
@@ -691,10 +697,8 @@ class _ImageActionButton extends StatelessWidget {
         child: Container(
           width: 36,
           height: 36,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Icon(icon, color: Colors.white, size: 18),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(20)),
+          child: Icon(icon, color: AppColors.onAccent, size: 18),
         ),
       ),
     );

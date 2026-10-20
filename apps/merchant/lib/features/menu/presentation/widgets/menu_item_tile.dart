@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../../core/utils/price_formatter.dart';
 import '../../../../../generated/database.dart';
@@ -28,11 +29,13 @@ class MenuItemTile extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           errorWidget: (context, url, error) => CircleAvatar(
-            backgroundColor: item.isAvailable ? Colors.green : Colors.grey,
+            backgroundColor: item.isAvailable
+                ? AppColors.herb
+                : AppColors.surface3,
             radius: 20,
             child: Icon(
               item.isAvailable ? Icons.restaurant : Icons.block,
-              color: Colors.white,
+              color: item.isAvailable ? AppColors.onAccent : AppColors.muted,
               size: 20,
             ),
           ),
@@ -40,20 +43,17 @@ class MenuItemTile extends StatelessWidget {
       );
     } else {
       leadingWidget = CircleAvatar(
-        backgroundColor: item.isAvailable ? Colors.green : Colors.grey,
+        backgroundColor: item.isAvailable ? AppColors.herb : AppColors.surface3,
         child: Icon(
           item.isAvailable ? Icons.restaurant : Icons.block,
-          color: Colors.white,
+          color: item.isAvailable ? AppColors.onAccent : AppColors.muted,
           size: 20,
         ),
       );
     }
 
     if (!item.isAvailable) {
-      leadingWidget = Opacity(
-        opacity: 0.5,
-        child: leadingWidget,
-      );
+      leadingWidget = Opacity(opacity: 0.5, child: leadingWidget);
     }
 
     return ListTile(
@@ -68,7 +68,10 @@ class MenuItemTile extends StatelessWidget {
       ),
       subtitle: Text(
         formatPrice(item.priceCents),
-        style: const TextStyle(fontWeight: FontWeight.w500),
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          color: AppColors.emberText,
+        ),
       ),
       trailing: const Icon(Icons.chevron_right),
     );

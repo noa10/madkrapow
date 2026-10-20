@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../../checkout/data/checkout_models.dart' show PromoPreview;
@@ -17,7 +18,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -68,7 +70,7 @@ class _HomeScreenContent extends ConsumerWidget {
     final promoUpdated = ref.watch(promoUpdatedProvider);
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(title: const AppLogo(height: 28)),
       body: CustomScrollView(
         slivers: [
           // Hero banner
@@ -81,21 +83,27 @@ class _HomeScreenContent extends ConsumerWidget {
             SliverToBoxAdapter(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: AppColors.successSoft,
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.herbText.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.update, size: 16, color: Colors.green),
+                    Icon(Icons.update, size: 16, color: AppColors.herbText),
                     SizedBox(width: 8),
                     Text(
                       'Menu updated',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.green,
+                        color: AppColors.herbText,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -108,21 +116,31 @@ class _HomeScreenContent extends ConsumerWidget {
             SliverToBoxAdapter(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
+                  color: AppColors.emberSoft,
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.emberText.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.local_offer, size: 16, color: Colors.orange),
+                    Icon(
+                      Icons.local_offer,
+                      size: 16,
+                      color: AppColors.emberText,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'Promos updated',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.orange,
+                        color: AppColors.emberText,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -165,37 +183,31 @@ class _HeroBanner extends ConsumerWidget {
 
         return Stack(
           children: [
-            if (showHeroImage)
-              Positioned.fill(
-                child: CachedNetworkImage(
-                  imageUrl: heroUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                  ),
-                  errorWidget: (context, url, err) => const SizedBox.shrink(),
-                ),
-              ),
+            Positioned.fill(
+              child: showHeroImage
+                  ? CachedNetworkImage(
+                      imageUrl: heroUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) =>
+                          Container(color: AppColors.surface2),
+                      errorWidget: (context, url, err) =>
+                          Image.asset(AppAssets.hero, fit: BoxFit.cover),
+                    )
+                  : Image.asset(AppAssets.hero, fit: BoxFit.cover),
+            ),
             Container(
               padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
               decoration: BoxDecoration(
-                gradient: showHeroImage
-                    ? LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          theme.colorScheme.surface.withValues(alpha: 0.4),
-                          theme.colorScheme.surface,
-                        ],
-                      )
-                    : LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          theme.colorScheme.primary.withValues(alpha: 0.3),
-                          theme.colorScheme.surface,
-                        ],
-                      ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    theme.colorScheme.surface.withValues(alpha: 0.35),
+                    theme.colorScheme.surface.withValues(alpha: 0.92),
+                    theme.colorScheme.surface,
+                  ],
+                  stops: const [0, 0.62, 1],
+                ),
               ),
               child: Column(
                 children: [
@@ -215,18 +227,11 @@ class _HeroBanner extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      errorWidget: (context, url, error) => Icon(
-                        Icons.local_fire_department,
-                        size: 56,
-                        color: theme.colorScheme.primary,
-                      ),
+                      errorWidget: (context, url, error) =>
+                          const AppLogo(height: 56),
                     )
                   else
-                    Icon(
-                      Icons.local_fire_department,
-                      size: 56,
-                      color: theme.colorScheme.primary,
-                    ),
+                    const AppLogo(height: 56),
                   const SizedBox(height: 12),
                   Text(
                     branding.storeName,
@@ -245,12 +250,24 @@ class _HeroBanner extends ConsumerWidget {
                   if (isStoreOpen != null) ...[
                     const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
-                        color: (isStoreOpen! ? Colors.green : Colors.red).withValues(
-                          alpha: 0.2,
-                        ),
+                        color:
+                            (isStoreOpen!
+                                    ? AppColors.herbText
+                                    : AppColors.dangerText)
+                                .withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color:
+                              (isStoreOpen!
+                                      ? AppColors.herbText
+                                      : AppColors.dangerText)
+                                  .withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -258,13 +275,17 @@ class _HeroBanner extends ConsumerWidget {
                           Icon(
                             isStoreOpen! ? Icons.circle : Icons.cancel_outlined,
                             size: 12,
-                            color: isStoreOpen! ? Colors.green : Colors.red,
+                            color: isStoreOpen!
+                                ? AppColors.herbText
+                                : AppColors.dangerText,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             isStoreOpen! ? 'Open Now' : 'Currently Closed',
                             style: theme.textTheme.labelMedium?.copyWith(
-                              color: isStoreOpen! ? Colors.green : Colors.red,
+                              color: isStoreOpen!
+                                  ? AppColors.herbText
+                                  : AppColors.dangerText,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -286,11 +307,7 @@ class _HeroBanner extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
         child: Column(
           children: [
-            Icon(
-              Icons.local_fire_department,
-              size: 56,
-              color: theme.colorScheme.primary,
-            ),
+            const AppLogo(height: 56),
             const SizedBox(height: 12),
             Text(
               'Mad Krapow',
@@ -347,7 +364,7 @@ class _CategorySection extends StatelessWidget {
             child: Text(
               category.category.description!,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -409,15 +426,28 @@ class _MenuItemTile extends ConsumerWidget {
     if (isUnavailable) {
       imageWidget = ColorFiltered(
         colorFilter: const ColorFilter.matrix([
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0,      0,      0,      1, 0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]),
-        child: Opacity(
-          opacity: 0.5,
-          child: imageWidget,
-        ),
+        child: Opacity(opacity: 0.5, child: imageWidget),
       );
     }
 
@@ -452,9 +482,7 @@ class _MenuItemTile extends ConsumerWidget {
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: isUnavailable
                             ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
-                            : theme.colorScheme.onSurface.withValues(
-                                alpha: 0.6,
-                              ),
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   const SizedBox(height: 4),
@@ -489,7 +517,7 @@ class _MenuItemTile extends ConsumerWidget {
             else
               Icon(
                 Icons.chevron_right,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                color: theme.colorScheme.onSurfaceVariant,
               ),
           ],
         ),
@@ -505,7 +533,8 @@ class _MenuItemTile extends ConsumerWidget {
     bool isUnavailable,
   ) {
     final promo = promoAsync.valueOrNull;
-    final showDiscount = !isUnavailable && promo != null && promo.savingsCents > 0;
+    final showDiscount =
+        !isUnavailable && promo != null && promo.savingsCents > 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -516,7 +545,7 @@ class _MenuItemTile extends ConsumerWidget {
               Text(
                 formatPrice(promo.discountedCents),
                 style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
+                  color: AppColors.emberText,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -534,7 +563,7 @@ class _MenuItemTile extends ConsumerWidget {
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: isUnavailable
                       ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
-                      : theme.colorScheme.primary,
+                      : AppColors.emberText,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -543,9 +572,7 @@ class _MenuItemTile extends ConsumerWidget {
                 Text(
                   'Customizable',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(
-                      alpha: 0.5,
-                    ),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ],

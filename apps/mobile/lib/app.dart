@@ -43,10 +43,7 @@ const _protectedRoutes = [
 ];
 
 /// Routes that require both authentication AND email verification.
-const _verifiedRoutes = [
-  AppRoutes.checkout,
-  AppRoutes.stripeCheckout,
-];
+const _verifiedRoutes = [AppRoutes.checkout, AppRoutes.stripeCheckout];
 
 bool _isProtectedRoute(String location) {
   for (final route in _protectedRoutes) {
@@ -256,10 +253,7 @@ GoRouter _createRouter(Ref ref) {
       ),
 
       // Legacy /profile/* redirects.
-      GoRoute(
-        path: '/profile',
-        redirect: (context, state) => AppRoutes.more,
-      ),
+      GoRoute(path: '/profile', redirect: (context, state) => AppRoutes.more),
       GoRoute(
         path: '/profile/contacts',
         redirect: (context, state) => AppRoutes.contacts,
@@ -289,16 +283,14 @@ class MadKrapowApp extends ConsumerWidget {
       child: MaterialApp.router(
         title: 'Mad Krapow',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
+        theme: AppTheme.darkTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.dark,
         routerConfig: router,
         builder: (context, child) {
           return UpdateLifecycleObserver(
             child: UpdatePromptMount(
-              child: _WhatsNewGate(
-                child: child ?? const SizedBox.shrink(),
-              ),
+              child: _WhatsNewGate(child: child ?? const SizedBox.shrink()),
             ),
           );
         },

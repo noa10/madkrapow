@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
@@ -136,7 +137,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } on AuthRequiredException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), duration: const Duration(seconds: 4)),
+          SnackBar(
+            content: Text(e.message),
+            duration: const Duration(seconds: 4),
+          ),
         );
         context.go(
           '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
@@ -145,7 +149,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (e) {
       debugPrint('CheckoutScreen: delivery quote failed — $e');
       if (mounted) {
-        setState(() => _errorText = 'Could not calculate delivery fee: ${e.toString().replaceAll('Exception: ', '')}');
+        setState(
+          () => _errorText =
+              'Could not calculate delivery fee: ${e.toString().replaceAll('Exception: ', '')}',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -158,13 +165,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  Future<void> _fetchAutoPromos({required int subtotalCents, required int deliveryFeeCents}) async {
+  Future<void> _fetchAutoPromos({
+    required int subtotalCents,
+    required int deliveryFeeCents,
+  }) async {
     if (subtotalCents <= 0) return;
     try {
-      await ref.read(checkoutProvider.notifier).fetchAndApplyAutoPromos(
-        subtotalCents: subtotalCents,
-        deliveryFeeCents: deliveryFeeCents,
-      );
+      await ref
+          .read(checkoutProvider.notifier)
+          .fetchAndApplyAutoPromos(
+            subtotalCents: subtotalCents,
+            deliveryFeeCents: deliveryFeeCents,
+          );
     } catch (e) {
       // Silently fail — auto-promos are non-critical
     }
@@ -175,12 +187,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     refreshCartPromoDiscounts(ref);
   }
 
-  Future<void> _handlePromoApply(String code, int subtotalCents, int deliveryFeeCents) async {
-    await ref.read(checkoutProvider.notifier).validateAndApplyPromo(
-      code: code,
-      subtotalCents: subtotalCents,
-      deliveryFeeCents: deliveryFeeCents,
-    );
+  Future<void> _handlePromoApply(
+    String code,
+    int subtotalCents,
+    int deliveryFeeCents,
+  ) async {
+    await ref
+        .read(checkoutProvider.notifier)
+        .validateAndApplyPromo(
+          code: code,
+          subtotalCents: subtotalCents,
+          deliveryFeeCents: deliveryFeeCents,
+        );
   }
 
   void _handleRemovePromo(String code) {
@@ -191,7 +209,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _quoteDebounce?.cancel();
     _quoteDebounce = Timer(const Duration(milliseconds: 800), () {
       final checkout = ref.read(checkoutProvider);
-      if (checkout.useManualAddress && checkout.deliveryType == DeliveryType.delivery) {
+      if (checkout.useManualAddress &&
+          checkout.deliveryType == DeliveryType.delivery) {
         final address = DeliveryAddress(
           addressLine1: _manualAddressLine1Controller.text.trim(),
           addressLine2: _manualAddressLine2Controller.text.trim().isEmpty
@@ -222,7 +241,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final repo = ref.read(checkoutRepositoryProvider);
 
       // If saving manual contact to profile
-      if (checkout.useManualContact && _saveContactToProfile && profile != null) {
+      if (checkout.useManualContact &&
+          _saveContactToProfile &&
+          profile != null) {
         await ref.read(profileRepositoryProvider).addContact({
           'customer_id': profile.customer.id,
           'name': _manualNameController.text.trim(),
@@ -233,7 +254,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       }
 
       // If saving manual address to profile
-      if (checkout.useManualAddress && _saveAddressToProfile && profile != null) {
+      if (checkout.useManualAddress &&
+          _saveAddressToProfile &&
+          profile != null) {
         await ref.read(profileRepositoryProvider).addAddress({
           'customer_id': profile.customer.id,
           'label': null,
@@ -251,7 +274,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       }
 
       // Build delivery address for checkout
-      final contactInfo = checkout.contactInfo ??
+      final contactInfo =
+          checkout.contactInfo ??
           DeliveryAddress(
             fullName: _manualNameController.text.trim(),
             phone: _manualPhoneController.text.trim(),
@@ -262,13 +286,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               fullName: contactInfo.fullName,
               phone: contactInfo.phone,
               address: checkout.deliveryAddress?.address,
-              addressLine1: checkout.deliveryAddress?.addressLine1 ?? _manualAddressLine1Controller.text.trim(),
-              addressLine2: checkout.deliveryAddress?.addressLine2 ?? (_manualAddressLine2Controller.text.trim().isEmpty
-                  ? null
-                  : _manualAddressLine2Controller.text.trim()),
-              postalCode: checkout.deliveryAddress?.postalCode ?? _manualPostalCodeController.text.trim(),
-              city: checkout.deliveryAddress?.city ?? _manualCityController.text.trim(),
-              state: checkout.deliveryAddress?.state ?? _manualStateController.text.trim(),
+              addressLine1:
+                  checkout.deliveryAddress?.addressLine1 ??
+                  _manualAddressLine1Controller.text.trim(),
+              addressLine2:
+                  checkout.deliveryAddress?.addressLine2 ??
+                  (_manualAddressLine2Controller.text.trim().isEmpty
+                      ? null
+                      : _manualAddressLine2Controller.text.trim()),
+              postalCode:
+                  checkout.deliveryAddress?.postalCode ??
+                  _manualPostalCodeController.text.trim(),
+              city:
+                  checkout.deliveryAddress?.city ??
+                  _manualCityController.text.trim(),
+              state:
+                  checkout.deliveryAddress?.state ??
+                  _manualStateController.text.trim(),
               latitude: checkout.deliveryAddress?.latitude,
               longitude: checkout.deliveryAddress?.longitude,
             )
@@ -321,7 +355,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } on AuthRequiredException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), duration: const Duration(seconds: 4)),
+          SnackBar(
+            content: Text(e.message),
+            duration: const Duration(seconds: 4),
+          ),
         );
         context.go(
           '${AppRoutes.signIn}?from=${Uri.encodeComponent(AppRoutes.checkout)}',
@@ -356,7 +393,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           return false;
         }
       } else if (checkout.selectedAddressId == null) {
-        setState(() => _errorText = 'Please select or enter a delivery address');
+        setState(
+          () => _errorText = 'Please select or enter a delivery address',
+        );
         return false;
       }
     }
@@ -432,17 +471,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.1),
+                        color: AppColors.successSoft,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.check_circle, color: Colors.green[700], size: 20),
-                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.check_circle,
+                            color: AppColors.herbText,
+                            size: 20,
+                          ),
+                          SizedBox(width: 8),
                           Text(
                             'Verification email sent!',
-                            style: TextStyle(color: Colors.green[700]),
+                            style: TextStyle(color: AppColors.herbText),
                           ),
                         ],
                       ),
@@ -450,11 +493,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     const SizedBox(height: 16),
                   ],
                   if (_errorText != null) ...[
-                    Text(_errorText!, style: const TextStyle(color: Colors.red)),
+                    Text(
+                      _errorText!,
+                      style: const TextStyle(color: AppColors.dangerText),
+                    ),
                     const SizedBox(height: 16),
                   ],
                   FilledButton.icon(
-                    onPressed: _isResendingVerification ? null : _handleResendVerification,
+                    onPressed: _isResendingVerification
+                        ? null
+                        : _handleResendVerification,
                     icon: _isResendingVerification
                         ? const SizedBox(
                             width: 16,
@@ -496,10 +544,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final isDelivery = checkout.deliveryType == DeliveryType.delivery;
     final hasDeliveryAddress = isDelivery
         ? (checkout.useManualAddress
-            ? _manualAddressLine1Controller.text.trim().isNotEmpty
-            : checkout.selectedAddressId != null)
+              ? _manualAddressLine1Controller.text.trim().isNotEmpty
+              : checkout.selectedAddressId != null)
         : true;
-    final isQuoteReady = !isDelivery ||
+    final isQuoteReady =
+        !isDelivery ||
         (checkout.deliveryQuote != null && !checkout.isQuoteExpired());
     final canCheckout = !_isLoading && hasDeliveryAddress && isQuoteReady;
 
@@ -508,7 +557,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         title: const Text('Checkout'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.canPop() ? context.pop() : context.go(AppRoutes.home),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go(AppRoutes.home),
         ),
       ),
       body: profileAsync.when(
@@ -526,7 +576,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 selected: checkout.deliveryType,
                 onChanged: (type) {
                   ref.read(checkoutProvider.notifier).setDeliveryType(type);
-                  if (type == DeliveryType.delivery && checkout.deliveryAddress != null) {
+                  if (type == DeliveryType.delivery &&
+                      checkout.deliveryAddress != null) {
                     _fetchDeliveryQuote();
                   }
                 },
@@ -544,8 +595,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 saveToProfile: _saveContactToProfile,
                 onToggleSave: (v) => setState(() => _saveContactToProfile = v),
                 onContactSelected: (contact) {
-                  ref.read(checkoutProvider.notifier).selectContact(contact?.id);
-                  ref.read(checkoutProvider.notifier).setContactInfo(
+                  ref
+                      .read(checkoutProvider.notifier)
+                      .selectContact(contact?.id);
+                  ref
+                      .read(checkoutProvider.notifier)
+                      .setContactInfo(
                         DeliveryAddress.fromCustomerContact(contact!),
                       );
                 },
@@ -575,12 +630,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   cityController: _manualCityController,
                   stateController: _manualStateController,
                   saveToProfile: _saveAddressToProfile,
-                  onToggleSave: (v) => setState(() => _saveAddressToProfile = v),
+                  onToggleSave: (v) =>
+                      setState(() => _saveAddressToProfile = v),
                   onAddressSelected: (address) {
-                    ref.read(checkoutProvider.notifier).selectAddress(
-                          address?.id,
-                          address: address,
-                        );
+                    ref
+                        .read(checkoutProvider.notifier)
+                        .selectAddress(address?.id, address: address);
                     _fetchDeliveryQuote();
                   },
                   onToggleManual: (v) {
@@ -590,10 +645,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         (a) => a.isDefault,
                         orElse: () => profile.addresses.first,
                       );
-                      ref.read(checkoutProvider.notifier).selectAddress(
-                            defaultAddr.id,
-                            address: defaultAddr,
-                          );
+                      ref
+                          .read(checkoutProvider.notifier)
+                          .selectAddress(defaultAddr.id, address: defaultAddr);
                       _fetchDeliveryQuote();
                     }
                   },
@@ -604,7 +658,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
-                    onPressed: checkout.useManualAddress ? _fetchDeliveryQuote : null,
+                    onPressed: checkout.useManualAddress
+                        ? _fetchDeliveryQuote
+                        : null,
                     icon: const Icon(Icons.local_shipping_outlined, size: 18),
                     label: const Text('Calculate Delivery Fee'),
                   ),
@@ -617,15 +673,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               const SizedBox(height: 8),
               _FulfillmentSelector(
                 selected: checkout.fulfillmentType,
-                onChanged: (type) =>
-                    ref.read(checkoutProvider.notifier).setFulfillmentType(type),
+                onChanged: (type) => ref
+                    .read(checkoutProvider.notifier)
+                    .setFulfillmentType(type),
               ),
               const SizedBox(height: 24),
 
               SwitchListTile(
                 value: checkout.includeCutlery,
-                onChanged: (value) =>
-                    ref.read(checkoutProvider.notifier).setIncludeCutlery(value),
+                onChanged: (value) => ref
+                    .read(checkoutProvider.notifier)
+                    .setIncludeCutlery(value),
                 title: const Text('Include cutlery?'),
                 subtitle: const Text(
                   'Help reduce waste. Uncheck if you don\'t need forks/spoons.',
@@ -667,16 +725,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           children: [
                             Text(
                               formatPrice(item.lineTotalCents),
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppColors.emberText),
                             ),
                             Text(
                               formatPrice(item.originalLineTotalCents),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                                decoration: TextDecoration.lineThrough,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
                             ),
                           ],
                         ),
@@ -696,14 +756,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   Text(formatPrice(subtotal)),
                 ],
               ),
-              if (ref.read(cartProvider.notifier).originalSubtotalCents > subtotal) ...[
+              if (ref.read(cartProvider.notifier).originalSubtotalCents >
+                  subtotal) ...[
                 const SizedBox(height: 4),
                 Row(
                   children: [
                     const Expanded(child: Text('Menu Promo Savings')),
                     Text(
                       '-${formatPrice(ref.read(cartProvider.notifier).originalSubtotalCents - subtotal)}',
-                      style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                      style: const TextStyle(color: AppColors.herbText),
                     ),
                   ],
                 ),
@@ -717,8 +778,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       deliveryFee > 0
                           ? formatPrice(deliveryFee)
                           : checkout.deliveryQuote != null
-                              ? formatPrice(deliveryFee)
-                              : 'Calculating...',
+                          ? formatPrice(deliveryFee)
+                          : 'Calculating...',
                     ),
                   ],
                 ),
@@ -730,7 +791,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     const Expanded(child: Text('Promo Discount')),
                     Text(
                       '-${formatPrice(discountTotal)}',
-                      style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                      style: const TextStyle(color: AppColors.herbText),
                     ),
                   ],
                 ),
@@ -753,16 +814,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     child: Text(
                       'Total',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   Text(
                     formatPrice(total),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.emberText,
+                    ),
                   ),
                 ],
               ),
@@ -882,7 +943,9 @@ class _ContactSectionState extends State<_ContactSection> {
               padding: const EdgeInsets.only(bottom: 8),
               child: _ContactCard(
                 contact: contact,
-                isSelected: !isManual && widget.checkout.selectedContactId == contact.id,
+                isSelected:
+                    !isManual &&
+                    widget.checkout.selectedContactId == contact.id,
                 onTap: () => widget.onContactSelected(contact),
               ),
             ),
@@ -894,8 +957,10 @@ class _ContactSectionState extends State<_ContactSection> {
                 child: Text(
                   'or',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                      ),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
                 ),
               ),
               const Expanded(child: Divider()),
@@ -909,7 +974,9 @@ class _ContactSectionState extends State<_ContactSection> {
             isManual ? Icons.expand_less : Icons.edit_outlined,
             size: 18,
           ),
-          label: Text(isManual ? 'Hide Manual Entry' : 'Enter Contact Manually'),
+          label: Text(
+            isManual ? 'Hide Manual Entry' : 'Enter Contact Manually',
+          ),
         ),
         // Manual entry form
         if (isManual) ...[
@@ -1009,7 +1076,9 @@ class _ContactCard extends StatelessWidget {
                     ),
                     Text(
                       contact.phone,
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -1078,7 +1147,9 @@ class _AddressSectionState extends State<_AddressSection> {
               padding: const EdgeInsets.only(bottom: 8),
               child: _AddressCard(
                 address: address,
-                isSelected: !isManual && widget.checkout.selectedAddressId == address.id,
+                isSelected:
+                    !isManual &&
+                    widget.checkout.selectedAddressId == address.id,
                 onTap: () => widget.onAddressSelected(address),
               ),
             ),
@@ -1090,8 +1161,10 @@ class _AddressSectionState extends State<_AddressSection> {
                 child: Text(
                   'or',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                      ),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
                 ),
               ),
               const Expanded(child: Divider()),
@@ -1105,7 +1178,9 @@ class _AddressSectionState extends State<_AddressSection> {
             isManual ? Icons.expand_less : Icons.edit_outlined,
             size: 18,
           ),
-          label: Text(isManual ? 'Hide Manual Entry' : 'Enter Address Manually'),
+          label: Text(
+            isManual ? 'Hide Manual Entry' : 'Enter Address Manually',
+          ),
         ),
         // Manual entry form
         if (isManual) ...[
@@ -1122,7 +1197,9 @@ class _AddressSectionState extends State<_AddressSection> {
           const SizedBox(height: 12),
           TextField(
             controller: widget.addressLine2Controller,
-            decoration: const InputDecoration(labelText: 'Address Line 2 (optional)'),
+            decoration: const InputDecoration(
+              labelText: 'Address Line 2 (optional)',
+            ),
             onChanged: (_) => widget.onAddressChanged(),
           ),
           const SizedBox(height: 12),
@@ -1241,7 +1318,9 @@ class _AddressCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       displayAddress,
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -1269,9 +1348,9 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
     );
   }
 }

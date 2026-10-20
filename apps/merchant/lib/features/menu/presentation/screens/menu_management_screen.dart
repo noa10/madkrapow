@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
@@ -99,20 +100,14 @@ class _MenuManagementScreenState extends ConsumerState<MenuManagementScreen> {
           value: categoriesAsync,
           data: (categories) {
             if (categories.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.restaurant_menu, size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text('No menu categories yet'),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      onPressed: () => context.push(AppRoutes.categoryNew),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Category'),
-                    ),
-                  ],
+              return AppEmptyState(
+                icon: Icons.restaurant_menu,
+                title: 'No menu categories yet',
+                message: 'Create a category to start building your menu.',
+                action: FilledButton.icon(
+                  onPressed: () => context.push(AppRoutes.categoryNew),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Category'),
                 ),
               );
             }

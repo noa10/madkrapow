@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_orders/order_status.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../providers/admin_order_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
@@ -9,7 +10,11 @@ import '../../../../core/constants/roles.dart';
 /// Cancel order button placed at the bottom of the order detail screen.
 /// Only visible to cashier/admin/manager for orders in cancellable statuses.
 class CancelOrderButton extends ConsumerWidget {
-  const CancelOrderButton({super.key, required this.orderId, required this.currentStatus});
+  const CancelOrderButton({
+    super.key,
+    required this.orderId,
+    required this.currentStatus,
+  });
 
   final String orderId;
   final String currentStatus;
@@ -59,7 +64,10 @@ class CancelOrderButton extends ConsumerWidget {
         title: const Text('Cancel Order?'),
         content: const Text('This action cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Yes, Cancel'),
@@ -80,7 +88,10 @@ class CancelOrderButton extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     }

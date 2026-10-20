@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Placeholder screen for the Analytics tab.
 /// Replaced with the real analytics dashboard in Phase 2.
@@ -7,20 +8,10 @@ class PlaceholderAnalyticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.bar_chart, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            'Analytics',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 8),
-          Text('Coming soon'),
-        ],
-      ),
+    return const AppEmptyState(
+      icon: Icons.bar_chart,
+      title: 'Analytics',
+      message: 'Coming soon',
     );
   }
 }

@@ -67,7 +67,7 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to update: ${state.error}'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       } else {
@@ -88,7 +88,7 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to create: ${state.error}'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       } else {
@@ -104,9 +104,7 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
         : ref.watch(createEmployeeProvider).isLoading;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Staff' : 'Add Staff'),
-      ),
+      appBar: AppBar(title: Text(_isEditing ? 'Edit Staff' : 'Add Staff')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(

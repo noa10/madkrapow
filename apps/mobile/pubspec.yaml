@@ -13,6 +13,8 @@ dependencies:
 
   madkrapow_orders:
     path: ../../packages/madkrapow_orders
+  madkrapow_ui:
+    path: ../../packages/madkrapow_ui
 
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.9.0

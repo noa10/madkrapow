@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../generated/tables/order_events.dart';
 
@@ -41,7 +42,7 @@ class OrderEventTimeline extends StatelessWidget {
                   Container(
                     width: 2,
                     height: 28,
-                    color: Colors.grey.shade300,
+                    color: AppColors.borderStrong,
                   ),
                 ],
               ),
@@ -58,14 +59,14 @@ class OrderEventTimeline extends StatelessWidget {
                     ),
                     if (newValue != null)
                       Text(
-                          _formatValue(newValue),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        _formatValue(newValue),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     Text(
                       _formatTime(event.createdAt),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
                     ),
                   ],
                 ),
@@ -79,10 +80,10 @@ class OrderEventTimeline extends StatelessWidget {
 
   Color _eventColor(String eventType) {
     return switch (eventType) {
-      'status_changed' => Colors.blue,
-      'bulk_approved' => Colors.green,
-      'bulk_rejected' => Colors.red,
-      _ => Colors.grey,
+      'status_changed' => AppColors.info,
+      'bulk_approved' => AppColors.herbText,
+      'bulk_rejected' => AppColors.dangerText,
+      _ => AppColors.muted,
     };
   }
 
@@ -112,7 +113,11 @@ class OrderEventTimeline extends StatelessWidget {
     final h = dt.hour;
     final m = dt.minute.toString().padLeft(2, '0');
     final ampm = h >= 12 ? 'PM' : 'AM';
-    final h12 = h > 12 ? h - 12 : h == 0 ? 12 : h;
+    final h12 = h > 12
+        ? h - 12
+        : h == 0
+        ? 12
+        : h;
     return '${dt.day}/${dt.month} $h12:$m $ampm';
   }
 }

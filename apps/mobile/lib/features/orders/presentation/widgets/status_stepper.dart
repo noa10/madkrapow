@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:madkrapow_orders/order_status.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 const Map<OrderStatus, IconData> _stepIcons = {
   OrderStatus.pending: Icons.schedule,
@@ -103,13 +104,18 @@ class _StepTile extends StatelessWidget {
                   ),
                   child: Center(
                     child: isCompleted
-                        ? const Icon(Icons.check, size: 16, color: Colors.white)
+                        ? const Icon(
+                            Icons.check,
+                            size: 16,
+                            color: AppColors.onAccent,
+                          )
                         : isCurrent
-                            ? Icon(icon, size: 14, color: Colors.white)
-                            : Icon(icon,
-                                size: 14,
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.3)),
+                        ? Icon(icon, size: 14, color: AppColors.onAccent)
+                        : Icon(
+                            icon,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                   ),
                 ),
                 // Connector line
@@ -137,7 +143,7 @@ class _StepTile extends StatelessWidget {
                   fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                   color: isCompleted || isCurrent
                       ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                      : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),

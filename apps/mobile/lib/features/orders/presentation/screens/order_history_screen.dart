@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
@@ -55,16 +56,20 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
     try {
       final repo = ref.read(orderRepositoryProvider);
       final cartNotifier = ref.read(cartProvider.notifier);
-      final itemsWithModifiers = await repo.fetchOrderItemsWithModifiers(orderId);
+      final itemsWithModifiers = await repo.fetchOrderItemsWithModifiers(
+        orderId,
+      );
 
       for (final iw in itemsWithModifiers) {
         final item = iw.item;
         final modifiers = iw.modifiers
-            .map((m) => SelectedModifier(
-                  id: m.modifierId,
-                  name: m.modifierName,
-                  priceDeltaCents: m.modifierPriceDeltaCents,
-                ))
+            .map(
+              (m) => SelectedModifier(
+                id: m.modifierId,
+                name: m.modifierName,
+                priceDeltaCents: m.modifierPriceDeltaCents,
+              ),
+            )
             .toList();
 
         cartNotifier.addItem(
@@ -93,9 +98,9 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to reorder: \$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to reorder: \$e')));
       }
     } finally {
       if (mounted) setState(() => _isReordering = false);
@@ -183,7 +188,9 @@ class _OrderCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    order.deliveryType == 'delivery' ? 'Delivery' : 'Self Pickup',
+                    order.deliveryType == 'delivery'
+                        ? 'Delivery'
+                        : 'Self Pickup',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
@@ -225,7 +232,7 @@ class _OrderCard extends ConsumerWidget {
                     formatPrice(order.totalCents),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+                      color: AppColors.emberText,
                     ),
                   ),
                 ],
@@ -239,9 +246,14 @@ class _OrderCard extends ConsumerWidget {
                   label: const Text('Reorder'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: theme.colorScheme.primary,
-                    side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+                    side: BorderSide(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -264,34 +276,14 @@ class _EmptyOrdersState extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dateFilter = ref.watch(orderDateFilterProvider);
-    final theme = Theme.of(context);
     final isToday = dateFilter.displayLabel == 'Today';
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.receipt_long_outlined,
-            size: 64,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            isToday ? 'No food orders yet' : 'No food orders on this day',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isToday
-                ? 'Place your first order to see it here'
-                : 'Try selecting a different date',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-        ],
-      ),
+    return AppEmptyState(
+      icon: Icons.receipt_long_outlined,
+      title: isToday ? 'No food orders yet' : 'No food orders on this day',
+      message: isToday
+          ? 'Place your first order to see it here'
+          : 'Try selecting a different date',
     );
   }
 }
@@ -302,43 +294,10 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        _label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+    return StatusPill(
+      status: status,
+      label: status == 'picked_up' ? 'On the way' : null,
+      dense: true,
     );
   }
-
-  Color get _statusColor => switch (status) {
-    'paid' => Colors.blue,
-    'accepted' => Colors.indigo,
-    'preparing' => Colors.orange,
-    'ready' => Colors.teal,
-    'picked_up' => Colors.purple,
-    'delivered' => Colors.green,
-    'cancelled' => Colors.red,
-    _ => Colors.grey,
-  };
-
-  String get _label => switch (status) {
-    'paid' => 'Paid',
-    'accepted' => 'Accepted',
-    'preparing' => 'Preparing',
-    'ready' => 'Ready',
-    'picked_up' => 'On the way',
-    'delivered' => 'Delivered',
-    'cancelled' => 'Cancelled',
-    _ => status,
-  };
 }

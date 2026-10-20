@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_orders/order_status.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../providers/admin_order_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
@@ -10,7 +11,11 @@ import '../../../../core/constants/roles.dart';
 /// and role gating come from the shared `madkrapow_orders` package; the API
 /// route enforces the same map server-side.
 class AdvanceStatusButton extends ConsumerWidget {
-  const AdvanceStatusButton({super.key, required this.orderId, required this.currentStatus});
+  const AdvanceStatusButton({
+    super.key,
+    required this.orderId,
+    required this.currentStatus,
+  });
 
   final String orderId;
   final String currentStatus;
@@ -49,9 +54,12 @@ class AdvanceStatusButton extends ConsumerWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.task_alt, color: Colors.green),
+              Icon(Icons.task_alt, color: AppColors.herbText),
               SizedBox(width: 8),
-              Text('Order Complete', style: TextStyle(color: Colors.green)),
+              Text(
+                'Order Complete',
+                style: TextStyle(color: AppColors.herbText),
+              ),
             ],
           ),
         );
@@ -102,7 +110,10 @@ class AdvanceStatusButton extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/price_formatter.dart';
 import '../../data/merchant_order_repository.dart';
@@ -54,9 +55,9 @@ class OrderItemCard extends StatelessWidget {
                     ),
                     Text(
                       formatPrice(item.menuItemPriceCents),
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: AppColors.muted,
                       ),
                     ),
                   ],
@@ -68,6 +69,7 @@ class OrderItemCard extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
+                  color: AppColors.emberText,
                 ),
               ),
             ],
@@ -84,27 +86,27 @@ class OrderItemCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.add_circle_outline,
                           size: 12,
-                          color: Colors.grey[500],
+                          color: AppColors.muted,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             modifier.modifierName,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[700],
+                              color: AppColors.muted,
                             ),
                           ),
                         ),
                         if (modifier.modifierPriceDeltaCents > 0)
                           Text(
                             '+ ${formatPrice(modifier.modifierPriceDeltaCents)}',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: AppColors.emberText,
                             ),
                           ),
                       ],
@@ -121,19 +123,19 @@ class OrderItemCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.notes_outlined,
                     size: 12,
-                    color: Colors.grey[500],
+                    color: AppColors.muted,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Note: ${item.notes}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
                         fontStyle: FontStyle.italic,
-                        color: Colors.grey[700],
+                        color: AppColors.muted,
                       ),
                     ),
                   ),

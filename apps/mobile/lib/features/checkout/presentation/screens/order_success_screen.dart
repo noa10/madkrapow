@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../config/routes.dart';
 import '../../../../core/utils/order_code.dart';
@@ -190,20 +191,24 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.15),
+            color: AppColors.successSoft,
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+          child: const Icon(
+            Icons.check_circle,
+            color: AppColors.herbText,
+            size: 48,
+          ),
         );
       case _PaymentStatus.timedOut:
         return Container(
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            color: Colors.orange.withValues(alpha: 0.15),
+            color: AppColors.sesameSoft,
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.schedule, color: Colors.orange, size: 48),
+          child: const Icon(Icons.schedule, color: AppColors.sesame, size: 48),
         );
     }
   }

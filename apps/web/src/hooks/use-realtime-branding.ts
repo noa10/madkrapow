@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
+import { pickCanonicalBrandingRow } from "@/lib/branding";
 
 export interface StoreBranding {
   logoUrl: string | null;
@@ -43,17 +44,19 @@ async function fetchBrandingData(): Promise<StoreBranding & { error: string | nu
   const supabase = getBrowserClient();
   const { data, error } = await supabase
     .from("store_branding")
-    .select("logo_url, hero_image_url, store_name")
-    .limit(1)
-    .single();
+    .select("id, logo_url, hero_image_url, store_name")
+    .order("created_at", { ascending: true })
+    .limit(20);
 
   if (error) {
     return { logoUrl: null, heroImageUrl: null, storeName: "Mad Krapow", error: error.message };
   }
+
+  const row = pickCanonicalBrandingRow(data ?? []);
   return {
-    logoUrl: data?.logo_url as string | null,
-    heroImageUrl: data?.hero_image_url as string | null,
-    storeName: (data?.store_name as string) || "Mad Krapow",
+    logoUrl: row?.logo_url ?? null,
+    heroImageUrl: row?.hero_image_url ?? null,
+    storeName: row?.store_name || "Mad Krapow",
     error: null,
   };
 }

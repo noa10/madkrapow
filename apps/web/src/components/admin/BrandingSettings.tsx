@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { getBrowserClient } from '@/lib/supabase/client'
+import { pickCanonicalBrandingRow } from '@/lib/branding'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Upload, X, Loader2, Store, ImageIcon } from 'lucide-react'
@@ -15,6 +16,38 @@ interface BrandingSettingsProps {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+/**
+ * Resolve the row to update. The table is a singleton, but a bad seed could
+ * leave an empty duplicate behind; pick the row that carries branding and
+ * create the singleton when the table is genuinely empty.
+ */
+async function getBrandingRowId(supabase: ReturnType<typeof getBrowserClient>): Promise<string> {
+  const { data, error } = await supabase
+    .from('store_branding')
+    .select('id, logo_url, hero_image_url')
+    .order('created_at', { ascending: true })
+    .limit(20)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const canonical = pickCanonicalBrandingRow(data ?? [])
+  if (canonical) return canonical.id
+
+  const { data: created, error: insertError } = await supabase
+    .from('store_branding')
+    .insert({})
+    .select('id')
+    .single()
+
+  if (insertError || !created) {
+    throw new Error(insertError?.message ?? 'Could not create store branding settings')
+  }
+
+  return created.id
+}
 
 export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initialHeroUrl }: BrandingSettingsProps) {
   const router = useRouter()
@@ -56,6 +89,7 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
 
       setUploading(true)
       try {
+        const rowId = await getBrandingRowId(supabase)
         const fileExt = file.name.split('.').pop() || 'jpg'
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
         const storagePath = `store/${type}-${fileName}`
@@ -73,14 +107,10 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
           .getPublicUrl(storagePath)
 
         const updateField = type === 'logo' ? 'logo_url' : 'hero_image_url'
-        const { data: row, error: idError } = await supabase.from('store_branding').select('id').single()
-        if (idError) {
-          throw new Error(idError.message)
-        }
         const { error: updateError } = await supabase
           .from('store_branding')
           .update({ [updateField]: publicUrl })
-          .eq('id', row!.id)
+          .eq('id', rowId)
 
         if (updateError) {
           throw new Error(updateError.message)
@@ -112,15 +142,12 @@ export function BrandingSettings({ logoUrl: initialLogoUrl, heroImageUrl: initia
       setError(null)
       setUploading(true)
       try {
+        const rowId = await getBrandingRowId(supabase)
         const updateField = type === 'logo' ? 'logo_url' : 'hero_image_url'
-        const { data: row, error: idError } = await supabase.from('store_branding').select('id').single()
-        if (idError) {
-          throw new Error(idError.message)
-        }
         const { error: updateError } = await supabase
           .from('store_branding')
           .update({ [updateField]: null })
-          .eq('id', row!.id)
+          .eq('id', rowId)
 
         if (updateError) {
           throw new Error(updateError.message)

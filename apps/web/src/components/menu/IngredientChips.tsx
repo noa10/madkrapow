@@ -13,14 +13,14 @@ export function IngredientChips({ items, max = 4 }: IngredientChipsProps) {
       {visible.map((ing) => (
         <li
           key={ing}
-          className="max-w-[7rem] truncate rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-[#d8d1c6]"
+          className="max-w-[7rem] truncate rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
           title={ing}
         >
           {ing}
         </li>
       ))}
       {overflow > 0 && (
-        <li className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-[#9a9388]">
+        <li className="rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
           +{overflow} more
         </li>
       )}

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { RefreshCw, Activity, AlertTriangle, CheckCircle, XCircle, Clock, ListTodo } from "lucide-react";
 import { BrandingSettings } from "@/components/admin/BrandingSettings";
 import { BotSettingsSection } from "@/components/admin/BotSettingsSection";
+import { pickCanonicalBrandingRow } from "@/lib/branding";
 
 async function getHubboPosStatus() {
   const supabase = await getServerClient();
@@ -37,12 +38,13 @@ async function getBrandingSettings() {
   const supabase = await getServerClient();
   const { data } = await supabase
     .from("store_branding")
-    .select("logo_url, hero_image_url")
-    .limit(1)
-    .single();
+    .select("id, logo_url, hero_image_url")
+    .order("created_at", { ascending: true })
+    .limit(20);
+  const branding = pickCanonicalBrandingRow(data ?? []);
   return {
-    logoUrl: data?.logo_url as string | null,
-    heroImageUrl: data?.hero_image_url as string | null,
+    logoUrl: branding?.logo_url ?? null,
+    heroImageUrl: branding?.hero_image_url ?? null,
   };
 }
 

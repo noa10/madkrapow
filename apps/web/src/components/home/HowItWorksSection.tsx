@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ShoppingCart, MapPin, CreditCard, Truck } from "lucide-react";
 
 const steps = [
@@ -8,13 +7,13 @@ const steps = [
     icon: ShoppingCart,
     step: "01",
     title: "Pick your dish",
-    description: "Browse the menu and add your favorite Phad Kra Phao to the cart.",
+    description: "Browse the menu and add your favourite Phad Kra Phao to the cart.",
   },
   {
     icon: MapPin,
     step: "02",
     title: "Enter your address",
-    description: "Provide your delivery address within Kampung Subang Baru, Shah Alam.",
+    description: "Provide your delivery address, or switch to self-pickup at the store.",
   },
   {
     icon: CreditCard,
@@ -32,43 +31,37 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section id="how_it_works" className="relative px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+    <section id="how_it_works" className="relative scroll-mt-[var(--topbar-h)] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-10 text-center">
-          <h2 className="font-display text-3xl leading-tight text-white sm:text-4xl lg:text-5xl">
-            How It Works
+        <div className="mb-[18px]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ember-text">Fast &amp; frictionless</p>
+          <h2 className="mt-1 font-display text-[clamp(1.375rem,1.15rem+0.9vw,1.875rem)] font-extrabold leading-[1.15] tracking-[-0.02em] text-foreground">
+            How it works
           </h2>
-          <p className="mt-4 text-base leading-7 text-[#d8d1c6] sm:text-lg">
-            Four simple steps from craving to doorstep.
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+            Four steps from craving to doorstep.
           </p>
         </div>
 
-        <ol className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {steps.map((item) => (
             <li
               key={item.step}
-              className="rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-6 backdrop-blur-sm"
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3.5 rounded-2xl border border-border bg-surface p-4 lg:grid-cols-1 lg:gap-0"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line-strong)] bg-white/5">
-                <item.icon className="h-5 w-5 text-[var(--gold-strong)]" aria-hidden />
+              <span className="grid h-[38px] w-[38px] flex-none place-items-center rounded-[11px] bg-accent/16 text-[#ffb3b6] lg:mb-[15px]">
+                <item.icon className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ember-text">
+                  Step {item.step}
+                </p>
+                <p className="mt-1 text-sm font-bold text-foreground">{item.title}</p>
+                <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{item.description}</p>
               </div>
-              <p className="mt-4 text-xs uppercase tracking-[0.35em] text-[var(--gold-strong)]">
-                Step {item.step}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-white">{item.title}</p>
-              <p className="mt-2 text-sm leading-6 text-[#d8d1c6]">{item.description}</p>
             </li>
           ))}
         </ol>
-
-        <div className="mt-10 flex justify-center">
-          <Link
-            href="/order"
-            className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-sm font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.01]"
-          >
-            Start Order
-          </Link>
-        </div>
       </div>
     </section>
   );

@@ -14,7 +14,6 @@ import {
   CheckCircle,
   Circle,
   Loader2,
-  Menu,
 } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -45,7 +44,7 @@ const DeliveryMap = dynamic(
     ),
   }
 )
-import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
+import { ClientPageShell } from '@/components/layout/ClientPageShell'
 
 interface ShipmentData {
   id: string
@@ -155,7 +154,6 @@ export default function OrderTrackingPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authChecking, setAuthChecking] = useState(true)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -328,9 +326,8 @@ export default function OrderTrackingPage() {
 
   if (authChecking || loading) {
     return (
-      <div className="flex min-h-screen bg-background">
-        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
-        <main className="flex-1 flex items-center justify-center lg:ml-[260px] min-h-screen bg-background">
+      <ClientPageShell>
+        <main className="flex min-h-[60vh] items-center justify-center bg-background">
           <PageContainer size="narrow">
             <div className="text-center">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
@@ -338,15 +335,14 @@ export default function OrderTrackingPage() {
             </div>
           </PageContainer>
         </main>
-      </div>
+      </ClientPageShell>
     )
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen bg-background">
-        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
-        <main className="min-h-screen bg-background lg:ml-[260px]">
+      <ClientPageShell>
+        <main className="min-h-[60vh] bg-background">
           <PageContainer size="narrow">
             <div className="py-8">
               <div className="flex flex-col items-center justify-center py-12">
@@ -360,15 +356,14 @@ export default function OrderTrackingPage() {
             </div>
           </PageContainer>
         </main>
-      </div>
+      </ClientPageShell>
     )
   }
 
   if (error || !order) {
     return (
-      <div className="flex min-h-screen bg-background">
-        <DashboardSidebar mobileOpen={false} onMobileClose={() => {}} />
-        <main className="min-h-screen bg-background lg:ml-[260px]">
+      <ClientPageShell>
+        <main className="min-h-[60vh] bg-background">
           <PageContainer size="narrow">
             <div className="py-8">
               <div className="flex flex-col items-center justify-center py-12">
@@ -382,7 +377,7 @@ export default function OrderTrackingPage() {
             </div>
           </PageContainer>
         </main>
-      </div>
+      </ClientPageShell>
     )
   }
 
@@ -402,20 +397,13 @@ export default function OrderTrackingPage() {
   const currentStepIndex = getStepIndex(order.status)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <DashboardSidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
-      <main className="flex-1 lg:ml-[260px]">
+    <ClientPageShell>
+      <main className="w-full">
         <PageContainer>
           <div className="py-6 md:py-10">
             {/* Page Header */}
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setMobileMenuOpen(true)}
-                  className="lg:hidden rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                >
-                  <Menu className="h-5 w-5" />
-                </button>
                 <div>
                   <h1 className="text-2xl font-semibold font-display">{getOrderDisplayCode(order)}</h1>
                   <p className="text-xs text-muted-foreground/60 mt-0.5 font-mono">
@@ -701,6 +689,6 @@ export default function OrderTrackingPage() {
         </div>
       </PageContainer>
       </main>
-    </div>
+    </ClientPageShell>
   )
 }

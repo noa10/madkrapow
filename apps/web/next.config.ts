@@ -25,6 +25,19 @@ let nextConfig: NextConfig = {
       },
     ],
   },
+  // The menu moved onto the storefront ("/", the single-page ordering design).
+  // A config-level redirect runs before rendering, so old links, bookmarks and
+  // QR codes get a real 307 — and query params are forwarded
+  // (?category=... → /?category=... for the catalog's deep links).
+  async redirects() {
+    return [
+      {
+        source: "/menu",
+        destination: "/",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

@@ -437,7 +437,7 @@ function SuccessContent() {
             )}
 
             <div className="space-y-3 pt-2">
-              <Button asChild className="w-full shadow-gold" size="lg">
+              <Button asChild className="w-full min-h-[54px] rounded-full bg-[image:var(--grad-cta)] text-[15px] font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110" size="lg">
                 <Link href={orderId ? `/order/${orderId}` : '/'}>
                   Track Order
                   <ArrowRight className="h-4 w-4 ml-2" />

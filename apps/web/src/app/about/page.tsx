@@ -9,33 +9,27 @@ const GRABFOOD_URL = process.env.NEXT_PUBLIC_GRABFOOD_URL || '#'
 const promiseList = [
   'Wok-fired to order in 90 seconds',
   'Real Thai holy basil imported weekly',
-  '100% halal-sourced ingredients',
 ]
 
 export default function AboutPage() {
   return (
-    <ClientPageShell activeHref="/about">
-      <div className="relative min-h-screen overflow-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(180deg,rgba(8,8,8,0.92)_0%,rgba(8,8,8,1)_100%)]" />
-
-        <div className="relative mx-auto max-w-4xl py-16 sm:py-24">
-          <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-[var(--line-strong)] bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-[var(--gold-strong)]">
-            <span className="h-2 w-2 rounded-full bg-[var(--gold-strong)]" />
+    <ClientPageShell>
+      <div className="relative min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl py-12 sm:py-20">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.11em] text-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-ember" />
             Our story
           </div>
 
-          <h1 className="font-display text-5xl leading-[0.94] text-white sm:text-6xl">
-            About{' '}
-            <span className="bg-[var(--text-gradient-gold)] bg-clip-text text-transparent">
-              Mad Krapow
-            </span>
+          <h1 className="font-display text-[clamp(2.25rem,1.5rem+3vw,3.75rem)] font-extrabold leading-[1.02] tracking-[-0.03em] text-foreground">
+            About <span className="text-ember-text">Mad Krapow</span>
           </h1>
 
-          <p className="mt-5 font-display text-xl leading-tight text-[var(--gold-strong)] sm:text-2xl">
-            One Dish. Done Right. Done Halal.
+          <p className="mt-4 font-display text-xl font-bold leading-tight text-ember-text sm:text-2xl">
+            One Dish. Done Right.
           </p>
 
-          <div className="mt-10 max-w-2xl space-y-6 text-base leading-8 text-[#d8d1c6] sm:text-lg">
+          <div className="mt-8 max-w-2xl space-y-5 text-[15px] leading-7 text-muted-foreground sm:text-base sm:leading-8">
             <p>
               Mad Krapow started in February 2023 in a home kitchen in Kampung Subang Baru,
               Shah Alam, with one obsession: Phad Kra Phao the way it tastes on a Bangkok
@@ -43,8 +37,8 @@ export default function AboutPage() {
             </p>
             <p>
               We are a Muslim-friendly kitchen. That means no pork, no lard, no alcohol in
-              any recipe. Our meats are sourced from halal-certified suppliers in Selangor,
-              and our sauces are checked for halal certification.
+              any recipe. Our meats and sauces are sourced from trusted local suppliers
+              in Selangor.
             </p>
             <p>
               In 2024, customers asked for faster, cheaper delivery beyond Grab&apos;s radius.
@@ -54,22 +48,22 @@ export default function AboutPage() {
             </p>
           </div>
 
-          <ul className="mt-12 space-y-3">
+          <ul className="mt-10 space-y-3">
             {promiseList.map((promise) => (
               <li
                 key={promise}
-                className="flex items-start gap-3 rounded-[1.2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-5 py-4 backdrop-blur-sm"
+                className="flex items-start gap-3 rounded-2xl border border-border bg-surface px-5 py-4"
               >
-                <Flame className="mt-0.5 h-5 w-5 flex-none text-[var(--gold-strong)]" />
-                <span className="text-base leading-7 text-[#d8d1c6] sm:text-lg">
+                <Flame className="mt-0.5 h-5 w-5 flex-none fill-ember/30 text-ember" />
+                <span className="text-[15px] leading-7 text-foreground sm:text-base">
                   {promise}
                 </span>
               </li>
             ))}
           </ul>
 
-          <div className="mt-14">
-            <p className="text-sm uppercase tracking-[0.28em] text-[var(--gold-strong)]">
+          <div className="mt-12">
+            <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ember-text">
               Ready to try?
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-4">
@@ -77,13 +71,13 @@ export default function AboutPage() {
                 href={GRABFOOD_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-sm font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.01]"
+                className="inline-flex min-h-12 items-center justify-center rounded-full bg-[image:var(--grad-cta)] px-6 text-sm font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] transition hover:brightness-110 active:translate-y-px"
               >
                 Order on GrabFood
               </a>
               <Link
-                href="/order"
-                className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)]"
+                href="/#menu"
+                className="inline-flex min-h-12 items-center justify-center rounded-full border border-border-2 px-6 text-sm font-bold text-foreground transition hover:bg-surface-2"
               >
                 Order Direct
               </Link>

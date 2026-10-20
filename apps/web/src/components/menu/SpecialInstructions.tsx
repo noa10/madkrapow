@@ -17,7 +17,7 @@ export function SpecialInstructions({ value, onChange, disabled }: SpecialInstru
     <div className="space-y-2">
       <label
         htmlFor="special-instructions"
-        className="text-sm font-medium text-foreground"
+        className="text-[13px] font-extrabold text-foreground"
       >
         Special Instructions
       </label>
@@ -30,11 +30,10 @@ export function SpecialInstructions({ value, onChange, disabled }: SpecialInstru
         rows={3}
         disabled={disabled}
         className={cn(
-          'w-full px-3 py-2 rounded-md border bg-background text-foreground',
+          'w-full resize-none rounded-xl border border-border-2 bg-surface-2 px-3.5 py-3 text-sm text-foreground',
           'placeholder:text-muted-foreground',
-          'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
-          'resize-none',
-          disabled && 'opacity-60 cursor-not-allowed'
+          'focus:border-primary focus:outline-none focus:ring-0',
+          disabled && 'cursor-not-allowed opacity-60'
         )}
         aria-describedby="char-counter"
       />

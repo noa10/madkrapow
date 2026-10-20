@@ -2,7 +2,7 @@
 
 This file contains curated memories, decisions, and learnings that persist across sessions. This is your long-term memory — the distilled essence of what matters.
 
-**Last Updated**: 2026-10-14
+**Last Updated**: 2026-10-20
 
 ---
 
@@ -149,6 +149,160 @@ This file contains curated memories, decisions, and learnings that persist acros
   branch *fully* and the loss was confined to the 19 stacked commits.
 - **Highest-impact item**: `d680699` — accept the order on Grab after import.
   Master had no `acceptOrder` call at all, and Grab auto-cancels unaccepted orders.
+
+### 2026-10-19: Storefront design system port ("Fiery Wok" crimson) — shipped in PR #450
+- **Decision**: Ported the approved OpenDesign artifact into `apps/web` as the
+  storefront visual system: crimson default accent, ember/sesame/herb support
+  colors, Plus Jakarta Sans, topbar shell (replaces the client sidebar), design
+  hero/menu tiles/cart/checkout styling, account pages migrated to the shell.
+- **Single source of truth**: `apps/web/src/app/globals.css` (`@theme` block).
+  Tailwind v4 — `tailwind.config.ts` is dead code (no `@config`), do not touch.
+  Legacy token names (`bg-primary`, `text-gold`, `var(--gold-strong)`,
+  `var(--line-strong)`) were remapped, so swapping back to app gold is a
+  one-block edit in `globals.css`.
+- **Committed on request** as `f0cbe2b` (base `c11577e`) on
+  `feat/fiery-wok-storefront-redesign`; PR #450. Follow-ups: `7656e58`
+  (required options), `50d7a83` (required CTA overflow), then the
+  review-pass fixes (hydration gate, dialog semantics/focus, logo WebP).
+- **Dead files**: `AboutView` / `OrderView` / `Hero` / `ClientSidebar` /
+  `Header` / `Footer` / `ProfileDropdown` are unused — not restyled.
+- Checks at hand-off: typecheck clean; lint 33 warnings / 0 errors (baseline);
+  Tailwind compile probe verified all new utilities emit. Vitest full-suite
+  failures are pre-existing (alias resolution + Windows worker crashes) and no
+  test touches the ported components.
+- **Follow-up (same day, user request)**: Menu is now the single ordering
+  surface — "Quick order" pill removed from the topbar (`/order` route kept
+  alive). The menu category rail now follows the scroll like Rigatony's
+  (owner.com pattern): click scrolls the section under the bars, the active
+  pill highlights instantly and auto-centers, `?category=` deep links land
+  correctly.
+- **Gotcha learned**: `overflow-x-hidden` on `ClientPageShell`'s `<main>` was
+  silently breaking `position: sticky` for descendants (it turns the ancestor
+  into a scroll container). Fixed with `overflow-x-clip` — never reintroduce
+  `overflow-x-hidden` on that element.
+- **Gotcha learned (2)**: `position: sticky` establishes a stacking context.
+  The item-image zoom modal was rendered inside the `lg:sticky` image
+  `<aside>`, so its `fixed … z-[60]` overlay was trapped in that context and
+  painted under later-DOM siblings — the customize `<section>` (its
+  `fade-in-up` animation retains `transform: translateY(0)` via
+  `fill-mode: both`, so it paints like a positioned z-0 box). Fix: the modal
+  is `createPortal`ed to `document.body` at `z-[70]` (lightbox = topmost
+  layer; topbar/bottom bar `z-30`, drawer `z-40/50`, toasts `z-60`). Rule:
+  never render a fixed overlay from inside a sticky/transformed/animated
+  ancestor — portal it to body.
+- **Topbar logo**: static `public/madkrapow-logo.svg` at `h-12` / `md:h-14`,
+  text lockup removed (logo carries the name). `unoptimized` is required — a
+  string-src SVG through `next/image` hits `/_next/image`, which rejects SVGs
+  (400); the old `unoptimized={!!logoUrl}` fallback rendered broken whenever
+  no `store_branding` row existed. The file is ~904KB (raster-in-SVG);
+  optimizing it is a recorded follow-up.
+- **Halal removed sitewide** (same day, user request): deleted
+  `HalalCommitmentSection` + `HalalBadge` components, "Halal" nav pill, and
+  all halal copy on hero/menu/about. Home order is now hero → how-to-order →
+  how-it-works. Kept "No pork, no lard" / "Muslim-friendly kitchen" (not the
+  word "halal"). If live DB menu descriptions mention halal, that's a
+  separate data sweep.
+- **Menu page now Rig A' Tony's-style** (owner.com pattern): `lg+` sticky
+  left sidebar (search + vertical category list with counts, scroll-spy +
+  auto-center), mobile keeps search-under-title + sticky pill rail; search
+  filters name/description and hides empty categories; `RichMenuGrid` is
+  layout-agnostic now (page padding owned by the two-column wrapper) with
+  `md:grid-cols-2` cards.
+- **Menu cards restyled to owner.com layout** (same day): text left / photo
+  right with a floating round "+" (light circle, `bg-foreground`), price at
+  the column bottom; grid `md:grid-cols-2`; photo `w-28 sm:w-32 xl:w-40`,
+  card `min-h-[120px] sm:min-h-[136px]`. Whole card is clickable via a
+  stretched `inset-0` trigger (the "+" is decorative, pointer-events-none).
+  `SpiceLevel` renders nothing at level 0 — no more "Mild" chip.
+  `Add +`/`Added ✓` labels untouched (they live in `MenuItemCard` / `/order`).
+- **Site footer** (same day, user request): `ClientFooter` rendered by
+  `ClientPageShell` on all shell pages. 4 columns — brand (logo only +
+  blurb), Menu (category deep links `?category=`; slugs verified against
+  the live DB: `bazar-ramadan-ttdi-jaya`, not the design's `bazar-ramadan`),
+  Visit & hours, Ordering — plus © row with "Locally sourced ingredients"
+  (herb) / "Lalamove delivery" (ember) seals. Halal-free copy throughout.
+  `pb-[104px] lg:pb-0` = the design's `.padforbar`; the always-on item-page
+  bar overlaps the bottom row at lg full-scroll (accepted, minor).
+- **Menu category click fix**: never `router.replace/push` in the same tick
+  as a programmatic smooth scroll while a `loading.tsx` exists — the soft
+  navigation swaps in the skeleton, collapses the page, and aborts the
+  scroll ("first click dead, second click works"). The `?category=` URL is
+  now updated via native `window.history.replaceState` (supported in the
+  App Router).
+- **Card z-index rule**: `RichMenuCard` carries `isolate`. Its stretched
+  trigger (z-10) and "+" badge (z-20) are contained in the card's stacking
+  context; without `isolate` they leak to the root context, tie the sticky
+  category rails (z-20), and — because cards come later in the DOM — paint
+  over the rails. Don't remove it; page chrome stays rail z-20 < topbar
+  z-30 < quick view z-[35] < drawer z-40/50 < toasts z-60 < image lightbox
+  z-[70].
+- **Item detail image is `object-contain`** (preview box + zoom modal): the
+  full photo must be visible — the frame letterboxes on `bg-surface-sunk`.
+  Do not switch the preview back to `object-cover` (it crops the photo —
+  user-reported).
+- **Menu quick view (dialog, same day, user request)**: clicking a menu card
+  no longer navigates to `/item/[slug]` — it opens `ItemQuickView`, a
+  body-portaled dialog (`z-[35]`, bottom sheet on mobile) with the full
+  customization UI and add-to-cart. Card + signature-hero CTA are now
+  buttons (`aria-haspopup="dialog"`), not links; the `/item/[slug]` pages
+  still exist for deep links/direct visits. Ordering state/validation/pricing
+  live in the shared `useItemOrder` hook (item page + dialog) — never
+  duplicate that logic in a new surface. Adding from the dialog closes it;
+  the cart drawer does NOT auto-open on add (user request — feedback is the
+  toast + the topbar count; open the cart explicitly via the topbar
+  button). The dialog's Esc handler yields to the image lightbox when it is
+  open on top.
+- **Menu card badge = live in-cart count** (same day, user request): the
+  floating circle on each `RichMenuCard` shows `+` at 0 and the item's
+  total quantity in the cart (all modifier variants summed) at >0 as a
+  `bg-primary` circle, owner.com style. Implemented as a primitive zustand
+  selector so a card only re-renders when its own count changes. The badge
+  stays decorative/pointer-events-none (the stretched button opens the
+  quick view) and the stretched button's aria-label gains ", N in cart".
+- **Quick-view layout = the owner.com reference the user supplied** (same
+  day, second pass): full-bleed photo band (`aspect-[3/2]`, `object-cover`)
+  with a floating white ✕ button, `max-w-[640px]` card, name (26px) +
+  description, hairline dividers, footer = qty stepper box + `Add item
+  RM x.xx ›` solid `bg-primary` button. The cover crop is deliberate here
+  (the reference shows a filled photo band) and scoped to `ItemImagePreview
+  variant="banner"`; the item-page preview keeps `object-contain` (rule
+  above still stands). Option rows deliberately use the shared bordered
+  checkbox/radio `ModifierGroup` cards — a compact owner.com-style `− count
+  +` stepper variant was tried and reverted the same day (user preferred
+  the cards); do not reintroduce it. Clicking the photo band still opens
+  the zoom lightbox (chip label hidden in banner variant).
+- **Scroll locking is ref-counted** (`useBodyScrollLock`): `ItemQuickView`
+  (always locked while mounted), the `ItemImagePreview` lightbox and the
+  `CartDrawer` all acquire/release one shared counter. Never go back to an
+  overlay writing `document.body.style.overflow` directly — when nested
+  overlays (dialog → lightbox / dialog → drawer) each own the value, closing
+  the inner one re-enables page scroll behind the outer one.
+- **Menu moved onto the home page** (2026-10-20, user request): `/` is the
+  single-page storefront from the original design — hero → menu (search /
+  categories / dishes / quick view) → how-to-order → how-it-works. The
+  `/menu` route is a config-level 307 → `/` (`next.config.ts` `redirects()`;
+  runs before rendering, forwards query params; the old page file is gone).
+  Topbar nav pills are gone entirely (logo + account + cart only); About
+  lives in the footer and the mobile account sheet; hero CTAs scroll to
+  `#menu`; footer category links use `/?category=…`; anchor targets carry
+  `scroll-mt-[var(--topbar-h)]` and `globals.css` has a reduced-motion-aware
+  `scroll-behavior: smooth`. `PageSwitcher` / `HomePageLayout` and the
+  `activeHref` shell prop were deleted; `BackButton` falls back to `/`.
+- **Gotcha learned (3) — `useSearchParams` without a Suspense boundary
+  deopts the whole route.** With the catalog on `/`, the prerendered HTML
+  contained only the root loading skeleton: a client `useSearchParams()` with
+  no Suspense boundary above it opts the entire page into client-side
+  rendering (warning only, no build error — check the built HTML, not the
+  exit code). The `?category=` deep-link reader now lives in
+  `MenuDeepLinkScroller`, wrapped in its own `<Suspense>` inside the catalog,
+  so the storefront (hero, dishes, sections, footer) stays server-rendered.
+  Any future search-param consumer must follow the same pattern.
+- **Gotcha learned (4) — `redirect()` inside a page becomes a client-side
+  redirect when a `loading.tsx` boundary flushes first.** The old
+  `/menu` page variant returned 200 + a redirecting RSC payload (no 307) for
+  document requests; use a `next.config.ts` `redirects()` entry for route
+  moves instead. Verified with a local `next start`: `/menu?category=x` →
+  307 → `/?category=x`, `/menu/` → 308 → `/menu`.
 
 ---
 

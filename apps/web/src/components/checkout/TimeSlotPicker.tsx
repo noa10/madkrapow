@@ -191,7 +191,7 @@ export function TimeSlotPicker({
               className={cn(
                 'px-3 py-3 rounded-lg text-sm font-medium transition-all border min-h-[44px] active:scale-[0.98]',
                 isSelected(slot.start)
-                  ? 'bg-primary text-primary-foreground border-primary shadow-gold'
+                  ? 'bg-primary text-primary-foreground border-primary shadow-[0_10px_24px_-12px_var(--accent)]'
                   : 'bg-background text-foreground border-border hover:border-primary'
               )}
             >

@@ -117,23 +117,22 @@ function SignUpPageContent() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(210,176,123,0.18),transparent_30%),linear-gradient(180deg,rgba(8,8,8,0.92)_0%,rgba(8,8,8,1)_100%)]" />
-      <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-[rgba(210,176,123,0.12)] blur-3xl" />
+      <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-accent/10 blur-3xl" />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
         <div className="grid w-full gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="max-w-2xl space-y-6">
-            <div className="inline-flex items-center gap-3 rounded-full border border-[var(--line-strong)] bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-[var(--gold-strong)]">
-              <span className="h-2 w-2 rounded-full bg-[var(--gold-strong)]" />
+            <div className="inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.11em] text-foreground">
+              <span className="h-2 w-2 rounded-full bg-ember-text" />
               Mad Krapow account
             </div>
 
             <div className="space-y-4">
               <h1 className="font-display text-5xl leading-[0.94] text-white sm:text-6xl">
                 Create your
-                <span className="bg-[var(--text-gradient-gold)] bg-clip-text text-transparent"> account</span>
+                <span className="text-ember-text"> account</span>
               </h1>
-              <p className="max-w-xl text-base leading-8 text-[#d8d1c6] sm:text-lg">
+              <p className="max-w-xl text-base leading-8 text-muted-foreground sm:text-lg">
                 {isCheckoutRedirect
                   ? 'Register to complete your checkout. Your cart is safe and waiting for you.'
                   : 'Sign up to place orders faster, save your delivery details, and track your Mad Krapow orders.'}
@@ -141,42 +140,42 @@ function SignUpPageContent() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-[0.28em] text-muted-foreground">
-              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
+              <span className="rounded-full border border-border bg-surface-2 px-4 py-2">
                 Track your orders
               </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
+              <span className="rounded-full border border-border bg-surface-2 px-4 py-2">
                 Reorder favourites
               </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2">
+              <span className="rounded-full border border-border bg-surface-2 px-4 py-2">
                 Manage your profile
               </span>
             </div>
 
             <Link
               href={isCheckoutRedirect ? '/cart' : '/'}
-              className="inline-flex rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm uppercase tracking-[0.28em] text-white/90 transition hover:border-[var(--line-strong)] hover:text-[var(--gold-strong)]"
+              className="inline-flex rounded-full border border-border-2 bg-surface-2 px-5 py-3 text-sm font-bold uppercase tracking-[0.11em] text-foreground transition hover:bg-surface-3"
             >
               {isCheckoutRedirect ? 'Back to cart' : 'Back to menu'}
             </Link>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-6 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8">
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-[0_30px_100px_rgba(0,0,0,0.45)] sm:p-8">
             {isSuccess ? (
               <div className="py-4 text-center">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[rgba(210,176,123,0.12)]">
-                  <CheckCircle className="h-8 w-8 text-[var(--gold-strong)]" />
+                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-accent/10">
+                  <CheckCircle className="h-8 w-8 text-ember-text" />
                 </div>
-                <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-strong)]">
+                <p className="text-xs uppercase tracking-[0.32em] text-ember-text">
                   Almost there
                 </p>
                 <h2 className="mt-3 text-3xl font-semibold text-white">Check your email</h2>
-                <p className="mt-3 text-sm text-[#d8d1c6]">
+                <p className="mt-3 text-sm text-muted-foreground">
                   We&apos;ve sent a confirmation link to <strong className="text-white">{email}</strong>.
                   Follow it to verify your account.
                 </p>
                 <Link
                   href={signInHref}
-                  className="mt-6 inline-flex h-11 items-center justify-center rounded-xl border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-6 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:brightness-105"
+                  className="mt-6 inline-flex h-11 items-center justify-center rounded-xl border border-border-2 bg-[image:var(--grad-cta)] px-6 text-sm font-semibold uppercase tracking-[0.2em] text-white hover:brightness-110"
                 >
                   Back to sign in
                 </Link>
@@ -184,11 +183,11 @@ function SignUpPageContent() {
             ) : (
               <>
                 <div className="mb-8 text-center">
-                  <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-strong)]">
+                  <p className="text-xs uppercase tracking-[0.32em] text-ember-text">
                     Join Mad Krapow
                   </p>
                   <h2 className="mt-3 text-3xl font-semibold text-white">Create your account</h2>
-                  <p className="mt-2 text-sm text-[#d8d1c6]">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     Get started in seconds with email or Google.
                   </p>
                 </div>
@@ -198,7 +197,7 @@ function SignUpPageContent() {
                     variant="outline"
                     onClick={handleGoogleSignUp}
                     disabled={isLoading}
-                    className="w-full border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                    className="w-full border-border bg-surface-2 text-foreground hover:bg-surface-3 hover:text-foreground"
                   >
                     <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -214,7 +213,7 @@ function SignUpPageContent() {
                       <span className="w-full border-t" />
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="rounded-full bg-black/55 px-3 py-1 tracking-[0.28em] text-[#d8d1c6]">
+                      <span className="rounded-full bg-black/55 px-3 py-1 tracking-[0.28em] text-muted-foreground">
                         Or sign up with email
                       </span>
                     </div>
@@ -234,7 +233,7 @@ function SignUpPageContent() {
                         required
                         disabled={isLoading}
                         autoComplete="email"
-                        className="h-11 rounded-xl border-white/10 bg-black/30 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
+                        className="h-11 rounded-xl border-border-2 bg-surface-2 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       />
                     </div>
 
@@ -252,7 +251,7 @@ function SignUpPageContent() {
                           required
                           disabled={isLoading}
                           autoComplete="new-password"
-                          className="h-11 rounded-xl border-white/10 bg-black/30 pr-10 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
+                          className="h-11 rounded-xl border-border-2 bg-surface-2 pr-10 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                         />
                         <Button
                           type="button"
@@ -260,12 +259,12 @@ function SignUpPageContent() {
                           size="sm"
                           onClick={() => setShowPassword(!showPassword)}
                           aria-label={showPassword ? 'Hide password' : 'Show password'}
-                          className="absolute right-0 top-0 h-full px-3 py-2 text-white/60 hover:bg-transparent hover:text-white"
+                          className="absolute right-0 top-0 h-full px-3 py-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </div>
-                      <p className="text-xs text-[#d8d1c6]/70">Must be at least 6 characters</p>
+                      <p className="text-xs text-muted-foreground/70">Must be at least 6 characters</p>
                     </div>
 
                     {error && (
@@ -279,7 +278,7 @@ function SignUpPageContent() {
 
                     <Button
                       type="submit"
-                      className="h-11 w-full rounded-xl border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] font-semibold uppercase tracking-[0.2em] text-black hover:brightness-105"
+                      className="h-11 w-full rounded-xl border border-border-2 bg-[image:var(--grad-cta)] font-semibold uppercase tracking-[0.2em] text-white hover:brightness-110"
                       disabled={isLoading || password.length < 6}
                     >
                       {isLoading ? (

@@ -48,7 +48,7 @@ export default async function ItemDetailPage({ params }: PageProps) {
   }
 
   return (
-    <ClientPageShell activeHref="/menu">
+    <ClientPageShell>
       <ItemDetailClient item={item} />
     </ClientPageShell>
   )

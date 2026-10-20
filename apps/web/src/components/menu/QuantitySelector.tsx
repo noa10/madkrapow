@@ -32,18 +32,21 @@ export function QuantitySelector({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2.5">
       <Button
         variant="outline"
         size="icon"
         onClick={handleDecrease}
         disabled={disabled || quantity <= min}
         aria-label="Decrease quantity"
-        className="h-11 w-11 bg-muted active:scale-[0.95] focus:bg-primary focus:text-primary-foreground"
+        className="h-11 w-11 rounded-full border-border-2 bg-surface-2 hover:bg-surface-3 hover:text-foreground active:scale-[0.95]"
       >
         <Minus className="h-4 w-4" />
       </Button>
-      <span className={cn("w-8 text-center font-medium", disabled && "text-muted-foreground")} aria-live="polite">
+      <span
+        className={cn('min-w-8 text-center text-[15px] font-extrabold tabular-nums', disabled && 'text-muted-foreground')}
+        aria-live="polite"
+      >
         {quantity}
       </span>
       <Button
@@ -52,7 +55,7 @@ export function QuantitySelector({
         onClick={handleIncrease}
         disabled={disabled || quantity >= max}
         aria-label="Increase quantity"
-        className="h-11 w-11 bg-muted active:scale-[0.95] focus:bg-primary focus:text-primary-foreground"
+        className="h-11 w-11 rounded-full border-border-2 bg-surface-2 hover:bg-surface-3 hover:text-foreground active:scale-[0.95]"
       >
         <Plus className="h-4 w-4" />
       </Button>

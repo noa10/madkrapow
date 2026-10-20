@@ -115,7 +115,7 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
 
     didInitialScrollRef.current = true;
     setTimeout(() => {
-      const offset = 80;
+      const offset = 136;
       const top = element.getBoundingClientRect().top + window.scrollY - offset;
       window.scrollTo({ top, behavior: "smooth" });
     }, 150);
@@ -154,7 +154,7 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
   const handleClick = (category: CategoryWithMenuItems) => {
     const element = document.getElementById(`category-${category.id}`);
     if (element) {
-      const offset = 80;
+      const offset = 136;
       const top = element.getBoundingClientRect().top + window.scrollY - offset;
       window.scrollTo({ top, behavior: "smooth" });
     }
@@ -168,18 +168,18 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
     <div className="min-h-screen bg-background">
       {categories.length > 0 && (
         <div>
-          <nav className="sticky top-16 z-40 backdrop-blur-md bg-background/80 border-b border-white/10 lg:top-0">
-            <div className="max-w-7xl mx-auto px-4 w-full">
-              <div className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
+          <nav className="sticky top-[var(--topbar-h)] z-20 border-b border-border bg-background/95 backdrop-blur-xl">
+            <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+              <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto py-2.5">
                 {categories.map((category) => (
                   <button
                     key={category.id}
                     onClick={() => handleClick(category)}
                     className={cn(
-                      "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                      "inline-flex min-h-[38px] flex-none items-center whitespace-nowrap rounded-full px-3.5 text-xs font-bold transition-colors",
                       activeId === `category-${category.id}`
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        ? "bg-primary text-primary-foreground hover:bg-[var(--accent-hover)]"
+                        : "bg-surface-2 text-muted-foreground hover:bg-surface-3 hover:text-foreground"
                     )}
                   >
                     {category.name}
@@ -191,7 +191,7 @@ export function MenuListView({ categories, quickAddEnabled = false }: MenuListVi
         </div>
       )}
 
-      <div className="py-8 md:py-12">
+      <div className="py-2 md:py-4">
         {categories.length > 0 ? (
           categories.map((category) => (
             <MenuSection

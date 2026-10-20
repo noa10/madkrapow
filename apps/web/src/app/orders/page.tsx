@@ -3,11 +3,10 @@
 import { useEffect, useState, useCallback, Suspense } from "react"
 import Link from "next/link"
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
-import { Menu, Package, Loader2 } from "lucide-react"
+import { Package, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getBrowserClient } from "@/lib/supabase/client"
-import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
-import { DashboardPageContainer } from "@/components/dashboard/DashboardPageContainer"
+import { ClientPageShell } from "@/components/layout/ClientPageShell"
 import { OrdersCardView } from "@/components/orders/OrdersCardView"
 
 interface Order {
@@ -30,8 +29,6 @@ function OrdersContent() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true)
@@ -93,31 +90,15 @@ function OrdersContent() {
   }, [supabase, fetchOrders])
 
   return (
-    <>
-      <DashboardSidebar
-        mobileOpen={mobileMenuOpen}
-        onMobileClose={() => setMobileMenuOpen(false)}
-        collapsed={sidebarCollapsed}
-        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
-      />
-
-      <DashboardPageContainer collapsed={sidebarCollapsed}>
+    <ClientPageShell>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3 lg:hidden">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <h1 className="text-xl font-bold font-display">Food Orders</h1>
-          </div>
-          <div className="hidden lg:block">
-            <h1 className="text-xl font-bold font-display">Food Orders</h1>
+          <div>
+            <h1 className="font-display text-2xl font-extrabold tracking-[-0.02em]">Food Orders</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Browse and track all your food orders</p>
           </div>
-          <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-white/8">
+          <Button asChild variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border">
             <Link href="/profile">
               Back to Profile
             </Link>
@@ -139,7 +120,7 @@ function OrdersContent() {
           )}
 
           {!isLoading && !error && orders.length === 0 && (
-            <div className="rounded-xl border border-white/8 bg-card p-12 text-center backdrop-blur-sm">
+            <div className="rounded-xl border border-border bg-card p-12 text-center backdrop-blur-sm">
               <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
               <p className="text-muted-foreground mb-4 text-sm">No orders found</p>
               <Button asChild>
@@ -152,8 +133,8 @@ function OrdersContent() {
             <OrdersCardView orders={orders} />
           )}
         </div>
-      </DashboardPageContainer>
-    </>
+      </div>
+    </ClientPageShell>
   )
 }
 

@@ -85,7 +85,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
 
   const imageBlock = (
     <div className={cn(
-      "relative h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-lg",
+      "relative h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0 overflow-hidden rounded-xl",
       isUnavailable && "grayscale"
     )}>
       {item.image_url ? (
@@ -130,13 +130,13 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
       <div className="mt-1.5 flex items-baseline gap-2">
         {showDiscount && !isUnavailable ? (
           <>
-            <p className="font-medium text-primary">{formatPrice(promoPreview.discountedCents)}</p>
+            <p className="font-extrabold tabular-nums text-herb-text">{formatPrice(promoPreview.discountedCents)}</p>
             <p className="text-sm text-muted-foreground line-through">{formatPrice(promoPreview.originalCents)}</p>
           </>
         ) : (
           <p className={cn(
-            "font-medium",
-            isUnavailable ? "text-muted-foreground/50" : "text-primary"
+            "font-extrabold tabular-nums",
+            isUnavailable ? "text-muted-foreground/50" : "text-ember-text"
           )}>{formatPrice(item.price_cents)}</p>
         )}
       </div>
@@ -154,7 +154,7 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
           "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider transition-colors",
           item.has_modifiers
             ? "border-primary/40 text-primary group-hover:bg-primary group-hover:text-primary-foreground"
-            : "border-muted-foreground/30 text-muted-foreground group-hover:bg-muted"
+            : "border-border-2 text-muted-foreground group-hover:bg-surface-2 group-hover:text-foreground"
         )}>
           {item.has_modifiers ? 'Customize' : 'View'}
         </span>
@@ -164,10 +164,10 @@ export const MenuItemCard = memo(function MenuItemCard({ item, promoPreview, qui
 
   return (
     <Card className={cn(
-      "overflow-hidden group transition-all duration-300 border-transparent",
+      "overflow-hidden rounded-2xl border border-border bg-surface group transition-all duration-300",
       isUnavailable
-        ? "opacity-60 bg-muted/30 cursor-not-allowed"
-        : "hover:shadow-gold hover:-translate-y-0.5 hover:border-primary/30"
+        ? "opacity-60 bg-surface-2/40 cursor-not-allowed"
+        : "hover:border-border-2"
     )}>
       {isUnavailable ? (
         <div

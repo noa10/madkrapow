@@ -1,37 +1,35 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
-import { buildItemHref } from "@/lib/item-url";
+import { Plus } from "lucide-react";
 import type { MenuItemWithModifiers } from "@/lib/queries/menu";
 import { SpiceLevel } from "./SpiceLevel";
-import { HalalBadge } from "./HalalBadge";
-import { IngredientChips } from "./IngredientChips";
 
 interface SignatureHeroProps {
   items: MenuItemWithModifiers[];
+  onSelectItem: (item: MenuItemWithModifiers) => void;
 }
 
 function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`;
 }
 
-export function SignatureHero({ items }: SignatureHeroProps) {
+export function SignatureHero({ items, onSelectItem }: SignatureHeroProps) {
   const featured = items.slice(0, 2);
   if (featured.length === 0) return null;
 
   return (
-    <section className="relative px-4 pt-10 pb-8 sm:px-6 lg:px-8 lg:pt-16">
+    <section className="relative px-4 pt-8 pb-6 sm:px-6 lg:px-8 lg:pt-10">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-[var(--line-strong)] bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.35em] text-[var(--gold-strong)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--gold-strong)]" />
+        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.11em] text-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-ember" />
           Chef&apos;s picks
-        </div>
-        <div className={`grid gap-6 ${featured.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
+        </p>
+        <div className={`grid gap-3.5 ${featured.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
           {featured.map((item) => (
             <article
               key={item.id}
-              className="relative overflow-hidden rounded-[2rem] border border-white/8 bg-black/30 shadow-[0_30px_100px_rgba(0,0,0,0.45)]"
+              className="relative overflow-hidden rounded-3xl border border-border bg-surface"
             >
               <div className="absolute inset-0">
                 {item.image_url ? (
@@ -44,38 +42,33 @@ export function SignatureHero({ items }: SignatureHeroProps) {
                     priority
                   />
                 ) : (
-                  <div className="h-full w-full bg-white/5" />
+                  <div className="h-full w-full bg-surface-2" />
                 )}
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,8,8,0.2)_0%,rgba(8,8,8,0.92)_80%)]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/75 to-background/10" />
               </div>
-              <div className="relative flex min-h-[26rem] flex-col justify-end gap-4 p-8 sm:p-10">
-                <div className="flex flex-wrap gap-2">
-                  <HalalBadge />
-                  <SpiceLevel level={item.spice_level ?? 0} />
-                </div>
-                <h2 className="font-display text-3xl text-white sm:text-4xl lg:text-5xl">
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#f1d7aa] to-[#c59661]">
-                    {item.name}
-                  </span>
+              <div className="relative flex min-h-[24rem] flex-col justify-end gap-3.5 p-6 sm:p-8">
+                <SpiceLevel level={item.spice_level ?? 0} />
+                <h2 className="font-display text-2xl font-extrabold leading-tight tracking-[-0.02em] text-foreground sm:text-3xl">
+                  {item.name}
                 </h2>
                 {item.description && (
-                  <p className="max-w-xl text-base leading-7 text-[#d8d1c6]">
+                  <p className="max-w-xl text-[13px] leading-5 text-muted-foreground sm:text-sm sm:leading-6">
                     {item.description}
                   </p>
                 )}
-                {item.ingredients && item.ingredients.length > 0 && (
-                  <IngredientChips items={item.ingredients} max={5} />
-                )}
-                <div className="mt-2 flex items-center gap-4">
-                  <span className="font-display text-2xl text-[var(--gold-strong)]">
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
+                  <span className="text-[22px] font-extrabold tabular-nums tracking-[-0.01em] text-ember-text">
                     {formatPrice(item.price_cents)}
                   </span>
-                  <Link
-                    href={buildItemHref(item.slug, item.name)}
-                    className="rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-7 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-black transition hover:scale-[1.02]"
+                  <button
+                    type="button"
+                    onClick={() => onSelectItem(item)}
+                    aria-haspopup="dialog"
+                    className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full bg-primary px-5 text-[13px] font-bold text-primary-foreground shadow-[0_6px_18px_-8px_var(--accent)] transition hover:bg-[var(--accent-hover)] active:translate-y-px"
                   >
-                    Order Now
-                  </Link>
+                    <Plus className="h-4 w-4" aria-hidden />
+                    {item.has_modifiers ? "Customize" : "Order now"}
+                  </button>
                 </div>
               </div>
             </article>

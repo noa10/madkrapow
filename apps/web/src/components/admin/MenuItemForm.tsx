@@ -369,7 +369,7 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
           className="h-4 w-4 rounded border-gray-300"
         />
         <label htmlFor="isSignature" className="text-sm font-medium">
-          Featured on /menu hero (max 2 items)
+          Featured as a Chef&apos;s pick (max 2 items)
         </label>
       </div>
       

@@ -1,3 +1,5 @@
+import { Flame } from "lucide-react";
+
 interface ModifierSummaryProps {
   hasModifiers: boolean;
 }
@@ -5,7 +7,8 @@ interface ModifierSummaryProps {
 export function ModifierSummary({ hasModifiers }: ModifierSummaryProps) {
   if (!hasModifiers) return null;
   return (
-    <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--gold-strong)]">
+    <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.01em] text-ember-text">
+      <Flame className="h-3.5 w-3.5 fill-ember/40 text-ember" aria-hidden />
       Customizable
     </p>
   );

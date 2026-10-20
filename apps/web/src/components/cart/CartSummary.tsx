@@ -33,13 +33,15 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4">
-      <h2 className="text-lg font-semibold font-display">Order Summary</h2>
+    <div className="space-y-4 rounded-2xl border border-border bg-surface p-5">
+      <h2 className="text-[15px] font-extrabold">
+        Order Summary
+      </h2>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Subtotal</span>
-          <span className="font-medium">{formatPrice(subtotal)}</span>
+          <span className="font-semibold tabular-nums">{formatPrice(subtotal)}</span>
         </div>
 
         <div className="flex items-center justify-between">
@@ -49,20 +51,20 @@ export function CartSummary({ minOrderAmount: minOrderAmountProp, subtotal: prop
       </div>
 
       {isBelowMinimum && (
-        <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
+        <p className="rounded-xl bg-surface-2 p-3 text-sm text-muted-foreground">
           Minimum order: {formatPrice(minOrderAmount)}. Add {formatPrice(remainingForMinimum)} more to checkout.
         </p>
       )}
 
-      <div className="border-t border-primary/30 pt-4 mt-4">
+      <div className="mt-4 border-t border-border pt-4">
         <div className="flex items-center justify-between">
-          <span className="font-medium">Total</span>
-          <span className="text-xl font-bold text-primary">{formatPrice(subtotal)}</span>
+          <span className="font-bold">Total</span>
+          <span className="text-xl font-extrabold tabular-nums text-ember-text">{formatPrice(subtotal)}</span>
         </div>
       </div>
 
       <Button
-        className="w-full shadow-gold"
+        className="min-h-[54px] w-full rounded-full bg-[image:var(--grad-cta)] text-[15px] font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110 active:translate-y-px"
         size="lg"
         onClick={handleCheckout}
         disabled={!canCheckout}

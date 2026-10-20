@@ -153,9 +153,9 @@ export default function AuthCallbackPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="rounded-[1.75rem] border border-white/10 bg-white/5 px-10 py-12 text-center shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-[var(--gold-strong)]" />
-          <p className="text-[#d8d1c6]">Signing you in...</p>
+        <div className="rounded-3xl border border-border bg-surface px-10 py-12 text-center shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-ember-text" />
+          <p className="text-muted-foreground">Signing you in...</p>
         </div>
       </div>
     )
@@ -163,14 +163,14 @@ export default function AuthCallbackPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-white/5 p-8 text-center shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+      <div className="w-full max-w-md rounded-3xl border border-border bg-surface p-8 text-center shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-xl">
         <h1 className="mb-4 text-2xl font-bold text-white">Authentication Error</h1>
-        <p className="mb-6 text-[#d8d1c6]" role="alert" aria-live="assertive">
+        <p className="mb-6 text-muted-foreground" role="alert" aria-live="assertive">
           {error || 'Something went wrong'}
         </p>
         <a
           href="/auth"
-          className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] px-5 font-medium text-black hover:brightness-105"
+          className="inline-flex h-10 items-center justify-center rounded-full border border-border-2 bg-[image:var(--grad-cta)] px-5 font-medium text-white hover:brightness-110"
         >
           Try Again
         </a>

@@ -125,7 +125,7 @@ export function AuthForm() {
         variant="outline"
         onClick={handleGoogleSignIn}
         disabled={isLoading}
-        className="w-full border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+        className="min-h-11 w-full rounded-full border-border-2 bg-surface-2 font-semibold text-foreground hover:bg-surface-3 hover:text-foreground"
       >
         <svg
           className="mr-2 h-4 w-4"
@@ -155,10 +155,10 @@ export function AuthForm() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t" />
+          <span className="w-full border-t border-border" />
         </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="rounded-full bg-black/55 px-3 py-1 tracking-[0.28em] text-[#d8d1c6]">
+        <div className="relative flex justify-center text-[11px] font-semibold uppercase tracking-[0.14em]">
+          <span className="rounded-full bg-surface px-3 py-1 text-muted-foreground">
             Or continue with email
           </span>
         </div>
@@ -166,7 +166,7 @@ export function AuthForm() {
 
       <form onSubmit={handlePasswordSubmit} className="space-y-4">
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium text-foreground">
+          <label htmlFor="email" className="text-[13px] font-extrabold text-foreground">
             Email address
           </label>
           <Input
@@ -178,12 +178,12 @@ export function AuthForm() {
             required
             disabled={isLoading}
             autoComplete="email"
-            className="h-11 rounded-xl border-white/10 bg-black/30 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
+            className="h-11 rounded-xl border-border-2 bg-surface-2 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
           />
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium text-foreground">
+          <label htmlFor="password" className="text-[13px] font-extrabold text-foreground">
             Password
           </label>
           <div className="relative">
@@ -196,7 +196,7 @@ export function AuthForm() {
               required
               disabled={isLoading}
               autoComplete="current-password"
-              className="h-11 rounded-xl border-white/10 bg-black/30 pr-10 text-white placeholder:text-white/35 focus-visible:ring-[var(--gold-strong)]"
+              className="h-11 rounded-xl border-border-2 bg-surface-2 pr-10 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
             />
             <Button
               type="button"
@@ -204,7 +204,7 @@ export function AuthForm() {
               size="sm"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? "Hide password" : "Show password"}
-              className="absolute right-0 top-0 h-full px-3 py-2 text-white/60 hover:bg-transparent hover:text-white"
+              className="absolute right-0 top-0 h-full px-3 py-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -232,7 +232,7 @@ export function AuthForm() {
 
         {error && (
           <p
-            className="rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+            className="rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive"
             role="alert"
           >
             {error}
@@ -241,7 +241,7 @@ export function AuthForm() {
 
         <Button
           type="submit"
-          className="h-11 w-full rounded-xl border border-[var(--line-strong)] bg-[linear-gradient(135deg,#f1d7aa,#c59661)] font-semibold uppercase tracking-[0.2em] text-black hover:brightness-105"
+          className="h-12 w-full rounded-full bg-[image:var(--grad-cta)] text-sm font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110"
           disabled={isLoading}
         >
           {isLoading ? "Signing in..." : "Sign In"}

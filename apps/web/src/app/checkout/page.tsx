@@ -1027,7 +1027,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
               <h2 className="text-xl font-semibold mb-2 text-center font-display">Bulk Order Submitted!</h2>
               <p className="text-muted-foreground text-center mb-6">{successMessage}</p>
               <Link href="/orders">
-                <Button className="shadow-gold">View My Orders</Button>
+                <Button className="min-h-12 rounded-full bg-[image:var(--grad-cta)] font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110">View My Orders</Button>
               </Link>
             </div>
           </div>
@@ -1076,7 +1076,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                 Your cart is empty. Add some items first.
               </p>
               <Link href="/">
-                <Button className="shadow-gold">Browse Menu</Button>
+                <Button className="min-h-12 rounded-full bg-[image:var(--grad-cta)] font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110">Browse Menu</Button>
               </Link>
             </div>
           </div>
@@ -1373,7 +1373,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                       </div>
                     )}
                     {menuPromoSavings > 0 && (
-                      <div className="flex justify-between text-sm text-primary">
+                      <div className="flex justify-between text-sm text-herb-text">
                         <span>Menu Promo Savings</span>
                         <span>-{formatPrice(menuPromoSavings)}</span>
                       </div>
@@ -1383,15 +1383,15 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                       deliveryFeeCents={deliveryFee}
                     />
                     {promoDiscount > 0 && (
-                      <div className="flex justify-between text-sm text-primary">
+                      <div className="flex justify-between text-sm text-herb-text">
                         <span>Promo Code Discount</span>
                         <span>-{formatPrice(promoDiscount)}</span>
                       </div>
                     )}
-                    <div className="border-t border-primary/30 pt-4 mt-4">
+                    <div className="border-t border-border pt-4 mt-4">
                       <div className="flex justify-between text-lg font-semibold">
                         <span>Total</span>
-                        <span className="text-primary">{formatPrice(total)}</span>
+                        <span className="text-ember-text">{formatPrice(total)}</span>
                       </div>
                     </div>
                   </div>
@@ -1404,7 +1404,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                 )}
 
                 <Button
-                  className="w-full shadow-gold"
+                  className="w-full min-h-[54px] rounded-full bg-[image:var(--grad-cta)] text-[15px] font-bold text-white shadow-[0_14px_32px_-12px_var(--accent)] hover:brightness-110"
                   size="lg"
                   onClick={handlePayNow}
                   disabled={!canCheckout || isProcessing}

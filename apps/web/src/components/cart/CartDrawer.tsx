@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { X, ShoppingCart } from 'lucide-react'
+import { X, ShoppingBag } from 'lucide-react'
 import { useCartStore } from '@/stores/cart'
 import { CartItem } from './CartItem'
 import { CartSummary } from './CartSummary'
 import { Button } from '@/components/ui/button'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { getMenuItems, type MenuItem } from '@/lib/queries/menu-client'
 
 function formatPrice(priceCents: number): string {
@@ -45,16 +46,7 @@ export function CartDrawer() {
     [menuItems]
   )
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [isOpen])
+  useBodyScrollLock(isOpen)
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
@@ -73,6 +65,7 @@ export function CartDrawer() {
   const subtotal = isHydrated ? getSubtotal() : 0
   const displayItems = isHydrated ? items : []
   const discountTotal = isHydrated ? getDiscountTotal() : 0
+  const totalItems = displayItems.reduce((sum, item) => sum + item.quantity, 0)
 
   return (
     <>
@@ -85,7 +78,7 @@ export function CartDrawer() {
       />
 
       <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-md bg-background shadow-xl transition-transform duration-300 ease-in-out ${
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-border bg-background shadow-xl transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
         role="dialog"
@@ -94,25 +87,38 @@ export function CartDrawer() {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between border-b px-4 py-4">
-            <h2 className="text-lg font-semibold">Your Cart</h2>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close cart">
-              <X className="h-5 w-5" />
-            </Button>
+        <div className="flex h-full flex-col">
+          <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
+            <ShoppingBag className="h-[18px] w-[18px]" aria-hidden />
+            <h2 className="flex-1 text-[15px] font-extrabold">Your order</h2>
+            <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11px] font-bold text-foreground">
+              {totalItems} {totalItems === 1 ? 'item' : 'items'}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close cart"
+              className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-foreground transition hover:bg-surface-3"
+            >
+              <X className="h-[18px] w-[18px]" />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4">
             {displayItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-12">
-                <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground text-center">Your cart is empty</p>
-                <Button variant="link" onClick={onClose} className="mt-2">
+              <div className="flex h-full flex-col items-center justify-center gap-3 py-12">
+                <ShoppingBag className="h-12 w-12 text-muted-foreground" />
+                <p className="text-center text-sm text-muted-foreground">Your cart is empty</p>
+                <Button
+                  variant="ghost"
+                  onClick={onClose}
+                  className="rounded-full border border-border-2 px-5 text-[13px] font-bold hover:bg-surface-2"
+                >
                   Browse menu
                 </Button>
               </div>
             ) : (
-              <div className="divide-y">
+              <div className="flex flex-col gap-3 py-3">
                 {displayItems.map((item, index) => (
                   <CartItem
                     key={`${item.menu_item_id}-${index}`}
@@ -127,18 +133,18 @@ export function CartDrawer() {
 
           {/* Applied promos */}
           {appliedPromos.length > 0 && (
-            <div className="px-4 py-3 border-t bg-primary/5">
-              <h3 className="text-sm font-medium mb-2">Applied Promos</h3>
+            <div className="border-t border-border bg-surface-sunk px-4 py-3">
+              <h3 className="mb-2 text-[13px] font-extrabold">Applied promos</h3>
               <div className="space-y-1">
                 {appliedPromos.map((promo) => (
                   <div key={promo.code} className="flex items-center justify-between">
-                    <span className="text-sm text-green-600">
+                    <span className="text-sm text-herb-text">
                       -{formatPrice(promo.discountCents)} ({promo.code})
                     </span>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-xs text-muted-foreground"
+                      className="h-6 rounded-full px-2 text-xs text-muted-foreground hover:bg-surface-2"
                       onClick={() => removePromo(promo.code)}
                     >
                       Remove
@@ -149,7 +155,9 @@ export function CartDrawer() {
             </div>
           )}
 
-          <CartSummary subtotal={subtotal - discountTotal} minOrderAmount={0} />
+          <div className="p-4">
+            <CartSummary subtotal={subtotal - discountTotal} minOrderAmount={0} />
+          </div>
         </div>
       </div>
     </>

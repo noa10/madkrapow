@@ -10,6 +10,7 @@ import { isAdminUser } from "@/lib/auth/roles"
 import { useClientUser } from "@/lib/auth/client-user"
 import { useCartStore } from "@/stores/cart"
 import { useIsClient } from "@/hooks/useIsClient"
+import { useRealtimeBranding } from "@/hooks/use-realtime-branding"
 import { ClientFooter } from "./ClientFooter"
 
 interface ClientPageShellProps {
@@ -30,6 +31,7 @@ export function ClientPageShell({ children }: ClientPageShellProps) {
   const displaySubtotalCents = isClient ? subtotalCents : 0
   const openDrawer = useCartStore((state) => state.openDrawer)
   const user = useClientUser()
+  const { logoUrl } = useRealtimeBranding()
   const supabase = getBrowserClient()
   const isAdmin = isAdminUser(user)
   const router = useRouter()
@@ -52,11 +54,11 @@ export function ClientPageShell({ children }: ClientPageShellProps) {
         <div className="mx-auto flex h-[var(--topbar-h)] w-full max-w-[1280px] items-center gap-3 px-4 sm:px-6 md:gap-3.5 lg:px-8">
           <Link href="/" className="flex shrink-0 items-center" aria-label="Mad Krapow — home">
             <Image
-              src="/madkrapow-logo.webp"
+              src={logoUrl ?? "/madkrapow-logo.webp"}
               alt="Mad Krapow"
               width={128}
               height={128}
-              className="h-12 w-12 shrink-0 md:h-14 md:w-14"
+              className="h-12 w-auto shrink-0 object-contain md:h-14"
               sizes="112px"
               priority
             />

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useCartStore, type SelectedModifier } from '@/stores/cart'
 import { useToastStore } from '@/stores/toast'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
+import { MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY } from '@/lib/menu/quantity'
 import { getUnsatisfiedRequiredGroupNames } from '@/lib/menu/required-options'
 
 function formatPrice(priceCents: number): string {
@@ -11,8 +12,8 @@ function formatPrice(priceCents: number): string {
 }
 
 /** Quantity bounds shared by the item page and the quick-view dialog. */
-export const MIN_QUANTITY = 1
-export const MAX_QUANTITY = 10
+export const MIN_QUANTITY = MIN_ITEM_QUANTITY
+export const MAX_QUANTITY = MAX_ITEM_QUANTITY
 
 /**
  * Ordering state for a single menu item — shared by the item detail page

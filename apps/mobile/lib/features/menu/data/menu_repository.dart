@@ -14,8 +14,23 @@ import '../../../generated/tables/store_settings.dart';
 class MenuItemWithModifiers {
   final MenuItemsRow item;
   final bool hasModifiers;
+  final List<ModifierGroupWithModifiers> modifierGroups;
 
-  MenuItemWithModifiers({required this.item, required this.hasModifiers});
+  MenuItemWithModifiers({
+    required this.item,
+    required this.hasModifiers,
+    this.modifierGroups = const [],
+  });
+
+  /// Builds the detail payload the quick view needs. The quick view does not
+  /// render the category label, so an empty name is sufficient here.
+  FullMenuItem toQuickViewItem() {
+    return FullMenuItem(
+      item: item,
+      category: (id: item.categoryId, name: ''),
+      modifierGroups: modifierGroups,
+    );
+  }
 }
 
 class CategoryWithMenuItems {
@@ -57,34 +72,82 @@ class MenuRepository {
   final SupabaseClient _supabase;
 
   /// Fetch categories with their available menu items.
-  /// Mirrors web's fetchCategories() — 3 queries + client-side grouping.
+  ///
+  /// The five reads are independent, so they run together. Hydrating modifier
+  /// groups here (rather than on item tap) keeps the quick view instant: the
+  /// menu is small, and every item already carries everything the sheet needs.
   Future<List<CategoryWithMenuItems>> fetchCategoriesWithItems() async {
-    final categoriesRes = await _supabase
-        .from('categories')
-        .select()
-        .eq('is_active', true)
-        .order('sort_order', ascending: true);
+    final responses = await Future.wait([
+      _supabase
+          .from('categories')
+          .select()
+          .eq('is_active', true)
+          .order('sort_order', ascending: true),
+      _supabase
+          .from('menu_items')
+          .select()
+          .order('sort_order', ascending: true),
+      _supabase.from('menu_item_modifier_groups').select(),
+      _supabase
+          .from('modifier_groups')
+          .select()
+          .order('sort_order', ascending: true),
+      _supabase
+          .from('modifiers')
+          .select()
+          .eq('is_available', true)
+          .order('sort_order', ascending: true),
+    ]);
 
-    final itemsRes = await _supabase
-        .from('menu_items')
-        .select()
-        .order('sort_order', ascending: true);
+    final categoriesRes = responses[0];
+    final itemsRes = responses[1];
+    final junctionRes = responses[2];
+    final groupsRes = responses[3];
+    final modifiersRes = responses[4];
 
-    final junctionRes = await _supabase
-        .from('menu_item_modifier_groups')
-        .select('menu_item_id');
-
-    // Build set of item IDs that have modifiers
-    final itemsWithModifiers = <String>{};
-    for (final row in junctionRes) {
-      itemsWithModifiers.add(row['menu_item_id'] as String);
-    }
-
-    // Parse rows
     final categories = categoriesRes
         .map((json) => CategoriesRow.fromJson(json))
         .toList();
     final items = itemsRes.map((json) => MenuItemsRow.fromJson(json)).toList();
+
+    final junctionsByItem = <String, List<MenuItemModifierGroupsRow>>{};
+    for (final json in junctionRes) {
+      final junction = MenuItemModifierGroupsRow.fromJson(json);
+      junctionsByItem.putIfAbsent(junction.menuItemId, () => []).add(junction);
+    }
+
+    final groups = groupsRes
+        .map((json) => ModifierGroupsRow.fromJson(json))
+        .toList();
+    final groupsById = {for (final group in groups) group.id: group};
+
+    final modifiersByGroup = <String, List<ModifiersRow>>{};
+    for (final json in modifiersRes) {
+      final modifier = ModifiersRow.fromJson(json);
+      modifiersByGroup
+          .putIfAbsent(modifier.modifierGroupId, () => [])
+          .add(modifier);
+    }
+
+    List<ModifierGroupWithModifiers> modifierGroupsFor(String itemId) {
+      final groupsForItem = <ModifierGroupWithModifiers>[];
+      for (final junction
+          in junctionsByItem[itemId] ?? const <MenuItemModifierGroupsRow>[]) {
+        final group = groupsById[junction.modifierGroupId];
+        if (group == null) continue;
+        groupsForItem.add(
+          ModifierGroupWithModifiers(
+            group: group,
+            modifiers: modifiersByGroup[group.id] ?? const [],
+            isRequired: junction.isRequired,
+          ),
+        );
+      }
+      groupsForItem.sort(
+        (a, b) => a.group.sortOrder.compareTo(b.group.sortOrder),
+      );
+      return groupsForItem;
+    }
 
     // Group items by category_id
     final itemsByCategory = <String, List<MenuItemsRow>>{};
@@ -97,12 +160,14 @@ class MenuRepository {
       final categoryItems = itemsByCategory[category.id] ?? [];
       return CategoryWithMenuItems(
         category: category,
-        menuItems: categoryItems
-            .map((item) => MenuItemWithModifiers(
-                  item: item,
-                  hasModifiers: itemsWithModifiers.contains(item.id),
-                ))
-            .toList(),
+        menuItems: categoryItems.map((item) {
+          final modifierGroups = modifierGroupsFor(item.id);
+          return MenuItemWithModifiers(
+            item: item,
+            hasModifiers: modifierGroups.isNotEmpty,
+            modifierGroups: modifierGroups,
+          );
+        }).toList(),
       );
     }).toList();
   }
@@ -126,8 +191,10 @@ class MenuRepository {
         .eq('id', menuItem.categoryId)
         .single();
 
-    final category =
-        (id: categoryRes['id'] as String, name: categoryRes['name'] as String);
+    final category = (
+      id: categoryRes['id'] as String,
+      name: categoryRes['name'] as String,
+    );
 
     // 3. Fetch junction rows for this item's modifier groups
     final junctionRes = await _supabase
@@ -147,7 +214,9 @@ class MenuRepository {
         .map((json) => MenuItemModifierGroupsRow.fromJson(json))
         .toList();
     final modifierGroupIds = junctions.map((j) => j.modifierGroupId).toList();
-    final isRequiredMap = {for (final j in junctions) j.modifierGroupId: j.isRequired};
+    final isRequiredMap = {
+      for (final j in junctions) j.modifierGroupId: j.isRequired,
+    };
 
     // 4. Fetch modifier groups
     final groupsRes = await _supabase
@@ -156,8 +225,9 @@ class MenuRepository {
         .inFilter('id', modifierGroupIds)
         .order('sort_order', ascending: true);
 
-    final groups =
-        groupsRes.map((json) => ModifierGroupsRow.fromJson(json)).toList();
+    final groups = groupsRes
+        .map((json) => ModifierGroupsRow.fromJson(json))
+        .toList();
 
     // 5. Fetch modifiers for all groups
     final groupIdList = groups.map((g) => g.id).toList();
@@ -168,8 +238,9 @@ class MenuRepository {
         .eq('is_available', true)
         .order('sort_order', ascending: true);
 
-    final allModifiers =
-        modifiersRes.map((json) => ModifiersRow.fromJson(json)).toList();
+    final allModifiers = modifiersRes
+        .map((json) => ModifiersRow.fromJson(json))
+        .toList();
 
     // Group modifiers by modifier_group_id
     final modifiersByGroup = <String, List<ModifiersRow>>{};
@@ -205,9 +276,7 @@ class MenuRepository {
 
   // -- Realtime --
 
-  RealtimeChannel subscribeToMenuChanges({
-    required void Function() onChange,
-  }) {
+  RealtimeChannel subscribeToMenuChanges({required void Function() onChange}) {
     return _supabase
         .channel('menu-changes')
         .onPostgresChanges(
@@ -266,14 +335,17 @@ final menuRepositoryProvider = Provider<MenuRepository>((ref) {
   return MenuRepository(ref.watch(supabaseProvider));
 });
 
-final categoriesWithItemsProvider =
-    FutureProvider<List<CategoryWithMenuItems>>((ref) async {
-  final repo = ref.watch(menuRepositoryProvider);
-  return repo.fetchCategoriesWithItems();
-});
+final categoriesWithItemsProvider = FutureProvider<List<CategoryWithMenuItems>>(
+  (ref) async {
+    final repo = ref.watch(menuRepositoryProvider);
+    return repo.fetchCategoriesWithItems();
+  },
+);
 
-final menuItemDetailProvider =
-    FutureProvider.family<FullMenuItem?, String>((ref, itemId) async {
+final menuItemDetailProvider = FutureProvider.family<FullMenuItem?, String>((
+  ref,
+  itemId,
+) async {
   final repo = ref.watch(menuRepositoryProvider);
   return repo.fetchItemById(itemId);
 });

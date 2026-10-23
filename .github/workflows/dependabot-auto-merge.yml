@@ -12,7 +12,14 @@ jobs:
   auto-merge:
     name: Auto-Merge Eligible PRs
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    # Match the PR *author*, not github.actor: synchronize events fired by
+    # pr-autoupdate (or a manual "Update branch") run under the rebaser's
+    # identity, which skipped the gate and left green Dependabot PRs open.
+    # Dependabot's identity is `app/dependabot` (GitHub App) with the legacy
+    # `dependabot[bot]` user as fallback.
+    if: >-
+      github.event.pull_request.user.login == 'app/dependabot' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v7.0.1
 

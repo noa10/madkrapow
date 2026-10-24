@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
-import '../../../checkout/data/checkout_models.dart' show PromoPreview;
 import '../../../profile/data/store_settings_repository.dart';
-import '../widgets/store_closed_banner.dart';
 import '../../providers/menu_providers.dart';
 import '../../providers/promo_preview_provider.dart';
+import '../menu_catalog_filter.dart';
+import '../widgets/brand_logo.dart';
+import '../widgets/home_hero.dart';
+import '../widgets/home_menu_states.dart';
+import '../widgets/how_it_works_section.dart';
+import '../widgets/how_to_order_section.dart';
+import '../widgets/item_quick_view.dart';
+import '../widgets/menu_category_rail.dart';
+import '../widgets/menu_category_section.dart';
+import '../widgets/menu_search_field.dart';
+import '../widgets/signature_menu_card.dart';
+import '../widgets/store_closed_banner.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +25,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -57,502 +66,412 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 }
 
-class _HomeScreenContent extends ConsumerWidget {
+class _HomeScreenContent extends ConsumerStatefulWidget {
   const _HomeScreenContent();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HomeScreenContent> createState() => _HomeScreenContentState();
+}
+
+class _HomeScreenContentState extends ConsumerState<_HomeScreenContent> {
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _scrollViewKey = GlobalKey();
+  final GlobalKey _menuAnchorKey = GlobalKey();
+  final GlobalKey _menuEndKey = GlobalKey();
+  final Map<String, GlobalKey> _sectionKeys = {};
+  final ValueNotifier<bool> _menuEnded = ValueNotifier<bool>(false);
+
+  String _query = '';
+  String? _activeCategoryId;
+  String? _catalogSignature;
+  MenuCatalogViewData? _viewData;
+  bool _syncScheduled = false;
+  bool _programmaticScroll = false;
+  int _scrollRequest = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
+    _searchController.dispose();
+    _menuEnded.dispose();
+    super.dispose();
+  }
+
+  GlobalKey _headerKey(String categoryId) {
+    return _sectionKeys.putIfAbsent(categoryId, GlobalKey.new);
+  }
+
+  void _handleScroll() {
+    if (!mounted) return;
+    _updateMenuEnded();
+    if (_programmaticScroll) return;
+    _syncActiveCategory();
+  }
+
+  void _scheduleSync() {
+    if (_syncScheduled) return;
+    _syncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncScheduled = false;
+      if (!mounted) return;
+      _handleScroll();
+    });
+  }
+
+  void _updateMenuEnded() {
+    final scrollBox =
+        _scrollViewKey.currentContext?.findRenderObject() as RenderBox?;
+    final menuEndBox =
+        _menuEndKey.currentContext?.findRenderObject() as RenderBox?;
+    if (scrollBox == null || menuEndBox == null) {
+      if (_menuEnded.value) _menuEnded.value = false;
+      return;
+    }
+
+    final viewportTop = scrollBox.localToGlobal(Offset.zero).dy;
+    final menuEndTop = menuEndBox.localToGlobal(Offset.zero).dy;
+    final ended = menuEndTop <= viewportTop + 8;
+    if (_menuEnded.value != ended) _menuEnded.value = ended;
+  }
+
+  void _syncActiveCategory() {
+    final viewData = _viewData;
+    if (viewData == null || viewData.categories.isEmpty) {
+      if (_activeCategoryId != null) {
+        setState(() => _activeCategoryId = null);
+      }
+      return;
+    }
+
+    final scrollBox =
+        _scrollViewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (scrollBox == null) return;
+
+    final threshold =
+        scrollBox.localToGlobal(Offset.zero).dy + MenuCategoryRail.height + 8;
+    String? next;
+    for (final category in viewData.categories) {
+      final sectionBox =
+          _sectionKeys[category.category.id]?.currentContext?.findRenderObject()
+              as RenderBox?;
+      if (sectionBox == null) continue;
+      if (sectionBox.localToGlobal(Offset.zero).dy <= threshold) {
+        next = category.category.id;
+      }
+    }
+    next ??= viewData.categories.first.category.id;
+
+    if (next != _activeCategoryId) {
+      setState(() => _activeCategoryId = next);
+    }
+  }
+
+  void _handleQueryChanged(String value) {
+    if (value == _query) return;
+    setState(() {
+      _query = value;
+      _activeCategoryId = null;
+    });
+    _scheduleSync();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _handleQueryChanged('');
+    FocusScope.of(context).unfocus();
+  }
+
+  void _openItem(MenuItemWithModifiers item) {
+    showItemQuickView(context, item.item.id, preview: item);
+  }
+
+  Future<void> _scrollToMenu() async {
+    FocusScope.of(context).unfocus();
+    final anchorContext = _menuAnchorKey.currentContext;
+    if (anchorContext == null) return;
+    await Scrollable.ensureVisible(
+      anchorContext,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+      alignment: 0.0,
+    );
+  }
+
+  Future<void> _scrollToCategory(String categoryId) async {
+    FocusScope.of(context).unfocus();
+    final headerContext = _sectionKeys[categoryId]?.currentContext;
+    final scrollBox =
+        _scrollViewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (headerContext == null ||
+        scrollBox == null ||
+        !_scrollController.hasClients) {
+      return;
+    }
+
+    final headerBox = headerContext.findRenderObject() as RenderBox?;
+    if (headerBox == null) return;
+
+    final currentOffset = _scrollController.offset;
+    final viewportTop = scrollBox.localToGlobal(Offset.zero).dy;
+    final headerTop = headerBox.localToGlobal(Offset.zero).dy;
+    final target =
+        (currentOffset + headerTop - viewportTop - MenuCategoryRail.height + 2)
+            .clamp(0.0, _scrollController.position.maxScrollExtent)
+            .toDouble();
+
+    if (_activeCategoryId != categoryId) {
+      setState(() => _activeCategoryId = categoryId);
+    }
+
+    _programmaticScroll = true;
+    final request = ++_scrollRequest;
+    try {
+      await _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      // An overlapping chip tap may have started a newer scroll; only the
+      // latest request is allowed to clear the guard.
+      if (request == _scrollRequest) _programmaticScroll = false;
+    }
+    if (mounted) _updateMenuEnded();
+  }
+
+  String _signatureFor(MenuCatalogViewData viewData) {
+    final categoryIds = viewData.categories
+        .map((category) => category.category.id)
+        .join(',');
+    final itemIds = viewData.categories
+        .expand((category) => category.menuItems)
+        .map((item) => item.item.id)
+        .join(',');
+    return '$_query|${viewData.isSearching}|$categoryIds|$itemIds';
+  }
+
+  List<Widget> _buildMenuSlivers(
+    BuildContext context,
+    MenuCatalogViewData viewData,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final crossAxisCount = width >= 600 ? 2 : 1;
+    final cardHeight = width >= 600 ? 136.0 : 120.0;
+
+    final slivers = <Widget>[
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+          child: MenuSearchField(
+            key: _menuAnchorKey,
+            controller: _searchController,
+            onChanged: _handleQueryChanged,
+            onClear: () => FocusScope.of(context).unfocus(),
+          ),
+        ),
+      ),
+    ];
+
+    if (!viewData.isSearching && viewData.signatureItems.isNotEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: SignatureMenuSection(
+            items: viewData.signatureItems,
+            onItemTap: _openItem,
+          ),
+        ),
+      );
+    }
+
+    if (viewData.categories.isNotEmpty) {
+      slivers
+        ..add(
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: MenuCategoryRailDelegate(
+              categories: viewData.categories,
+              activeId: _activeCategoryId,
+              onSelected: (categoryId) {
+                _scrollToCategory(categoryId);
+              },
+              hiddenWhen: _menuEnded,
+            ),
+          ),
+        )
+        ..add(
+          // The catalog is small (tens of items), so one non-virtualized
+          // column keeps the category rail's offsets simple. Revisit with a
+          // SliverList if the menu grows into the hundreds.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final category in viewData.categories)
+                    MenuCategorySection(
+                      key: ValueKey('menu-category-${category.category.id}'),
+                      category: category,
+                      headerKey: _headerKey(category.category.id),
+                      cardHeight: cardHeight,
+                      crossAxisCount: crossAxisCount,
+                      onItemTap: _openItem,
+                    ),
+                  SizedBox(key: _menuEndKey, height: 0),
+                ],
+              ),
+            ),
+          ),
+        );
+    }
+
+    if (viewData.isSearching && viewData.categories.isEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: MenuNoResultsState(query: _query, onClear: _clearSearch),
+        ),
+      );
+    } else if (!viewData.isSearching &&
+        viewData.categories.isEmpty &&
+        viewData.signatureItems.isEmpty) {
+      slivers.add(const SliverToBoxAdapter(child: MenuUnavailableState()));
+    }
+
+    return slivers;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesWithItemsProvider);
     final storeOpen = ref.watch(storeOpenProvider);
     final menuUpdated = ref.watch(menuUpdatedProvider);
     final promoUpdated = ref.watch(promoUpdatedProvider);
+    final categories = categoriesAsync.valueOrNull;
+    final viewData = categories == null
+        ? null
+        : buildMenuCatalogViewData(categories, _query);
+    _viewData = viewData;
+
+    if (viewData != null) {
+      final signature = _signatureFor(viewData);
+      if (signature != _catalogSignature) {
+        _catalogSignature = signature;
+        _scheduleSync();
+      }
+    }
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(title: const BrandLogo(height: 34)),
       body: CustomScrollView(
+        key: _scrollViewKey,
+        controller: _scrollController,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: [
-          // Hero banner
-          SliverToBoxAdapter(child: _HeroBanner(isStoreOpen: storeOpen)),
-          // Store closed banner
-          if (storeOpen == false)
-            const SliverToBoxAdapter(child: StoreClosedBanner()),
-          // Menu updated indicator
-          if (menuUpdated)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.update, size: 16, color: Colors.green),
-                    SizedBox(width: 8),
-                    Text(
-                      'Menu updated',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.green,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          // Promos updated indicator
-          if (promoUpdated)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.local_offer, size: 16, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Text(
-                      'Promos updated',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          // Menu content
-          categoriesAsync.when(
-            data: (categories) => _MenuContent(categories: categories),
-            loading: () => const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (err, _) => SliverFillRemaining(
-              child: Center(child: Text('Failed to load menu: $err')),
+          SliverToBoxAdapter(
+            child: HomeHero(
+              onOrderNow: () {
+                _scrollToMenu();
+              },
+              onExploreMenu: () {
+                _scrollToMenu();
+              },
             ),
           ),
+          if (storeOpen == false)
+            const SliverToBoxAdapter(child: StoreClosedBanner()),
+          if (menuUpdated)
+            const SliverToBoxAdapter(
+              child: _UpdateIndicator(
+                icon: Icons.update,
+                label: 'Menu updated',
+                foreground: AppColors.herbText,
+                background: AppColors.herbSoft,
+              ),
+            ),
+          if (promoUpdated)
+            const SliverToBoxAdapter(
+              child: _UpdateIndicator(
+                icon: Icons.local_offer,
+                label: 'Promos updated',
+                foreground: AppColors.emberText,
+                background: AppColors.emberSoft,
+              ),
+            ),
+          if (viewData != null)
+            ..._buildMenuSlivers(context, viewData)
+          else if (categoriesAsync.hasError)
+            SliverToBoxAdapter(
+              child: MenuErrorState(
+                onRetry: () => ref.invalidate(categoriesWithItemsProvider),
+              ),
+            )
+          else
+            const SliverToBoxAdapter(child: MenuLoadingState()),
+          SliverToBoxAdapter(
+            child: HowToOrderSection(
+              onBrowseMenu: () {
+                _scrollToMenu();
+              },
+            ),
+          ),
+          const SliverToBoxAdapter(child: HowItWorksSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
     );
   }
 }
 
-class _HeroBanner extends ConsumerWidget {
-  const _HeroBanner({required this.isStoreOpen});
+class _UpdateIndicator extends StatelessWidget {
+  const _UpdateIndicator({
+    required this.icon,
+    required this.label,
+    required this.foreground,
+    required this.background,
+  });
 
-  final bool? isStoreOpen;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final brandingAsync = ref.watch(storeBrandingProvider);
-
-    return brandingAsync.when(
-      data: (branding) {
-        final logoUrl = branding.logoUrl;
-        final heroUrl = branding.heroImageUrl;
-        final showHeroImage = heroUrl != null && heroUrl.isNotEmpty;
-        final showLogo = logoUrl != null && logoUrl.isNotEmpty;
-
-        return Stack(
-          children: [
-            if (showHeroImage)
-              Positioned.fill(
-                child: CachedNetworkImage(
-                  imageUrl: heroUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                  ),
-                  errorWidget: (context, url, err) => const SizedBox.shrink(),
-                ),
-              ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
-              decoration: BoxDecoration(
-                gradient: showHeroImage
-                    ? LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          theme.colorScheme.surface.withValues(alpha: 0.4),
-                          theme.colorScheme.surface,
-                        ],
-                      )
-                    : LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          theme.colorScheme.primary.withValues(alpha: 0.3),
-                          theme.colorScheme.surface,
-                        ],
-                      ),
-              ),
-              child: Column(
-                children: [
-                  if (showLogo)
-                    CachedNetworkImage(
-                      imageUrl: logoUrl,
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      errorWidget: (context, url, error) => Icon(
-                        Icons.local_fire_department,
-                        size: 56,
-                        color: theme.colorScheme.primary,
-                      ),
-                    )
-                  else
-                    Icon(
-                      Icons.local_fire_department,
-                      size: 56,
-                      color: theme.colorScheme.primary,
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    branding.storeName,
-                    style: theme.textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Hot, fiery Phad Kra Phao\ndelivered to your door.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  if (isStoreOpen != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: (isStoreOpen! ? Colors.green : Colors.red).withValues(
-                          alpha: 0.2,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isStoreOpen! ? Icons.circle : Icons.cancel_outlined,
-                            size: 12,
-                            color: isStoreOpen! ? Colors.green : Colors.red,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isStoreOpen! ? 'Open Now' : 'Currently Closed',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: isStoreOpen! ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-      loading: () => Container(
-        padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
-        child: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (err, stack) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
-        child: Column(
-          children: [
-            Icon(
-              Icons.local_fire_department,
-              size: 56,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Mad Krapow',
-              style: theme.textTheme.headlineLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MenuContent extends StatelessWidget {
-  const _MenuContent({required this.categories});
-
-  final List<CategoryWithMenuItems> categories;
+  final IconData icon;
+  final String label;
+  final Color foreground;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        final category = categories[index];
-        return _CategorySection(category: category);
-      }, childCount: categories.length),
-    );
-  }
-}
-
-class _CategorySection extends StatelessWidget {
-  const _CategorySection({required this.category});
-
-  final CategoryWithMenuItems category;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-          child: Text(
-            category.category.name,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        if (category.category.description != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              category.category.description!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-          ),
-        const SizedBox(height: 8),
-        ...category.menuItems.map(
-          (item) => _MenuItemTile(itemWithModifiers: item),
-        ),
-      ],
-    );
-  }
-}
-
-class _MenuItemTile extends ConsumerWidget {
-  const _MenuItemTile({required this.itemWithModifiers});
-
-  final MenuItemWithModifiers itemWithModifiers;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final item = itemWithModifiers.item;
-    final theme = Theme.of(context);
-    final promoAsync = ref.watch(promoPreviewProvider(item.id));
-    final isUnavailable = !item.isAvailable;
-
-    Widget imageWidget;
-    if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
-      imageWidget = ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
-          imageUrl: item.imageUrl!,
-          width: 64,
-          height: 64,
-          fit: BoxFit.cover,
-          placeholder: (context, url) => Container(
-            width: 64,
-            height: 64,
-            color: theme.colorScheme.surfaceContainerHighest,
-          ),
-          errorWidget: (context, url, error) => Container(
-            width: 64,
-            height: 64,
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: const Icon(Icons.restaurant, size: 28),
-          ),
-        ),
-      );
-    } else {
-      imageWidget = Container(
-        width: 64,
-        height: 64,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
+          color: background,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: foreground.withValues(alpha: 0.3)),
         ),
-        child: const Icon(Icons.restaurant, size: 28),
-      );
-    }
-
-    if (isUnavailable) {
-      imageWidget = ColorFiltered(
-        colorFilter: const ColorFilter.matrix([
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0,      0,      0,      1, 0,
-        ]),
-        child: Opacity(
-          opacity: 0.5,
-          child: imageWidget,
-        ),
-      );
-    }
-
-    return InkWell(
-      onTap: isUnavailable ? null : () => context.push('/item/${item.id}'),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Item image
-            imageWidget,
-            const SizedBox(width: 12),
-            // Item info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isUnavailable
-                          ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                          : null,
-                    ),
-                  ),
-                  if (item.description != null && item.description!.isNotEmpty)
-                    Text(
-                      item.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: isUnavailable
-                            ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
-                            : theme.colorScheme.onSurface.withValues(
-                                alpha: 0.6,
-                              ),
-                      ),
-                    ),
-                  const SizedBox(height: 4),
-                  _buildPrice(
-                    context,
-                    theme,
-                    item.priceCents,
-                    promoAsync,
-                    isUnavailable,
-                  ),
-                ],
+            Icon(icon, size: 16, color: foreground),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: foreground,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            if (isUnavailable)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.error.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: theme.colorScheme.error.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Text(
-                  'Unavailable',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.error,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              )
-            else
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPrice(
-    BuildContext context,
-    ThemeData theme,
-    int originalPriceCents,
-    AsyncValue<PromoPreview?> promoAsync,
-    bool isUnavailable,
-  ) {
-    final promo = promoAsync.valueOrNull;
-    final showDiscount = !isUnavailable && promo != null && promo.savingsCents > 0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            if (showDiscount) ...[
-              Text(
-                formatPrice(promo.discountedCents),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                formatPrice(originalPriceCents),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  decoration: TextDecoration.lineThrough,
-                ),
-              ),
-            ] else ...[
-              Text(
-                formatPrice(originalPriceCents),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: isUnavailable
-                      ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
-                      : theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (!isUnavailable && itemWithModifiers.hasModifiers) ...[
-                const SizedBox(width: 8),
-                Text(
-                  'Customizable',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(
-                      alpha: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ],
     );
   }
 }

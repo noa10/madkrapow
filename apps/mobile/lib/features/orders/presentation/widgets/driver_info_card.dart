@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/time_formatter.dart';
@@ -56,16 +57,11 @@ class DriverInfoCard extends StatelessWidget {
             if (!_hasAnyDriverInfo)
               Row(
                 children: [
-                  Icon(
-                    Icons.person_off_outlined,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                  ),
+                  const Icon(Icons.person_off_outlined, color: AppColors.muted),
                   const SizedBox(width: 8),
-                  Text(
+                  const Text(
                     'Driver not yet assigned',
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                    ),
+                    style: TextStyle(color: AppColors.muted),
                   ),
                 ],
               )
@@ -107,10 +103,9 @@ class DriverInfoCard extends StatelessWidget {
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
                               'Last updated: ${formatRelativeTime(driverLocationUpdatedAt)}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.5),
+                                color: AppColors.muted,
                               ),
                             ),
                           ),
@@ -134,27 +129,24 @@ class DriverInfoCard extends StatelessWidget {
           width: 56,
           height: 56,
           fit: BoxFit.cover,
-          placeholder: (context, url) => CircleAvatar(
+          placeholder: (context, url) => const CircleAvatar(
             radius: 28,
-            backgroundColor: Colors.grey[300],
-            child: const Icon(Icons.person, color: Colors.white),
+            backgroundColor: AppColors.surface3,
+            child: Icon(Icons.person, color: AppColors.muted),
           ),
-          errorWidget: (context, url, error) => CircleAvatar(
+          errorWidget: (context, url, error) => const CircleAvatar(
             radius: 28,
-            backgroundColor: Colors.grey[300],
-            child: const Icon(Icons.person, color: Colors.white),
+            backgroundColor: AppColors.surface3,
+            child: Icon(Icons.person, color: AppColors.muted),
           ),
         ),
       );
     }
 
-    return CircleAvatar(
+    return const CircleAvatar(
       radius: 28,
-      backgroundColor: Colors.grey[300],
-      child: Icon(
-        Icons.person,
-        color: Colors.grey[600],
-      ),
+      backgroundColor: AppColors.surface3,
+      child: Icon(Icons.person, color: AppColors.muted),
     );
   }
 
@@ -173,11 +165,7 @@ class DriverInfoCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
             Text(
               text,
@@ -196,24 +184,24 @@ class DriverInfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.12),
+        color: AppColors.emberSoft,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
+          const Icon(
             Icons.directions_car_outlined,
             size: 14,
-            color: Colors.orange[700],
+            color: AppColors.emberText,
           ),
           const SizedBox(width: 6),
           Text(
             plate,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.orange[800],
+              color: AppColors.emberText,
             ),
           ),
         ],
@@ -222,7 +210,8 @@ class DriverInfoCard extends StatelessWidget {
   }
 
   Widget _buildTrackButton(BuildContext context) {
-    final url = shareLink ??
+    final url =
+        shareLink ??
         (lalamoveOrderId != null
             ? 'https://www.lalamove.com/en-my/track/MY/$lalamoveOrderId'
             : null);
@@ -236,24 +225,20 @@ class DriverInfoCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.orange.withValues(alpha: 0.1),
+            color: AppColors.emberSoft,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.open_in_new,
-                size: 14,
-                color: Colors.orange[800],
-              ),
-              const SizedBox(width: 6),
+              Icon(Icons.open_in_new, size: 14, color: AppColors.emberText),
+              SizedBox(width: 6),
               Text(
                 'Track Delivery on Lalamove',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.orange[800],
+                  color: AppColors.emberText,
                 ),
               ),
             ],

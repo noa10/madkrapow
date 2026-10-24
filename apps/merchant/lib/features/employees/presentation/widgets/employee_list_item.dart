@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/constants/roles.dart';
 import '../../../employees/data/employee_repository.dart';
 
 class EmployeeListItem extends StatelessWidget {
-  const EmployeeListItem({
-    super.key,
-    required this.employee,
-    this.onTap,
-  });
+  const EmployeeListItem({super.key, required this.employee, this.onTap});
 
   final Employee employee;
   final VoidCallback? onTap;
@@ -23,10 +20,7 @@ class EmployeeListItem extends StatelessWidget {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: roleColor.withValues(alpha: 0.15),
-          child: Icon(
-            Icons.person,
-            color: roleColor,
-          ),
+          child: Icon(Icons.person, color: roleColor),
         ),
         title: Text(
           employee.name,
@@ -58,19 +52,7 @@ class EmployeeListItem extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             if (!employee.isActive)
-              const Chip(
-                label: Text(
-                  'Inactive',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                backgroundColor: Colors.black12,
-                padding: EdgeInsets.zero,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+              const StatusPill(status: 'inactive', dense: true),
           ],
         ),
         onTap: onTap,
@@ -80,11 +62,11 @@ class EmployeeListItem extends StatelessWidget {
 
   Color _roleColor(BuildContext context, StaffRole? role) {
     return switch (role) {
-      StaffRole.admin => Colors.purple,
-      StaffRole.manager => Colors.blue,
-      StaffRole.cashier => Colors.green,
-      StaffRole.kitchen => Colors.orange,
-      null => Colors.grey,
+      StaffRole.admin => AppColors.accent,
+      StaffRole.manager => AppColors.info,
+      StaffRole.cashier => AppColors.herbText,
+      StaffRole.kitchen => AppColors.emberText,
+      null => AppColors.muted,
     };
   }
 }

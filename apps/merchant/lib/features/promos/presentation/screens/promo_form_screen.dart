@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../features/menu/providers/menu_providers.dart';
 import '../../../../features/menu/data/menu_repository.dart';
@@ -43,8 +44,9 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
     super.initState();
     final promo = widget.promo;
     _codeController = TextEditingController(text: promo?.code ?? '');
-    _descriptionController =
-        TextEditingController(text: promo?.description ?? '');
+    _descriptionController = TextEditingController(
+      text: promo?.description ?? '',
+    );
     _scope = promo?.scope ?? 'order';
     _applicationType = promo?.applicationType ?? 'code';
     _discountType = promo?.discountType ?? 'percentage';
@@ -52,8 +54,9 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
 
     if (promo != null) {
       if (promo.discountType == 'percentage') {
-        _discountValueController =
-            TextEditingController(text: promo.discountValue.toString());
+        _discountValueController = TextEditingController(
+          text: promo.discountValue.toString(),
+        );
       } else {
         _discountValueController = TextEditingController(
           text: (promo.discountValue / 100).toStringAsFixed(2),
@@ -142,8 +145,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
         : int.tryParse(maxDiscountText);
 
     final maxUsesText = _maxUsesController.text.trim();
-    final int? maxUses =
-        maxUsesText.isEmpty ? null : int.tryParse(maxUsesText);
+    final int? maxUses = maxUsesText.isEmpty ? null : int.tryParse(maxUsesText);
 
     if (_isEditing) {
       final notifier = ref.read(updatePromoProvider.notifier);
@@ -172,7 +174,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to update: ${state.error}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       } else {
@@ -204,7 +206,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to create: ${state.error}'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       } else {
@@ -274,7 +276,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
         ),
         const Text(
           'Select items this promo applies to',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
+          style: TextStyle(fontSize: 12, color: AppColors.muted),
         ),
         const SizedBox(height: 8),
         for (final category in categories) ...[
@@ -285,7 +287,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
-                color: Colors.teal,
+                color: AppColors.herbText,
               ),
             ),
           ),
@@ -314,7 +316,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
         const SizedBox(height: 8),
         Text(
           '${_targetMenuItemIds.length} item(s) selected',
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
+          style: const TextStyle(fontSize: 12, color: AppColors.muted),
         ),
       ],
     );
@@ -413,7 +415,9 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
               ),
               if (_showTargetItems) ...[
                 const SizedBox(height: 16),
-                ref.watch(categoriesWithItemsProvider).when(
+                ref
+                    .watch(categoriesWithItemsProvider)
+                    .when(
                       data: (categories) =>
                           _buildTargetItemsSelector(categories),
                       loading: () => const Center(
@@ -454,7 +458,9 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _discountValueController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: _discountType == 'percentage'
                       ? 'Discount Value * (%)'
@@ -475,7 +481,9 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _minOrderAmountController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Min Order Amount (RM)',
                   prefixIcon: Icon(Icons.shopping_cart_outlined),
@@ -564,7 +572,7 @@ class _PromoFormScreenState extends ConsumerState<PromoFormScreen> {
                 ),
                 secondary: Icon(
                   _isActive ? Icons.toggle_on : Icons.toggle_off,
-                  color: _isActive ? Colors.green : Colors.grey,
+                  color: _isActive ? AppColors.herbText : AppColors.muted,
                 ),
                 value: _isActive,
                 onChanged: (value) {

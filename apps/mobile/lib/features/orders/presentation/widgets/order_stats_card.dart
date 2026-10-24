@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../data/order_repository.dart';
 
@@ -20,7 +21,7 @@ class OrderStatsCard extends ConsumerWidget {
             child: _StatItem(
               label: 'Completed',
               count: summary.completedCount,
-              color: Colors.green,
+              color: AppColors.herbText,
               icon: Icons.check_circle_outline,
             ),
           ),
@@ -29,7 +30,7 @@ class OrderStatsCard extends ConsumerWidget {
             child: _StatItem(
               label: 'Cancelled',
               count: summary.cancelledCount,
-              color: Colors.red,
+              color: AppColors.dangerText,
               icon: Icons.cancel_outlined,
             ),
           ),
@@ -64,20 +65,16 @@ class _StatItem extends StatelessWidget {
             Text(
               '$count',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.color
-                        ?.withValues(alpha: 0.7),
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
             ),
           ],
         ),

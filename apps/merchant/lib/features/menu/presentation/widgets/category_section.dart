@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../config/routes.dart';
 import '../../../../generated/database.dart';
@@ -112,9 +113,11 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                       if (!widget.category.isActive)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.15),
+                            color: AppColors.dangerSoft,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Text(
@@ -122,7 +125,7 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Colors.red,
+                              color: AppColors.dangerText,
                             ),
                           ),
                         ),
@@ -136,7 +139,9 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                       if (widget.onMoveDown != null)
                         IconButton(
                           icon: const Icon(Icons.arrow_downward, size: 20),
-                          onPressed: widget.canMoveDown ? widget.onMoveDown : null,
+                          onPressed: widget.canMoveDown
+                              ? widget.onMoveDown
+                              : null,
                           tooltip: 'Move down',
                         ),
                       IconButton(
@@ -148,9 +153,7 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                         onPressed: _newItem,
                         tooltip: 'Add Item',
                       ),
-                      Icon(
-                        _expanded ? Icons.expand_more : Icons.chevron_right,
-                      ),
+                      Icon(_expanded ? Icons.expand_more : Icons.chevron_right),
                     ],
                   ),
                 ],
@@ -178,7 +181,9 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                     ),
                   )
                 : ReorderableListView.builder(
-                    key: ValueKey('reorder_${widget.category.id}_$_dataVersion'),
+                    key: ValueKey(
+                      'reorder_${widget.category.id}_$_dataVersion',
+                    ),
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _items.length,
@@ -196,7 +201,10 @@ class _CategorySectionState extends ConsumerState<CategorySection> {
                                 vertical: 12,
                                 horizontal: 4,
                               ),
-                              child: Icon(Icons.drag_handle, color: Colors.grey),
+                              child: Icon(
+                                Icons.drag_handle,
+                                color: AppColors.muted,
+                              ),
                             ),
                           ),
                           Expanded(child: MenuItemTile(item: item)),

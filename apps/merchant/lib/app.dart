@@ -39,7 +39,9 @@ import 'main.dart' show firebaseInitialized;
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 final _ordersNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'orders');
 final _menuNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'menu');
-final _analyticsNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'analytics');
+final _analyticsNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'analytics',
+);
 final _moreNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'more');
 
 GoRouter _createRouter(Ref ref) {
@@ -135,7 +137,8 @@ GoRouter _createRouter(Ref ref) {
                   GoRoute(
                     path: 'items/new',
                     builder: (context, state) => MenuItemFormScreen(
-                      initialCategoryId: state.uri.queryParameters['categoryId'],
+                      initialCategoryId:
+                          state.uri.queryParameters['categoryId'],
                     ),
                   ),
                   GoRoute(
@@ -463,7 +466,7 @@ class MerchantApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Mad Krapow Merchant',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,
       routerConfig: router,

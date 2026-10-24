@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -55,7 +56,9 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
 
-    await ref.read(adminSignInProvider.notifier).signIn(
+    await ref
+        .read(adminSignInProvider.notifier)
+        .signIn(
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
@@ -67,7 +70,7 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(state.error.toString()),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     } else {
@@ -83,7 +86,7 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(state.error.toString()),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -105,24 +108,20 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Logo / title area
-                  Icon(
-                    Icons.storefront,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                  const AppLogo(height: 64),
                   const SizedBox(height: 16),
                   Text(
                     'Mad Krapow',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Merchant Portal',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 32),
 
@@ -153,7 +152,9 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                          _obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                         ),
                         onPressed: () {
                           setState(() => _obscurePassword = !_obscurePassword);
@@ -232,11 +233,8 @@ class _AdminSignInScreenState extends ConsumerState<AdminSignInScreen> {
                       return Text(
                         'v${snap.data!.version}',
                         style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.5),
-                            ),
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
                       );
                     },
                   ),

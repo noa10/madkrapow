@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../../config/routes.dart';
 import '../../../../core/widgets/async_value_widget.dart';
@@ -50,7 +51,10 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
                       hintText: 'Search promos...',
                       prefixIcon: Icon(Icons.search, size: 20),
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       isDense: true,
                     ),
                     onChanged: (value) => setState(() => _searchQuery = value),
@@ -63,7 +67,10 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All')),
                     DropdownMenuItem(value: 'order', child: Text('Order')),
-                    DropdownMenuItem(value: 'delivery', child: Text('Delivery')),
+                    DropdownMenuItem(
+                      value: 'delivery',
+                      child: Text('Delivery'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value != null) setState(() => _scopeFilter = value);
@@ -78,26 +85,29 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
               value: promosAsync,
               data: (promos) {
                 final filtered = promos.where((promo) {
-                  final matchesSearch = _searchQuery.isEmpty ||
-                      promo.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                      (promo.description?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
-                  final matchesScope = _scopeFilter == 'all' || promo.scope == _scopeFilter;
+                  final matchesSearch =
+                      _searchQuery.isEmpty ||
+                      promo.code.toLowerCase().contains(
+                        _searchQuery.toLowerCase(),
+                      ) ||
+                      (promo.description?.toLowerCase().contains(
+                            _searchQuery.toLowerCase(),
+                          ) ??
+                          false);
+                  final matchesScope =
+                      _scopeFilter == 'all' || promo.scope == _scopeFilter;
                   return matchesSearch && matchesScope;
                 }).toList();
 
                 if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.local_offer_outlined, size: 64, color: Colors.grey[400]),
-                        const SizedBox(height: 16),
-                        Text(
-                          promos.isEmpty ? 'No promotions yet' : 'No promos match your filters',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
+                  return AppEmptyState(
+                    icon: Icons.local_offer_outlined,
+                    title: promos.isEmpty
+                        ? 'No promotions yet'
+                        : 'No promos match your filters',
+                    message: promos.isEmpty
+                        ? 'Create a promo code to boost orders.'
+                        : 'Try a different search or scope.',
                   );
                 }
 
@@ -147,7 +157,7 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
             ListTile(
               leading: Icon(
                 promo.isActive ? Icons.toggle_on : Icons.toggle_off,
-                color: promo.isActive ? Colors.green : Colors.grey,
+                color: promo.isActive ? AppColors.herbText : AppColors.muted,
               ),
               title: Text(promo.isActive ? 'Deactivate' : 'Activate'),
               onTap: () {
@@ -156,8 +166,11 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              leading: const Icon(Icons.delete, color: AppColors.dangerText),
+              title: const Text(
+                'Delete',
+                style: TextStyle(color: AppColors.dangerText),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _confirmDelete(context, promo);
@@ -178,7 +191,7 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to toggle: ${state.error}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.danger,
         ),
       );
     }
@@ -189,7 +202,9 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Promo?'),
-        content: Text('Are you sure you want to delete ${promo.code}? This cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete ${promo.code}? This cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -215,13 +230,13 @@ class _PromoListScreenState extends ConsumerState<PromoListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to delete: ${state.error}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.danger,
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Promo deleted')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Promo deleted')));
     }
   }
 }
@@ -244,7 +259,7 @@ class _PromoListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColor(promo.statusLabel);
+    final statusColor = AppStatusColors.of(promo.statusLabel).foreground;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -260,13 +275,19 @@ class _PromoListTile extends StatelessWidget {
         ),
         title: Text(
           promo.code,
-          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (promo.description != null && promo.description!.isNotEmpty)
-              Text(promo.description!, maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(
+                promo.description!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             Row(
               children: [
                 _BadgeText(_scopeLabel(promo.scope)),
@@ -281,17 +302,7 @@ class _PromoListTile extends StatelessWidget {
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                promo.statusLabel,
-                style: theme.textTheme.labelSmall?.copyWith(color: statusColor),
-              ),
-            ),
+            StatusPill(status: promo.statusLabel, dense: true),
             const SizedBox(height: 2),
             Text(
               '${promo.currentUses}${promo.maxUses != null ? '/${promo.maxUses}' : '/∞'}',
@@ -303,30 +314,16 @@ class _PromoListTile extends StatelessWidget {
     );
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'Active':
-        return Colors.green;
-      case 'Inactive':
-        return Colors.grey;
-      case 'Depleted':
-        return Colors.orange;
-      case 'Expired':
-        return Colors.red;
-      case 'Scheduled':
-        return Colors.blue;
-      default:
-        return Colors.grey;
-    }
-  }
-
   String _scopeLabel(String scope) => scope == 'order' ? 'Order' : 'Delivery';
 
   String _discountLabel(PromoCode promo) {
     if (promo.discountType == 'percentage') {
       return '${promo.discountValue}%';
     }
-    final currencyFormat = NumberFormat.currency(symbol: 'RM ', decimalDigits: 2);
+    final currencyFormat = NumberFormat.currency(
+      symbol: 'RM ',
+      decimalDigits: 2,
+    );
     return currencyFormat.format(promo.discountValue / 100);
   }
 }
@@ -341,8 +338,8 @@ class _BadgeText extends StatelessWidget {
     return Text(
       text,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Theme.of(context).colorScheme.outline,
-          ),
+        color: Theme.of(context).colorScheme.outline,
+      ),
     );
   }
 }

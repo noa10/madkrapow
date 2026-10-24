@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -60,9 +61,7 @@ _FilteredOrders _applyFilters(SalesReportData data, WidgetRef ref) {
       return oiIds.any((id) => filteredOrderItemIds.contains(id));
     }).toList();
     orderItems = data.orderItems
-        .where(
-          (oi) => orders.map((o) => o.id).toSet().contains(oi.orderId),
-        )
+        .where((oi) => orders.map((o) => o.id).toSet().contains(oi.orderId))
         .toList();
   }
 
@@ -80,8 +79,7 @@ class SalesReportsScreen extends ConsumerStatefulWidget {
   const SalesReportsScreen({super.key});
 
   @override
-  ConsumerState<SalesReportsScreen> createState() =>
-      _SalesReportsScreenState();
+  ConsumerState<SalesReportsScreen> createState() => _SalesReportsScreenState();
 }
 
 class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> {
@@ -98,8 +96,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> {
           IconButton(
             icon: const Icon(Icons.download),
             tooltip: 'Export CSV',
-            onPressed:
-                reportAsync is AsyncData ? () => _exportCsv() : null,
+            onPressed: reportAsync is AsyncData ? () => _exportCsv() : null,
           ),
         ],
       ),
@@ -108,8 +105,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> {
           const _FilterSection(),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () =>
-                  ref.read(salesReportProvider.notifier).refresh(),
+              onRefresh: () => ref.read(salesReportProvider.notifier).refresh(),
               child: reportAsync.when(
                 loading: () => const _LoadingView(),
                 error: (error, stack) => _ErrorView(
@@ -165,15 +161,12 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> {
         '${DateFormat('yyyy-MM-dd').format(DateTime.now())}.csv',
       );
       await file.writeAsString(csvContent.toString());
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: 'Sales Report',
-      );
+      await Share.shareXFiles([XFile(file.path)], text: 'Sales Report');
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to export CSV')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to export CSV')));
       }
     }
   }
@@ -208,10 +201,7 @@ class _FilterSection extends ConsumerWidget {
               children: [
                 const Icon(Icons.filter_list, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  'Filters',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('Filters', style: Theme.of(context).textTheme.titleMedium),
               ],
             ),
             const SizedBox(height: 12),
@@ -288,10 +278,12 @@ class _FilterSection extends ConsumerWidget {
                         value: null,
                         child: Text('All Categories'),
                       ),
-                      ...categories.map((c) => DropdownMenuItem<String?>(
-                            value: c.id,
-                            child: Text(c.name),
-                          )),
+                      ...categories.map(
+                        (c) => DropdownMenuItem<String?>(
+                          value: c.id,
+                          child: Text(c.name),
+                        ),
+                      ),
                     ],
                     onChanged: (v) {
                       ref.read(salesCategoryFilterProvider.notifier).state = v;
@@ -381,10 +373,7 @@ class _DatePickerButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         alignment: Alignment.centerLeft,
       ),
-      child: Text(
-        '$label: $dateStr',
-        overflow: TextOverflow.ellipsis,
-      ),
+      child: Text('$label: $dateStr', overflow: TextOverflow.ellipsis),
     );
   }
 }
@@ -417,16 +406,20 @@ class _ReportContent extends ConsumerWidget {
       }
     }
 
-    final categoryBreakdown = data.categories
-        .map((cat) => _CategoryRevenue(
-              name: cat.name,
-              revenueCents: categoryRevenue[cat.id] ?? 0,
-              percentage: stats.totalRevenue > 0
-                  ? ((categoryRevenue[cat.id] ?? 0) / stats.totalRevenue) * 100
-                  : 0,
-            ))
-        .toList()
-      ..sort((a, b) => b.revenueCents.compareTo(a.revenueCents));
+    final categoryBreakdown =
+        data.categories
+            .map(
+              (cat) => _CategoryRevenue(
+                name: cat.name,
+                revenueCents: categoryRevenue[cat.id] ?? 0,
+                percentage: stats.totalRevenue > 0
+                    ? ((categoryRevenue[cat.id] ?? 0) / stats.totalRevenue) *
+                          100
+                    : 0,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.revenueCents.compareTo(a.revenueCents));
 
     final totalRevenue = stats.totalRevenue;
     String formatRm(int cents) => (cents / 100).toStringAsFixed(2);
@@ -438,8 +431,7 @@ class _ReportContent extends ConsumerWidget {
     );
     final cashOrders = filtered.orders.where(
       (o) =>
-          o.stripePaymentIntentId == null ||
-          o.stripePaymentIntentId!.isEmpty,
+          o.stripePaymentIntentId == null || o.stripePaymentIntentId!.isEmpty,
     );
 
     final cardRevenue = cardOrders.fold<int>(0, (s, o) => s + o.totalCents);
@@ -457,10 +449,7 @@ class _ReportContent extends ConsumerWidget {
               title: 'Total Revenue',
               value: 'RM ${formatRm(totalRevenue)}',
             ),
-            _StatCard(
-              title: 'Total Orders',
-              value: '${stats.totalOrders}',
-            ),
+            _StatCard(title: 'Total Orders', value: '${stats.totalOrders}'),
             _StatCard(
               title: 'Avg Order Value',
               value: 'RM ${formatRm(stats.avgOrderValue)}',
@@ -481,8 +470,9 @@ class _ReportContent extends ConsumerWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth > 600;
-            final childWidth =
-                wide ? (constraints.maxWidth - 12) / 2 : constraints.maxWidth;
+            final childWidth = wide
+                ? (constraints.maxWidth - 12) / 2
+                : constraints.maxWidth;
             return Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -515,17 +505,19 @@ class _ReportContent extends ConsumerWidget {
                                     _TableHeaderRight('%'),
                                   ],
                                 ),
-                                ...categoryBreakdown.map((cat) => TableRow(
-                                      children: [
-                                        _TableCell(cat.name),
-                                        _TableCellRight(
-                                          'RM ${formatRm(cat.revenueCents)}',
-                                        ),
-                                        _TableCellRight(
-                                          '${cat.percentage.toStringAsFixed(1)}%',
-                                        ),
-                                      ],
-                                    )),
+                                ...categoryBreakdown.map(
+                                  (cat) => TableRow(
+                                    children: [
+                                      _TableCell(cat.name),
+                                      _TableCellRight(
+                                        'RM ${formatRm(cat.revenueCents)}',
+                                      ),
+                                      _TableCellRight(
+                                        '${cat.percentage.toStringAsFixed(1)}%',
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             )
                           else
@@ -533,7 +525,7 @@ class _ReportContent extends ConsumerWidget {
                               'No data available',
                               style: TextStyle(
                                 fontStyle: FontStyle.italic,
-                                color: Colors.grey,
+                                color: AppColors.muted,
                               ),
                             ),
                         ],
@@ -573,7 +565,8 @@ class _ReportContent extends ConsumerWidget {
                                   const _TableCell('Card (Stripe)'),
                                   _TableCellRight('${cardOrders.length}'),
                                   _TableCellRight(
-                                      'RM ${formatRm(cardRevenue)}'),
+                                    'RM ${formatRm(cardRevenue)}',
+                                  ),
                                 ],
                               ),
                               TableRow(
@@ -581,7 +574,8 @@ class _ReportContent extends ConsumerWidget {
                                   const _TableCell('Cash'),
                                   _TableCellRight('${cashOrders.length}'),
                                   _TableCellRight(
-                                      'RM ${formatRm(cashRevenue)}'),
+                                    'RM ${formatRm(cashRevenue)}',
+                                  ),
                                 ],
                               ),
                             ],
@@ -635,13 +629,16 @@ class _ReportContent extends ConsumerWidget {
                           _TableHeader('Payment'),
                         ],
                       ),
-                      ...filtered.orders.take(100).map(
+                      ...filtered.orders
+                          .take(100)
+                          .map(
                             (order) => TableRow(
                               children: [
                                 _TableCell(order.orderNumber),
                                 _TableCell(
-                                  DateFormat('MMM dd, HH:mm')
-                                      .format(order.createdAt),
+                                  DateFormat(
+                                    'MMM dd, HH:mm',
+                                  ).format(order.createdAt),
                                 ),
                                 _StatusCell(status: order.status),
                                 _TableCellRight(
@@ -652,14 +649,15 @@ class _ReportContent extends ConsumerWidget {
                                 ),
                                 _TableCellRight(
                                   '-RM ${formatRm(order.discountCents)}',
-                                  color: Colors.redAccent,
+                                  color: AppColors.dangerText,
                                 ),
                                 _TableCellRight(
                                   'RM ${formatRm(order.totalCents)}',
                                 ),
                                 _TableCell(
                                   (order.stripePaymentIntentId != null &&
-                                          order.stripePaymentIntentId!
+                                          order
+                                              .stripePaymentIntentId!
                                               .isNotEmpty)
                                       ? 'Card'
                                       : 'Cash',
@@ -678,7 +676,7 @@ class _ReportContent extends ConsumerWidget {
                       'Export to CSV for complete data.',
                       style: const TextStyle(
                         fontStyle: FontStyle.italic,
-                        color: Colors.grey,
+                        color: AppColors.muted,
                         fontSize: 12,
                       ),
                     ),
@@ -697,10 +695,11 @@ _Stats _computeStats(_FilteredOrders filtered) {
   final totalRevenue = orders.fold<int>(0, (s, o) => s + o.totalCents);
   final totalOrders = orders.length;
   final avgOrderValue = totalOrders > 0 ? totalRevenue ~/ totalOrders : 0;
-  final totalDeliveryFees =
-      orders.fold<int>(0, (s, o) => s + o.deliveryFeeCents);
-  final totalDiscounts =
-      orders.fold<int>(0, (s, o) => s + o.discountCents);
+  final totalDeliveryFees = orders.fold<int>(
+    0,
+    (s, o) => s + o.deliveryFeeCents,
+  );
+  final totalDiscounts = orders.fold<int>(0, (s, o) => s + o.discountCents);
 
   return _Stats(
     totalRevenue: totalRevenue,
@@ -761,11 +760,9 @@ class _StatCard extends StatelessWidget {
                 title,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.color
-                      ?.withAlpha(180),
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.color?.withAlpha(180),
                 ),
               ),
               const SizedBox(height: 4),
@@ -797,11 +794,7 @@ class _TableHeader extends StatelessWidget {
         style: TextStyle(
           fontWeight: FontWeight.w600,
           fontSize: 12,
-          color: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.color
-              ?.withAlpha(180),
+          color: Theme.of(context).textTheme.bodySmall?.color?.withAlpha(180),
         ),
       ),
     );
@@ -822,11 +815,7 @@ class _TableHeaderRight extends StatelessWidget {
         style: TextStyle(
           fontWeight: FontWeight.w600,
           fontSize: 12,
-          color: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.color
-              ?.withAlpha(180),
+          color: Theme.of(context).textTheme.bodySmall?.color?.withAlpha(180),
         ),
       ),
     );
@@ -870,26 +859,11 @@ class _StatusCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bgColor, fgColor) = switch (status) {
-      'completed' =>
-        (Colors.green.shade800, Colors.green.shade200),
-      'paid' => (Colors.blue.shade800, Colors.blue.shade200),
-      _ => (Colors.orange.shade800, Colors.orange.shade200),
-    };
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: bgColor.withAlpha(180),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: fgColor.withAlpha(80)),
-        ),
-        child: Text(
-          status,
-          style: TextStyle(fontSize: 11, color: fgColor),
-        ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: StatusPill(status: status, dense: true),
       ),
     );
   }
@@ -921,33 +895,11 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 12),
-            Text(
-              error.toString(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Check logs for [SalesReports] tags for details.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
+    return AppEmptyState(
+      icon: Icons.error_outline,
+      title: 'Could not load sales report',
+      message: error.toString(),
+      action: OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
     );
   }
 }
@@ -957,18 +909,10 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
-          SizedBox(height: 12),
-          Text(
-            'No orders found for the selected filters',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
+    return const AppEmptyState(
+      icon: Icons.inbox_outlined,
+      title: 'No orders found',
+      message: 'Try a different date range or clear the filters.',
     );
   }
 }

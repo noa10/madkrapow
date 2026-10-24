@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../data/analytics_models.dart';
 import '../../providers/analytics_providers.dart';
@@ -19,9 +20,7 @@ class AnalyticsScreen extends ConsumerWidget {
     ref.watch(analyticsAutoRefreshProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Analytics'),
-      ),
+      appBar: AppBar(title: const Text('Analytics')),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.read(analyticsProvider.notifier).refresh(range: range);
@@ -33,14 +32,18 @@ class AnalyticsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: ['7d', '30d', '90d']
-                      .map((r) => _RangeChip(
-                            label: r,
-                            selected: range == r,
-                            onTap: () {
-                              ref.read(analyticsRangeProvider.notifier).state = r;
-                              ref.read(analyticsProvider.notifier).refresh(range: r);
-                            },
-                          ))
+                      .map(
+                        (r) => _RangeChip(
+                          label: r,
+                          selected: range == r,
+                          onTap: () {
+                            ref.read(analyticsRangeProvider.notifier).state = r;
+                            ref
+                                .read(analyticsProvider.notifier)
+                                .refresh(range: r);
+                          },
+                        ),
+                      )
                       .toList(),
                 ),
               ),
@@ -59,7 +62,9 @@ class AnalyticsScreen extends ConsumerWidget {
                   error: (error, stack) => _ErrorAnalyticsView(
                     error: error,
                     onRetry: () {
-                      ref.read(analyticsProvider.notifier).refresh(range: range);
+                      ref
+                          .read(analyticsProvider.notifier)
+                          .refresh(range: range);
                     },
                   ),
                 ),
@@ -143,20 +148,11 @@ class _ErrorAnalyticsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.error_outline, size: 48, color: Colors.red),
-          const SizedBox(height: 8),
-          Text(error.toString()),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
+    return AppEmptyState(
+      icon: Icons.error_outline,
+      title: 'Could not load analytics',
+      message: error.toString(),
+      action: OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
     );
   }
 }
@@ -166,8 +162,10 @@ class _EmptyAnalyticsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text('No analytics data available'),
+    return const AppEmptyState(
+      icon: Icons.bar_chart,
+      title: 'No analytics data available',
+      message: 'Try widening the date range.',
     );
   }
 }

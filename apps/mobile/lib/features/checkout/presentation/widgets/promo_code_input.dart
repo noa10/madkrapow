@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../data/checkout_models.dart';
 
@@ -15,7 +16,12 @@ class PromoCodeInput extends StatefulWidget {
   final int subtotalCents;
   final int deliveryFeeCents;
   final List<AppliedPromo> appliedPromos;
-  final Future<void> Function(String code, int subtotalCents, int deliveryFeeCents) onApply;
+  final Future<void> Function(
+    String code,
+    int subtotalCents,
+    int deliveryFeeCents,
+  )
+  onApply;
   final void Function(String code) onRemove;
 
   @override
@@ -118,14 +124,23 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
             (promo) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  color: theme.colorScheme.primaryContainer.withValues(
+                    alpha: 0.3,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                    const Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: AppColors.herbText,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       promo.code,
@@ -137,7 +152,7 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
                     Text(
                       _formatDiscount(promo),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
+                        color: AppColors.herbText,
                       ),
                     ),
                     const SizedBox(width: 8),

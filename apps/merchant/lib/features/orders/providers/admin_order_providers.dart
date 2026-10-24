@@ -38,7 +38,7 @@ final adminOrdersProvider = FutureProvider.family<List<OrdersRow>, OrderTab>(
     switch (tab) {
       case OrderTab.preparing:
         return repo.fetchOrders(
-          statuses: ['pending', 'paid', 'preparing'],
+          statuses: ['pending', 'paid', 'accepted', 'preparing'],
           fulfillmentType: 'asap',
         );
       case OrderTab.ready:

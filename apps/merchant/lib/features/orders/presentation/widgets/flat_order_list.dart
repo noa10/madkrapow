@@ -82,8 +82,7 @@ class _EmptyOrders extends StatelessWidget {
       return (
         icon: Icons.restaurant_menu,
         title: 'No orders being prepared',
-        body:
-            'ASAP orders that are pending, paid, or being prepared will appear here.',
+        body: 'New and in-progress ASAP orders will appear here.',
       );
     case OrderTab.ready:
       return (

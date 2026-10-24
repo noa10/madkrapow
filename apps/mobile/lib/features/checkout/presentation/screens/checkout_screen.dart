@@ -9,7 +9,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/routes.dart';
 import '../../../../core/providers/supabase_provider.dart';
 import '../../../../core/utils/auth_exceptions.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/tables/customer_addresses.dart';
 import '../../../../generated/tables/customer_contacts.dart';
 import '../../../profile/data/profile_repository.dart';

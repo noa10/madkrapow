@@ -2,7 +2,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../data/menu_item_visuals.dart';
 import '../../data/menu_repository.dart';
 import 'spice_level_indicator.dart';
@@ -130,6 +129,7 @@ class SignatureMenuCard extends StatelessWidget {
 
     return Semantics(
       button: true,
+      excludeSemantics: true,
       label: '${item.item.name}, ${formatPrice(item.item.priceCents)}',
       child: Material(
         color: AppColors.surface,

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../../checkout/data/checkout_models.dart' show PromoPreview;
 import '../../../../generated/tables/menu_items.dart';

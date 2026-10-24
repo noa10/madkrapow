@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/services/image_upload_service.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/database.dart';
 import '../../providers/menu_providers.dart';
 import '../widgets/modifier_bindings_editor.dart';

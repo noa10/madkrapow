@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../providers/admin_order_providers.dart';
 import 'provider_badges.dart';

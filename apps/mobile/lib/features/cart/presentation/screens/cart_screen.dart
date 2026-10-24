@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../config/routes.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../data/cart_item.dart';
 import '../../providers/cart_provider.dart';
 
@@ -77,7 +76,9 @@ class CartScreen extends ConsumerWidget {
           children: [
             const Text('Your Cart'),
             const SizedBox(width: 8),
-            _ItemCountPill(count: cart.items.length),
+            _ItemCountPill(
+              count: cart.items.fold(0, (sum, item) => sum + item.quantity),
+            ),
           ],
         ),
       ),
@@ -108,12 +109,41 @@ class CartScreen extends ConsumerWidget {
           ),
           _CartSummary(
             subtotalCents: cartNotifier.subtotalCents,
-            onClear: () => cartNotifier.clear(),
+            itemCount: cart.items.fold(0, (sum, item) => sum + item.quantity),
+            onClear: () => _confirmClearCart(context, cartNotifier),
           ),
         ],
       ),
     );
   }
+}
+
+Future<void> _confirmClearCart(
+  BuildContext context,
+  CartNotifier notifier,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Clear cart?'),
+      content: const Text('This removes every item from your cart.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Keep items'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(dialogContext).colorScheme.error,
+          ),
+          child: const Text('Clear cart'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed == true) notifier.clear();
 }
 
 class _ItemCountPill extends StatelessWidget {
@@ -289,9 +319,14 @@ class _CartItemTile extends StatelessWidget {
 }
 
 class _CartSummary extends StatelessWidget {
-  const _CartSummary({required this.subtotalCents, required this.onClear});
+  const _CartSummary({
+    required this.subtotalCents,
+    required this.itemCount,
+    required this.onClear,
+  });
 
   final int subtotalCents;
+  final int itemCount;
   final VoidCallback onClear;
 
   @override
@@ -325,7 +360,7 @@ class _CartSummary extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Subtotal',
+                  'Subtotal ($itemCount ${itemCount == 1 ? 'item' : 'items'})',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: AppColors.muted,
                   ),
@@ -363,7 +398,7 @@ class _CartSummary extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Total',
+                  'Estimated total',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),

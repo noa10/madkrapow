@@ -135,7 +135,7 @@ class _HeroImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasRemoteImage = imageUrl != null && imageUrl!.isNotEmpty;
     final fallback = Image.asset(
-      AppAssets.hero,
+      'assets/images/hero-wok-kra-pao.jpg',
       fit: BoxFit.cover,
       alignment: const Alignment(0, -0.16),
     );

@@ -88,6 +88,7 @@ class _HomeScreenContentState extends ConsumerState<_HomeScreenContent> {
   MenuCatalogViewData? _viewData;
   bool _syncScheduled = false;
   bool _programmaticScroll = false;
+  int _scrollRequest = 0;
 
   @override
   void initState() {
@@ -232,12 +233,18 @@ class _HomeScreenContentState extends ConsumerState<_HomeScreenContent> {
     }
 
     _programmaticScroll = true;
-    await _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-    );
-    _programmaticScroll = false;
+    final request = ++_scrollRequest;
+    try {
+      await _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      // An overlapping chip tap may have started a newer scroll; only the
+      // latest request is allowed to clear the guard.
+      if (request == _scrollRequest) _programmaticScroll = false;
+    }
     if (mounted) _updateMenuEnded();
   }
 
@@ -301,6 +308,9 @@ class _HomeScreenContentState extends ConsumerState<_HomeScreenContent> {
           ),
         )
         ..add(
+          // The catalog is small (tens of items), so one non-virtualized
+          // column keeps the category rail's offsets simple. Revisit with a
+          // SliverList if the menu grows into the hundreds.
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),

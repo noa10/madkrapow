@@ -16,7 +16,6 @@ import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
 import '../widgets/provider_badges.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 

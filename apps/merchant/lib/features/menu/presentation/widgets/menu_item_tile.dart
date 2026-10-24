@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../../core/utils/price_formatter.dart';
 import '../../../../../generated/database.dart';
 
 class MenuItemTile extends StatelessWidget {

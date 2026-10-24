@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../data/merchant_order_repository.dart';
 
 /// Displays a single order item with its modifiers/addons, notes, and pricing.

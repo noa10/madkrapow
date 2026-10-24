@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/time_formatter.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/merchant_order_repository.dart';

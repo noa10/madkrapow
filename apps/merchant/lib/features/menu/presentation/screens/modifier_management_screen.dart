@@ -4,7 +4,6 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../core/widgets/error_banner.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../generated/database.dart';
 import '../../providers/menu_providers.dart';
 import '../widgets/modifier_bindings_editor.dart';

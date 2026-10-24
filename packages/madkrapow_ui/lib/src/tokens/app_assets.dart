@@ -5,6 +5,4 @@ class AppAssets {
 
   static const String logo =
       'packages/madkrapow_ui/assets/images/madkrapow-logo.webp';
-  static const String hero =
-      'packages/madkrapow_ui/assets/images/hero-wok-kra-pao.jpg';
 }

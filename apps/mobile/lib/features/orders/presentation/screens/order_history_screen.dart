@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../cart/providers/cart_provider.dart';

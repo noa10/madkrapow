@@ -76,27 +76,68 @@ class MenuRepository {
   /// The five reads are independent, so they run together. Hydrating modifier
   /// groups here (rather than on item tap) keeps the quick view instant: the
   /// menu is small, and every item already carries everything the sheet needs.
+  ///
+  /// Each table is paged because PostgREST caps a response at 1000 rows by
+  /// default. Without paging, a menu that grows past the cap would silently
+  /// lose required modifier options.
   Future<List<CategoryWithMenuItems>> fetchCategoriesWithItems() async {
+    const pageSize = 1000;
+
+    Future<List<Map<String, dynamic>>> fetchAllPages(
+      Future<List<Map<String, dynamic>>> Function(int from, int to) fetchPage,
+    ) async {
+      final rows = <Map<String, dynamic>>[];
+      var from = 0;
+      while (true) {
+        final page = await fetchPage(from, from + pageSize - 1);
+        rows.addAll(page);
+        if (page.length < pageSize) return rows;
+        from += pageSize;
+      }
+    }
+
     final responses = await Future.wait([
-      _supabase
-          .from('categories')
-          .select()
-          .eq('is_active', true)
-          .order('sort_order', ascending: true),
-      _supabase
-          .from('menu_items')
-          .select()
-          .order('sort_order', ascending: true),
-      _supabase.from('menu_item_modifier_groups').select(),
-      _supabase
-          .from('modifier_groups')
-          .select()
-          .order('sort_order', ascending: true),
-      _supabase
-          .from('modifiers')
-          .select()
-          .eq('is_available', true)
-          .order('sort_order', ascending: true),
+      fetchAllPages(
+        (from, to) => _supabase
+            .from('categories')
+            .select()
+            .eq('is_active', true)
+            .order('sort_order', ascending: true)
+            .order('id')
+            .range(from, to),
+      ),
+      fetchAllPages(
+        (from, to) => _supabase
+            .from('menu_items')
+            .select()
+            .order('sort_order', ascending: true)
+            .order('id')
+            .range(from, to),
+      ),
+      fetchAllPages(
+        (from, to) => _supabase
+            .from('menu_item_modifier_groups')
+            .select()
+            .order('id')
+            .range(from, to),
+      ),
+      fetchAllPages(
+        (from, to) => _supabase
+            .from('modifier_groups')
+            .select()
+            .order('sort_order', ascending: true)
+            .order('id')
+            .range(from, to),
+      ),
+      fetchAllPages(
+        (from, to) => _supabase
+            .from('modifiers')
+            .select()
+            .eq('is_available', true)
+            .order('sort_order', ascending: true)
+            .order('id')
+            .range(from, to),
+      ),
     ]);
 
     final categoriesRes = responses[0];
@@ -295,6 +336,18 @@ class MenuRepository {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'modifiers',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'modifier_groups',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'menu_item_modifier_groups',
           callback: (_) => onChange(),
         )
         .subscribe();

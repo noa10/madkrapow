@@ -13,7 +13,7 @@ class StoreClosedBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.sesameSoft,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x66FBBF24)),
+        border: Border.all(color: AppColors.sesame.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [

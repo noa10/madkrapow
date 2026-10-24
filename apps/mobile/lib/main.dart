@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -12,6 +13,7 @@ import 'core/services/update/updater_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerMadkrapowUiLicenses();
 
   await Supabase.initialize(
     url: AppEnv.supabaseUrl,

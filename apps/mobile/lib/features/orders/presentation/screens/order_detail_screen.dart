@@ -6,7 +6,6 @@ import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../data/order_repository.dart';
 import '../widgets/customer_order_timeline.dart';

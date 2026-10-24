@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:madkrapow_mobile/features/cart/providers/cart_provider.dart';
 import 'package:madkrapow_mobile/features/checkout/data/checkout_models.dart';
 import 'package:madkrapow_mobile/features/menu/data/menu_repository.dart';
+import 'package:madkrapow_mobile/features/menu/presentation/widgets/item_order_widgets.dart';
 import 'package:madkrapow_mobile/features/menu/presentation/widgets/item_quick_view.dart';
 import 'package:madkrapow_mobile/features/menu/providers/promo_preview_provider.dart';
 import 'package:madkrapow_mobile/generated/tables/modifier_groups.dart';
@@ -107,6 +108,14 @@ void main() {
     expect(find.text('Preview Krapow'), findsOneWidget);
     expect(find.text('Spice Level'), findsOneWidget);
     expect(find.text('Select options (1)'), findsOneWidget);
+    // The web sheet hides the running total until the required picks are done.
+    expect(
+      find.descendant(
+        of: find.byType(ItemPrimaryButton),
+        matching: find.text('RM 14.50'),
+      ),
+      findsNothing,
+    );
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.ensureVisible(find.text('Medium'));
@@ -114,7 +123,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Add item'), findsOneWidget);
-    expect(find.text('RM 14.50'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(ItemPrimaryButton),
+        matching: find.text('RM 14.50'),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

@@ -150,10 +150,12 @@ class _QuickViewDragSurface extends StatelessWidget {
             width: 38,
             height: 4,
             decoration: BoxDecoration(
-              color: AppColors.surface.withValues(alpha: 0.9),
+              // The grabber sits on top of the banner, so it needs a light
+              // fill with a dark hairline to stay visible on any photo.
+              color: AppColors.foreground.withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                color: AppColors.foreground.withValues(alpha: 0.12),
+                color: AppColors.surfaceSunk.withValues(alpha: 0.25),
               ),
               boxShadow: [
                 BoxShadow(
@@ -438,7 +440,11 @@ class _QuickViewBottomBar extends StatelessWidget {
           Expanded(
             child: ItemPrimaryButton(
               label: label,
-              trailing: isUnavailable ? null : formatPrice(totalCents),
+              // Match the web sheet: the running total only appears once the
+              // required picks are done, so the label keeps its full width.
+              trailing: isUnavailable || requiredOptionsCount > 0
+                  ? null
+                  : formatPrice(totalCents),
               onPressed: onAddPressed,
               isUnavailable: isUnavailable,
             ),

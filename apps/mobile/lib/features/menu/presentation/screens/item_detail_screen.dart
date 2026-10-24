@@ -368,7 +368,11 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen>
                     label: requiredGroups.isEmpty
                         ? 'Add to Cart'
                         : 'Select required options (${requiredGroups.length})',
-                    trailing: formatPrice(totalCents),
+                    // Mirrors the web item page: no total until the required
+                    // picks are complete.
+                    trailing: requiredGroups.isEmpty
+                        ? formatPrice(totalCents)
+                        : null,
                     onPressed: () => _handleAddPressed(item),
                   ),
                 ),

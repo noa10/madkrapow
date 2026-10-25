@@ -85,10 +85,7 @@ Future<void> refreshCartPromoDiscounts(WidgetRef ref) async {
   final discountMap = <String, int>{};
   for (final itemId in uniqueItemIds) {
     final preview = previewMap[itemId];
-    if (preview != null &&
-        preview.discountType == 'percentage' &&
-        preview.savingsCents > 0 &&
-        preview.isItemScoped) {
+    if (preview != null && preview.discountsCartItem) {
       discountMap[itemId] = preview.savingsCents;
     }
   }

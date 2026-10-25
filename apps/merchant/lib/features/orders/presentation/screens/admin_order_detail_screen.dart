@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_orders/order_status.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/admin_order_providers.dart';
@@ -15,7 +16,6 @@ import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
 import '../widgets/provider_badges.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 
@@ -29,8 +29,8 @@ class AdminOrderDetailScreen extends ConsumerStatefulWidget {
       _AdminOrderDetailScreenState();
 }
 
-class _AdminOrderDetailScreenState
-    extends ConsumerState<AdminOrderDetailScreen> with WidgetsBindingObserver {
+class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
+    with WidgetsBindingObserver {
   RealtimeChannel? _channel;
   Timer? _pollingTimer;
 
@@ -58,7 +58,9 @@ class _AdminOrderDetailScreenState
     // terminal status. Detail-screen only — list screens stay realtime-only.
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
-      final detail = ref.read(adminOrderDetailProvider(widget.orderId)).valueOrNull;
+      final detail = ref
+          .read(adminOrderDetailProvider(widget.orderId))
+          .valueOrNull;
       final status = detail?.order.status;
       if (status != null && OrderStatusFlow.isTerminalWire(status)) {
         _pollingTimer?.cancel();
@@ -135,33 +137,33 @@ class _OrderDetailContent extends StatelessWidget {
                       children: [
                         Text(
                           getOrderDisplayCode(order),
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         Text(
                           'System ID: ${order.id}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.muted, fontSize: 12),
                         ),
                       ],
                     ),
                     const Spacer(),
                     if (order.orderKind == 'bulk')
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.purple.withValues(alpha: 0.15),
+                          color: Theme.of(context).colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Text(
+                        child: Text(
                           'BULK',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Colors.purple,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),
@@ -173,13 +175,15 @@ class _OrderDetailContent extends StatelessWidget {
                   Text('Phone: ${order.customerPhone}'),
                 Text(
                   'Total: ${formatPrice(order.totalCents)}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.emberText,
+                  ),
                 ),
                 Text(
                   'Type: ${order.deliveryType == 'pickup' ? 'Pickup' : 'Delivery'}',
                 ),
-                if (order.notes != null)
-                  Text('Notes: ${order.notes}'),
+                if (order.notes != null) Text('Notes: ${order.notes}'),
                 const SizedBox(height: 8),
                 ProviderBadges(
                   data: ProviderBadgeData(
@@ -199,7 +203,9 @@ class _OrderDetailContent extends StatelessWidget {
                     Icon(
                       Icons.flatware,
                       size: 16,
-                      color: order.includeCutlery ? Colors.green : Colors.grey,
+                      color: order.includeCutlery
+                          ? AppColors.herbText
+                          : AppColors.muted,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -207,7 +213,9 @@ class _OrderDetailContent extends StatelessWidget {
                           ? 'Cutlery: Yes'
                           : 'Cutlery: No — customer requested no cutlery',
                       style: TextStyle(
-                        color: order.includeCutlery ? Colors.green : Colors.grey,
+                        color: order.includeCutlery
+                            ? AppColors.herbText
+                            : AppColors.muted,
                       ),
                     ),
                   ],
@@ -223,8 +231,7 @@ class _OrderDetailContent extends StatelessWidget {
         // a hint to retry / contact the customer / cancel via existing
         // controls below. Mirrors the web admin banner.
         if (detail.shipment != null)
-          _DispatchAdminBanner(
-              dispatchStatus: detail.shipment!.dispatchStatus),
+          _DispatchAdminBanner(dispatchStatus: detail.shipment!.dispatchStatus),
 
         // Status stepper
         Card(
@@ -236,8 +243,8 @@ class _OrderDetailContent extends StatelessWidget {
                 Text(
                   'Status',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 AdminStatusStepper(currentStatus: order.status),
@@ -275,11 +282,9 @@ class _OrderDetailContent extends StatelessWidget {
                 driverLatitude: detail.shipment!.driverLatitude,
                 driverLongitude: detail.shipment!.driverLongitude,
                 destinationLatitude:
-                    (order.deliveryAddressJson!['latitude'] as num)
-                        .toDouble(),
+                    (order.deliveryAddressJson!['latitude'] as num).toDouble(),
                 destinationLongitude:
-                    (order.deliveryAddressJson!['longitude'] as num)
-                        .toDouble(),
+                    (order.deliveryAddressJson!['longitude'] as num).toDouble(),
               ),
             ),
           const SizedBox(height: 16),
@@ -295,13 +300,13 @@ class _OrderDetailContent extends StatelessWidget {
                 Text(
                   'Items (${detail.items.fold<int>(0, (sum, i) => sum + i.item.quantity)})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                ...detail.items.map((item) => OrderItemCard(
-                      itemWithModifiers: item,
-                    )),
+                ...detail.items.map(
+                  (item) => OrderItemCard(itemWithModifiers: item),
+                ),
               ],
             ),
           ),
@@ -319,8 +324,8 @@ class _OrderDetailContent extends StatelessWidget {
                 Text(
                   'Events',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 OrderEventTimeline(events: detail.events),
@@ -331,10 +336,7 @@ class _OrderDetailContent extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        CancelOrderButton(
-          orderId: order.id,
-          currentStatus: order.status,
-        ),
+        CancelOrderButton(orderId: order.id, currentStatus: order.status),
       ],
     );
   }
@@ -347,28 +349,35 @@ class _DispatchAdminBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final copy = dispatchBanner(dispatchStatus);
-    if (copy == null || copy.severity != 'danger') return const SizedBox.shrink();
+    if (copy == null || copy.severity != 'danger') {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Card(
-        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+        color: Theme.of(
+          context,
+        ).colorScheme.errorContainer.withValues(alpha: 0.4),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.warning_amber_rounded,
-                  color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(copy.title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      copy.title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(copy.body),
                   ],

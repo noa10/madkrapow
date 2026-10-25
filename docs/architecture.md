@@ -115,6 +115,27 @@ separate mobile API. Both live in `apps/` and share the `packages/madkrapow_orde
 | **Customer** | `apps/mobile` | Diners | Browse the menu, order, pay, track delivery |
 | **Merchant** | `apps/merchant` | Store staff | Orders, kitchen display, menu, employees, promos, analytics, settings |
 
+### Shared design system
+
+`packages/madkrapow_ui` is the single source of truth for the Flutter visual language. Both apps
+depend on it by path, so the customer storefront and the merchant admin share tokens and widgets
+without sharing navigation or screen layouts.
+
+- **Tokens** mirror `apps/web/src/app/globals.css`: background `#0D0D0F`, surface `#18181B`,
+  accent crimson `#E11D48`, ember prices `#F66018`, and the semantic status palette. When the web
+  tokens change, update `AppColors` and keep the shared theme test green.
+- **Theme** is dark-only. `AppTheme.darkTheme` is wired into both `MaterialApp`s; `lightTheme`
+  remains a compatibility alias. Typography is Plus Jakarta Sans, actions are pill-shaped, and cards
+  use 16px corners with hairline borders.
+- **Widgets** such as `StatusPill`, `AppCard`, `AppLogo`, `AppPriceText`, `SectionHeading`,
+  `GradientCta`, and `AppEmptyState` keep repeated visual patterns consistent. Use
+  `AppStatusColors.of(status)` rather than ad-hoc status colours.
+- **Brand assets** (logo, hero image, font) ship with the package. Reference them through `AppLogo`
+  or `AppAssets` so the `packages/madkrapow_ui/...` asset prefix stays correct.
+- **Boundaries**: the customer app follows the storefront layout; the merchant app follows the web
+  admin layout. This package owns colour, type, shape, elevation, and shared components only — not
+  routes, providers, business logic, or screen structure.
+
 ### Shared order-status contract
 
 `packages/madkrapow_orders/order_status.json` is the machine source of truth for the order state
@@ -201,10 +222,17 @@ mad-krapow/
 │   │   └── typescript/
 │   │       └── db.ts                   # Generated Supabase database types
 │   │
-│   └── madkrapow_orders/               # Canonical order-status contract, shared by
-│       ├── order_status.json           #   web + both Flutter apps. Generated from
-│       ├── lib/order_status.g.dart     #   the JSON spec; `npm run lint:parity` fails
-│       └── tool/generate.dart          #   CI if any platform drifts from it
+│   ├── madkrapow_orders/               # Canonical order-status contract, shared by
+│   │   ├── order_status.json           #   web + both Flutter apps. Generated from
+│   │   ├── lib/order_status.g.dart     #   the JSON spec; `npm run lint:parity` fails
+│   │   └── tool/generate.dart          #   CI if any platform drifts from it
+│   │
+│   └── madkrapow_ui/                   # Shared Fiery Wok design system for both apps
+│       ├── lib/src/tokens/             # colours, radii, type, brand extension, assets
+│       ├── lib/src/theme.dart          # canonical dark ThemeData
+│       ├── lib/src/widgets/            # AppCard, StatusPill, AppLogo, GradientCta, ...
+│       ├── assets/                     # Plus Jakarta Sans, logo, hero image
+│       └── test/                       # token and widget coverage
 │
 ├── supabase/
 │   ├── migrations/

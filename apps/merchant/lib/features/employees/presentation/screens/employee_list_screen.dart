@@ -31,9 +31,7 @@ class EmployeeListScreen extends ConsumerWidget {
         value: employeesAsync,
         data: (employees) {
           if (employees.isEmpty) {
-            return const Center(
-              child: Text('No employees found.'),
-            );
+            return const Center(child: Text('No employees found.'));
           }
 
           return ListView.builder(
@@ -74,12 +72,17 @@ class EmployeeListScreen extends ConsumerWidget {
               title: const Text('Edit'),
               onTap: () {
                 Navigator.pop(context);
-                context.push(AppRoutes.staffEdit.replaceAll(':id', employee.id));
+                context.push(
+                  AppRoutes.staffEdit.replaceAll(':id', employee.id),
+                );
               },
             ),
             if (employee.isActive)
               ListTile(
-                leading: Icon(Icons.block, color: Theme.of(context).colorScheme.error),
+                leading: Icon(
+                  Icons.block,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 title: Text(
                   'Deactivate',
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -130,13 +133,13 @@ class EmployeeListScreen extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to deactivate: ${state.error}'),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Employee deactivated')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Employee deactivated')));
     }
   }
 }

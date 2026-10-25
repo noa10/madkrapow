@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -59,10 +60,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
 
     try {
-      await ref.read(authRepositoryProvider).signInWithEmail(
-            email: email,
-            password: password,
-          );
+      await ref
+          .read(authRepositoryProvider)
+          .signInWithEmail(email: email, password: password);
       await _persistEmail(_rememberMe, email);
       if (mounted) {
         final from = GoRouterState.of(context).uri.queryParameters['from'];
@@ -84,8 +84,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
 
     try {
-      final response =
-          await ref.read(authRepositoryProvider).signInWithGoogle();
+      final response = await ref
+          .read(authRepositoryProvider)
+          .signInWithGoogle();
       if (!mounted) return;
       if (response?.session == null) {
         // User cancelled the picker — leave the sign-in screen as-is.
@@ -112,17 +113,13 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.local_fire_department,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                const AppLogo(height: 64),
                 const SizedBox(height: 16),
                 Text(
                   'Mad Krapow',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -184,7 +181,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: _isLoading ? null : () => context.go(AppRoutes.home),
+                  onPressed: _isLoading
+                      ? null
+                      : () => context.go(AppRoutes.home),
                   child: const Text('Continue as Guest'),
                 ),
                 const SizedBox(height: 16),
@@ -210,8 +209,8 @@ class _VersionFooter extends StatelessWidget {
         return Text(
           'v${snap.data!.version}',
           style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.5),
-              ),
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.5),
+          ),
         );
       },
     );

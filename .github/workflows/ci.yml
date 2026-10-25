@@ -63,6 +63,11 @@ jobs:
           flutter pub get
           dart analyze
           flutter test
+      - working-directory: packages/madkrapow_ui
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
 
   build:
     name: Build

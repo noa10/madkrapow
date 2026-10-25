@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Payment-provider classification for an order.
 enum PaymentProvider { stripe, cash, pending }
@@ -32,7 +33,8 @@ class ProviderBadgeData {
 }
 
 PaymentProvider paymentProviderFor(ProviderBadgeData data) {
-  if ((data.stripePaymentIntentId != null && data.stripePaymentIntentId!.isNotEmpty) ||
+  if ((data.stripePaymentIntentId != null &&
+          data.stripePaymentIntentId!.isNotEmpty) ||
       (data.stripeSessionId != null && data.stripeSessionId!.isNotEmpty)) {
     return PaymentProvider.stripe;
   }
@@ -106,24 +108,24 @@ IconData deliveryIcon(DeliveryProvider p) {
 Color paymentColor(PaymentProvider p) {
   switch (p) {
     case PaymentProvider.stripe:
-      return const Color(0xFF7C5BD3);
+      return const Color(0xFFA78BFA);
     case PaymentProvider.cash:
-      return const Color(0xFF10B981);
+      return AppColors.herbText;
     case PaymentProvider.pending:
-      return const Color(0xFFD97706);
+      return AppColors.sesame;
   }
 }
 
 Color deliveryColor(DeliveryProvider p) {
   switch (p) {
     case DeliveryProvider.lalamove:
-      return const Color(0xFFF97316);
+      return AppColors.emberText;
     case DeliveryProvider.selfPickup:
-      return const Color(0xFF0EA5E9);
+      return AppColors.info;
     case DeliveryProvider.inHouse:
-      return const Color(0xFF14B8A6);
+      return AppColors.success;
     case DeliveryProvider.pending:
-      return const Color(0xFF64748B);
+      return AppColors.muted;
   }
 }
 

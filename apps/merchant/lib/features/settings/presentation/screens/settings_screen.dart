@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/services/update/app_updates_panel.dart';
 import '../../../../generated/tables/store_settings.dart';
@@ -61,8 +62,7 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton(
-                        onPressed: () =>
-                            ref.invalidate(hubboPosStatusProvider),
+                        onPressed: () => ref.invalidate(hubboPosStatusProvider),
                         child: const Text('Retry'),
                       ),
                     ],
@@ -94,15 +94,15 @@ class _StoreBrandingCard extends ConsumerWidget {
           children: [
             Text(
               'Store Branding',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
               'Upload your logo and hero image. Changes appear instantly on customer apps.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
@@ -146,9 +146,7 @@ class _StoreBrandingCard extends ConsumerWidget {
               ),
               error: (err, _) => Text(
                 'Failed to load branding: $err',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
             if (actionAsync.hasError) ...[
@@ -202,7 +200,12 @@ class _BrandingUploadCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+        Text(
+          title,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -227,9 +230,11 @@ class _BrandingUploadCard extends StatelessWidget {
                               placeholder: (context, url) => Container(
                                 width: 120,
                                 height: 120,
-                                color: theme.colorScheme.surfaceContainerHighest,
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
                               ),
-                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, size: 48),
+                              errorWidget: (context, url, error) =>
+                                  const Icon(Icons.broken_image, size: 48),
                             )
                           : CachedNetworkImage(
                               imageUrl: currentUrl!,
@@ -238,9 +243,11 @@ class _BrandingUploadCard extends StatelessWidget {
                               fit: BoxFit.cover,
                               placeholder: (context, url) => Container(
                                 height: 140,
-                                color: theme.colorScheme.surfaceContainerHighest,
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
                               ),
-                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, size: 48),
+                              errorWidget: (context, url, error) =>
+                                  const Icon(Icons.broken_image, size: 48),
                             ),
                     ),
                     const SizedBox(height: 12),
@@ -271,7 +278,9 @@ class _BrandingUploadCard extends StatelessWidget {
                       Icon(
                         isLogo ? Icons.store : Icons.image,
                         size: 40,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.4,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextButton.icon(
@@ -282,7 +291,9 @@ class _BrandingUploadCard extends StatelessWidget {
                       Text(
                         'JPEG, PNG, WebP up to 5MB',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.5,
+                          ),
                         ),
                       ),
                     ],
@@ -323,7 +334,8 @@ class _BrandingPreviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final showHero = branding.heroImageUrl != null && branding.heroImageUrl!.isNotEmpty;
+    final showHero =
+        branding.heroImageUrl != null && branding.heroImageUrl!.isNotEmpty;
     final showLogo = branding.logoUrl != null && branding.logoUrl!.isNotEmpty;
 
     return Container(
@@ -441,15 +453,15 @@ class _HubboPosSection extends ConsumerWidget {
             // ── Title ──
             Text(
               'HubboPOS Integration',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
               'POS synchronization and connection management',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
@@ -493,7 +505,9 @@ class _HubboPosSection extends ConsumerWidget {
                   child: OutlinedButton.icon(
                     onPressed: actionAsync.isLoading
                         ? null
-                        : () => ref.read(hubboPosActionProvider.notifier).testConnection(),
+                        : () => ref
+                              .read(hubboPosActionProvider.notifier)
+                              .testConnection(),
                     icon: actionAsync.isLoading
                         ? const SizedBox(
                             width: 16,
@@ -509,14 +523,16 @@ class _HubboPosSection extends ConsumerWidget {
                   child: ElevatedButton.icon(
                     onPressed: actionAsync.isLoading
                         ? null
-                        : () => ref.read(hubboPosActionProvider.notifier).syncNow(),
+                        : () => ref
+                              .read(hubboPosActionProvider.notifier)
+                              .syncNow(),
                     icon: actionAsync.isLoading
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppColors.onAccent,
                             ),
                           )
                         : const Icon(Icons.sync, size: 18),
@@ -573,27 +589,27 @@ class _StatusRow extends StatelessWidget {
 
   Color _healthColor(String status) {
     return switch (status) {
-      'healthy' => const Color(0xFF6EE7B7),   // emerald-500
-      'degraded' => const Color(0xFFFBBF24),   // amber-500
-      'unhealthy' => const Color(0xFFEF4444),  // red-500
-      _ => const Color(0xFF9CA3AF),            // gray-400
+      'healthy' => AppColors.herbText,
+      'degraded' => AppColors.sesame,
+      'unhealthy' => AppColors.dangerText,
+      _ => AppColors.muted,
     };
   }
 
   Color _healthBackground(String status) {
     return switch (status) {
-      'healthy' => const Color(0xFF6EE7B7).withValues(alpha: 0.15),
-      'degraded' => const Color(0xFFFBBF24).withValues(alpha: 0.15),
-      'unhealthy' => const Color(0xFFEF4444).withValues(alpha: 0.15),
-      _ => const Color(0xFF9CA3AF).withValues(alpha: 0.15),
+      'healthy' => AppColors.successSoft,
+      'degraded' => AppColors.sesameSoft,
+      'unhealthy' => AppColors.dangerSoft,
+      _ => const Color(0x26A1A1AA),
     };
   }
 
   Color _circuitColor(String state) {
     return switch (state) {
-      'closed' => const Color(0xFF6EE7B7),
-      'half_open' => const Color(0xFFFBBF24),
-      _ => const Color(0xFFEF4444),
+      'closed' => AppColors.herbText,
+      'half_open' => AppColors.sesame,
+      _ => AppColors.dangerText,
     };
   }
 
@@ -607,10 +623,8 @@ class _StatusRow extends StatelessWidget {
         _StatusBadge(
           label: 'Status',
           value: isEnabled ? 'Enabled' : 'Disabled',
-          valueColor: Colors.white,
-          valueBackground: isEnabled
-              ? const Color(0xFF6EE7B7)
-              : const Color(0xFF6B7280),
+          valueColor: AppColors.onAccent,
+          valueBackground: isEnabled ? AppColors.herb : AppColors.surface3,
         ),
         // Health
         _StatusBadge(
@@ -623,13 +637,16 @@ class _StatusRow extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.warning_amber_rounded,
-                size: 16, color: _circuitColor(circuitState)),
+            Icon(
+              Icons.warning_amber_rounded,
+              size: 16,
+              color: _circuitColor(circuitState),
+            ),
             const SizedBox(width: 4),
             Text(
               'Circuit',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(width: 6),
@@ -647,10 +664,10 @@ class _StatusRow extends StatelessWidget {
         _StatusBadge(
           label: 'Queue',
           value: '$queuePending',
-          valueColor: Colors.white,
+          valueColor: queuePending > 0 ? AppColors.onAccent : AppColors.muted,
           valueBackground: queuePending > 0
-              ? const Color(0xFFEF4444)
-              : const Color(0xFF6B7280),
+              ? AppColors.danger
+              : AppColors.surface3,
         ),
       ],
     );
@@ -679,7 +696,7 @@ class _StatusBadge extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(width: 6),
@@ -777,11 +794,11 @@ class _ConnectionDetailsGrid extends StatelessWidget {
                   label: 'Read-Only Mode',
                   value: settings.hubboPosReadOnlyMode ? 'Active' : 'Inactive',
                   valueColor: settings.hubboPosReadOnlyMode
-                      ? const Color(0xFFFBBF24)
-                      : null,
+                      ? AppColors.sesame
+                      : AppColors.muted,
                   valueBackground: settings.hubboPosReadOnlyMode
-                      ? const Color(0xFFFBBF24).withValues(alpha: 0.15)
-                      : const Color(0xFF6B7280).withValues(alpha: 0.15),
+                      ? AppColors.sesameSoft
+                      : AppColors.surface3,
                 ),
               ),
             ],
@@ -816,7 +833,7 @@ class _DetailItem extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 2),
@@ -851,10 +868,7 @@ class _DetailItem extends StatelessWidget {
 
 /// Red-tinted error banner for the last HubboPOS error.
 class _LastErrorBanner extends StatelessWidget {
-  const _LastErrorBanner({
-    required this.errorMessage,
-    this.errorAt,
-  });
+  const _LastErrorBanner({required this.errorMessage, this.errorAt});
 
   final String errorMessage;
   final DateTime? errorAt;
@@ -865,10 +879,8 @@ class _LastErrorBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEF4444).withValues(alpha: 0.08),
-        border: Border.all(
-          color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-        ),
+        color: AppColors.dangerSoft,
+        border: Border.all(color: const Color(0x66EF4444)),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -876,7 +888,7 @@ class _LastErrorBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.cancel, size: 16, color: Color(0xFFEF4444)),
+              const Icon(Icons.cancel, size: 16, color: AppColors.dangerText),
               const SizedBox(width: 6),
               Text(
                 'Last Error',
@@ -902,7 +914,9 @@ class _LastErrorBanner extends StatelessWidget {
               '${errorAt!.year}-${errorAt!.month.toString().padLeft(2, '0')}-${errorAt!.day.toString().padLeft(2, '0')} '
               '${errorAt!.hour.toString().padLeft(2, '0')}:${errorAt!.minute.toString().padLeft(2, '0')}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.4),
               ),
             ),
           ],
@@ -921,9 +935,7 @@ class _RecentSyncSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompleted = sync.status == 'completed';
-    final statusColor = isCompleted
-        ? const Color(0xFF6EE7B7)
-        : const Color(0xFFEF4444);
+    final statusColor = isCompleted ? AppColors.herbText : AppColors.dangerText;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -937,14 +949,13 @@ class _RecentSyncSection extends StatelessWidget {
           // Header
           Row(
             children: [
-              const Icon(Icons.schedule, size: 16,
-                  color: Color(0xFF9CA3AF)),
+              const Icon(Icons.schedule, size: 16, color: AppColors.muted),
               const SizedBox(width: 6),
               Text(
                 'Most Recent Sync',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: 8),
               Container(
@@ -991,8 +1002,7 @@ class _RecentSyncSection extends StatelessWidget {
           ),
 
           // Error message from sync run
-          if (sync.errorMessage != null &&
-              sync.errorMessage!.isNotEmpty) ...[
+          if (sync.errorMessage != null && sync.errorMessage!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               sync.errorMessage!,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/admin_order_providers.dart';
@@ -9,9 +10,7 @@ import '../widgets/kitchen_order_card.dart';
 
 /// The only status the kitchen itself drives: once cooking is done, the order
 /// is ready to leave the pass.
-const _kitchenTransitions = {
-  'preparing': 'ready',
-};
+const _kitchenTransitions = {'preparing': 'ready'};
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -61,7 +60,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     }
@@ -84,11 +86,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               ref.invalidate(kitchenOrderCardsProvider);
             },
             child: LayoutBuilder(
-              builder: (context, constraints) => _ticketBoard(
-                context,
-                orders,
-                constraints.maxWidth,
-              ),
+              builder: (context, constraints) =>
+                  _ticketBoard(context, orders, constraints.maxWidth),
             ),
           );
         },

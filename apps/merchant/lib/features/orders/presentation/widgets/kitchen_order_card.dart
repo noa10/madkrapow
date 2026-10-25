@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
-import '../../../../core/utils/price_formatter.dart';
 import '../../../../core/utils/time_formatter.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/merchant_order_repository.dart';
@@ -22,40 +22,15 @@ TicketAge ticketAge(DateTime createdAt, DateTime now) {
   return TicketAge.fresh;
 }
 
-const _statusColors = {
-  'paid': Color(0xFF0EA5E9),
-  'accepted': Color(0xFF8B5CF6),
-  'preparing': Color(0xFFF97316),
-  'ready': Color(0xFF10B981),
-  'delivering': Color(0xFF6366F1),
-};
-
-const _statusLabels = {
-  'paid': 'Paid',
-  'accepted': 'Accepted',
-  'preparing': 'Preparing',
-  'ready': 'Ready',
-  'delivering': 'Delivering',
-};
-
-/// Colours for the order-note callout, tuned so it reads on the light surface
-/// and on the dark card alike.
+/// Colours for the order-note callout. The product is dark-only, so the note
+/// uses the shared warning palette rather than a light-mode branch.
 typedef _NotePalette = ({Color background, Color border, Color foreground});
 
-_NotePalette _notePalette(BuildContext context) {
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return isDark
-      ? (
-          background: const Color(0xFF3A2E12),
-          border: const Color(0xFF6B5518),
-          foreground: const Color(0xFFF3D08A),
-        )
-      : (
-          background: const Color(0xFFFFF7E6),
-          border: const Color(0xFFF0C36D),
-          foreground: const Color(0xFF7A4F00),
-        );
-}
+const _NotePalette _notePalette = (
+  background: AppColors.sesameSoft,
+  border: Color(0x66FBBF24),
+  foreground: AppColors.sesame,
+);
 
 /// A kitchen ticket: what to cook, for whom, and how long it has been waiting.
 ///
@@ -82,20 +57,19 @@ class KitchenOrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
-    final statusLabel = _statusLabels[order.status] ?? order.status;
+    final statusColor = AppStatusColors.of(order.status).foreground;
     final currentTime = now ?? DateTime.now();
     final note = order.notes?.trim();
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      shape: const RoundedRectangleBorder(borderRadius: AppRadii.lgRadius),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _header(context, statusColor, statusLabel, currentTime),
+          _header(context, statusColor, currentTime),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: Column(
@@ -136,11 +110,7 @@ class KitchenOrderCard extends StatelessWidget {
                     'Mark Ready',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  style: ElevatedButton.styleFrom(shape: AppRadii.pillBorder),
                 ),
               ),
             ),
@@ -152,7 +122,6 @@ class KitchenOrderCard extends StatelessWidget {
   Widget _header(
     BuildContext context,
     Color statusColor,
-    String statusLabel,
     DateTime currentTime,
   ) {
     final theme = Theme.of(context);
@@ -173,23 +142,7 @@ class KitchenOrderCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              StatusPill(status: order.status),
             ],
           ),
           const SizedBox(height: 6),
@@ -426,7 +379,7 @@ class KitchenOrderCard extends StatelessWidget {
 
   Widget _orderNote(BuildContext context, String note) {
     final theme = Theme.of(context);
-    final palette = _notePalette(context);
+    const palette = _notePalette;
 
     return Container(
       width: double.infinity,
@@ -507,6 +460,7 @@ class KitchenOrderCard extends StatelessWidget {
         textAlign: TextAlign.center,
         style: theme.textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.bold,
+          color: AppColors.emberText,
         ),
       ),
     );
@@ -515,14 +469,11 @@ class KitchenOrderCard extends StatelessWidget {
 
 Color _ageColor(BuildContext context, DateTime createdAt, DateTime now) {
   final theme = Theme.of(context);
-  final isDark = theme.brightness == Brightness.dark;
 
   return switch (ticketAge(createdAt, now)) {
     TicketAge.fresh => theme.colorScheme.onSurfaceVariant,
-    TicketAge.aging =>
-      isDark ? const Color(0xFFF5C168) : const Color(0xFFB45309),
-    TicketAge.overdue =>
-      isDark ? const Color(0xFFFF8A80) : theme.colorScheme.error,
+    TicketAge.aging => AppColors.sesame,
+    TicketAge.overdue => AppColors.dangerText,
   };
 }
 

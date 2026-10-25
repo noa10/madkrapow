@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../config/routes.dart';
@@ -48,16 +49,19 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         const Center(
           child: Column(
             children: [
-              Icon(Icons.settings, size: 48, color: Colors.grey),
+              Icon(Icons.settings, size: 48, color: AppColors.muted),
               SizedBox(height: 8),
-              Text('More', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(
+                'More',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
         ),
         const SizedBox(height: 32),
         // Kitchen Display
         ListTile(
-          leading: const Icon(Icons.kitchen, color: Colors.teal),
+          leading: const Icon(Icons.kitchen, color: AppColors.herbText),
           title: const Text('Kitchen Display'),
           subtitle: const Text('View and manage kitchen orders'),
           trailing: const Icon(Icons.chevron_right),
@@ -66,7 +70,10 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         const Divider(),
         // Promotions
         ListTile(
-          leading: const Icon(Icons.local_offer_outlined, color: Colors.orange),
+          leading: const Icon(
+            Icons.local_offer_outlined,
+            color: AppColors.emberText,
+          ),
           title: const Text('Promotions'),
           subtitle: const Text('Manage promo codes and discounts'),
           trailing: const Icon(Icons.chevron_right),
@@ -74,7 +81,7 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         ),
         const Divider(),
         ListTile(
-          leading: const Icon(Icons.bar_chart, color: Colors.blue),
+          leading: const Icon(Icons.bar_chart, color: AppColors.info),
           title: const Text('Sales Reports'),
           subtitle: const Text('Revenue analytics and insights'),
           trailing: const Icon(Icons.chevron_right),
@@ -93,7 +100,10 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         ],
         if (isAdmin) ...[
           ListTile(
-            leading: const Icon(Icons.settings_outlined, color: Colors.purple),
+            leading: const Icon(
+              Icons.settings_outlined,
+              color: AppColors.accent,
+            ),
             title: const Text('Settings'),
             subtitle: const Text('HubboPOS integration and store config'),
             trailing: const Icon(Icons.chevron_right),
@@ -103,7 +113,11 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         ],
         ListTile(
           leading: _isSigningOut
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.logout),
           title: const Text('Sign Out'),
           onTap: _isSigningOut ? null : _handleSignOut,
@@ -117,11 +131,8 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
               return Text(
                 'v${snap.data!.version}',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(ctx)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.5),
-                    ),
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               );
             },
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/cart_item.dart';
+import '../data/cart_limits.dart';
 import '../data/cart_local_storage.dart';
 
 class CartState {
@@ -25,11 +26,14 @@ class CartNotifier extends Notifier<CartState> {
   void addItem(CartItem item) {
     final modifierIds = item.selectedModifiers.map((m) => m.id).toList();
     final existingIndex = _findItemIndex(item.menuItemId, modifierIds);
+    final requested = item.quantity.clamp(1, maxItemQuantity);
 
     if (existingIndex >= 0) {
-      state.items[existingIndex].quantity += item.quantity;
+      final merged = state.items[existingIndex].quantity + requested;
+      state.items[existingIndex].quantity = merged.clamp(1, maxItemQuantity);
       state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
     } else {
+      item.quantity = requested;
       state = CartState(items: [...state.items, item], includeCutlery: state.includeCutlery);
     }
     _persist();
@@ -55,7 +59,7 @@ class CartNotifier extends Notifier<CartState> {
     if (quantity <= 0) {
       removeItem(menuItemId, modifierIds);
     } else {
-      state.items[index].quantity = quantity;
+      state.items[index].quantity = quantity.clamp(1, maxItemQuantity);
       state = CartState(items: [...state.items], includeCutlery: state.includeCutlery);
       _persist();
     }

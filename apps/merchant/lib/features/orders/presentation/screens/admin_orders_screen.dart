@@ -8,6 +8,7 @@ import '../../providers/admin_order_providers.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/flat_order_list.dart';
 import '../widgets/order_stats_card.dart';
+import '../widgets/orders_status_tabs.dart';
 import '../widgets/total_sales_card.dart';
 
 class AdminOrdersScreen extends ConsumerStatefulWidget {
@@ -79,10 +80,12 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen>
             onPressed: () => context.push(AppRoutes.kitchen),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: _tabs.map((t) => Tab(text: t.label)).toList(),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(54),
+          child: OrdersStatusTabs(
+            controller: _tabController,
+            labels: _tabs.map((t) => t.label).toList(),
+          ),
         ),
       ),
       body: TabBarView(
@@ -120,7 +123,7 @@ class _OrdersTabView extends ConsumerWidget {
             const SliverToBoxAdapter(child: SizedBox(height: 8)),
           ],
           ordersAsync.when(
-            data: (orders) => FlatOrderList(orders: orders),
+            data: (orders) => FlatOrderList(orders: orders, tab: tab),
             loading: () => const SliverFillRemaining(
               hasScrollBody: false,
               child: Center(child: CircularProgressIndicator()),
@@ -134,8 +137,7 @@ class _OrdersTabView extends ConsumerWidget {
                     Text(err.toString()),
                     const SizedBox(height: 12),
                     OutlinedButton(
-                      onPressed: () =>
-                          ref.invalidate(adminOrdersProvider(tab)),
+                      onPressed: () => ref.invalidate(adminOrdersProvider(tab)),
                       child: const Text('Retry'),
                     ),
                   ],

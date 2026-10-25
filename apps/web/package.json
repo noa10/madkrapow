@@ -40,7 +40,7 @@
     "chrome-devtools-mcp": "^1.11.0",
     "date-fns": "^4.4.0",
     "dotenv": "^18.0.8",
-    "next": "^16.4.1",
+    "next": "^16.4.2",
     "postcss": "^8.5.30",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

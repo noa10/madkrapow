@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/admin_order_providers.dart';
 import '../../data/merchant_order_repository.dart';
+import '../../data/orders_row_billplz.dart';
 import '../widgets/admin_status_stepper.dart';
 import '../widgets/advance_status_button.dart';
 import '../widgets/driver_info_card.dart';
@@ -191,6 +192,7 @@ class _OrderDetailContent extends StatelessWidget {
                     deliveryType: order.deliveryType,
                     stripePaymentIntentId: order.stripePaymentIntentId,
                     stripeSessionId: order.stripeSessionId,
+                    billplzBillId: order.billplzBillId,
                     lalamoveOrderId: order.lalamoveOrderId,
                     lalamoveQuoteId: order.lalamoveQuoteId,
                     driverName: order.driverName,

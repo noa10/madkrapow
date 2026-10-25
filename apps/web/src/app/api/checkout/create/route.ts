@@ -3,10 +3,17 @@ import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
+import {
+  createBill,
+  isBillplzConfigured,
+  normalizeBillplzMobile,
+} from '@/lib/billplz/client'
 import { moneyStringToCents } from '@/lib/lalamove/quote'
 import { validateModifierSelections } from '@/lib/menu/checkout-modifiers'
 import { MAX_ITEM_QUANTITY } from '@/lib/menu/quantity'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
+
+export const runtime = 'nodejs'
 
 const CheckoutItemSchema = z.object({
   id: z.string().min(1),
@@ -60,6 +67,8 @@ const CheckoutRequestSchema = z.object({
   // Promo codes — array of { code, scope } for stacking
   promoCodes: z.array(PromoCodeEntrySchema).default([]),
   includeCutlery: z.boolean().default(true),
+  // Default keeps existing clients (mobile) on Stripe without a payload change.
+  paymentMethod: z.enum(['stripe', 'billplz']).default('stripe'),
 }).superRefine((data, ctx) => {
   if (data.deliveryType === 'delivery') {
     const addr = data.deliveryAddress;
@@ -88,6 +97,7 @@ interface CheckoutSessionResponse {
   success: true
   checkoutUrl: string
   sessionId: string
+  provider: 'stripe' | 'billplz'
 }
 
 interface CheckoutError {
@@ -106,10 +116,6 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResult>> {
   try {
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
-      apiVersion: STRIPE_API_VERSION,
-    })
-
     // Use dual auth (cookie for web, Bearer token for mobile)
     const { user, supabase } = await getAuthenticatedUser(req)
 
@@ -154,7 +160,37 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
-    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown, promoCodes } = parsed.data
+    const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown, promoCodes, paymentMethod } = parsed.data
+
+    // Fail before creating an order when the selected gateway cannot be used.
+    // The methods endpoint hides a disabled method, but the API is the trust
+    // boundary and must enforce the flag too.
+    if (paymentMethod === 'billplz' && (!env.BILLPLZ_ENABLED || !isBillplzConfigured())) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Online banking is not available right now. Please choose card payment.',
+          code: 'BILLPLZ_NOT_CONFIGURED',
+        },
+        { status: 503 }
+      )
+    }
+
+    // Billplz requires an email or a mobile number on the bill. The web app
+    // always has an email, but keep the guard for bearer-token/mobile clients.
+    const billplzEmail = user.email || undefined
+    const billplzMobile = normalizeBillplzMobile(deliveryAddress.phone)
+
+    if (paymentMethod === 'billplz' && !billplzEmail && !billplzMobile) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'A verified email or phone number is required for online banking',
+          code: 'BILLPLZ_CONTACT_REQUIRED',
+        },
+        { status: 400 }
+      )
+    }
 
     // Self-pickup cannot have delivery fee. Delivery fee is re-derived from
     // server-issued Lalamove quote metadata when available instead of trusting
@@ -486,24 +522,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
 
     const totalCents = subtotalCents + effectiveDeliveryFee - totalDiscountCents
 
-    // Generate order number first (needed for Stripe coupon metadata)
+    // Generate the order number before the gateway call so it can be used in
+    // the Stripe coupon metadata and the Billplz bill description.
     const orderNumber = generateOrderNumber()
-
-    // ── Create Stripe Coupons for order-scoped promos ──────────────
-    const stripeCouponIds: string[] = []
-    if (totalDiscountCents > 0 && orderPromoCodeId) {
-      const coupon = await stripe.coupons.create({
-        amount_off: totalDiscountCents,
-        currency: 'myr',
-        duration: 'once',
-        max_redemptions: 1,
-        metadata: {
-          promo_code_id: orderPromoCodeId,
-          order_number: orderNumber,
-        },
-      })
-      stripeCouponIds.push(coupon.id)
-    }
 
     // Create order
 
@@ -708,6 +729,108 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       }
     }
 
+    // ── Hand off to the selected payment gateway ───────────────────
+    if (paymentMethod === 'billplz') {
+      const publicUrl = env.NEXT_PUBLIC_URL.replace(/\/+$/, '')
+      const callbackUrl = env.BILLPLZ_CALLBACK_URL ?? `${publicUrl}/api/webhooks/billplz`
+      // Local sandbox testing often fronts the app with a tunnel while
+      // NEXT_PUBLIC_URL still points at the production site. Use the tunnel
+      // origin for the customer redirect when one is configured.
+      const redirectBase = (env.BILLPLZ_REDIRECT_BASE_URL ?? publicUrl).replace(/\/+$/, '')
+      const redirectUrl = `${redirectBase}/order/success?orderId=${encodeURIComponent(order.id)}`
+      const customerName = (
+        deliveryAddress.fullName ||
+        user.user_metadata?.full_name ||
+        'Mad Krapow Customer'
+      ).slice(0, 255)
+
+      try {
+        const bill = await createBill({
+          email: billplzEmail,
+          mobile: billplzMobile,
+          name: customerName,
+          amountCents: totalCents,
+          description: `Mad Krapow order ${orderNumber}`,
+          callbackUrl,
+          redirectUrl,
+          reference1: order.id,
+          reference2: orderNumber,
+        })
+
+        const { error: billUpdateError } = await supabase
+          .from('orders')
+          .update({ billplz_bill_id: bill.id })
+          .eq('id', order.id)
+
+        if (billUpdateError) {
+          // The bill exists and the customer can still pay it, and the webhook
+          // can recover the order from reference_1, so do not fail the request.
+          console.error('[API] Failed to store Billplz bill id:', billUpdateError)
+        }
+
+        return NextResponse.json(
+          {
+            success: true,
+            checkoutUrl: bill.url,
+            sessionId: bill.id,
+            provider: 'billplz',
+          },
+          { status: 200 }
+        )
+      } catch (billError) {
+        console.error('[API] Failed to create Billplz bill:', billError)
+        // No usable payment URL exists, so cancel the order rather than leave
+        // an unpayable pending order in the kitchen queue.
+        await supabase
+          .from('orders')
+          .update({ status: 'cancelled' })
+          .eq('id', order.id)
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Unable to start online banking payment. Please try again.',
+            code: 'BILLPLZ_FAILED',
+          },
+          { status: 502 }
+        )
+      }
+    }
+
+    const stripeSecretKey = env.STRIPE_SECRET_KEY
+    if (!stripeSecretKey) {
+      console.error('[API] STRIPE_SECRET_KEY not configured')
+      await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Card payment is not available right now. Please choose online banking.',
+          code: 'STRIPE_NOT_CONFIGURED',
+        },
+        { status: 503 }
+      )
+    }
+
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: STRIPE_API_VERSION,
+    })
+
+    // ── Create Stripe Coupons for order-scoped promos ──────────────
+    const stripeCouponIds: string[] = []
+    if (totalDiscountCents > 0 && orderPromoCodeId) {
+      const coupon = await stripe.coupons.create({
+        amount_off: totalDiscountCents,
+        currency: 'myr',
+        duration: 'once',
+        max_redemptions: 1,
+        metadata: {
+          promo_code_id: orderPromoCodeId,
+          order_number: orderNumber,
+        },
+      })
+      stripeCouponIds.push(coupon.id)
+    }
+
     // Create Stripe Checkout Session
     const lineItems: NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>['line_items'] = validatedItems.map((item) => {
       const modifierSuffix = item.validatedModifiers.length > 0
@@ -782,6 +905,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         success: true,
         checkoutUrl: session.url,
         sessionId: session.id,
+        provider: 'stripe',
       },
       { status: 200 }
     )

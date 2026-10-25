@@ -33,6 +33,7 @@ export interface Order {
   // lives in `payments.method` — see the derivation note in lib/orders/payment-pill.ts.
   stripe_payment_intent_id: string | null
   stripe_session_id: string | null
+  billplz_bill_id: string | null
   lalamove_order_id: string | null
   lalamove_quote_id: string | null
   driver_name: string | null

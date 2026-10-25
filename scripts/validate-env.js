@@ -64,12 +64,37 @@ const invalid = [];
 
 for (const envVar of requiredEnvVars) {
   const value = process.env[envVar];
-  
+
   if (!value) {
     missing.push(envVar);
   } else if (envSchema[envVar] && !envSchema[envVar](value)) {
     invalid.push(envVar);
   }
+}
+
+// Billplz is optional, but a partial configuration must fail loudly: a
+// deployment with an API key but no X Signature key would accept payments
+// it cannot verify.
+const billplzKeys = [
+  'BILLPLZ_API_KEY',
+  'BILLPLZ_COLLECTION_ID',
+  'BILLPLZ_X_SIGNATURE_KEY',
+];
+const billplzDisabled = process.env.BILLPLZ_ENABLED === 'false';
+const billplzPartiallyConfigured = billplzKeys.some(key => process.env[key]);
+
+if (!billplzDisabled && billplzPartiallyConfigured) {
+  for (const envVar of billplzKeys) {
+    if (!process.env[envVar]) missing.push(envVar);
+  }
+}
+
+if (
+  process.env.BILLPLZ_ENV &&
+  process.env.BILLPLZ_ENV !== 'sandbox' &&
+  process.env.BILLPLZ_ENV !== 'production'
+) {
+  invalid.push('BILLPLZ_ENV');
 }
 
 if (missing.length > 0) {
@@ -102,6 +127,7 @@ if (invalid.length > 0) {
     NEXT_PUBLIC_GOOGLE_MAPS_KEY: 'Should start with "AIza"',
     RESEND_API_KEY: 'Should start with "re_"',
     LALAMOVE_ENV: 'Should be "sandbox" or "production"',
+    BILLPLZ_ENV: 'Should be "sandbox" or "production"',
     STORE_PHONE: 'Should start with "+60" (Malaysia)',
   };
   

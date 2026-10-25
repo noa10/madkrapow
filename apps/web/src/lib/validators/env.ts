@@ -7,6 +7,25 @@ const envSchema = z.object({
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith('pk_'),
   STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  // Billplz (Malaysian FPX gateway). Sandbox and production use separate
+  // accounts, keys, and base URLs. All three credentials are required before
+  // the checkout offers the method; the X Signature key is what makes the
+  // callback trustworthy, so a partially configured account fails closed.
+  BILLPLZ_ENABLED: z.union([z.string(), z.boolean()]).transform(v =>
+    typeof v === 'string' ? v === 'true' : v
+  ).default(true),
+  BILLPLZ_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  BILLPLZ_API_KEY: z.string().min(1).optional(),
+  BILLPLZ_COLLECTION_ID: z.string().min(1).optional(),
+  BILLPLZ_X_SIGNATURE_KEY: z.string().min(1).optional(),
+  BILLPLZ_BASE_URL: z.string().url().optional(),
+  // Public URL Billplz can reach. Defaults to NEXT_PUBLIC_URL + the webhook
+  // path; override it when a tunnel (e.g. ngrok) fronts local development.
+  BILLPLZ_CALLBACK_URL: z.string().url().optional(),
+  // Origin the customer is returned to after paying. Defaults to
+  // NEXT_PUBLIC_URL; set it to the tunnel origin during local sandbox testing
+  // so the redirect does not send the customer to the production site.
+  BILLPLZ_REDIRECT_BASE_URL: z.string().url().optional(),
   LALAMOVE_API_KEY: z.string().min(1).optional(),
   LALAMOVE_API_SECRET: z.string().min(1).optional(),
   LALAMOVE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
@@ -97,6 +116,14 @@ const envData = {
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  BILLPLZ_ENABLED: process.env.BILLPLZ_ENABLED,
+  BILLPLZ_ENV: process.env.BILLPLZ_ENV,
+  BILLPLZ_API_KEY: process.env.BILLPLZ_API_KEY,
+  BILLPLZ_COLLECTION_ID: process.env.BILLPLZ_COLLECTION_ID,
+  BILLPLZ_X_SIGNATURE_KEY: process.env.BILLPLZ_X_SIGNATURE_KEY,
+  BILLPLZ_BASE_URL: process.env.BILLPLZ_BASE_URL,
+  BILLPLZ_CALLBACK_URL: process.env.BILLPLZ_CALLBACK_URL,
+  BILLPLZ_REDIRECT_BASE_URL: process.env.BILLPLZ_REDIRECT_BASE_URL,
   LALAMOVE_API_KEY: process.env.LALAMOVE_API_KEY,
   LALAMOVE_API_SECRET: process.env.LALAMOVE_API_SECRET,
   LALAMOVE_ENV: process.env.LALAMOVE_ENV,

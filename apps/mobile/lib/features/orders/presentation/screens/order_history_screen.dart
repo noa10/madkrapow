@@ -10,6 +10,7 @@ import '../../../../core/widgets/async_value_widget.dart';
 import '../../../cart/providers/cart_provider.dart';
 import '../../../cart/data/cart_item.dart';
 import '../../data/order_repository.dart';
+import '../../data/orders_row_billplz.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/order_stats_card.dart';
 import '../widgets/provider_badges.dart';
@@ -210,6 +211,7 @@ class _OrderCard extends ConsumerWidget {
                   deliveryType: order.deliveryType,
                   stripePaymentIntentId: order.stripePaymentIntentId,
                   stripeSessionId: order.stripeSessionId,
+                  billplzBillId: order.billplzBillId,
                   lalamoveOrderId: order.lalamoveOrderId,
                   lalamoveQuoteId: order.lalamoveQuoteId,
                   driverName: order.driverName,

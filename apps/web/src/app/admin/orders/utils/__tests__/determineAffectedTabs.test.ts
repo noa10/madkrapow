@@ -26,6 +26,7 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
     customer_id: null,
     stripe_payment_intent_id: null,
     stripe_session_id: null,
+    billplz_bill_id: null,
     lalamove_order_id: null,
     lalamove_quote_id: null,
     driver_name: null,

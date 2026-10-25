@@ -5,6 +5,7 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
 import '../../../../generated/tables/orders.dart';
+import '../../data/orders_row_billplz.dart';
 import '../../providers/admin_order_providers.dart';
 import 'provider_badges.dart';
 
@@ -89,6 +90,7 @@ class OrderListTile extends ConsumerWidget {
                         deliveryType: order.deliveryType,
                         stripePaymentIntentId: order.stripePaymentIntentId,
                         stripeSessionId: order.stripeSessionId,
+                        billplzBillId: order.billplzBillId,
                         lalamoveOrderId: order.lalamoveOrderId,
                         lalamoveQuoteId: order.lalamoveQuoteId,
                         driverName: order.driverName,

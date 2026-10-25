@@ -20,7 +20,7 @@ export interface PaymentPill {
 
 export type PaymentPillOrder = Pick<
   Order,
-  "status" | "source" | "stripe_payment_intent_id" | "stripe_session_id"
+  "status" | "source" | "stripe_payment_intent_id" | "stripe_session_id" | "billplz_bill_id"
 > & { payment_method?: string | null }
 
 /**
@@ -30,6 +30,7 @@ export type PaymentPillOrder = Pick<
  */
 const EVIDENCE_BACKED_PROVIDERS = new Set<PaymentProvider>([
   "stripe",
+  "billplz",
   "grabfood",
   "foodpanda",
   "qr_pay",
@@ -56,6 +57,7 @@ export function getPaymentPill(order: PaymentPillOrder): PaymentPill {
     payment_method: order.payment_method,
     stripe_payment_intent_id: order.stripe_payment_intent_id,
     stripe_session_id: order.stripe_session_id,
+    billplz_bill_id: order.billplz_bill_id,
   })
 
   if (order.status === "pending" || badge.provider === "pending") {

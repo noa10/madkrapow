@@ -96,6 +96,7 @@ interface Order {
   lalamove_status: string | null
   stripe_payment_intent_id: string | null
   stripe_session_id: string | null
+  billplz_bill_id: string | null
   driver_name: string | null
   driver_phone: string | null
   driver_plate_number: string | null

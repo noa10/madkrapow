@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/order_code.dart';
 import '../../data/order_repository.dart';
+import '../../data/orders_row_billplz.dart';
 import '../widgets/customer_order_timeline.dart';
 import '../widgets/driver_info_card.dart';
 import '../widgets/driver_map.dart';
@@ -160,6 +161,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                             deliveryType: order.deliveryType,
                             stripePaymentIntentId: order.stripePaymentIntentId,
                             stripeSessionId: order.stripeSessionId,
+                            billplzBillId: order.billplzBillId,
                             lalamoveOrderId: order.lalamoveOrderId,
                             lalamoveQuoteId: order.lalamoveQuoteId,
                             driverName: order.driverName,

@@ -11,6 +11,19 @@ import '../../data/analytics_models.dart';
 import '../../data/sales_reports_repository.dart';
 import '../../providers/sales_reports_providers.dart';
 import '../../../../generated/database.dart';
+import '../../../orders/data/orders_row_billplz.dart';
+
+/// Single source of truth for the analytics/CSV payment-method label.
+String _paymentMethodLabel(OrdersRow order) {
+  if (order.stripePaymentIntentId != null &&
+      order.stripePaymentIntentId!.isNotEmpty) {
+    return 'Card (Stripe)';
+  }
+  if (order.billplzBillId != null) {
+    return 'Billplz (FPX)';
+  }
+  return 'Cash';
+}
 
 /// Applies payment-method and category filters to [data], returning
 /// the filtered orders and their order items.
@@ -29,12 +42,15 @@ _FilteredOrders _applyFilters(SalesReportData data, WidgetRef ref) {
                 o.stripePaymentIntentId!.isNotEmpty,
           )
           .toList();
+    } else if (paymentFilter == 'billplz') {
+      orders = orders.where((o) => o.billplzBillId != null).toList();
     } else if (paymentFilter == 'cash') {
       orders = orders
           .where(
             (o) =>
-                o.stripePaymentIntentId == null ||
-                o.stripePaymentIntentId!.isEmpty,
+                (o.stripePaymentIntentId == null ||
+                    o.stripePaymentIntentId!.isEmpty) &&
+                o.billplzBillId == null,
           )
           .toList();
     }
@@ -138,10 +154,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> {
         _formatCentsValue(order.deliveryFeeCents),
         _formatCentsValue(order.discountCents),
         _formatCentsValue(order.totalCents),
-        (order.stripePaymentIntentId != null &&
-                order.stripePaymentIntentId!.isNotEmpty)
-            ? 'Card (Stripe)'
-            : 'Cash',
+        _paymentMethodLabel(order),
       ];
     }).toList();
 
@@ -313,6 +326,10 @@ class _FilterSection extends ConsumerWidget {
                         child: Text('Card (Stripe)'),
                       ),
                       DropdownMenuItem<String?>(
+                        value: 'billplz',
+                        child: Text('Billplz (FPX)'),
+                      ),
+                      DropdownMenuItem<String?>(
                         value: 'cash',
                         child: Text('Cash'),
                       ),
@@ -429,12 +446,18 @@ class _ReportContent extends ConsumerWidget {
           o.stripePaymentIntentId != null &&
           o.stripePaymentIntentId!.isNotEmpty,
     );
+    final billplzOrders =
+        filtered.orders.where((o) => o.billplzBillId != null);
     final cashOrders = filtered.orders.where(
       (o) =>
-          o.stripePaymentIntentId == null || o.stripePaymentIntentId!.isEmpty,
+          (o.stripePaymentIntentId == null ||
+              o.stripePaymentIntentId!.isEmpty) &&
+          o.billplzBillId == null,
     );
 
     final cardRevenue = cardOrders.fold<int>(0, (s, o) => s + o.totalCents);
+    final billplzRevenue =
+        billplzOrders.fold<int>(0, (s, o) => s + o.totalCents);
     final cashRevenue = cashOrders.fold<int>(0, (s, o) => s + o.totalCents);
 
     return ListView(
@@ -571,6 +594,14 @@ class _ReportContent extends ConsumerWidget {
                               ),
                               TableRow(
                                 children: [
+                                  const _TableCell('Billplz (FPX)'),
+                                  _TableCellRight('${billplzOrders.length}'),
+                                  _TableCellRight(
+                                      'RM ${formatRm(billplzRevenue)}'),
+                                ],
+                              ),
+                              TableRow(
+                                children: [
                                   const _TableCell('Cash'),
                                   _TableCellRight('${cashOrders.length}'),
                                   _TableCellRight(
@@ -654,14 +685,7 @@ class _ReportContent extends ConsumerWidget {
                                 _TableCellRight(
                                   'RM ${formatRm(order.totalCents)}',
                                 ),
-                                _TableCell(
-                                  (order.stripePaymentIntentId != null &&
-                                          order
-                                              .stripePaymentIntentId!
-                                              .isNotEmpty)
-                                      ? 'Card'
-                                      : 'Cash',
-                                ),
+                                _TableCell(_paymentMethodLabel(order)),
                               ],
                             ),
                           ),

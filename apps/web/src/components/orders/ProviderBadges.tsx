@@ -1,4 +1,4 @@
-import { Banknote, Bike, CreditCard, Hourglass, Store, Truck, Wallet } from "lucide-react"
+import { Banknote, Bike, CreditCard, Hourglass, Landmark, Store, Truck, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   getDeliveryBadge,
@@ -12,6 +12,10 @@ const PAYMENT_STYLE: Record<PaymentProvider, { className: string; Icon: typeof C
   stripe: {
     className: "bg-violet-500/15 text-violet-400 border-violet-500/30",
     Icon: CreditCard,
+  },
+  billplz: {
+    className: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+    Icon: Landmark,
   },
   cash: {
     className: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",

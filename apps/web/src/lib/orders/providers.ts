@@ -3,6 +3,7 @@
  *
  * Payment:
  * - Stripe when stripe_payment_intent_id or stripe_session_id is set
+ * - Billplz when billplz_bill_id is set (FPX online banking)
  * - Platform channels (grabfood/foodpanda) — the customer paid in the platform app
  * - QR Pay / Cash when a payment method is known (counter POS)
  * - Awaiting Payment when the order is still pending
@@ -17,6 +18,7 @@
  */
 export type PaymentProvider =
   | "stripe"
+  | "billplz"
   | "cash"
   | "qr_pay"
   | "grabfood"
@@ -46,6 +48,7 @@ export interface ProviderSourceFields {
   delivery_type?: string | null
   stripe_payment_intent_id?: string | null
   stripe_session_id?: string | null
+  billplz_bill_id?: string | null
   lalamove_order_id?: string | null
   lalamove_quote_id?: string | null
   driver_name?: string | null
@@ -56,6 +59,9 @@ export interface ProviderSourceFields {
 export function getPaymentBadge(order: ProviderSourceFields): PaymentBadge {
   if (order.stripe_payment_intent_id || order.stripe_session_id) {
     return { provider: "stripe", label: "Stripe" }
+  }
+  if (order.billplz_bill_id) {
+    return { provider: "billplz", label: "Billplz" }
   }
   if (order.source === "grabfood") {
     return { provider: "grabfood", label: "GrabFood" }

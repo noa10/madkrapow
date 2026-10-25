@@ -1,66 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createStripeClient } from '@/lib/stripe/client'
-import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 import { createServerClient } from '@supabase/ssr'
-import { env } from '@/lib/validators/env'
-import { notifyKitchenOfPaidOrder } from '@/lib/bots/notifications'
+import { finalizePaidOrder } from '@/lib/services/order-payment'
 
-async function attemptHubboPosPush(supabase: ReturnType<typeof createServerClient>, orderId: string): Promise<void> {
-  if (!env.HUBBOPOS_ENABLED) return;
+export const runtime = 'nodejs'
 
-  try {
-    const { createHubboPosClient } = await import('@/lib/hubbopos/client');
-    const { buildOrderPayload } = await import('@/lib/hubbopos/orders');
-
-    const payload = await buildOrderPayload(orderId);
-    if (!payload) return;
-
-    const client = createHubboPosClient();
-    const response = await client.createOrder(payload);
-
-    await supabase
-      .from('orders')
-      .update({
-        hubbo_pos_trans_id: payload.trans_id,
-        hubbo_pos_invoice_no: payload.invoice_no,
-        hubbo_pos_order_id: response.hubbo_order_id || null,
-        hubbo_pos_sync_status: 'synced',
-        hubbo_pos_last_synced_at: new Date().toISOString(),
-        hubbo_pos_last_error: null,
-      })
-      .eq('id', orderId);
-
-    console.log(`[Webhook] HubboPOS order pushed: ${orderId} -> ${response.hubbo_order_id}`);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isRetryable = !(error instanceof Error && (error.name === 'HubboPosValidationError' || error.name === 'HubboPosAuthError'));
-
-    await supabase
-      .from('orders')
-      .update({
-        hubbo_pos_sync_status: isRetryable ? 'pending' : 'failed',
-        hubbo_pos_last_error: errorMessage,
-      })
-      .eq('id', orderId);
-
-    if (isRetryable) {
-      const { data: order } = await supabase.from('orders').select('order_number').eq('id', orderId).single();
-      await supabase.from('hubbopos_sync_queue').insert({
-        order_id: orderId,
-        action: 'create_order',
-        payload: {
-          trans_id: `mk-${orderId}`,
-          invoice_no: order?.order_number ? `MK-${order.order_number}` : `MK-${orderId.slice(0, 8)}`,
-        },
-        status: 'pending',
-        next_attempt_at: new Date().toISOString(),
-      });
-    }
-
-    console.error(`[Webhook] HubboPOS push failed for ${orderId}:`, errorMessage);
-  }
-}
-
+/**
+ * Stripe Checkout webhook.
+ *
+ * Payment confirmation and fulfilment live in `finalizePaidOrder` so Stripe and
+ * Billplz share the same idempotent paid -> preparing transition.
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.text()
@@ -123,7 +73,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // Fetch order
+    // Fetch order for the terminal-state guard and the async-failure branch.
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('*')
@@ -171,67 +121,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? session.payment_intent
       : (session.payment_intent as { id: string } | undefined)?.id ?? null
 
-    // Atomic conditional update: only advance if status hasn't changed since we read it.
-    // This prevents double-dispatch when webhook and checkout verify race each other.
-    const { data: updatedRows, error: updateError } = await supabase
-      .from('orders')
-      .update({ status: 'preparing', stripe_payment_intent_id: paymentIntentId })
-      .eq('id', orderId)
-      .eq('status', order.status)
-      .select('id')
+    const result = await finalizePaidOrder(supabase, orderId, {
+      paymentPatch: { stripe_payment_intent_id: paymentIntentId },
+      logLabel: 'Webhook',
+    })
 
-    if (updateError) {
-      console.error('[Webhook] Failed to advance order to preparing:', orderId, updateError)
+    if (result.outcome === 'failed') {
+      console.error('[Webhook] Failed to advance order to preparing:', orderId, result.error)
       return NextResponse.json({ success: false, error: 'Failed to advance order to preparing' }, { status: 500 })
     }
 
-    if (!updatedRows || updatedRows.length === 0) {
-      console.log(`[Webhook] Order ${orderId} already advanced by another process, skipping fulfillment`)
-      return NextResponse.json({ success: true }, { status: 200 })
-    }
-
-    console.log(`[Webhook] Order ${orderId} marked as paid and advanced to preparing`)
-
-    // Bot order notifications (best-effort, never fail webhook)
-    if (order.source === 'telegram' || order.source === 'whatsapp') {
-      await notifyKitchenOfPaidOrder(orderId)
-      try {
-        const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
-        await sendOrderStatusNotification(orderId, 'preparing')
-      } catch {
-        // Notification failure must not break the webhook
-      }
-    }
-
-    // Push to HubboPOS if enabled (best-effort, non-blocking)
-    await attemptHubboPosPush(supabase, orderId);
-
-    // Branch by delivery type and fulfillment type for dispatch setup
-    const deliveryType = order.delivery_type || 'delivery'
-    const fulfillmentType = order.fulfillment_type || 'asap'
-
-    if (deliveryType === 'self_pickup') {
-      // Self-pickup: no delivery booking
-      await supabase
-        .from('orders')
-        .update({ dispatch_status: 'not_ready' })
-        .eq('id', orderId)
-
-      console.log('[Webhook] Self-pickup dispatch not_ready:', orderId)
-
-    } else if (fulfillmentType === 'scheduled') {
-      // Scheduled delivery: queue for later dispatch by cron
-      await supabase
-        .from('orders')
-        .update({ dispatch_status: 'queued' })
-        .eq('id', orderId)
-
-      console.log('[Webhook] Scheduled delivery queued:', orderId)
-
-    } else {
-      // ASAP delivery: dispatch immediately using fulfillment service
-      const result = await fulfillDeliveryOrder(supabase, orderId)
-      console.log(`[Webhook] ASAP delivery ${result.success ? 'dispatched' : 'failed'}:`, orderId)
+    if (result.outcome === 'not_found') {
+      console.error('[Webhook] Order disappeared during finalisation:', orderId)
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
     return NextResponse.json({ success: true }, { status: 200 })

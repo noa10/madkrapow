@@ -18,6 +18,7 @@ function row(overrides: Partial<AdminOrderListRow> = {}): AdminOrderListRow {
     source: "web",
     stripe_payment_intent_id: null,
     stripe_session_id: null,
+    billplz_bill_id: null,
     order_items: null,
     ...overrides,
   } as AdminOrderListRow

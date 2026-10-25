@@ -138,12 +138,17 @@ for each environment that should offer Billplz:
 | `BILLPLZ_API_KEY` | production Secret Key | sandbox Secret Key |
 | `BILLPLZ_COLLECTION_ID` | production collection | sandbox collection |
 | `BILLPLZ_X_SIGNATURE_KEY` | production X Signature Key | sandbox X Signature Key |
-| `BILLPLZ_CALLBACK_URL` | `https://madkrapow.com/api/webhooks/billplz` (or omit — it defaults to `NEXT_PUBLIC_URL`) | leave unset unless Preview has a stable public URL |
+| `BILLPLZ_CALLBACK_URL` | `https://www.madkrapow.com/api/webhooks/billplz` (or omit — it defaults to `NEXT_PUBLIC_URL`) | leave unset unless Preview has a stable public URL |
 
 `BILLPLZ_REDIRECT_BASE_URL` is only needed for tunnel-based local testing; leave
 it unset in Vercel. Keep `BILLPLZ_ENABLED=false` until the production keys and
 callback URL are in place — the checkout hides the method while it is disabled
 or partially configured.
+
+Use the canonical **www** host for `NEXT_PUBLIC_URL` and the callback URL.
+`https://madkrapow.com/...` returns a 307 redirect to
+`https://www.madkrapow.com/...`, and Billplz callbacks should not depend on
+following a redirect.
 
 ### GitHub Actions
 

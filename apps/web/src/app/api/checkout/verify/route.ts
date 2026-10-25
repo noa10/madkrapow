@@ -40,23 +40,14 @@ export const dynamic = 'force-dynamic'
 /**
  * Success-page fallback when the webhook is delayed or missed.
  *
- * The caller supplies the provider reference it was redirected with (Stripe
- * `session_id` or Billplz `billId`). This route re-reads the payment from the
- * gateway and then hands off to the same finalisation path as the webhooks.
+ * The caller supplies only the order id. The server reads the payment provider
+ * and its stored reference from the order row, re-reads the payment from that
+ * gateway, and hands off to the same finalisation path as the webhooks.
  */
 export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>> {
   try {
     const body = await req.json()
     const orderId = typeof body.orderId === 'string' ? body.orderId : ''
-    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
-    const billId = typeof body.billId === 'string' ? body.billId : ''
-
-    if (!orderId) {
-      return NextResponse.json(
-        { success: false, error: 'Missing orderId' },
-        { status: 400 }
-      )
-    }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
       console.error('[Verify] Supabase env vars not configured')
@@ -73,9 +64,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // The gateway is chosen from the order row, which the server wrote at
-    // checkout. The client-supplied reference is only accepted when it exactly
-    // matches the reference stored on that order.
+    // The gateway and its reference come from the order row the server wrote
+    // at checkout. Client-supplied session/bill ids are ignored, so a caller
+    // cannot steer verification to a different gateway or reference.
     const { data: orderData, error: orderError } = await supabase
       .from('orders')
       .select('id, status, total_cents, billplz_bill_id, stripe_session_id')
@@ -93,23 +84,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
     const order = orderData as VerifyOrderRow
 
     if (order.billplz_bill_id) {
-      if (!billId || billId !== order.billplz_bill_id) {
-        return NextResponse.json(
-          { success: false, error: 'Bill does not match order' },
-          { status: 400 }
-        )
-      }
-      return verifyBillplzPayment(supabase, order, billId)
+      return verifyBillplzPayment(supabase, order, order.billplz_bill_id)
     }
 
     if (order.stripe_session_id) {
-      if (!sessionId || sessionId !== order.stripe_session_id) {
-        return NextResponse.json(
-          { success: false, error: 'Session does not match order' },
-          { status: 400 }
-        )
-      }
-      return verifyStripePayment(supabase, order, sessionId)
+      return verifyStripePayment(supabase, order, order.stripe_session_id)
     }
 
     return NextResponse.json(

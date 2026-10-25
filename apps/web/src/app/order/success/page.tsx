@@ -42,10 +42,6 @@ function SuccessContent() {
   const clearCart = useCartStore((state) => state.clear)
 
   const orderId = searchParams.get('orderId') || searchParams.get('order_id')
-  const sessionId = searchParams.get('session_id')
-  // Billplz appends `billplz[id]`, `billplz[paid]`, and `billplz[paid_at]` to
-  // the redirect URL. `billId` is also accepted for our own links/tests.
-  const billId = searchParams.get('billplz[id]') || searchParams.get('billId')
   const estimatedDelivery = searchParams.get('delivery')
 
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('confirming')
@@ -157,13 +153,15 @@ function SuccessContent() {
   // delayed or failed. Returns the server-side status (e.g. 'preparing',
   // 'processing') or null when verification could not be completed.
   const verifyPayment = useCallback(async (): Promise<string | null> => {
-    if (!orderId || (!sessionId && !billId)) return null
+    if (!orderId) return null
 
     try {
+      // The server reads the gateway and its reference from the order row;
+      // the browser only supplies the order id.
       const response = await fetch('/api/checkout/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, sessionId, billId }),
+        body: JSON.stringify({ orderId }),
       })
 
       if (!response.ok) {
@@ -182,7 +180,7 @@ function SuccessContent() {
       console.error('[SuccessPage] Verification API error:', err)
       return null
     }
-  }, [orderId, sessionId, billId])
+  }, [orderId])
 
   // Poll order status until payment is confirmed or timeout
   useEffect(() => {
@@ -212,29 +210,25 @@ function SuccessContent() {
       if (intervalId) clearInterval(intervalId)
       if (cancelled) return
 
-      if (sessionId || billId) {
-        setPaymentStatus('verifying')
-        const status = await verifyPayment()
-        if (cancelled) return
+      setPaymentStatus('verifying')
+      const status = await verifyPayment()
+      if (cancelled) return
 
-        if (status === 'processing') {
-          // Async payment (e.g. FPX) still pending bank confirmation.
-          // Restart polling and extend timeout instead of showing timed-out.
-          setPaymentStatus('processing')
-          intervalId = setInterval(poll, 3000)
-          timeoutId = setTimeout(async () => {
-            if (intervalId) clearInterval(intervalId)
-            if (!cancelled) setPaymentStatus('timed_out')
-          }, 45000)
-        } else if (status && status !== 'cancelled') {
-          // Any successful verification (preparing/paid/...) means the order
-          // has left `pending`; the poll would have caught it too, but this
-          // avoids showing a false timeout while the webhook is delayed.
-          // A cancelled order is a failed payment, not a confirmation.
-          setPaymentStatus('confirmed')
-        } else {
-          setPaymentStatus('timed_out')
-        }
+      if (status === 'processing') {
+        // Async payment (e.g. FPX) still pending bank confirmation.
+        // Restart polling and extend timeout instead of showing timed-out.
+        setPaymentStatus('processing')
+        intervalId = setInterval(poll, 3000)
+        timeoutId = setTimeout(async () => {
+          if (intervalId) clearInterval(intervalId)
+          if (!cancelled) setPaymentStatus('timed_out')
+        }, 45000)
+      } else if (status && status !== 'cancelled') {
+        // Any successful verification (preparing/paid/...) means the order
+        // has left `pending`; the poll would have caught it too, but this
+        // avoids showing a false timeout while the webhook is delayed.
+        // A cancelled order is a failed payment, not a confirmation.
+        setPaymentStatus('confirmed')
       } else {
         setPaymentStatus('timed_out')
       }
@@ -245,7 +239,7 @@ function SuccessContent() {
       if (intervalId) clearInterval(intervalId)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [orderId, checkStatus, verifyPayment, sessionId, billId])
+  }, [orderId, checkStatus, verifyPayment])
 
   return (
     <main className="min-h-screen bg-background">

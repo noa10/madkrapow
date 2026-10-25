@@ -33,6 +33,7 @@ interface Order {
   discount_cents: number;
   created_at: string;
   stripe_payment_intent_id: string | null;
+  billplz_bill_id: string | null;
 }
 
 interface OrderItem {
@@ -53,6 +54,16 @@ interface MenuItem {
   id: string;
   category_id: string;
   name: string;
+}
+
+/**
+ * Single source of truth for the analytics/CSV payment-method label. Cash is
+ * the fallback only when neither gateway left an identifier on the order.
+ */
+function paymentMethodLabel(order: Order): string {
+  if (order.stripe_payment_intent_id) return "Card (Stripe)";
+  if (order.billplz_bill_id) return "Billplz (FPX)";
+  return "Cash";
 }
 
 interface ReportData {
@@ -124,8 +135,12 @@ export default function SalesReportsPage() {
     if (paymentMethodFilter !== "all") {
       if (paymentMethodFilter === "card") {
         orders = orders.filter(o => o.stripe_payment_intent_id);
+      } else if (paymentMethodFilter === "billplz") {
+        orders = orders.filter(o => o.billplz_bill_id);
       } else if (paymentMethodFilter === "cash") {
-        orders = orders.filter(o => !o.stripe_payment_intent_id);
+        orders = orders.filter(
+          o => !o.stripe_payment_intent_id && !o.billplz_bill_id,
+        );
       }
     }
 
@@ -183,9 +198,15 @@ export default function SalesReportsPage() {
     })) || [];
 
     const cardPayments = orders.filter(o => o.stripe_payment_intent_id).length;
-    const cashPayments = orders.length - cardPayments;
+    const billplzPayments = orders.filter(o => o.billplz_bill_id).length;
+    const cashPayments = orders.filter(
+      o => !o.stripe_payment_intent_id && !o.billplz_bill_id,
+    ).length;
     const cardRevenue = orders.filter(o => o.stripe_payment_intent_id).reduce((sum, o) => sum + o.total_cents, 0);
-    const cashRevenue = orders.filter(o => !o.stripe_payment_intent_id).reduce((sum, o) => sum + o.total_cents, 0);
+    const billplzRevenue = orders.filter(o => o.billplz_bill_id).reduce((sum, o) => sum + o.total_cents, 0);
+    const cashRevenue = orders.filter(
+      o => !o.stripe_payment_intent_id && !o.billplz_bill_id,
+    ).reduce((sum, o) => sum + o.total_cents, 0);
 
     return {
       totalRevenue,
@@ -196,6 +217,7 @@ export default function SalesReportsPage() {
       categoryBreakdown: categoryBreakdown.sort((a, b) => b.revenue - a.revenue),
       paymentMethodBreakdown: [
         { method: "Card (Stripe)", count: cardPayments, revenue: cardRevenue },
+        { method: "Billplz (FPX)", count: billplzPayments, revenue: billplzRevenue },
         { method: "Cash", count: cashPayments, revenue: cashRevenue },
       ],
     };
@@ -225,7 +247,7 @@ export default function SalesReportsPage() {
       convertCentsToRM(order.delivery_fee_cents),
       convertCentsToRM(order.discount_cents),
       convertCentsToRM(order.total_cents),
-      order.stripe_payment_intent_id ? "Card (Stripe)" : "Cash",
+      paymentMethodLabel(order),
     ]);
 
     const csvContent = [
@@ -328,6 +350,7 @@ export default function SalesReportsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Methods</SelectItem>
                   <SelectItem value="card">Card (Stripe)</SelectItem>
+                  <SelectItem value="billplz">Billplz (FPX)</SelectItem>
                   <SelectItem value="cash">Cash</SelectItem>
                 </SelectContent>
               </Select>
@@ -509,7 +532,7 @@ export default function SalesReportsPage() {
                         <TableCell className="text-right text-muted-foreground">RM {convertCentsToRM(order.delivery_fee_cents)}</TableCell>
                         <TableCell className="text-right text-destructive">-RM {convertCentsToRM(order.discount_cents)}</TableCell>
                         <TableCell className="text-right font-bold text-foreground">RM {convertCentsToRM(order.total_cents)}</TableCell>
-                        <TableCell className="text-muted-foreground">{order.stripe_payment_intent_id ? "Card" : "Cash"}</TableCell>
+                        <TableCell className="text-muted-foreground">{paymentMethodLabel(order)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

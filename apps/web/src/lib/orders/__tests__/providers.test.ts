@@ -14,7 +14,13 @@ describe("getPaymentBadge", () => {
     ).toEqual({ provider: "stripe", label: "Stripe" })
   })
 
-  it("returns Awaiting Payment when status is pending and no Stripe IDs", () => {
+  it("returns Billplz when billplz_bill_id is set", () => {
+    expect(
+      getPaymentBadge({ status: "paid", billplz_bill_id: "bill_123" }),
+    ).toEqual({ provider: "billplz", label: "Billplz" })
+  })
+
+  it("returns Awaiting Payment when status is pending and no provider ids", () => {
     expect(getPaymentBadge({ status: "pending" })).toEqual({
       provider: "pending",
       label: "Awaiting Payment",
@@ -46,6 +52,16 @@ describe("getPaymentBadge", () => {
     expect(
       getPaymentBadge({ status: "paid", source: "counter", payment_method: "qr_pay" }),
     ).toEqual({ provider: "qr_pay", label: "QR Pay" })
+  })
+
+  it("keeps Stripe priority over Billplz", () => {
+    expect(
+      getPaymentBadge({
+        status: "paid",
+        stripe_session_id: "cs_123",
+        billplz_bill_id: "bill_123",
+      }),
+    ).toEqual({ provider: "stripe", label: "Stripe" })
   })
 
   it("keeps Stripe priority over platform source", () => {

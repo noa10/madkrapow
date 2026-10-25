@@ -8,6 +8,7 @@ function order(overrides: Partial<PaymentPillOrder>): PaymentPillOrder {
     source: "web",
     stripe_payment_intent_id: null,
     stripe_session_id: null,
+    billplz_bill_id: null,
     ...overrides,
   }
 }
@@ -43,6 +44,14 @@ describe("getPaymentPill", () => {
     )
   })
 
+  it("derives Billplz from the bill id for a paid order", () => {
+    expect(getPaymentPill(order({ billplz_bill_id: "bill_123" }))).toEqual({
+      state: "paid",
+      label: "Paid",
+      method: "Billplz",
+    })
+  })
+
   it("does not claim a method for a counter order with no payment evidence", () => {
     // `orders` has no persisted payment-method column, so a paid counter order
     // cannot be distinguished from a QR-paid one here. Claiming "Cash" would
@@ -74,6 +83,7 @@ describe("getPaymentPill", () => {
   it("keeps state paid with a method label for every non-pending case", () => {
     const cases: Array<[Partial<PaymentPillOrder>, string]> = [
       [{ stripe_payment_intent_id: "pi_1" }, "Stripe"],
+      [{ billplz_bill_id: "bill_1" }, "Billplz"],
       [{ source: "counter", payment_method: "cash" }, "Cash"],
       [{ source: "counter", payment_method: "qr_pay" }, "QR Pay"],
       [{ source: "grabfood" }, "GrabFood"],

@@ -3,7 +3,13 @@ import Stripe from 'stripe'
 import { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
-import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
+import {
+  getBill,
+  getBillplzCollectionId,
+  isBillplzConfigured,
+} from '@/lib/billplz/client'
+import { recordBillplzPayment } from '@/lib/billplz/payments'
+import { finalizePaidOrder } from '@/lib/services/order-payment'
 import { sanitizeForLog } from '@/lib/logging/safe-log'
 
 interface VerifyResponse {
@@ -18,96 +24,36 @@ interface VerifyError {
 }
 
 type VerifyResult = VerifyResponse | VerifyError
+type ServiceClient = ReturnType<typeof createServerClient>
 
+interface VerifyOrderRow {
+  id: string
+  status: string
+  total_cents: number
+  billplz_bill_id: string | null
+  stripe_session_id: string | null
+}
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+/**
+ * Success-page fallback when the webhook is delayed or missed.
+ *
+ * The caller supplies only the order id. The server reads the payment provider
+ * and its stored reference from the order row, re-reads the payment from that
+ * gateway, and hands off to the same finalisation path as the webhooks.
+ */
 export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>> {
   try {
     const body = await req.json()
-    const orderId = body.orderId as string | undefined
-    const sessionId = body.sessionId as string | undefined
-
-    if (!orderId || !sessionId) {
-      return NextResponse.json(
-        { success: false, error: 'Missing orderId or sessionId' },
-        { status: 400 }
-      )
-    }
-
-    if (!env.STRIPE_SECRET_KEY) {
-      console.error('[Verify] STRIPE_SECRET_KEY not configured')
-      return NextResponse.json(
-        { success: false, error: 'Payment service not configured' },
-        { status: 500 }
-      )
-    }
+    const orderId = typeof body.orderId === 'string' ? body.orderId : ''
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
       console.error('[Verify] Supabase env vars not configured')
       return NextResponse.json(
         { success: false, error: 'Database not configured' },
         { status: 500 }
-      )
-    }
-
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      apiVersion: STRIPE_API_VERSION,
-    })
-
-    // Verify the checkout session with Stripe
-    let session: Stripe.Checkout.Session
-    try {
-      session = await stripe.checkout.sessions.retrieve(sessionId)
-    } catch (stripeError) {
-      console.error('[Verify] Stripe session retrieve failed:', stripeError)
-      return NextResponse.json(
-        { success: false, error: 'Unable to verify payment with Stripe' },
-        { status: 500 }
-      )
-    }
-
-    // Security: ensure the session belongs to the requested order
-    if (session.metadata?.order_id !== orderId) {
-      console.error(
-        '[Verify] Session metadata order_id mismatch:',
-        sanitizeForLog(session.metadata?.order_id ?? ''),
-        '!=',
-        sanitizeForLog(orderId)
-      )
-      return NextResponse.json(
-        { success: false, error: 'Session does not match order' },
-        { status: 400 }
-      )
-    }
-
-    // For async methods (FPX, bank transfers) payment_status may be 'unpaid' at redirect time.
-    // Check the PaymentIntent to distinguish between processing and truly failed payments.
-    if (session.payment_status !== 'paid') {
-      const paymentIntentId = typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
-
-      if (paymentIntentId) {
-        try {
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
-          if (paymentIntent.status === 'processing' || paymentIntent.status === 'requires_action') {
-            return NextResponse.json(
-              { success: true, status: 'processing', message: 'Payment is being processed by the bank. Please wait.' },
-              { status: 200 }
-            )
-          }
-          if (['requires_payment_method', 'canceled'].includes(paymentIntent.status)) {
-            return NextResponse.json(
-              { success: false, error: 'Payment failed or was canceled' },
-              { status: 400 }
-            )
-          }
-        } catch (piError) {
-          console.error('[Verify] Failed to retrieve payment intent:', sanitizeForLog(paymentIntentId), piError)
-        }
-      }
-
-      return NextResponse.json(
-        { success: false, error: 'Payment not completed' },
-        { status: 400 }
       )
     }
 
@@ -118,91 +64,36 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    // Fetch order
-    const { data: order, error: orderError } = await supabase
+    // The gateway and its reference come from the order row the server wrote
+    // at checkout. Client-supplied session/bill ids are ignored, so a caller
+    // cannot steer verification to a different gateway or reference.
+    const { data: orderData, error: orderError } = await supabase
       .from('orders')
-      .select('*')
+      .select('id, status, total_cents, billplz_bill_id, stripe_session_id')
       .eq('id', orderId)
       .single()
 
-    if (orderError || !order) {
-      console.error('[Verify] Order not found:', orderId, orderError)
+    if (orderError || !orderData) {
+      console.error('[Verify] Order not found:', sanitizeForLog(orderId), orderError)
       return NextResponse.json(
         { success: false, error: 'Order not found' },
         { status: 404 }
       )
     }
 
-    // Idempotency: skip if already in post-preparing or terminal status.
-    // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
-    if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
-      return NextResponse.json(
-        { success: true, status: order.status, message: 'Order already processed' },
-        { status: 200 }
-      )
+    const order = orderData as VerifyOrderRow
+
+    if (order.billplz_bill_id) {
+      return verifyBillplzPayment(supabase, order, order.billplz_bill_id)
     }
 
-    // Atomic conditional update: only advance if status hasn't changed since we read it.
-    // This prevents double-dispatch when webhook and checkout verify race each other.
-    const paymentIntentId = typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
-
-    const { data: updatedRows, error: updateError } = await supabase
-      .from('orders')
-      .update({
-        status: 'preparing',
-        stripe_payment_intent_id: paymentIntentId,
-        stripe_session_id: session.id,
-      })
-      .eq('id', orderId)
-      .eq('status', order.status)
-      .select('id')
-
-    if (updateError) {
-      console.error('[Verify] Failed to advance order to preparing:', orderId, updateError)
-      return NextResponse.json(
-        { success: false, error: 'Failed to advance order to preparing' },
-        { status: 500 }
-      )
-    }
-
-    if (!updatedRows || updatedRows.length === 0) {
-      console.log(`[Verify] Order ${orderId} already advanced by another process, skipping fulfillment`)
-      return NextResponse.json(
-        { success: true, status: 'preparing', message: 'Order already processed' },
-        { status: 200 }
-      )
-    }
-
-    console.log(`[Verify] Order ${orderId} marked as paid and advanced to preparing`)
-
-    // Branch by delivery type and fulfillment type for dispatch setup
-    const deliveryType = order.delivery_type || 'delivery'
-    const fulfillmentType = order.fulfillment_type || 'asap'
-
-    if (deliveryType === 'self_pickup') {
-      await supabase
-        .from('orders')
-        .update({ dispatch_status: 'not_ready' })
-        .eq('id', orderId)
-
-      console.log('[Verify] Self-pickup dispatch not_ready:', orderId)
-    } else if (fulfillmentType === 'scheduled') {
-      await supabase
-        .from('orders')
-        .update({ dispatch_status: 'queued' })
-        .eq('id', orderId)
-
-      console.log('[Verify] Scheduled delivery queued:', orderId)
-    } else {
-      const result = await fulfillDeliveryOrder(supabase, orderId)
-      console.log(`[Verify] ASAP delivery ${result.success ? 'dispatched' : 'failed'}:`, orderId)
+    if (order.stripe_session_id) {
+      return verifyStripePayment(supabase, order, order.stripe_session_id)
     }
 
     return NextResponse.json(
-      { success: true, status: 'preparing', message: 'Payment confirmed and order updated' },
-      { status: 200 }
+      { success: false, error: 'Payment method could not be determined for this order' },
+      { status: 400 }
     )
   } catch (error) {
     console.error('[Verify] Unexpected error:', error)
@@ -212,4 +103,247 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       { status: 500 }
     )
   }
+}
+
+async function verifyBillplzPayment(
+  supabase: ServiceClient,
+  order: VerifyOrderRow,
+  billId: string,
+): Promise<NextResponse<VerifyResult>> {
+  if (!isBillplzConfigured()) {
+    console.error('[Verify] Billplz is not configured')
+    return NextResponse.json(
+      { success: false, error: 'Payment service not configured' },
+      { status: 500 }
+    )
+  }
+
+  let bill
+  try {
+    // The redirect query string is user-controlled; only the Billplz API can
+    // tell us whether the bill is actually paid.
+    bill = await getBill(billId)
+  } catch (billError) {
+    console.error(
+      '[Verify] Billplz bill retrieve failed:',
+      sanitizeForLog(billId),
+      billError instanceof Error ? billError.message : 'Unknown error'
+    )
+    return NextResponse.json(
+      { success: false, error: 'Unable to verify payment with Billplz' },
+      { status: 500 }
+    )
+  }
+
+  const expectedCollectionId = getBillplzCollectionId()
+  if (
+    expectedCollectionId &&
+    bill.collection_id &&
+    bill.collection_id !== expectedCollectionId
+  ) {
+    return NextResponse.json(
+      { success: false, error: 'Bill belongs to a different collection' },
+      { status: 400 }
+    )
+  }
+
+  // Security: ensure the bill belongs to the requested order.
+  if (bill.reference_1 !== order.id) {
+    console.error(
+      '[Verify] Bill reference mismatch:',
+      sanitizeForLog(String(bill.reference_1 ?? '')),
+      '!=',
+      sanitizeForLog(order.id)
+    )
+    return NextResponse.json(
+      { success: false, error: 'Bill does not match order' },
+      { status: 400 }
+    )
+  }
+
+  const isPaid = bill.paid === true || String(bill.paid) === 'true'
+  if (!isPaid) {
+    return NextResponse.json(
+      { success: false, error: 'Payment not completed' },
+      { status: 400 }
+    )
+  }
+
+  const paidAmountCents = Number(bill.paid_amount ?? bill.amount)
+  if (!Number.isInteger(paidAmountCents) || paidAmountCents <= 0) {
+    return NextResponse.json(
+      { success: false, error: 'Invalid paid amount' },
+      { status: 400 }
+    )
+  }
+
+  if (paidAmountCents !== order.total_cents) {
+    console.error(
+      `[Verify] Amount mismatch for order ${sanitizeForLog(order.id)}: paid=${paidAmountCents} expected=${order.total_cents}`
+    )
+    return NextResponse.json(
+      { success: false, error: 'Paid amount does not match order total' },
+      { status: 400 }
+    )
+  }
+
+  await recordBillplzPayment(supabase, order.id, bill, paidAmountCents)
+
+  const result = await finalizePaidOrder(supabase, order.id, {
+    paymentPatch: { billplz_bill_id: billId },
+    logLabel: 'Verify',
+  })
+
+  if (result.outcome === 'failed') {
+    console.error('[Verify] Failed to advance Billplz order:', sanitizeForLog(order.id), result.error)
+    return NextResponse.json(
+      { success: false, error: 'Failed to advance order to preparing' },
+      { status: 500 }
+    )
+  }
+
+  if (result.outcome === 'not_found') {
+    return NextResponse.json(
+      { success: false, error: 'Order not found' },
+      { status: 404 }
+    )
+  }
+
+  if (result.outcome === 'already_processed') {
+    return NextResponse.json(
+      { success: true, status: result.status, message: 'Order already processed' },
+      { status: 200 }
+    )
+  }
+
+  return NextResponse.json(
+    { success: true, status: 'preparing', message: 'Payment confirmed and order updated' },
+    { status: 200 }
+  )
+}
+
+async function verifyStripePayment(
+  supabase: ServiceClient,
+  order: VerifyOrderRow,
+  sessionId: string,
+): Promise<NextResponse<VerifyResult>> {
+  const stripeSecretKey = env.STRIPE_SECRET_KEY
+  if (!stripeSecretKey) {
+    console.error('[Verify] STRIPE_SECRET_KEY not configured')
+    return NextResponse.json(
+      { success: false, error: 'Payment service not configured' },
+      { status: 500 }
+    )
+  }
+
+  const stripe = new Stripe(stripeSecretKey, {
+    apiVersion: STRIPE_API_VERSION,
+  })
+
+  // Verify the checkout session with Stripe
+  let session: Stripe.Checkout.Session
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId)
+  } catch (stripeError) {
+    console.error('[Verify] Stripe session retrieve failed:', stripeError)
+    return NextResponse.json(
+      { success: false, error: 'Unable to verify payment with Stripe' },
+      { status: 500 }
+    )
+  }
+
+  // Security: ensure the session belongs to the requested order
+  if (session.metadata?.order_id !== order.id) {
+    console.error(
+      '[Verify] Session metadata order_id mismatch:',
+      sanitizeForLog(session.metadata?.order_id ?? ''),
+      '!=',
+      sanitizeForLog(order.id)
+    )
+    return NextResponse.json(
+      { success: false, error: 'Session does not match order' },
+      { status: 400 }
+    )
+  }
+
+  // For async methods (FPX, bank transfers) payment_status may be 'unpaid' at redirect time.
+  // Check the PaymentIntent to distinguish between processing and truly failed payments.
+  if (session.payment_status !== 'paid') {
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
+
+    if (paymentIntentId) {
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
+        if (paymentIntent.status === 'processing' || paymentIntent.status === 'requires_action') {
+          return NextResponse.json(
+            { success: true, status: 'processing', message: 'Payment is being processed by the bank. Please wait.' },
+            { status: 200 }
+          )
+        }
+        if (['requires_payment_method', 'canceled'].includes(paymentIntent.status)) {
+          return NextResponse.json(
+            { success: false, error: 'Payment failed or was canceled' },
+            { status: 400 }
+          )
+        }
+      } catch (piError) {
+        console.error('[Verify] Failed to retrieve payment intent:', sanitizeForLog(paymentIntentId), piError)
+      }
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Payment not completed' },
+      { status: 400 }
+    )
+  }
+
+  // Idempotency: skip if already in post-preparing or terminal status.
+  // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
+  if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
+    return NextResponse.json(
+      { success: true, status: order.status, message: 'Order already processed' },
+      { status: 200 }
+    )
+  }
+
+  const paymentIntentId = typeof session.payment_intent === 'string'
+    ? session.payment_intent
+    : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
+
+  const result = await finalizePaidOrder(supabase, order.id, {
+    paymentPatch: {
+      stripe_payment_intent_id: paymentIntentId,
+      stripe_session_id: session.id,
+    },
+    logLabel: 'Verify',
+  })
+
+  if (result.outcome === 'failed') {
+    console.error('[Verify] Failed to advance order to preparing:', order.id, result.error)
+    return NextResponse.json(
+      { success: false, error: 'Failed to advance order to preparing' },
+      { status: 500 }
+    )
+  }
+
+  if (result.outcome === 'not_found') {
+    return NextResponse.json(
+      { success: false, error: 'Order not found' },
+      { status: 404 }
+    )
+  }
+
+  if (result.outcome === 'already_processed') {
+    return NextResponse.json(
+      { success: true, status: result.status, message: 'Order already processed' },
+      { status: 200 }
+    )
+  }
+
+  return NextResponse.json(
+    { success: true, status: 'preparing', message: 'Payment confirmed and order updated' },
+    { status: 200 }
+  )
 }

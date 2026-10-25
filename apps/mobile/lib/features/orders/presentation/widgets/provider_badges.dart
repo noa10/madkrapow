@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Payment-provider classification for an order.
-enum PaymentProvider { stripe, cash, pending }
+enum PaymentProvider { stripe, billplz, cash, pending }
 
 /// Delivery-provider classification for an order.
 enum DeliveryProvider { lalamove, selfPickup, inHouse, pending }
@@ -16,6 +16,7 @@ class ProviderBadgeData {
     this.deliveryType,
     this.stripePaymentIntentId,
     this.stripeSessionId,
+    this.billplzBillId,
     this.lalamoveOrderId,
     this.lalamoveQuoteId,
     this.driverName,
@@ -26,6 +27,7 @@ class ProviderBadgeData {
   final String? deliveryType;
   final String? stripePaymentIntentId;
   final String? stripeSessionId;
+  final String? billplzBillId;
   final String? lalamoveOrderId;
   final String? lalamoveQuoteId;
   final String? driverName;
@@ -37,6 +39,9 @@ PaymentProvider paymentProviderFor(ProviderBadgeData data) {
           data.stripePaymentIntentId!.isNotEmpty) ||
       (data.stripeSessionId != null && data.stripeSessionId!.isNotEmpty)) {
     return PaymentProvider.stripe;
+  }
+  if (data.billplzBillId != null && data.billplzBillId!.isNotEmpty) {
+    return PaymentProvider.billplz;
   }
   if (data.status == 'pending') return PaymentProvider.pending;
   return PaymentProvider.cash;
@@ -61,6 +66,8 @@ String paymentLabel(PaymentProvider p) {
   switch (p) {
     case PaymentProvider.stripe:
       return 'Stripe';
+    case PaymentProvider.billplz:
+      return 'Billplz';
     case PaymentProvider.cash:
       return 'Cash';
     case PaymentProvider.pending:
@@ -85,6 +92,8 @@ IconData paymentIcon(PaymentProvider p) {
   switch (p) {
     case PaymentProvider.stripe:
       return Icons.credit_card;
+    case PaymentProvider.billplz:
+      return Icons.account_balance;
     case PaymentProvider.cash:
       return Icons.payments_outlined;
     case PaymentProvider.pending:
@@ -109,6 +118,8 @@ Color paymentColor(PaymentProvider p) {
   switch (p) {
     case PaymentProvider.stripe:
       return const Color(0xFFA78BFA);
+    case PaymentProvider.billplz:
+      return AppColors.info;
     case PaymentProvider.cash:
       return AppColors.herbText;
     case PaymentProvider.pending:

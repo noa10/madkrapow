@@ -21,6 +21,7 @@
  *  - source                    → source pill + payment pill
  *  - stripe_payment_intent_id  → payment pill
  *  - stripe_session_id         → payment pill
+ *  - billplz_bill_id           → payment pill
  *
  * `order_items(quantity)` stays embedded because the list derives
  * `item_count` from it; `order_items` itself is removed during that mapping.
@@ -43,6 +44,7 @@ export const ADMIN_ORDER_LIST_COLUMNS = [
   "source",
   "stripe_payment_intent_id",
   "stripe_session_id",
+  "billplz_bill_id",
 ] as const;
 
 /** Select string shared by the tab hook and the admin orders API route. */

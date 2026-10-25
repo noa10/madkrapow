@@ -14,6 +14,12 @@ import { TimeSlotPicker } from '@/components/checkout/TimeSlotPicker'
 import { BulkOrderForm } from '@/components/checkout/BulkOrderForm'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { PromoCodeInput } from '@/components/checkout/PromoCodeInput'
+import { PaymentMethodSelector } from '@/components/checkout/PaymentMethodSelector'
+import {
+  PAYMENT_METHOD_OPTIONS,
+  type PaymentMethod,
+  type PaymentMethodOption,
+} from '@/lib/payments/methods'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { CheckoutSkeleton } from '@/components/ui/PageSkeleton'
 import { cn } from '@/lib/utils'
@@ -202,6 +208,12 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const [isLoadingMenu, setIsLoadingMenu] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBulkMode, setIsBulkMode] = useState(false)
+  // Stripe is always available; Billplz appears only when the server reports
+  // it as configured (see /api/payments/methods).
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>(() =>
+    PAYMENT_METHOD_OPTIONS.filter((option) => option.id === 'stripe')
+  )
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stripe')
   const [showAddressInput, setShowAddressInput] = useState(false)
   const [showContactInput, setShowContactInput] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -403,6 +415,39 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
     fetchData()
     fetchSettings()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchPaymentMethods() {
+      try {
+        const res = await fetch('/api/payments/methods', { cache: 'no-store' })
+        if (!res.ok) return
+
+        const data = await res.json()
+        const methods: PaymentMethodOption[] = Array.isArray(data.methods)
+          ? data.methods.filter(
+              (method: PaymentMethodOption) =>
+                method?.id === 'stripe' || method?.id === 'billplz'
+            )
+          : []
+
+        if (cancelled || !data.success || methods.length === 0) return
+
+        setPaymentMethods(methods)
+        setPaymentMethod((current) =>
+          methods.some((method) => method.id === current) ? current : methods[0].id
+        )
+      } catch (err) {
+        console.error('Failed to fetch payment methods:', err)
+      }
+    }
+
+    fetchPaymentMethods()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const updateQuoteStatus = useCallback((status: QuoteStatus) => {
@@ -764,7 +809,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
     // Check the live store value, not just the `quoteExpired` snapshot: the
     // state is only as fresh as the expiry timer, and an expired quote must
-    // never reach Stripe (the create route trusts the client quotation).
+    // never reach a payment gateway (the create route trusts the quotation).
     if (deliveryType === 'delivery' && useCheckoutStore.getState().isQuoteExpired()) {
       setQuoteExpiryReached(true)
       setError('Your delivery quote has expired. Please refresh the quote.')
@@ -810,6 +855,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         deliveryFee: deliveryFee,
         deliveryType,
         fulfillmentType,
+        paymentMethod,
         scheduledFor: scheduledWindow?.window_start,
         promoCodes: useCartStore.getState().appliedPromos.map(p => ({ code: p.code, scope: p.scope })),
         includeCutlery: useCartStore.getState().includeCutlery,
@@ -835,8 +881,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         throw new Error(data.error || 'Failed to create checkout session')
       }
 
-      // Don't clear cart before Stripe redirect — cart must survive if user cancels or goes back.
-      // Cart is cleared on /order/success page after payment is confirmed via webhook.
+      // Don't clear cart before the gateway redirect — cart must survive if the
+      // user cancels or goes back. It is cleared on /order/success after the
+      // payment is confirmed via webhook.
       window.location.href = data.checkoutUrl
     } catch (err) {
       console.error('Checkout error:', err)
@@ -1307,6 +1354,21 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
                       />
                     </section>
                   )}
+
+                  <section className="rounded-xl border bg-card p-5 shadow-sm">
+                    <h2 className="text-lg font-semibold mb-4 font-display">Payment Method</h2>
+                    <PaymentMethodSelector
+                      options={paymentMethods}
+                      value={paymentMethod}
+                      onChange={setPaymentMethod}
+                      disabled={isProcessing}
+                    />
+                    {paymentMethod === 'billplz' && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        You&apos;ll be redirected to Billplz to complete payment with FPX online banking.
+                      </p>
+                    )}
+                  </section>
                 </>
               )}
             </div>

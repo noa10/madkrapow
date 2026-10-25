@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../features/cart/providers/cart_provider.dart';
 
@@ -41,39 +42,44 @@ class AppNavBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartItemCountProvider);
 
-    return NavigationBar(
-      selectedIndex: currentIndex,
-      onDestinationSelected: onTap,
-      destinations: [
-        const NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: 'Home',
-        ),
-        const NavigationDestination(
-          icon: Icon(Icons.receipt_long_outlined),
-          selectedIcon: Icon(Icons.receipt_long),
-          label: 'Orders',
-        ),
-        NavigationDestination(
-          icon: Badge(
-            isLabelVisible: cartCount > 0,
-            label: Text('$cartCount'),
-            child: const Icon(Icons.shopping_cart_outlined),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: BrandColors.of(context).border)),
+      ),
+      child: NavigationBar(
+        selectedIndex: currentIndex,
+        onDestinationSelected: onTap,
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
           ),
-          selectedIcon: Badge(
-            isLabelVisible: cartCount > 0,
-            label: Text('$cartCount'),
-            child: const Icon(Icons.shopping_cart),
+          const NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Orders',
           ),
-          label: 'Cart',
-        ),
-        const NavigationDestination(
-          icon: Icon(Icons.more_horiz_outlined),
-          selectedIcon: Icon(Icons.more_horiz),
-          label: 'More',
-        ),
-      ],
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: cartCount > 0,
+              label: Text('$cartCount'),
+              child: const Icon(Icons.shopping_cart_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: cartCount > 0,
+              label: Text('$cartCount'),
+              child: const Icon(Icons.shopping_cart),
+            ),
+            label: 'Cart',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.more_horiz_outlined),
+            selectedIcon: Icon(Icons.more_horiz),
+            label: 'More',
+          ),
+        ],
+      ),
     );
   }
 }

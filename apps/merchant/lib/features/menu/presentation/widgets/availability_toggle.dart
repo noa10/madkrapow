@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../generated/database.dart';
 import '../../providers/menu_providers.dart';
@@ -25,7 +26,7 @@ class AvailabilityToggle extends ConsumerWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to update availability: $e'),
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.danger,
               ),
             );
           }

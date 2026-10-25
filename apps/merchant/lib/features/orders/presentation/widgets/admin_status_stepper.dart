@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:madkrapow_orders/order_status.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Visual stepper showing the order status progression.
 /// pending → paid → preparing → ready → picked_up → delivered
@@ -46,6 +47,7 @@ class AdminStatusStepper extends StatelessWidget {
     final currentIndex = parsed == null
         ? 0
         : steps.indexOf(parsed).clamp(0, steps.length - 1);
+    final currentColor = AppStatusColors.of(currentStatus).foreground;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -56,9 +58,11 @@ class AdminStatusStepper extends StatelessWidget {
           final label = stepLabel(step);
           final isCompleted = i <= currentIndex;
           final isCurrent = i == currentIndex;
-          final color = isCompleted
-              ? (isCurrent ? Theme.of(context).colorScheme.primary : Colors.green)
-              : Colors.grey;
+          final color = isCurrent
+              ? currentColor
+              : isCompleted
+              ? AppColors.herbText
+              : AppColors.muted;
 
           return Expanded(
             child: Column(
@@ -70,7 +74,9 @@ class AdminStatusStepper extends StatelessWidget {
                       Expanded(
                         child: Container(
                           height: 2,
-                          color: i <= currentIndex ? Colors.green : Colors.grey.shade300,
+                          color: i <= currentIndex
+                              ? AppColors.herbText
+                              : AppColors.borderStrong,
                         ),
                       ),
                     CircleAvatar(
@@ -86,7 +92,9 @@ class AdminStatusStepper extends StatelessWidget {
                       Expanded(
                         child: Container(
                           height: 2,
-                          color: i < currentIndex ? Colors.green : Colors.grey.shade300,
+                          color: i < currentIndex
+                              ? AppColors.herbText
+                              : AppColors.borderStrong,
                         ),
                       ),
                   ],

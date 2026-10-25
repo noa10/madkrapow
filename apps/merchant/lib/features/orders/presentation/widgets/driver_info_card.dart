@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/time_formatter.dart';
@@ -44,7 +45,7 @@ class DriverInfoCard extends StatelessWidget {
                   // Driver avatar
                   CircleAvatar(
                     radius: 28,
-                    backgroundColor: Colors.grey.shade200,
+                    backgroundColor: AppColors.surface3,
                     child: driverPhotoUrl != null && driverPhotoUrl!.isNotEmpty
                         ? ClipOval(
                             child: CachedNetworkImage(
@@ -52,14 +53,10 @@ class DriverInfoCard extends StatelessWidget {
                               width: 56,
                               height: 56,
                               fit: BoxFit.cover,
-                              placeholder: (context, url) => const Icon(
-                                Icons.person,
-                                size: 28,
-                              ),
-                              errorWidget: (context, url, error) => const Icon(
-                                Icons.person,
-                                size: 28,
-                              ),
+                              placeholder: (context, url) =>
+                                  const Icon(Icons.person, size: 28),
+                              errorWidget: (context, url, error) =>
+                                  const Icon(Icons.person, size: 28),
                             ),
                           )
                         : const Icon(Icons.person, size: 28),
@@ -72,10 +69,8 @@ class DriverInfoCard extends StatelessWidget {
                       children: [
                         Text(
                           driverName!,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
                         if (driverPhone != null && driverPhone!.isNotEmpty)
@@ -97,7 +92,7 @@ class DriverInfoCard extends StatelessWidget {
                                 const Icon(
                                   Icons.directions_car,
                                   size: 16,
-                                  color: Colors.grey,
+                                  color: AppColors.muted,
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
@@ -106,7 +101,7 @@ class DriverInfoCard extends StatelessWidget {
                                     vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.withValues(alpha: 0.1),
+                                    color: AppColors.infoSoft,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -114,7 +109,7 @@ class DriverInfoCard extends StatelessWidget {
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.blue,
+                                      color: AppColors.info,
                                     ),
                                   ),
                                 ),
@@ -126,9 +121,9 @@ class DriverInfoCard extends StatelessWidget {
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               'Last updated: ${formatRelativeTime(driverLocationUpdatedAt)}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade600,
+                                color: AppColors.muted,
                               ),
                             ),
                           ),
@@ -138,14 +133,14 @@ class DriverInfoCard extends StatelessWidget {
                   ),
                 ],
               )
-            : Row(
+            : const Row(
                 children: [
-                  const Icon(Icons.local_shipping_outlined, color: Colors.grey),
-                  const SizedBox(width: 12),
+                  Icon(Icons.local_shipping_outlined, color: AppColors.muted),
+                  SizedBox(width: 12),
                   Text(
                     'Driver not yet assigned',
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: AppColors.muted,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -156,7 +151,8 @@ class DriverInfoCard extends StatelessWidget {
   }
 
   Widget _buildTrackButton() {
-    final url = shareLink ??
+    final url =
+        shareLink ??
         (lalamoveOrderId != null
             ? 'https://www.lalamove.com/en-my/track/MY/$lalamoveOrderId'
             : null);
@@ -169,24 +165,20 @@ class DriverInfoCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.orange.withValues(alpha: 0.1),
+            color: AppColors.emberSoft,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.open_in_new,
-                size: 14,
-                color: Colors.orange[800],
-              ),
-              const SizedBox(width: 6),
+              Icon(Icons.open_in_new, size: 14, color: AppColors.emberText),
+              SizedBox(width: 6),
               Text(
                 'Track Delivery on Lalamove',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.orange[800],
+                  color: AppColors.emberText,
                 ),
               ),
             ],
@@ -205,11 +197,7 @@ class DriverInfoCard extends StatelessWidget {
 }
 
 class _TapRow extends StatelessWidget {
-  const _TapRow({
-    required this.icon,
-    required this.text,
-    this.onTap,
-  });
+  const _TapRow({required this.icon, required this.text, this.onTap});
 
   final IconData icon;
   final String text;
@@ -221,14 +209,11 @@ class _TapRow extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          Icon(icon, size: 16, color: Colors.grey),
+          Icon(icon, size: 16, color: AppColors.muted),
           const SizedBox(width: 6),
           Text(
             text,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.blue,
-            ),
+            style: const TextStyle(fontSize: 14, color: AppColors.accent),
           ),
         ],
       ),

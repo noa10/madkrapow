@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../generated/database.dart';
 import '../../providers/menu_providers.dart';
@@ -73,7 +74,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save category: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -100,7 +101,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -121,7 +122,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to delete category: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
             ),
           );
         }
@@ -137,7 +138,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
         actions: _isEditing
             ? [
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
+                  icon: const Icon(Icons.delete, color: AppColors.dangerText),
                   tooltip: 'Delete Category',
                   onPressed: _confirmDelete,
                 ),

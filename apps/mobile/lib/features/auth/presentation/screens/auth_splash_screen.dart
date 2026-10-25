@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
@@ -76,17 +77,13 @@ class _AuthSplashScreenState extends ConsumerState<AuthSplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.local_fire_department,
-              size: 80,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            const AppLogo(height: 80),
             const SizedBox(height: 16),
             Text(
               'Mad Krapow',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 32),
             const CircularProgressIndicator(),

@@ -340,6 +340,14 @@ class PromoPreview {
   bool get isItemScoped => scope == 'item';
   bool get isOrderScoped => scope == 'order';
 
+  /// Whether the cart reflects this preview's savings in the item's line
+  /// price. Only item-scoped percentage promos discount the cart line; fixed
+  /// and order-scoped promos are applied to the order subtotal at checkout.
+  /// Every pre-checkout price display follows this so the card, the quick
+  /// view, the CTA, and the cart never disagree.
+  bool get discountsCartItem =>
+      discountType == 'percentage' && isItemScoped && savingsCents > 0;
+
   factory PromoPreview.fromJson(Map<String, dynamic> json) {
     return PromoPreview(
       promoCode: json['promoCode'] as String,

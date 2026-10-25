@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Displays a live tracking map with driver and destination markers,
 /// connected by a polyline. Falls back to a placeholder when coordinates
@@ -36,20 +37,18 @@ class DriverMap extends StatelessWidget {
               Icon(
                 Icons.map_outlined,
                 size: 32,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.3),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
                   'Driver location not available yet',
                   style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.5),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -60,8 +59,10 @@ class DriverMap extends StatelessWidget {
     }
 
     final driverLatLng = LatLng(driverLatitude!, driverLongitude!);
-    final destinationLatLng =
-        LatLng(destinationLatitude!, destinationLongitude!);
+    final destinationLatLng = LatLng(
+      destinationLatitude!,
+      destinationLongitude!,
+    );
 
     // Midpoint between driver and destination for initial center
     final center = LatLng(
@@ -74,10 +75,7 @@ class DriverMap extends StatelessWidget {
       child: SizedBox(
         height: 260,
         child: FlutterMap(
-          options: MapOptions(
-            initialCenter: center,
-            initialZoom: 14,
-          ),
+          options: MapOptions(initialCenter: center, initialZoom: 14),
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -87,7 +85,7 @@ class DriverMap extends StatelessWidget {
               polylines: [
                 Polyline(
                   points: [driverLatLng, destinationLatLng],
-                  color: Colors.orange,
+                  color: AppColors.emberText,
                   strokeWidth: 4,
                 ),
               ],
@@ -101,9 +99,9 @@ class DriverMap extends StatelessWidget {
                   height: 40,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.blue,
+                      color: AppColors.info,
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+                      border: Border.all(color: AppColors.onAccent, width: 2),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.2),
@@ -114,7 +112,7 @@ class DriverMap extends StatelessWidget {
                     ),
                     child: const Icon(
                       Icons.local_shipping,
-                      color: Colors.white,
+                      color: AppColors.onAccent,
                       size: 20,
                     ),
                   ),
@@ -126,9 +124,9 @@ class DriverMap extends StatelessWidget {
                   height: 40,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.red,
+                      color: AppColors.danger,
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+                      border: Border.all(color: AppColors.onAccent, width: 2),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.2),
@@ -139,7 +137,7 @@ class DriverMap extends StatelessWidget {
                     ),
                     child: const Icon(
                       Icons.location_pin,
-                      color: Colors.white,
+                      color: AppColors.onAccent,
                       size: 20,
                     ),
                   ),

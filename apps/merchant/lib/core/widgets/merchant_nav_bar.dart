@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../features/auth/providers/admin_auth_providers.dart';
 import '../../core/constants/roles.dart';
@@ -24,10 +25,15 @@ class MerchantNavBar extends ConsumerWidget {
     // Ensure currentIndex is valid for the role's destinations
     final safeIndex = currentIndex < destinations.length ? currentIndex : 0;
 
-    return NavigationBar(
-      selectedIndex: safeIndex,
-      onDestinationSelected: onTap,
-      destinations: destinations,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: BrandColors.of(context).border)),
+      ),
+      child: NavigationBar(
+        selectedIndex: safeIndex,
+        onDestinationSelected: onTap,
+        destinations: destinations,
+      ),
     );
   }
 

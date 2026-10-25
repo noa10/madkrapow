@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
-import '../../../../core/utils/price_formatter.dart';
 import '../../providers/admin_order_providers.dart';
 
 /// Summary card displayed in the History tab.

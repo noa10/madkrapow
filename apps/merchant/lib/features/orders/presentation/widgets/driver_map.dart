@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Map widget showing driver location, destination, and a connecting polyline.
 class DriverMap extends StatelessWidget {
@@ -19,29 +20,28 @@ class DriverMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final driverLatLng =
-        driverLatitude != null && driverLongitude != null
-            ? LatLng(driverLatitude!, driverLongitude!)
-            : null;
+    final driverLatLng = driverLatitude != null && driverLongitude != null
+        ? LatLng(driverLatitude!, driverLongitude!)
+        : null;
 
     final destLatLng =
         destinationLatitude != null && destinationLongitude != null
-            ? LatLng(destinationLatitude!, destinationLongitude!)
-            : null;
+        ? LatLng(destinationLatitude!, destinationLongitude!)
+        : null;
 
     final hasDriver = driverLatLng != null;
     final hasDest = destLatLng != null;
 
     if (!hasDriver && !hasDest) {
-      return _PlaceholderMap(
+      return const _PlaceholderMap(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.map_outlined, size: 40, color: Colors.grey.shade400),
-            const SizedBox(height: 8),
+            Icon(Icons.map_outlined, size: 40, color: AppColors.muted),
+            SizedBox(height: 8),
             Text(
               'Map will appear when driver is assigned',
-              style: TextStyle(color: Colors.grey.shade500),
+              style: TextStyle(color: AppColors.muted),
             ),
           ],
         ),
@@ -65,7 +65,7 @@ class DriverMap extends StatelessWidget {
           height: 40,
           child: const Icon(
             Icons.local_shipping,
-            color: Colors.blue,
+            color: AppColors.info,
             size: 32,
           ),
         ),
@@ -79,7 +79,7 @@ class DriverMap extends StatelessWidget {
           height: 40,
           child: const Icon(
             Icons.location_on,
-            color: Colors.red,
+            color: AppColors.danger,
             size: 32,
           ),
         ),
@@ -92,7 +92,7 @@ class DriverMap extends StatelessWidget {
         Polyline(
           points: [driverLatLng, destLatLng],
           strokeWidth: 3,
-          color: Colors.blue.withValues(alpha: 0.7),
+          color: AppColors.info.withValues(alpha: 0.7),
         ),
       );
     }
@@ -111,8 +111,7 @@ class DriverMap extends StatelessWidget {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.madkrapow.merchant',
             ),
-            if (polylines.isNotEmpty)
-              PolylineLayer(polylines: polylines),
+            if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
             MarkerLayer(markers: markers),
           ],
         ),
@@ -132,7 +131,7 @@ class _PlaceholderMap extends StatelessWidget {
       height: 200,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: AppColors.surface2,
           borderRadius: BorderRadius.circular(12),
         ),
         child: child,

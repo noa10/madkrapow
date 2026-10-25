@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
@@ -37,11 +38,13 @@ class _EmailVerificationScreenState
         return;
       }
 
-      final redirectUrl = Uri.parse(
-        'madkrapow://${AppRoutes.authCallback}',
-      ).replace(queryParameters: {
-        if (widget.redirectPath != null) 'redirect': widget.redirectPath!,
-      }).toString();
+      final redirectUrl = Uri.parse('madkrapow://${AppRoutes.authCallback}')
+          .replace(
+            queryParameters: {
+              if (widget.redirectPath != null) 'redirect': widget.redirectPath!,
+            },
+          )
+          .toString();
 
       await Supabase.instance.client.auth.resend(
         type: OtpType.signup,
@@ -95,17 +98,21 @@ class _EmailVerificationScreenState
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
+                      color: AppColors.successSoft,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.check_circle, color: Colors.green[700], size: 20),
-                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.check_circle,
+                          color: AppColors.herbText,
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
                         Text(
                           'Verification email sent!',
-                          style: TextStyle(color: Colors.green[700]),
+                          style: TextStyle(color: AppColors.herbText),
                         ),
                       ],
                     ),
@@ -113,7 +120,10 @@ class _EmailVerificationScreenState
                   const SizedBox(height: 16),
                 ],
                 if (_resendError != null) ...[
-                  Text(_resendError!, style: const TextStyle(color: Colors.red)),
+                  Text(
+                    _resendError!,
+                    style: const TextStyle(color: AppColors.dangerText),
+                  ),
                   const SizedBox(height: 16),
                 ],
                 FilledButton.icon(
@@ -125,9 +135,11 @@ class _EmailVerificationScreenState
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.refresh),
-                  label: Text(_resendSent
-                      ? 'Resend verification email'
-                      : 'Resend verification email'),
+                  label: Text(
+                    _resendSent
+                        ? 'Resend verification email'
+                        : 'Resend verification email',
+                  ),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton(

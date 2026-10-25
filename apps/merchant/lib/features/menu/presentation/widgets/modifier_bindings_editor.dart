@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../../core/widgets/async_value_widget.dart';
 import '../../../../../generated/database.dart';
@@ -40,8 +41,9 @@ class _ModifierBindingsEditorState
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(modifierGroupsProvider);
-    final existingBindingsAsync =
-        ref.watch(modifierBindingsForItemProvider(widget.menuItemId));
+    final existingBindingsAsync = ref.watch(
+      modifierBindingsForItemProvider(widget.menuItemId),
+    );
 
     return AsyncValueWidget(
       value: groupsAsync,
@@ -111,7 +113,9 @@ class _ModifierBindingsEditorState
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: binding.bound
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+          ? Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withValues(alpha: 0.3)
           : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -137,10 +141,12 @@ class _ModifierBindingsEditorState
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Icon(
-                      binding.bound ? Icons.check_box : Icons.check_box_outline_blank,
+                      binding.bound
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
                       color: binding.bound
                           ? Theme.of(context).colorScheme.primary
-                          : Colors.grey,
+                          : AppColors.muted,
                     ),
                   ),
                 Expanded(
@@ -155,17 +161,16 @@ class _ModifierBindingsEditorState
                           group.description!.isNotEmpty)
                         Text(
                           group.description!,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey.shade600,
+                            color: AppColors.muted,
                           ),
                         ),
                     ],
                   ),
                 ),
                 _TypeBadge(isRadio: isRadio),
-                if (binding.bound && binding.required)
-                  const _RequiredBadge(),
+                if (binding.bound && binding.required) const _RequiredBadge(),
               ],
             ),
             if (binding.bound && !widget.readOnly)
@@ -218,10 +223,12 @@ class _ModifierBindingsEditorState
       final repo = ref.read(menuRepositoryProvider);
       final bindingsToSave = _bindings.entries
           .where((e) => e.value.bound)
-          .map((e) => {
-                'modifier_group_id': e.key,
-                'is_required': e.value.required,
-              })
+          .map(
+            (e) => {
+              'modifier_group_id': e.key,
+              'is_required': e.value.required,
+            },
+          )
           .toList();
 
       await repo.batchUpdateModifierBindings(
@@ -231,9 +238,9 @@ class _ModifierBindingsEditorState
 
       if (mounted) {
         ref.invalidate(modifierBindingsForItemProvider(widget.menuItemId));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bindings saved')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Bindings saved')));
         widget.onSaved();
       }
     } catch (e) {
@@ -241,7 +248,7 @@ class _ModifierBindingsEditorState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save bindings: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
           ),
         );
       }
@@ -258,23 +265,10 @@ class _EmptyGroupsMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.extension_off, size: 48, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
-          Text(
-            'No modifier groups available',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Create modifier groups first to bind them to items',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-          ),
-        ],
-      ),
+    return const AppEmptyState(
+      icon: Icons.extension_off,
+      title: 'No modifier groups available',
+      message: 'Create modifier groups first to bind them to items',
     );
   }
 }
@@ -289,9 +283,7 @@ class _TypeBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: isRadio
-            ? Colors.blue.withValues(alpha: 0.15)
-            : Colors.green.withValues(alpha: 0.15),
+        color: isRadio ? AppColors.infoSoft : AppColors.successSoft,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -299,7 +291,7 @@ class _TypeBadge extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: isRadio ? Colors.blue.shade800 : Colors.green.shade800,
+          color: isRadio ? AppColors.info : AppColors.herbText,
         ),
       ),
     );
@@ -315,15 +307,15 @@ class _RequiredBadge extends StatelessWidget {
       margin: const EdgeInsets.only(left: 6),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.15),
+        color: AppColors.sesameSoft,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
+      child: const Text(
         'Required',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: Colors.orange.shade800,
+          color: AppColors.sesame,
         ),
       ),
     );

@@ -22,15 +22,16 @@ int selectedModifierTotalCents(
   return total;
 }
 
-/// Unit price after the item-level promo and selected modifier deltas.
+/// Unit price after the cart-line promo discount and selected modifier
+/// deltas. Only promos the cart honors per line reduce this total, so the
+/// CTA can never advertise a price the cart will not show.
 int itemUnitTotalCents(
   FullMenuItem item,
   Map<String, List<ModifiersRow>> selectedModifiers, {
   PromoPreview? promo,
 }) {
-  final discount = promo != null && promo.savingsCents > 0
-      ? promo.savingsCents
-      : 0;
+  final discount =
+      promo != null && promo.discountsCartItem ? promo.savingsCents : 0;
   final unit =
       item.item.priceCents -
       discount +
@@ -66,7 +67,7 @@ class ItemPriceText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final discounted = promo != null && promo!.savingsCents > 0;
+    final discounted = promo != null && promo!.discountsCartItem;
 
     final priceStyle = theme.textTheme.titleLarge?.copyWith(
       fontSize: size,

@@ -61,8 +61,10 @@ class RichMenuCard extends ConsumerWidget {
 
     final promoAsync = ref.watch(promoPreviewProvider(menuItem.id));
     final promo = promoAsync.valueOrNull;
-    final showDiscount =
-        !unavailable && promo != null && promo.savingsCents > 0;
+    // Gate on cart-line eligibility so the card never advertises a discount
+    // the quick view, CTA, and cart line will not show (order-scoped/fixed
+    // promos surface at checkout on the subtotal instead).
+    final showDiscount = !unavailable && promo != null && promo.discountsCartItem;
 
     final quantity = ref.watch(
       cartProvider.select((cart) {

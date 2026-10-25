@@ -185,7 +185,7 @@ class ItemQuickViewContent extends ConsumerWidget {
     required this.requiredOptionsCount,
     required this.specialInstructions,
     required this.selectedModifiers,
-    required this.groupKeys,
+    required this.groupKeyFor,
     required this.scrollController,
     required this.instructionsFocusNode,
     required this.instructionsFieldKey,
@@ -202,7 +202,13 @@ class ItemQuickViewContent extends ConsumerWidget {
   final int requiredOptionsCount;
   final String specialInstructions;
   final Map<String, List<ModifiersRow>> selectedModifiers;
-  final Map<String, GlobalKey> groupKeys;
+
+  /// Registers (once) and returns the scroll-reveal key for a modifier
+  /// group. Must be called while building each group so the detail screen's
+  /// reveal logic can find the group's context — reading a pre-populated map
+  /// is not enough, since quick-view builds never run the full-screen path
+  /// that used to populate it.
+  final GlobalKey Function(String groupId) groupKeyFor;
   final ScrollController scrollController;
   final FocusNode instructionsFocusNode;
   final GlobalKey instructionsFieldKey;
@@ -288,7 +294,7 @@ class ItemQuickViewContent extends ConsumerWidget {
               ...visibleGroups.map(
                 (group) => SliverToBoxAdapter(
                   child: KeyedSubtree(
-                    key: groupKeys[group.group.id],
+                    key: groupKeyFor(group.group.id),
                     child: ItemModifierGroupSection(
                       group: group,
                       selectedModifiers:

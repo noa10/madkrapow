@@ -180,13 +180,16 @@ void main() {
       name: 'Promo Krapow',
       priceCents: 1450,
     );
+
+    // Item-scoped percentage promo: the cart discounts the line, so the
+    // sheet price, the CTA total, and the cart line all show RM 10.00.
     const promo = PromoPreview(
       promoCode: 'KRAPOW10',
       discountedCents: 1000,
       originalCents: 1450,
       savingsCents: 450,
       discountType: 'percentage',
-      scope: 'order',
+      scope: 'item',
     );
 
     await _pumpHost(
@@ -213,6 +216,56 @@ void main() {
 
     expect(find.text('RM 10.00'), findsOneWidget);
     expect(find.text('RM 20.00'), findsOneWidget);
+  });
+
+  testWidgets('order-scoped promo keeps the quick view at full price', (
+    tester,
+  ) async {
+    final preview = _previewWithGroups(
+      id: 'order-promo-krapow',
+      name: 'Order Promo Krapow',
+      priceCents: 1450,
+    );
+
+    // Order-scoped promos are applied to the order subtotal at checkout, not
+    // to the cart line — the sheet must not advertise a per-line discount
+    // the cart will not show.
+    const promo = PromoPreview(
+      promoCode: 'SITEWIDE10',
+      discountedCents: 1000,
+      originalCents: 1450,
+      savingsCents: 450,
+      discountType: 'percentage',
+      scope: 'order',
+    );
+
+    await _pumpHost(
+      tester,
+      openLabel: 'Open order promo',
+      onOpen: (context) =>
+          showItemQuickView(context, 'order-promo-krapow', preview: preview),
+      overrides: [
+        menuItemDetailProvider(
+          'order-promo-krapow',
+        ).overrideWith((ref) async => null),
+        promoPreviewProvider(
+          'order-promo-krapow',
+        ).overrideWith((ref) async => promo),
+      ],
+    );
+
+    await tester.tap(find.text('Open order promo'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('RM 10.00'), findsNothing);
+    // Price text + CTA total both stay at the undiscounted price.
+    expect(find.text('RM 14.50'), findsNWidgets(2));
+
+    await tester.tap(find.byTooltip('Increase quantity'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('RM 29.00'), findsOneWidget);
+    expect(find.text('RM 14.50'), findsOneWidget);
   });
 
   testWidgets('modifier delta updates the footer and max=1 replaces', (
@@ -410,6 +463,90 @@ void main() {
 
     expect(container.read(cartProvider).items, isEmpty);
     expect(find.text('Select 1 more from Spice Level'), findsOneWidget);
+  });
+
+  testWidgets('tapping the CTA scrolls an off-screen required group into view', (
+    tester,
+  ) async {
+    final extrasGroup = _group(id: 'group-filler', name: 'Extras');
+    final spiceGroup = _group(
+      id: 'group-below-fold',
+      name: 'Spice Level',
+      isRequired: true,
+      maxSelections: 1,
+    );
+    final preview = _previewWithGroups(
+      id: 'scroll-krapow',
+      name: 'Scroll Krapow',
+      priceCents: 1450,
+      groups: [
+        ModifierGroupWithModifiers(
+          group: extrasGroup,
+          isRequired: false,
+          modifiers: [
+            for (var i = 1; i <= 10; i++)
+              _modifier(
+                groupId: extrasGroup.id,
+                id: 'modifier-extra-$i',
+                name: 'Extra $i',
+              ),
+          ],
+        ),
+        ModifierGroupWithModifiers(
+          group: spiceGroup,
+          isRequired: true,
+          modifiers: [
+            _modifier(groupId: spiceGroup.id, id: 'modifier-hot', name: 'Hot'),
+          ],
+        ),
+      ],
+    );
+
+    final container = await _pumpHost(
+      tester,
+      openLabel: 'Open scroll',
+      onOpen: (context) =>
+          showItemQuickView(context, 'scroll-krapow', preview: preview),
+      overrides: [
+        menuItemDetailProvider(
+          'scroll-krapow',
+        ).overrideWith((ref) async => null),
+        promoPreviewProvider(
+          'scroll-krapow',
+        ).overrideWith((ref) async => null),
+      ],
+    );
+
+    await tester.tap(find.text('Open scroll'));
+    await tester.pumpAndSettle();
+
+    // The sheet's viewport Scrollable — the multiline instructions TextField
+    // deeper inside the scroll view contributes its own vertical Scrollable,
+    // so take the first (the viewport itself) in tree order.
+    final scrollable = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
+          )
+          .first,
+    );
+    // The required group sits below the fold (sheet caps at 852*0.92 ≈ 784
+    // and the footer occupies ~76 of that); the sheet opens at the top.
+    expect(tester.getTopLeft(find.text('Spice Level')).dy, greaterThan(780));
+    expect(scrollable.position.pixels, 0);
+
+    await tester.tap(find.text('Select options (1)'));
+    await tester.pumpAndSettle();
+
+    // The reveal scrolls the sheet to the unsatisfied group instead of only
+    // showing the SnackBar.
+    expect(scrollable.position.pixels, greaterThan(0));
+    expect(find.text('Spice Level'), findsOneWidget);
+    expect(find.text('Select 1 more from Spice Level'), findsOneWidget);
+    expect(container.read(cartProvider).items, isEmpty);
   });
 }
 

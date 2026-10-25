@@ -307,7 +307,7 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen>
           requiredOptionsCount: _unsatisfiedRequiredGroups(item).length,
           specialInstructions: _specialInstructions,
           selectedModifiers: _selectedModifiers,
-          groupKeys: _groupKeys,
+          groupKeyFor: _groupKeyFor,
           scrollController: _quickViewScrollController,
           instructionsFocusNode: _instructionsFocusNode,
           instructionsFieldKey: _instructionsFieldKey,

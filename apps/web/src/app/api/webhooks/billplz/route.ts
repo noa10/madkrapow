@@ -43,14 +43,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const rawBody = await req.text()
-    const params: Record<string, string> = {}
-    for (const [key, value] of new URLSearchParams(rawBody)) {
-      params[key] = value
-    }
+    // Keep the parsed form as URLSearchParams: its entries are an iterable of
+    // key/value pairs, so untrusted callback keys are never written as object
+    // property names.
+    const params = new URLSearchParams(await req.text())
 
     const providedSignature =
-      params.x_signature ?? req.headers.get('x-signature')
+      params.get('x_signature') ?? req.headers.get('x-signature')
 
     if (!verifyBillplzSignature(params, providedSignature)) {
       console.error('[Billplz Webhook] Invalid X Signature')
@@ -60,7 +59,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const billId = params.id
+    const billId = params.get('id')
     if (!billId) {
       console.error('[Billplz Webhook] Missing bill id')
       return NextResponse.json(

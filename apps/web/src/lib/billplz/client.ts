@@ -225,8 +225,10 @@ export async function createBill(
 export async function getBill(billId: string): Promise<BillplzBill> {
   const { apiKey } = requireConfig()
 
-  if (!billId.trim()) {
-    throw new Error('Billplz bill id is required')
+  // Billplz ids are short alphanumeric tokens. Reject anything else before it
+  // reaches the URL path; this is the only user-influenced part of the request.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(billId)) {
+    throw new Error('Invalid Billplz bill id')
   }
 
   const response = await fetch(
@@ -254,24 +256,26 @@ export async function getBill(billId: string): Promise<BillplzBill> {
  * Keys are sorted case-insensitively, `x_signature` is excluded, and empty
  * values contribute only the key name (e.g. `mobile`).
  */
+export type BillplzSignatureEntries = Iterable<[string, unknown]>
+
 export function buildBillplzSignatureSource(
-  values: Record<string, unknown>,
+  values: BillplzSignatureEntries,
 ): string {
-  return Object.keys(values)
-    .filter((key) => key !== 'x_signature')
-    .sort((a, b) => {
+  return [...values]
+    .filter(([key]) => key !== 'x_signature')
+    .sort(([a], [b]) => {
       const lowerA = a.toLowerCase()
       const lowerB = b.toLowerCase()
       if (lowerA < lowerB) return -1
       if (lowerA > lowerB) return 1
       return 0
     })
-    .map((key) => `${key}${values[key] ?? ''}`)
+    .map(([key, value]) => `${key}${value ?? ''}`)
     .join('|')
 }
 
 export function computeBillplzSignature(
-  values: Record<string, unknown>,
+  values: BillplzSignatureEntries,
   xSignatureKey: string,
 ): string {
   return createHmac('sha256', xSignatureKey)
@@ -286,7 +290,7 @@ export function computeBillplzSignature(
  * that as a failed verification (fail closed).
  */
 export function verifyBillplzSignature(
-  values: Record<string, unknown>,
+  values: BillplzSignatureEntries,
   providedSignature: string | null | undefined,
 ): boolean {
   const xSignatureKey = env.BILLPLZ_X_SIGNATURE_KEY

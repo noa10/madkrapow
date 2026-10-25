@@ -149,16 +149,21 @@ describe('createBill', () => {
 })
 
 describe('getBill', () => {
-  it('fetches and URL-encodes the bill id', async () => {
+  it('fetches the bill by id', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ id: 'bill/1', paid: true, amount: 1250, paid_amount: 1250 }),
+      jsonResponse({ id: 'bill_1', paid: true, amount: 1250, paid_amount: 1250 }),
     )
 
-    const bill = await getBill('bill/1')
+    const bill = await getBill('bill_1')
 
     const [url] = fetchMock.mock.calls[0]
-    expect(url).toBe(`${BILLPLZ_SANDBOX_BASE_URL}/bills/bill%2F1`)
+    expect(url).toBe(`${BILLPLZ_SANDBOX_BASE_URL}/bills/bill_1`)
     expect(bill.paid).toBe(true)
+  })
+
+  it('rejects an invalid bill id before calling Billplz', async () => {
+    await expect(getBill('../evil')).rejects.toThrow('Invalid Billplz bill id')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
@@ -180,36 +185,36 @@ describe('Billplz X-Signature', () => {
   }
 
   it('sorts keys, concatenates key+value, joins with pipes, and signs with HMAC-SHA256', () => {
-    const source = buildBillplzSignatureSource(callback)
+    const source = buildBillplzSignatureSource(Object.entries(callback))
 
     expect(source).toBe(
       'amount1250|collection_idcollection-1|due_at2026-10-24|emaildiner@example.com|idbill-1|mobile|nameDiner|paidtrue|paid_amount1250|paid_at2026-10-24 12:00:00 +0800|statepaid|urlhttps://billplz.test/bill-1',
     )
 
     const expected = createHmac('sha256', 'x-sig-key').update(source).digest('hex')
-    expect(computeBillplzSignature(callback, 'x-sig-key')).toBe(expected)
+    expect(computeBillplzSignature(Object.entries(callback), 'x-sig-key')).toBe(expected)
   })
 
   it('verifies a valid signature and rejects a tampered payload', () => {
-    const signature = computeBillplzSignature(callback, 'x-sig-key')
+    const signature = computeBillplzSignature(Object.entries(callback), 'x-sig-key')
 
-    expect(verifyBillplzSignature(callback, signature)).toBe(true)
+    expect(verifyBillplzSignature(Object.entries(callback), signature)).toBe(true)
     expect(
-      verifyBillplzSignature({ ...callback, amount: '1' }, signature),
+      verifyBillplzSignature(Object.entries({ ...callback, amount: '1' }), signature),
     ).toBe(false)
   })
 
   it('rejects a signature of the wrong length without throwing', () => {
-    expect(verifyBillplzSignature(callback, 'deadbeef')).toBe(false)
+    expect(verifyBillplzSignature(Object.entries(callback), 'deadbeef')).toBe(false)
   })
 
   it('fails closed when the X Signature key is not configured', () => {
     mockEnv.BILLPLZ_X_SIGNATURE_KEY = undefined
     const signature = createHmac('sha256', 'x-sig-key').update(
-      buildBillplzSignatureSource(callback),
+      buildBillplzSignatureSource(Object.entries(callback)),
     ).digest('hex')
 
-    expect(verifyBillplzSignature(callback, signature)).toBe(false)
+    expect(verifyBillplzSignature(Object.entries(callback), signature)).toBe(false)
   })
 })
 

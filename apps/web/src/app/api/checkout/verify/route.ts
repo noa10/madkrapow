@@ -26,6 +26,14 @@ interface VerifyError {
 type VerifyResult = VerifyResponse | VerifyError
 type ServiceClient = ReturnType<typeof createServerClient>
 
+interface VerifyOrderRow {
+  id: string
+  status: string
+  total_cents: number
+  billplz_bill_id: string | null
+  stripe_session_id: string | null
+}
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -39,13 +47,13 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>> {
   try {
     const body = await req.json()
-    const orderId = body.orderId as string | undefined
-    const sessionId = body.sessionId as string | undefined
-    const billId = body.billId as string | undefined
+    const orderId = typeof body.orderId === 'string' ? body.orderId : ''
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+    const billId = typeof body.billId === 'string' ? body.billId : ''
 
-    if (!orderId || (!sessionId && !billId)) {
+    if (!orderId) {
       return NextResponse.json(
-        { success: false, error: 'Missing orderId and payment reference' },
+        { success: false, error: 'Missing orderId' },
         { status: 400 }
       )
     }
@@ -65,11 +73,49 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
       { cookies: { getAll() { return [] }, setAll() {} } }
     )
 
-    if (billId) {
-      return verifyBillplzPayment(supabase, orderId, billId)
+    // The gateway is chosen from the order row, which the server wrote at
+    // checkout. The client-supplied reference is only accepted when it exactly
+    // matches the reference stored on that order.
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select('id, status, total_cents, billplz_bill_id, stripe_session_id')
+      .eq('id', orderId)
+      .single()
+
+    if (orderError || !orderData) {
+      console.error('[Verify] Order not found:', sanitizeForLog(orderId), orderError)
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      )
     }
 
-    return verifyStripePayment(supabase, orderId, sessionId!)
+    const order = orderData as VerifyOrderRow
+
+    if (order.billplz_bill_id) {
+      if (!billId || billId !== order.billplz_bill_id) {
+        return NextResponse.json(
+          { success: false, error: 'Bill does not match order' },
+          { status: 400 }
+        )
+      }
+      return verifyBillplzPayment(supabase, order, billId)
+    }
+
+    if (order.stripe_session_id) {
+      if (!sessionId || sessionId !== order.stripe_session_id) {
+        return NextResponse.json(
+          { success: false, error: 'Session does not match order' },
+          { status: 400 }
+        )
+      }
+      return verifyStripePayment(supabase, order, sessionId)
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Payment method could not be determined for this order' },
+      { status: 400 }
+    )
   } catch (error) {
     console.error('[Verify] Unexpected error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -82,7 +128,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VerifyResult>
 
 async function verifyBillplzPayment(
   supabase: ServiceClient,
-  orderId: string,
+  order: VerifyOrderRow,
   billId: string,
 ): Promise<NextResponse<VerifyResult>> {
   if (!isBillplzConfigured()) {
@@ -123,12 +169,12 @@ async function verifyBillplzPayment(
   }
 
   // Security: ensure the bill belongs to the requested order.
-  if (bill.reference_1 !== orderId) {
+  if (bill.reference_1 !== order.id) {
     console.error(
       '[Verify] Bill reference mismatch:',
       sanitizeForLog(String(bill.reference_1 ?? '')),
       '!=',
-      sanitizeForLog(orderId)
+      sanitizeForLog(order.id)
     )
     return NextResponse.json(
       { success: false, error: 'Bill does not match order' },
@@ -152,30 +198,9 @@ async function verifyBillplzPayment(
     )
   }
 
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('id', orderId)
-    .single()
-
-  if (orderError || !order) {
-    console.error('[Verify] Order not found:', sanitizeForLog(orderId), orderError)
-    return NextResponse.json(
-      { success: false, error: 'Order not found' },
-      { status: 404 }
-    )
-  }
-
-  if (order.billplz_bill_id && order.billplz_bill_id !== billId) {
-    return NextResponse.json(
-      { success: false, error: 'Bill does not match order' },
-      { status: 400 }
-    )
-  }
-
   if (paidAmountCents !== order.total_cents) {
     console.error(
-      `[Verify] Amount mismatch for order ${sanitizeForLog(orderId)}: paid=${paidAmountCents} expected=${order.total_cents}`
+      `[Verify] Amount mismatch for order ${sanitizeForLog(order.id)}: paid=${paidAmountCents} expected=${order.total_cents}`
     )
     return NextResponse.json(
       { success: false, error: 'Paid amount does not match order total' },
@@ -183,15 +208,15 @@ async function verifyBillplzPayment(
     )
   }
 
-  await recordBillplzPayment(supabase, orderId, bill, paidAmountCents)
+  await recordBillplzPayment(supabase, order.id, bill, paidAmountCents)
 
-  const result = await finalizePaidOrder(supabase, orderId, {
+  const result = await finalizePaidOrder(supabase, order.id, {
     paymentPatch: { billplz_bill_id: billId },
     logLabel: 'Verify',
   })
 
   if (result.outcome === 'failed') {
-    console.error('[Verify] Failed to advance Billplz order:', sanitizeForLog(orderId), result.error)
+    console.error('[Verify] Failed to advance Billplz order:', sanitizeForLog(order.id), result.error)
     return NextResponse.json(
       { success: false, error: 'Failed to advance order to preparing' },
       { status: 500 }
@@ -220,7 +245,7 @@ async function verifyBillplzPayment(
 
 async function verifyStripePayment(
   supabase: ServiceClient,
-  orderId: string,
+  order: VerifyOrderRow,
   sessionId: string,
 ): Promise<NextResponse<VerifyResult>> {
   const stripeSecretKey = env.STRIPE_SECRET_KEY
@@ -249,12 +274,12 @@ async function verifyStripePayment(
   }
 
   // Security: ensure the session belongs to the requested order
-  if (session.metadata?.order_id !== orderId) {
+  if (session.metadata?.order_id !== order.id) {
     console.error(
       '[Verify] Session metadata order_id mismatch:',
       sanitizeForLog(session.metadata?.order_id ?? ''),
       '!=',
-      sanitizeForLog(orderId)
+      sanitizeForLog(order.id)
     )
     return NextResponse.json(
       { success: false, error: 'Session does not match order' },
@@ -295,21 +320,6 @@ async function verifyStripePayment(
     )
   }
 
-  // Fetch order
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('id', orderId)
-    .single()
-
-  if (orderError || !order) {
-    console.error('[Verify] Order not found:', orderId, orderError)
-    return NextResponse.json(
-      { success: false, error: 'Order not found' },
-      { status: 404 }
-    )
-  }
-
   // Idempotency: skip if already in post-preparing or terminal status.
   // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
   if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
@@ -323,7 +333,7 @@ async function verifyStripePayment(
     ? session.payment_intent
     : (session.payment_intent as Stripe.PaymentIntent | null)?.id ?? null
 
-  const result = await finalizePaidOrder(supabase, orderId, {
+  const result = await finalizePaidOrder(supabase, order.id, {
     paymentPatch: {
       stripe_payment_intent_id: paymentIntentId,
       stripe_session_id: session.id,
@@ -332,7 +342,7 @@ async function verifyStripePayment(
   })
 
   if (result.outcome === 'failed') {
-    console.error('[Verify] Failed to advance order to preparing:', orderId, result.error)
+    console.error('[Verify] Failed to advance order to preparing:', order.id, result.error)
     return NextResponse.json(
       { success: false, error: 'Failed to advance order to preparing' },
       { status: 500 }

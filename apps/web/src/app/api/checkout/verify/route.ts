@@ -299,6 +299,19 @@ async function verifyStripePayment(
     )
   }
 
+  // Defence in depth: the order total is calculated on the server at checkout.
+  // A session paid for a different amount must not finalise this order, even
+  // when its metadata carries the right order id.
+  if (session.amount_total !== order.total_cents) {
+    console.error(
+      `[Verify] Stripe amount mismatch for order ${sanitizeForLog(order.id)}: paid=${session.amount_total} expected=${order.total_cents}`
+    )
+    return NextResponse.json(
+      { success: false, error: 'Paid amount does not match order total' },
+      { status: 400 }
+    )
+  }
+
   // Idempotency: skip if already in post-preparing or terminal status.
   // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
   if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {

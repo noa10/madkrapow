@@ -47,6 +47,7 @@ export function usePosData(enabled: boolean) {
   const [itemsWithModifiers, setItemsWithModifiers] = useState<Set<string>>(
     new Set()
   )
+  const [noModifierItems, setNoModifierItems] = useState<Set<string>>(new Set())
   const [tables, setTables] = useState<RestaurantTable[]>([])
   const [openOrders, setOpenOrders] = useState<PosOpenOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -144,8 +145,99 @@ export function usePosData(enabled: boolean) {
     )
   }, [])
 
-  const loadTables = useCallback(async () => {
-    const supabase = getBrowserClient()
+  /**
+   * Live fallback for a single dish, used when the prefetched index is stale
+   * or empty (e.g. the page loaded before a menu edit). Returns `null` on a
+   * query error so the caller can refuse to add a dish that may have options.
+   */
+  const loadModifierGroupsForItem = useCallback(
+    async (itemId: string): Promise<PosModifierGroup[] | null> => {
+      const supabase = getBrowserClient()
+      const { data: junctions, error: junctionError } = await supabase
+        .from('menu_item_modifier_groups')
+        .select('menu_item_id, modifier_group_id, is_required')
+        .eq('menu_item_id', itemId)
+
+      if (junctionError) return null
+      if (!junctions || junctions.length === 0) {
+        setNoModifierItems((previous) => {
+          if (previous.has(itemId)) return previous
+          const next = new Set(previous)
+          next.add(itemId)
+          return next
+        })
+        return []
+      }
+
+      const rows = junctions as {
+        menu_item_id: string
+        modifier_group_id: string
+        is_required: boolean
+      }[]
+      const groupIds = [...new Set(rows.map((row) => row.modifier_group_id))]
+
+      const [groupsResult, modifiersResult] = await Promise.all([
+        supabase
+          .from('modifier_groups')
+          .select('*')
+          .in('id', groupIds)
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('modifiers')
+          .select('*')
+          .in('modifier_group_id', groupIds)
+          .eq('is_available', true)
+          .order('sort_order', { ascending: true }),
+      ])
+
+      if (groupsResult.error || modifiersResult.error) return null
+
+      const groups = (groupsResult.data ?? []) as ModifierGroup[]
+      const modifiers = (modifiersResult.data ?? []) as Modifier[]
+      const groupsById = new Map(groups.map((group) => [group.id, group]))
+      const modifiersByGroup = new Map<string, Modifier[]>()
+      for (const modifier of modifiers) {
+        const list = modifiersByGroup.get(modifier.modifier_group_id) ?? []
+        list.push(modifier)
+        modifiersByGroup.set(modifier.modifier_group_id, list)
+      }
+
+      const loaded: PosModifierGroup[] = []
+      for (const row of rows) {
+        const group = groupsById.get(row.modifier_group_id)
+        if (!group) continue
+        loaded.push({
+          ...group,
+          is_required: row.is_required,
+          modifiers: modifiersByGroup.get(group.id) ?? [],
+        })
+      }
+
+      setItemsWithModifiers((previous) => {
+        if (previous.has(itemId)) return previous
+        const next = new Set(previous)
+        next.add(itemId)
+        return next
+      })
+      setNoModifierItems((previous) => {
+        if (!previous.has(itemId)) return previous
+        const next = new Set(previous)
+        next.delete(itemId)
+        return next
+      })
+      setModifierGroupsByItem((previous) => {
+        if (previous.has(itemId)) return previous
+        const next = new Map(previous)
+        next.set(itemId, loaded)
+        return next
+      })
+
+      return loaded
+    },
+    []
+  )
+
+  const loadTables = useCallback(async () => {    const supabase = getBrowserClient()
     const { data, error: tablesError } = await supabase
       .from('restaurant_tables')
       .select('*')
@@ -260,6 +352,8 @@ export function usePosData(enabled: boolean) {
     itemsByCategory,
     modifierGroupsByItem,
     itemsWithModifiers,
+    noModifierItems,
+    loadModifierGroupsForItem,
     tables,
     openOrders,
     loading,

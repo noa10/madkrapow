@@ -31,7 +31,7 @@ import {
 import { PosCompanyQrModal } from './components/PosCompanyQrModal'
 import { PosSettleModal } from './components/PosSettleModal'
 import { PosTableBoard } from './components/PosTableBoard'
-import { usePosData, type PosMenuItem } from './hooks/usePosData'
+import { usePosData, type PosMenuItem, type PosModifierGroup } from './hooks/usePosData'
 
 function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
@@ -68,6 +68,8 @@ export default function PosPage() {
     itemsByCategory,
     modifierGroupsByItem,
     itemsWithModifiers,
+    noModifierItems,
+    loadModifierGroupsForItem,
     tables,
     openOrders,
     loading,
@@ -81,7 +83,10 @@ export default function PosPage() {
   const [pax, setPax] = useState(2)
   const [customerName, setCustomerName] = useState('')
   const [cart, setCart] = useState<PosCartLine[]>([])
-  const [optionsItem, setOptionsItem] = useState<PosMenuItem | null>(null)
+  const [optionsItem, setOptionsItem] = useState<{
+    item: PosMenuItem
+    groups: PosModifierGroup[]
+  } | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
   const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
   const [qrConfirmOpen, setQrConfirmOpen] = useState(false)
@@ -183,23 +188,43 @@ export default function PosPage() {
   )
 
   const handleMenuSelect = useCallback(
-    (item: PosMenuItem) => {
-      if (!itemsWithModifiers.has(item.id)) {
+    async (item: PosMenuItem) => {
+      const cached = modifierGroupsByItem.get(item.id)
+      if (cached && cached.length > 0) {
+        setOptionsItem({ item, groups: cached })
+        return
+      }
+
+      if (noModifierItems.has(item.id)) {
         addToCart(item)
         return
       }
-      const groups = modifierGroupsByItem.get(item.id)
-      if (!groups || groups.length === 0) {
+
+      // Prefetch empty/stale or groups missing: check the DB before adding, so
+      // a customizable dish can never be added without its options.
+      const groups = await loadModifierGroupsForItem(item.id)
+      if (groups === null) {
         addToast({
           type: 'error',
-          title: 'Options unavailable',
-          description: 'This dish needs options but they could not be loaded. Refresh and retry.',
+          title: 'Could not load options',
+          description: 'Please retry. The dish was not added to the sale.',
         })
         return
       }
-      setOptionsItem(item)
+      if (groups.length > 0) {
+        setOptionsItem({ item, groups })
+        return
+      }
+
+      addToCart(item)
     },
-    [itemsWithModifiers, modifierGroupsByItem, addToCart, addToast]
+    [
+      modifierGroupsByItem,
+      noModifierItems,
+      loadModifierGroupsForItem,
+      addToCart,
+      addToast,
+    ]
   )
 
   const changeQuantity = useCallback((lineKey: string, delta: number) => {
@@ -560,12 +585,12 @@ export default function PosPage() {
 
       {optionsItem && (
         <PosItemOptionsModal
-          key={optionsItem.id}
-          item={optionsItem}
-          groups={modifierGroupsByItem.get(optionsItem.id) ?? []}
+          key={optionsItem.item.id}
+          item={optionsItem.item}
+          groups={optionsItem.groups}
           onClose={() => setOptionsItem(null)}
           onAdd={({ quantity, modifiers, notes }) => {
-            addToCart(optionsItem, modifiers, notes, quantity)
+            addToCart(optionsItem.item, modifiers, notes, quantity)
             setOptionsItem(null)
           }}
         />

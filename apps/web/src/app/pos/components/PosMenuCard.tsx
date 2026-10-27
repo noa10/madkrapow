@@ -17,8 +17,8 @@ function formatPrice(cents: number): string {
 
 /**
  * A POS dish card in the storefront's visual language: text left, photo right,
- * a floating add affordance. Unlike the customer card, the whole card is the
- * tap target because the counter flow adds straight to the sale (no options).
+ * a floating add affordance. Tapping opens the options dialog for customizable
+ * dishes and adds straight to the sale otherwise.
  */
 export function PosMenuCard({ item, hasModifiers, onSelect }: PosMenuCardProps) {
   return (

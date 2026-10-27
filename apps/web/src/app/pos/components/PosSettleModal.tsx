@@ -36,8 +36,11 @@ export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleMod
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
-    if (order) dialog.showModal()
-    else dialog.close()
+    if (order) {
+      if (!dialog.open) dialog.showModal()
+    } else if (dialog.open) {
+      dialog.close()
+    }
   }, [order])
 
   useEffect(() => {

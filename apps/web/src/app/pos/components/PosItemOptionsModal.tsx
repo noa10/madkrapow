@@ -42,8 +42,10 @@ export function PosItemOptionsModal({
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
-    dialog.showModal()
-    return () => dialog.close()
+    // Do not return a cleanup that calls dialog.close(): React StrictMode's
+    // dev-only setup → cleanup → setup cycle would close the dialog and fire
+    // its `close` event, which the parent handles by clearing the item.
+    if (!dialog.open) dialog.showModal()
   }, [])
 
   const unsatisfied = getUnsatisfiedRequiredGroupNames(groups, selectedByGroup)

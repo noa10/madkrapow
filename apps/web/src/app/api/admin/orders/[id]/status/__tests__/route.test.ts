@@ -21,7 +21,12 @@ function context() {
   return { params: Promise.resolve({ id: ORDER_ID }) }
 }
 
-function clientFor(currentStatus: string, deliveryType = 'dine_in') {
+function clientFor(
+  currentStatus: string,
+  deliveryType = 'dine_in',
+  source = 'web',
+  conflict = false
+) {
   const updates: Record<string, unknown>[] = []
   const client = {
     updates,
@@ -31,7 +36,7 @@ function clientFor(currentStatus: string, deliveryType = 'dine_in') {
           single: async () => ({
             data:
               table === 'orders'
-                ? { status: currentStatus, delivery_type: deliveryType }
+                ? { status: currentStatus, delivery_type: deliveryType, source }
                 : null,
             error: null,
           }),
@@ -39,7 +44,16 @@ function clientFor(currentStatus: string, deliveryType = 'dine_in') {
       }),
       update: (patch: Record<string, unknown>) => {
         updates.push(patch)
-        return { eq: async () => ({ error: null }) }
+        return {
+          eq: () => ({
+            eq: () => ({
+              select: async () => ({
+                data: conflict ? [] : [{ id: 'order-row' }],
+                error: null,
+              }),
+            }),
+          }),
+        }
       },
       insert: async () => ({ error: null }),
     }),
@@ -47,8 +61,14 @@ function clientFor(currentStatus: string, deliveryType = 'dine_in') {
   return client
 }
 
-function auth(role: string, currentStatus: string, deliveryType = 'dine_in') {
-  const client = clientFor(currentStatus, deliveryType)
+function auth(
+  role: string,
+  currentStatus: string,
+  deliveryType = 'dine_in',
+  source = 'web',
+  conflict = false
+) {
+  const client = clientFor(currentStatus, deliveryType, source, conflict)
   return {
     client,
     user: { id: 'staff-user', app_metadata: { role } },
@@ -110,12 +130,23 @@ describe('POST /api/admin/orders/[id]/status role gates', () => {
   })
 
   it('does not let a cashier cancel a pending web delivery order', async () => {
-    const session = auth('cashier', 'pending', 'delivery')
+    const session = auth('cashier', 'pending', 'delivery', 'web')
     requireRoleMock.mockResolvedValue(session)
 
     const response = await POST(makeRequest('cancelled') as never, context() as never)
     expect(response.status).toBe(403)
     expect(session.client.updates).toEqual([])
+  })
+
+  it('lets a cashier void an unpaid pay-later take-away order', async () => {
+    const session = auth('cashier', 'pending', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('cancelled') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(session.client.updates).toEqual([
+      expect.objectContaining({ status: 'cancelled' }),
+    ])
   })
 
   it('does not let the kitchen void a pending table order', async () => {
@@ -126,12 +157,31 @@ describe('POST /api/admin/orders/[id]/status role gates', () => {
     expect(response.status).toBe(403)
   })
 
-  it('lets an admin mark an order paid manually', async () => {
-    const session = auth('admin', 'pending')
+  it('lets an admin mark a web order paid manually', async () => {
+    const session = auth('admin', 'pending', 'delivery', 'web')
     requireRoleMock.mockResolvedValue(session)
 
     const response = await POST(makeRequest('paid') as never, context() as never)
     expect(response.status).toBe(200)
+  })
+
+  it('does not let an admin mark a POS pay-later order paid outside settle', async () => {
+    const session = auth('admin', 'pending', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('paid') as never, context() as never)
+    expect(response.status).toBe(403)
+    expect((await response.json()).error).toMatch(/settle flow/i)
+    expect(session.client.updates).toEqual([])
+  })
+
+  it('returns 409 when the order changed concurrently', async () => {
+    const session = auth('cashier', 'paid', 'dine_in', 'counter', true)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('preparing') as never, context() as never)
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toMatch(/state changed/i)
   })
 
   it('still rejects non-canonical transitions', async () => {

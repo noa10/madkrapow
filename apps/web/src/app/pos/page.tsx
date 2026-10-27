@@ -20,7 +20,9 @@ import {
   type PosCartLine,
   type PosOrderType,
   type PosPaymentMethod,
+  type PosPaymentTiming,
 } from './components/PosSalePanel'
+import { PosCompanyQrModal } from './components/PosCompanyQrModal'
 import { PosSettleModal } from './components/PosSettleModal'
 import { PosTableBoard } from './components/PosTableBoard'
 import { usePosData, type PosMenuItem } from './hooks/usePosData'
@@ -72,6 +74,8 @@ export default function PosPage() {
   const [customerName, setCustomerName] = useState('')
   const [cart, setCart] = useState<PosCartLine[]>([])
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
+  const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
+  const [qrConfirmOpen, setQrConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null)
   const [settleOrder, setSettleOrder] = useState<PosOpenOrder | null>(null)
@@ -106,6 +110,21 @@ export default function PosPage() {
     () => openOrders.filter((order) => order.status === 'pending').length,
     [openOrders]
   )
+
+  const unpaidTakeaway = useMemo(
+    () =>
+      openOrders.filter(
+        (order) =>
+          order.status === 'pending' && order.delivery_type === 'self_pickup'
+      ),
+    [openOrders]
+  )
+
+  const selectedTable = tables.find((table) => table.id === selectedTableId)
+  const qrLabel =
+    orderType === 'dine_in'
+      ? `${selectedTable?.label ? `Table ${selectedTable.label}` : 'Dine-in'} · ${pax} pax`
+      : `Take-away · ${customerName.trim() || 'Walk-in'}`
 
   const addToCart = useCallback((item: PosMenuItem) => {
     setCart((previous) => {
@@ -150,6 +169,8 @@ export default function PosPage() {
     setCart([])
     setCustomerName('')
     setPaymentMethod('cash')
+    setPaymentTiming('pay_now')
+    setQrConfirmOpen(false)
   }, [])
 
   const handleRefresh = useCallback(async () => {
@@ -161,7 +182,7 @@ export default function PosPage() {
     }
   }, [refresh])
 
-  const handleSubmit = async () => {
+  const submitOrder = async (methodOverride?: PosPaymentMethod) => {
     if (submitLock.current || cart.length === 0) return
     if (orderType === 'dine_in' && !selectedTableId) {
       addToast({ type: 'error', title: 'Pick a table for a dine-in order' })
@@ -169,6 +190,16 @@ export default function PosPage() {
     }
     if (orderType === 'take_away' && !customerName.trim()) {
       addToast({ type: 'error', title: 'Enter the customer name for take-away' })
+      return
+    }
+
+    const payLater = paymentTiming === 'pay_later'
+    const method = payLater ? undefined : methodOverride ?? paymentMethod
+
+    // Company-QR pay-now is a two-step flow: show the QR, then create the
+    // order only after the cashier confirms the transfer.
+    if (!payLater && method === 'qr_pay' && !methodOverride) {
+      setQrConfirmOpen(true)
       return
     }
 
@@ -180,7 +211,8 @@ export default function PosPage() {
           menu_item_id: line.item.id,
           quantity: line.quantity,
         })),
-        payment_method: paymentMethod,
+        payment_timing: payLater ? 'pay_later' : 'pay_now',
+        payment_method: method,
         order_type: orderType,
         table_id: orderType === 'dine_in' ? selectedTableId : undefined,
         pax: orderType === 'dine_in' ? pax : undefined,
@@ -204,13 +236,17 @@ export default function PosPage() {
       setLastOrderNumber(orderCode)
       addToast({
         type: 'success',
-        title: `Order ${orderCode} created`,
-        description: `${formatPrice(json.total_cents)} · ${context}`,
+        title: payLater ? `Order ${orderCode} sent` : `Order ${orderCode} created`,
+        description: `${formatPrice(json.total_cents)} · ${context}${payLater ? ' · Pay later' : ''}`,
       })
       resetSale()
       await refresh()
-      void autoPrintOrder(json.order_id, 'counter', (printError) =>
-        addToast({ type: 'error', title: 'Print failed', description: printError })
+      void autoPrintOrder(
+        json.order_id,
+        'counter',
+        (printError) =>
+          addToast({ type: 'error', title: 'Print failed', description: printError }),
+        { docketOnly: json.status === 'pending' }
       )
     } catch {
       addToast({ type: 'error', title: 'Network error creating order' })
@@ -218,6 +254,14 @@ export default function PosPage() {
       setSubmitting(false)
       submitLock.current = false
     }
+  }
+
+  const handleSubmit = () => {
+    void submitOrder()
+  }
+
+  const handleQrConfirm = () => {
+    void submitOrder('qr_pay')
   }
 
   const handleSettle = async (method: 'cash' | 'qr_pay') => {
@@ -420,6 +464,8 @@ export default function PosPage() {
             onClear={resetSale}
             paymentMethod={paymentMethod}
             onPaymentMethodChange={setPaymentMethod}
+            paymentTiming={paymentTiming}
+            onPaymentTimingChange={setPaymentTiming}
             totalCents={totalCents}
             submitting={submitting}
             onSubmit={handleSubmit}
@@ -428,6 +474,7 @@ export default function PosPage() {
       ) : (
         <PosTableBoard
           summaries={summaries}
+          unpaidTakeaway={unpaidTakeaway}
           busyId={busyId}
           refreshing={refreshing}
           onNewOrder={startTableOrder}
@@ -438,7 +485,19 @@ export default function PosPage() {
         />
       )}
 
+      <PosCompanyQrModal
+        open={qrConfirmOpen}
+        amountCents={totalCents}
+        label={qrLabel}
+        busy={submitting}
+        onClose={() => {
+          if (!submitting) setQrConfirmOpen(false)
+        }}
+        onConfirm={handleQrConfirm}
+      />
+
       <PosSettleModal
+        key={settleOrder?.id ?? 'no-settle-order'}
         order={settleOrder}
         busy={busyId === settleOrder?.id}
         onClose={() => {
@@ -453,7 +512,7 @@ export default function PosPage() {
           if (!busyId) setVoidOrder(null)
         }}
         title={`Void order ${voidOrder?.display_code ?? ''}?`}
-        description="This cancels the unpaid table order and removes it from the kitchen queue. Use it when a diner left or mis-ordered."
+        description="This cancels the unpaid order and removes it from the kitchen queue. Use it when a customer left or the order was keyed incorrectly."
         confirmLabel="Void order"
         variant="danger"
         loading={busyId !== null && busyId === voidOrder?.id}

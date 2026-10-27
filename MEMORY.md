@@ -331,15 +331,34 @@ This file contains curated memories, decisions, and learnings that persist acros
   revokes the settle/close RPCs from anon/authenticated.
 - **Roles**: `/api/admin/orders/[id]/status` now accepts
   admin/manager/kitchen/cashier (needed so a shift without an admin can finish
-  settle→preparing→ready→close), but marking `pending→paid` manually and
-  cancelling remain admin/manager-only — except a cashier may void an unpaid
-  (`pending`) dine-in order from the POS table board.
+  settle→preparing→ready→close). POS/table orders can only become `paid`
+  through the settle RPC (it writes the payments row); the status route blocks
+  a bare `pending→paid` for `source='counter'`/`delivery_type='dine_in'` even
+  for managers. Web orders keep the admin/manager manual-paid override, and
+  cancellations remain admin/manager-only — except a cashier may void an
+  unpaid (`pending`) dine-in or POS counter order from the table board. Status
+  updates are optimistic-concurrency guarded (`eq('status', readStatus)` →
+  409 on a concurrent settle/void).
 - **Payment snapshot**: `orders.payment_method` is written by the POS create
   and settle paths so admin cards show Cash/QR Pay; `payments` stays the
   ledger.
 - **Printing**: table-QR tickets print a kitchen docket while `pending` and
   add a receipt after settlement (`jobTypesForOrder` takes status/delivery
   type); dockets show `TABLE X · N PAX`; cash receipts open the drawer.
+- **Optional payment (2026-10-27 follow-up)**: POS offers **Pay now** (Cash
+  or Company DuitNow QR at `apps/web/public/company-qr.jpeg`) or **Pay
+  later**; the **Card** option is disabled until a terminal integration
+  exists. Pay-later creates a `pending` counter order with no payment row;
+  the kitchen starts immediately (pending source=counter is now
+  kitchen-active) and the cashier settles later from the table board or the
+  new Unpaid take-away strip. Migration 058 broadens `settle_dine_in_order`
+  to POS counter orders; the print bridge prints the docket only while
+  pending and the receipt after settlement.
+- **POS UI follow-up**: the POS menu uses storefront-style photo cards
+  (`PosMenuCard` with `image_url`/description), the Add Table modal uses
+  foreground-contrast labels/buttons, and `<html>` carries
+  `data-scroll-behavior="smooth"` to silence the Next.js route-transition
+  warning.
 - **Known limits**: Flutter merchant kitchen excludes pending tickets and
   labels `dine_in` as a generic delivery badge (web-only scope decision);
   analytics delivery/pickup buckets ignore dine-in (totals include it);

@@ -127,6 +127,8 @@ Decisions made during implementation that deviate from or clarify the original p
 
 | 2026-10-27 | POS | Dine-in POS: `restaurant_tables` + `orders.table_id/table_label/pax`, `delivery_type='dine_in'`, public table-QR ordering (`/t/<token>`), POS table board, settle/close RPCs | Merchant staff key dine-in (table + pax) and take-away (name) orders at `/pos`; diners order from a table QR without logging in. QR orders are `pending` (pay at counter) so the kitchen starts immediately; cashier settles to `paid`; closing a table requires every open order `ready` and moves them to `picked_up`. No new statuses (`lint:parity` untouched). Migration 057 also drops the legacy anonymous `auth_insert_orders` policy; settle/close RPCs are service-role only. |
 
+| 2026-10-27 | POS | Optional payment for POS orders: pay now (cash / company DuitNow QR) or pay later; card disabled; migration 058 broadens settlement to counter orders | Staff can send a dine-in or take-away ticket to the kitchen before payment (`pending` with no payment row). Pending counter orders are kitchen-active and print a docket; the cashier collects later from the table board or the Unpaid take-away strip. Card stays disabled until a terminal integration. The company QR asset is public and receive-only. |
+
 *Add rows as decisions are made during implementation.*
 
 ---

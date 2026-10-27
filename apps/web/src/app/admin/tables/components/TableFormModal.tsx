@@ -125,7 +125,7 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
     >
       <form
         onSubmit={handleSubmit}
-        className="rounded-xl border border-border bg-card p-6 shadow-2xl shadow-black/40"
+        className="rounded-xl border border-border bg-card p-6 text-foreground shadow-2xl shadow-black/40"
       >
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -149,7 +149,9 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="table-label">Table label</Label>
+            <Label htmlFor="table-label" className="text-foreground">
+              Table label
+            </Label>
             <Input
               id="table-label"
               value={form.label}
@@ -165,7 +167,9 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="table-zone">Zone (optional)</Label>
+              <Label htmlFor="table-zone" className="text-foreground">
+                Zone (optional)
+              </Label>
               <Input
                 id="table-zone"
                 value={form.zone}
@@ -177,7 +181,9 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="table-seats">Seats</Label>
+              <Label htmlFor="table-seats" className="text-foreground">
+                Seats
+              </Label>
               <Input
                 id="table-seats"
                 type="number"
@@ -194,7 +200,9 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="table-sort">Sort order</Label>
+              <Label htmlFor="table-sort" className="text-foreground">
+                Sort order
+              </Label>
               <Input
                 id="table-sort"
                 type="number"
@@ -230,7 +238,11 @@ export function TableFormModal({ open, table, onClose, onSaved }: TableFormModal
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving || !form.label.trim()}>
+          <Button
+            type="submit"
+            disabled={saving || !form.label.trim()}
+            className="disabled:bg-primary/40 disabled:text-white/75 disabled:opacity-100"
+          >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save table'}
           </Button>
         </div>

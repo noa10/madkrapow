@@ -21,6 +21,12 @@ describe('jobTypesForOrder', () => {
     ])
   })
 
+  it('prints only the docket for a pay-later counter order', () => {
+    expect(jobTypesForOrder({ source: 'counter', status: 'pending' })).toEqual([
+      'kitchen_docket',
+    ])
+  })
+
   it('prints only the docket while a table-QR order is unpaid', () => {
     expect(
       jobTypesForOrder({

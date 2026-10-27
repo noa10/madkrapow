@@ -16,24 +16,41 @@ const PosOrderSchema = z
     order_type: z.enum(['dine_in', 'take_away']).default('take_away'),
     table_id: z.string().uuid().optional(),
     pax: z.number().int().min(1).max(50).optional(),
-    payment_method: z.enum(['cash', 'qr_pay']),
+    /** Pay now (default) or send the ticket and collect later. */
+    payment_timing: z.enum(['pay_now', 'pay_later']).default('pay_now'),
+    payment_method: z.enum(['cash', 'qr_pay']).optional(),
     customer_name: z.string().trim().max(120).optional(),
     notes: z.string().trim().max(500).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.order_type !== 'dine_in') return
-    if (!data.table_id) {
+    if (data.order_type === 'dine_in') {
+      if (!data.table_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['table_id'],
+          message: 'A table is required for dine-in orders',
+        })
+      }
+      if (data.pax == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pax'],
+          message: 'Pax is required for dine-in orders',
+        })
+      }
+    }
+    if (data.payment_timing === 'pay_now' && !data.payment_method) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['table_id'],
-        message: 'A table is required for dine-in orders',
+        path: ['payment_method'],
+        message: 'Choose a payment method or send the order as pay-later',
       })
     }
-    if (data.pax == null) {
+    if (data.payment_timing === 'pay_later' && data.payment_method) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['pax'],
-        message: 'Pax is required for dine-in orders',
+        path: ['payment_method'],
+        message: 'A payment method is only used when paying now',
       })
     }
   })
@@ -63,9 +80,12 @@ const PosOrderSchema = z
  *                `Walk-in`.
  *
  * Prices are NEVER taken from the client: the route re-reads menu_items from
- * the database and recomputes the total. Orders are created as source='counter',
- * status='paid' (the customer pays at the counter — no Stripe session), and a
- * payments row records the money movement (cash or QR Pay).
+ * the database and recomputes the total. Orders are created as source='counter'
+ * and either:
+ *
+ * - paid now (default) — status='paid', a payments row records cash/qr_pay; or
+ * - pay later — status='pending' with no payment row, settled from the POS
+ *   table board / unpaid take-away list (`settle_dine_in_order`).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -92,10 +112,13 @@ export async function POST(req: NextRequest) {
       order_type,
       table_id,
       pax,
+      payment_timing,
       payment_method,
       customer_name,
       notes,
     } = parsed.data
+
+    const payLater = payment_timing === 'pay_later'
 
     // The transform above collapses duplicate rows; a crafted payload could
     // still push one dish past the per-line cap.
@@ -174,13 +197,15 @@ export async function POST(req: NextRequest) {
           order_type === 'dine_in'
             ? customer_name || null
             : customer_name || 'Walk-in',
-        status: 'paid',
+        status: payLater ? 'pending' : 'paid',
         source: 'counter',
         delivery_type: order_type === 'dine_in' ? 'dine_in' : 'self_pickup',
         table_id: order_type === 'dine_in' ? table_id : null,
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
-        payment_method,
+        // The method is only known when the customer pays now; a pay-later
+        // order is settled later through the POS (cash/company QR).
+        payment_method: payLater ? null : payment_method,
         fulfillment_type: 'asap',
         order_kind: 'standard',
         dispatch_status: 'not_ready',
@@ -221,22 +246,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { error: paymentError } = await supabase.from('payments').insert({
-      order_id: order.id,
-      method: payment_method,
-      amount_cents: totalCents,
-      status: 'succeeded',
-      paid_at: now,
-    })
-    if (paymentError) {
-      console.error('[API/POS] Payment insert failed:', paymentError)
-      return NextResponse.json(
-        {
-          error: 'Order created but payment record failed — record the payment manually',
-          order_number: order.order_number,
-        },
-        { status: 500 }
-      )
+    if (!payLater) {
+      const { error: paymentError } = await supabase.from('payments').insert({
+        order_id: order.id,
+        method: payment_method,
+        amount_cents: totalCents,
+        status: 'succeeded',
+        paid_at: now,
+      })
+      if (paymentError) {
+        console.error('[API/POS] Payment insert failed:', paymentError)
+        return NextResponse.json(
+          {
+            error: 'Order created but payment record failed — record the payment manually',
+            order_number: order.order_number,
+          },
+          { status: 500 }
+        )
+      }
     }
 
     await supabase.from('order_events').insert({
@@ -249,7 +276,8 @@ export async function POST(req: NextRequest) {
         table_id: order_type === 'dine_in' ? table_id : null,
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
-        payment_method,
+        payment_method: payLater ? null : payment_method,
+        payment_timing,
         total_cents: totalCents,
       },
     })
@@ -261,6 +289,8 @@ export async function POST(req: NextRequest) {
         display_code: order.display_code,
         total_cents: totalCents,
         order_type,
+        payment_timing,
+        status: payLater ? 'pending' : 'paid',
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
       },

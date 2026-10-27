@@ -59,6 +59,8 @@ memory/heartbeat-state.json
 
 # oh-my-claudecode
 .omc/
+.omo/
+.zcode/
 
 # IDE
 .vscode/

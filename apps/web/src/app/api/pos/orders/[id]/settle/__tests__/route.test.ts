@@ -108,6 +108,18 @@ describe('POST /api/pos/orders/[id]/settle', () => {
     expect(response.status).toBe(400)
   })
 
+  it('returns 400 for a non-settleable order', async () => {
+    requireRoleMock.mockResolvedValue(
+      authWithRpc({ ok: false, code: 'not_settleable' })
+    )
+    const response = await POST(
+      makeRequest({ payment_method: 'cash' }) as never,
+      context() as never
+    )
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toMatch(/POS counter or dine-in/i)
+  })
+
   it('returns 500 when the RPC errors', async () => {
     requireRoleMock.mockResolvedValue(
       authWithRpc(null, { message: 'connection lost' })

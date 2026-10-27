@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { PosCategory, PosMenuItem } from '../hooks/usePosData'
+import { PosMenuCard } from './PosMenuCard'
 
 interface PosMenuProps {
   categories: PosCategory[]
@@ -12,11 +13,7 @@ interface PosMenuProps {
   onAdd: (item: PosMenuItem) => void
 }
 
-function formatPrice(cents: number): string {
-  return `RM ${(cents / 100).toFixed(2)}`
-}
-
-/** The sellable menu: search, category rail and a compact tap grid. */
+/** The sellable menu: search, category rail and photo cards. */
 export function PosMenu({ categories, itemsByCategory, onAdd }: PosMenuProps) {
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -29,7 +26,11 @@ export function PosMenu({ categories, itemsByCategory, onAdd }: PosMenuProps) {
         .map((category) => ({
           ...category,
           items: (itemsByCategory.get(category.id) ?? []).filter((item) =>
-            normalized ? item.name.toLowerCase().includes(normalized) : true
+            normalized
+              ? `${item.name} ${item.description ?? ''}`
+                  .toLowerCase()
+                  .includes(normalized)
+              : true
           ),
         }))
         .filter((category) => category.items.length > 0),
@@ -89,21 +90,9 @@ export function PosMenu({ categories, itemsByCategory, onAdd }: PosMenuProps) {
               <h2 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                 {category.name}
               </h2>
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                 {category.items.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onAdd(item)}
-                    className="rounded-lg border border-white/10 bg-white/5 p-3 text-left transition hover:border-primary/50 hover:bg-white/10 active:translate-y-px"
-                  >
-                    <div className="text-sm font-semibold leading-tight text-foreground">
-                      {item.name}
-                    </div>
-                    <div className="mt-1 text-xs tabular-nums text-muted-foreground">
-                      {formatPrice(item.price_cents)}
-                    </div>
-                  </button>
+                  <PosMenuCard key={item.id} item={item} onAdd={onAdd} />
                 ))}
               </div>
             </section>

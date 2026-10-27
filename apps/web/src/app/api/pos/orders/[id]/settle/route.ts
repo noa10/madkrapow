@@ -9,12 +9,13 @@ const SettleSchema = z.object({
 const ORDER_ID = z.string().uuid()
 
 /**
- * Collect payment for a table-QR dine-in order.
+ * Collect payment for an unpaid POS order.
  *
- * Table-QR orders start `pending` (the diner pays at the counter). This route
- * records the cash/QR Pay payment and moves the order to `paid` in one
- * transaction (`settle_dine_in_order`), so a double-tap cannot record two
- * payments. The kitchen already sees the pending ticket.
+ * Covers table-QR dine-in orders (pay at the counter) and POS pay-later
+ * counter orders (dine-in or take-away). This route records the cash/QR Pay
+ * payment and moves the order to `paid` in one transaction
+ * (`settle_dine_in_order`), so a double-tap cannot record two payments. The
+ * kitchen already sees the pending ticket.
  */
 export async function POST(
   req: NextRequest,
@@ -74,9 +75,10 @@ export async function POST(
     switch (result?.code) {
       case 'not_found':
         return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      case 'not_settleable':
       case 'not_dine_in':
         return NextResponse.json(
-          { error: 'Only dine-in orders can be settled here' },
+          { error: 'Only POS counter or dine-in orders can be settled here' },
           { status: 400 }
         )
       case 'already_paid':

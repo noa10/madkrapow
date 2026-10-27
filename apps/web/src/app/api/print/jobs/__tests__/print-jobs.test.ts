@@ -172,7 +172,7 @@ describe('GET /api/print/jobs/claim', () => {
     ])
   })
 
-  it('claims a pending dine-in docket but skips a pending web checkout', async () => {
+  it('claims pending dine-in and counter dockets but skips pending web checkouts', async () => {
     const dineInPending = {
       ...ORDER_ROW,
       id: 'dine-in-1',
@@ -187,8 +187,15 @@ describe('GET /api/print/jobs/claim', () => {
       status: 'pending',
       delivery_type: 'delivery',
     }
+    const counterPending = {
+      ...ORDER_ROW,
+      id: 'counter-1',
+      source: 'counter',
+      status: 'pending',
+      delivery_type: 'self_pickup',
+    }
     const client = buildMockClient({
-      orders: [dineInPending, webPending],
+      orders: [dineInPending, webPending, counterPending],
       liveOrderRow: dineInPending,
       orderRow: dineInPending,
     })
@@ -198,19 +205,25 @@ describe('GET /api/print/jobs/claim', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    // Unpaid table-QR order: the kitchen needs the docket immediately; the
-    // receipt waits for settlement. Abandoned web checkouts never print.
+    // Unpaid tickets print the docket immediately; receipts wait for
+    // settlement. Abandoned web checkouts never print.
     expect(json.jobs.map((job: { type: string }) => job.type)).toEqual([
+      'kitchen_docket',
       'kitchen_docket',
     ])
     const markers = client.attemptedInserts.filter(
       (insert) => insert.table === 'order_events'
     )
-    expect(markers).toHaveLength(1)
-    expect(markers[0].payload).toMatchObject({
-      order_id: 'dine-in-1',
-      event_type: 'printed_kitchen_docket',
-    })
+    expect(markers.map((marker) => marker.payload)).toEqual([
+      expect.objectContaining({
+        order_id: 'dine-in-1',
+        event_type: 'printed_kitchen_docket',
+      }),
+      expect.objectContaining({
+        order_id: 'counter-1',
+        event_type: 'printed_kitchen_docket',
+      }),
+    ])
   })
 
   it('does not re-claim orders that already have printed markers', async () => {

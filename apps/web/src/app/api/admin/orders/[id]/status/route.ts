@@ -43,7 +43,7 @@ export async function POST(
 
     const { data: order, error: fetchError } = await db
       .from('orders')
-      .select('status, delivery_type')
+      .select('status, delivery_type, source')
       .eq('id', id)
       .single();
 
@@ -56,10 +56,26 @@ export async function POST(
 
     // Every staff role may move kitchen state (paid → preparing → ready), but
     // money-state and destructive transitions stay with admins/managers.
-    // Cashiers collect table-QR payments through the POS settle route, which
-    // writes a payments row — not by marking an order paid here.
     const actorRole = user.app_metadata?.role as string | undefined;
     const isManagerial = actorRole === 'admin' || actorRole === 'manager';
+    const isPosOrder =
+      order.source === 'counter' || order.delivery_type === 'dine_in';
+
+    // POS/table orders become paid only through the settle RPC, which writes
+    // the payments row atomically. Allowing a bare status write here would
+    // produce a paid order with no money record.
+    if (newStatus === 'paid' && order.status === 'pending' && isPosOrder) {
+      return NextResponse.json(
+        {
+          error:
+            'Collect payment through the POS settle flow (it records a payments row).',
+        },
+        { status: 403 }
+      );
+    }
+
+    // Cashiers collect table-QR/pay-later payments through the POS settle
+    // route, which writes a payments row — not by marking an order paid here.
     if (!isManagerial && newStatus === 'paid' && order.status === 'pending') {
       return NextResponse.json(
         {
@@ -69,16 +85,16 @@ export async function POST(
         { status: 403 }
       );
     }
-    // A cashier alone on shift must be able to clear an abandoned table-QR
-    // order (diner left / mis-ordered) without waiting for a manager. The void
-    // is scoped to unpaid dine-in orders; everything else still needs a
-    // manager.
-    const canVoidPendingDineIn =
+    // A cashier alone on shift must be able to clear an abandoned unpaid
+    // ticket (diner left / mis-ordered / pay-later take-away never collected)
+    // without waiting for a manager. The void is scoped to pending dine-in or
+    // POS counter orders; everything else still needs a manager.
+    const canVoidPendingPosOrder =
       actorRole === 'cashier' &&
       order.status === 'pending' &&
-      order.delivery_type === 'dine_in' &&
+      (order.delivery_type === 'dine_in' || order.source === 'counter') &&
       newStatus === 'cancelled';
-    if (!isManagerial && newStatus === 'cancelled' && !canVoidPendingDineIn) {
+    if (!isManagerial && newStatus === 'cancelled' && !canVoidPendingPosOrder) {
       return NextResponse.json(
         { error: 'Only an admin or manager can cancel an order.' },
         { status: 403 }
@@ -93,13 +109,23 @@ export async function POST(
       );
     }
 
-    const { error: updateError } = await db
+    const { data: updated, error: updateError } = await db
       .from('orders')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      // Optimistic concurrency: a concurrent settle/void may have moved the
+      // order since the read above. Never overwrite that state.
+      .eq('status', order.status)
+      .select('id');
 
     if (updateError) {
       return NextResponse.json({ error: 'Failed to update order', details: updateError.message }, { status: 500 });
+    }
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        { error: 'Order state changed; refresh and retry.' },
+        { status: 409 }
+      );
     }
 
     await db.from('order_events').insert({

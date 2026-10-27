@@ -50,6 +50,9 @@ export interface PosOpenOrder {
   pax: number | null
   table_id: string | null
   table_label: string | null
+  /** `dine_in` or `self_pickup` (pending counter take-away). */
+  delivery_type?: string | null
+  source?: string | null
 }
 
 export type TableCloseBlockReason = 'empty' | 'unpaid' | 'not_ready'

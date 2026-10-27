@@ -1,6 +1,15 @@
 'use client'
 
-import { Armchair, Ban, Banknote, Loader2, Plus, RefreshCw, UtensilsCrossed } from 'lucide-react'
+import {
+  Armchair,
+  Ban,
+  Banknote,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ShoppingBag,
+  UtensilsCrossed,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -10,6 +19,7 @@ import type { PosOpenOrder, RestaurantTable, TableSummary } from '@/lib/pos/type
 
 interface PosTableBoardProps {
   summaries: TableSummary[]
+  unpaidTakeaway: PosOpenOrder[]
   busyId: string | null
   refreshing: boolean
   onNewOrder: (table: RestaurantTable, summary: TableSummary) => void
@@ -30,6 +40,7 @@ function minutesSince(iso: string): number {
 /** Live floor plan: occupancy, open orders, unpaid balances and actions. */
 export function PosTableBoard({
   summaries,
+  unpaidTakeaway,
   busyId,
   refreshing,
   onNewOrder,
@@ -77,6 +88,65 @@ export function PosTableBoard({
           Refresh
         </Button>
       </div>
+
+      {unpaidTakeaway.length > 0 && (
+        <section className="mb-3 rounded-xl border border-amber-500/50 bg-amber-500/5 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <ShoppingBag className="h-4 w-4 text-amber-400" />
+            <span className="text-sm font-semibold text-foreground">
+              Unpaid take-away
+            </span>
+            <Badge className="border-none bg-amber-500 text-black">
+              {unpaidTakeaway.length}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              Collect before hand-off — the kitchen is already preparing these.
+            </span>
+          </div>
+          <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+            {unpaidTakeaway.map((order) => (
+              <li
+                key={order.id}
+                className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-bold tabular-nums text-foreground">
+                      {order.display_code ?? '—'}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {order.customer_name ?? 'Walk-in'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {formatPrice(order.total_cents)} · {minutesSince(order.created_at)} min
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => onSettle(order)}
+                  disabled={busyId === order.id}
+                  className="h-7 gap-1 px-2 text-[11px]"
+                >
+                  <Banknote className="h-3 w-3" />
+                  Collect
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onVoid(order)}
+                  disabled={busyId === order.id}
+                  aria-label={`Void order ${order.display_code ?? ''}`}
+                  title="Void this unpaid order"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {summaries.length === 0 ? (
         <div className="rounded-xl border border-dashed border-white/15 p-10 text-center">

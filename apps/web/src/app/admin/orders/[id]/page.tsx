@@ -602,21 +602,26 @@ export default function AdminOrderDetailPage() {
         </Card>
       )}
 
-      {order.status === 'pending' && order.delivery_type === 'dine_in' && (
+      {order.status === 'pending' &&
+        (order.delivery_type === 'dine_in' || order.source === 'counter') && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="pt-4 flex items-start gap-3">
             <Clock className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />
             <div>
               <p className="font-medium text-yellow-800">Awaiting payment at the counter</p>
               <p className="text-sm text-yellow-700">
-                This dine-in order came from the table QR. The kitchen already sees it; collect cash or QR Pay in the POS table board to mark it paid.
+                {order.source === 'counter'
+                  ? `This pay-later ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
+                  : 'This dine-in order came from the table QR. The kitchen already sees it; collect cash or Company QR in the POS table board to mark it paid.'}
               </p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {order.status === 'pending' && order.delivery_type !== 'dine_in' && (
+      {order.status === 'pending' &&
+        order.delivery_type !== 'dine_in' &&
+        order.source !== 'counter' && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="pt-4 flex items-start gap-3">
             <Clock className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />

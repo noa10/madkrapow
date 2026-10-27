@@ -13,9 +13,21 @@ describe('isKitchenActive', () => {
     expect(isKitchenActive({ status: 'pending', delivery_type: 'dine_in' })).toBe(true)
   })
 
+  it('includes pending POS counter orders (pay-later, including take-away)', () => {
+    expect(
+      isKitchenActive({ status: 'pending', delivery_type: 'self_pickup', source: 'counter' })
+    ).toBe(true)
+    expect(
+      isKitchenActive({ status: 'pending', delivery_type: 'dine_in', source: 'counter' })
+    ).toBe(true)
+  })
+
   it('excludes abandoned web checkouts', () => {
     expect(isKitchenActive({ status: 'pending', delivery_type: 'delivery' })).toBe(false)
     expect(isKitchenActive({ status: 'pending', delivery_type: 'self_pickup' })).toBe(false)
+    expect(
+      isKitchenActive({ status: 'pending', delivery_type: 'delivery', source: 'web' })
+    ).toBe(false)
     expect(isKitchenActive({ status: 'pending' })).toBe(false)
   })
 
@@ -29,6 +41,9 @@ describe('isKitchenActive', () => {
     expect(KITCHEN_QUEUE_OR_FILTER).toContain('status.in.(paid,accepted,preparing,ready)')
     expect(KITCHEN_QUEUE_OR_FILTER).toContain(
       'and(status.eq.pending,delivery_type.eq.dine_in)'
+    )
+    expect(KITCHEN_QUEUE_OR_FILTER).toContain(
+      'and(status.eq.pending,source.eq.counter)'
     )
   })
 })

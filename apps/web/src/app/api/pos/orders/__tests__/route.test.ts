@@ -309,6 +309,68 @@ describe('POST /api/pos/orders', () => {
     expect(unknown.status).toBe(400)
   })
 
+  it('creates a pay-later order with no payment record', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 2 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_later',
+      }) as never,
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      status: 'pending',
+      payment_timing: 'pay_later',
+      total_cents: 2500,
+    })
+
+    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
+    expect(orderInsert?.row).toMatchObject({
+      status: 'pending',
+      source: 'counter',
+      delivery_type: 'self_pickup',
+      payment_method: null,
+      total_cents: 2500,
+    })
+    expect(client.calls.find((c) => c.table === 'payments')).toBeUndefined()
+  })
+
+  it('requires a payment method when paying now', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_now',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a payment method on a pay-later order', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_later',
+        payment_method: 'cash',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+  })
+
   it('returns 403 when the staff guard rejects', async () => {
     const { NextResponse } = await import('next/server')
     requireRoleMock.mockResolvedValue({

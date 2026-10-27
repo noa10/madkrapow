@@ -56,11 +56,14 @@ export async function GET(req: NextRequest) {
     // Dine-in tickets print as soon as the order exists — a table-QR order is
     // still 'pending' (pay at the counter) but the kitchen must cook it. Other
     // pending orders are unpaid web checkouts and must never print.
+    // The window uses updated_at so a pay-later order settled after the
+    // 24-hour creation window still prints its receipt (the docket marker
+    // dedupes the reprint).
     .in('status', [...ACTIVE_STATUSES, 'pending'])
     .or(
       `source.in.(${AUTO_PRINT_SOURCES.join(',')}),delivery_type.eq.dine_in`
     )
-    .gte('created_at', since)
+    .gte('updated_at', since)
     .order('created_at', { ascending: true })
   if (error) {
     return NextResponse.json({ error: `Failed to load orders: ${error.message}` }, { status: 500 })
@@ -75,8 +78,14 @@ export async function GET(req: NextRequest) {
 
   for (const row of orders ?? []) {
     // The status filter above also admits unpaid web checkouts; only dine-in
-    // pending orders (table QR) are real tickets.
-    if (row.status === 'pending' && row.delivery_type !== 'dine_in') continue
+    // and POS counter (pay-later) pending orders are real tickets.
+    if (
+      row.status === 'pending' &&
+      row.delivery_type !== 'dine_in' &&
+      row.source !== 'counter'
+    ) {
+      continue
+    }
 
     // The order may have been deleted/voided since the query above. Confirm it
     // still exists before doing the (more expensive) render work; the marker

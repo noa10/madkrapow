@@ -102,7 +102,7 @@ export function KitchenOrderCard({
   const dishCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const isDelivery = order.delivery_type === 'delivery';
   const isDineIn = order.delivery_type === 'dine_in';
-  const isUnpaidDineIn = isDineIn && order.status === 'pending';
+  const isUnpaid = order.status === 'pending';
 
   return (
     <Card className="overflow-hidden hover:shadow-xl transition-all cursor-default border-2 border-border bg-card shadow-sm rounded-xl">
@@ -128,7 +128,7 @@ export function KitchenOrderCard({
             >
               {statusConfig.label}
             </Badge>
-            {isUnpaidDineIn && (
+            {isUnpaid && (
               <Badge className="border-none bg-amber-500 text-black text-base md:text-lg px-3 py-1 font-bold">
                 Unpaid
               </Badge>

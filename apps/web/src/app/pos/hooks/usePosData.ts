@@ -13,11 +13,16 @@ export interface PosCategory {
 export interface PosMenuItem {
   id: string
   name: string
+  description: string | null
+  image_url: string | null
   price_cents: number
   is_available: boolean
   category_id: string
   sort_order: number
 }
+
+const POS_ORDER_COLUMNS =
+  'id, display_code, status, total_cents, created_at, customer_name, pax, table_id, table_label, delivery_type, source'
 
 /**
  * Data for the counter POS: the sellable menu, the active floor plan and the
@@ -45,7 +50,7 @@ export function usePosData(enabled: boolean) {
         .order('sort_order', { ascending: true }),
       supabase
         .from('menu_items')
-        .select('id, name, price_cents, is_available, category_id, sort_order')
+        .select('id, name, description, image_url, price_cents, is_available, category_id, sort_order')
         .order('sort_order', { ascending: true }),
     ])
 
@@ -75,20 +80,32 @@ export function usePosData(enabled: boolean) {
 
   const loadOpenOrders = useCallback(async () => {
     const supabase = getBrowserClient()
-    const { data, error: ordersError } = await supabase
-      .from('orders')
-      .select(
-        'id, display_code, status, total_cents, created_at, customer_name, pax, table_id, table_label'
-      )
-      .eq('delivery_type', 'dine_in')
-      .in('status', OPEN_DINE_IN_STATUSES)
-      .order('created_at', { ascending: true })
+    // Two independent sets: open dine-in orders drive the floor board, and
+    // pending counter take-away orders are the "collect later" queue.
+    const [dineInResult, takeawayResult] = await Promise.all([
+      supabase
+        .from('orders')
+        .select(POS_ORDER_COLUMNS)
+        .eq('delivery_type', 'dine_in')
+        .in('status', OPEN_DINE_IN_STATUSES)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('orders')
+        .select(POS_ORDER_COLUMNS)
+        .eq('source', 'counter')
+        .eq('delivery_type', 'self_pickup')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true }),
+    ])
 
-    if (ordersError) {
-      setError(ordersError.message)
+    if (dineInResult.error || takeawayResult.error) {
+      setError(dineInResult.error?.message ?? takeawayResult.error?.message ?? 'Failed to load orders')
       return
     }
-    setOpenOrders((data ?? []) as PosOpenOrder[])
+    setOpenOrders([
+      ...((dineInResult.data ?? []) as PosOpenOrder[]),
+      ...((takeawayResult.data ?? []) as PosOpenOrder[]),
+    ])
   }, [])
 
   const refresh = useCallback(async () => {
@@ -110,9 +127,10 @@ export function usePosData(enabled: boolean) {
     }
   }, [enabled, loadMenu, loadTables, loadOpenOrders])
 
-  // Realtime keeps the table board current. Only dine-in order events matter;
-  // debounce because a kitchen status change and the payment row can land as
-  // separate updates in quick succession.
+  // Realtime keeps the table board and the unpaid take-away queue current.
+  // A Realtime filter can only express one predicate, and we need both
+  // dine-in and counter take-away events, so refresh on any order event
+  // (debounced — status + payment rows can land in quick succession).
   useEffect(() => {
     if (!enabled) return
     const supabase = getBrowserClient()
@@ -125,14 +143,13 @@ export function usePosData(enabled: boolean) {
     }
 
     const channel = supabase
-      .channel('pos-dine-in-orders')
+      .channel('pos-open-orders')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'orders',
-          filter: 'delivery_type=eq.dine_in',
         },
         scheduleRefresh
       )

@@ -428,9 +428,21 @@ function ReviewSheet({
                       {menuNameById.get(item.menu_item_id) ?? 'Item'}
                     </p>
                     {item.selected_modifiers.length > 0 && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {item.selected_modifiers.map((modifier) => modifier.name).join(', ')}
-                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {item.selected_modifiers.map((modifier) => (
+                          <li
+                            key={modifier.id}
+                            className="text-[11px] leading-4 text-amber-200"
+                          >
+                            + {modifier.name}
+                            {modifier.price_delta_cents > 0 && (
+                              <span className="ml-1 tabular-nums text-amber-300/80">
+                                (+RM {(modifier.price_delta_cents / 100).toFixed(2)})
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     )}
                     {item.special_instructions.trim() && (
                       <p className="mt-0.5 text-xs italic text-muted-foreground">

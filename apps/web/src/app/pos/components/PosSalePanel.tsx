@@ -248,23 +248,40 @@ export function PosSalePanel({
             {cart.map((line) => (
               <li
                 key={line.key}
-                className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-2 py-1.5"
+                className="flex items-start justify-between gap-2 rounded-lg bg-white/5 px-2 py-1.5"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">
                     {line.item.name}
                   </div>
                   {line.modifiers.length > 0 && (
-                    <div className="truncate text-[10px] text-amber-300">
-                      {line.modifiers.map((modifier) => `+ ${modifier.name}`).join(' · ')}
-                    </div>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {line.modifiers.map((modifier) => (
+                        <li
+                          key={modifier.id}
+                          className="flex items-start gap-1 text-[11px] leading-4 text-amber-200"
+                        >
+                          <span aria-hidden className="mt-px shrink-0">
+                            +
+                          </span>
+                          <span className="break-words">
+                            {modifier.name}
+                            {modifier.price_delta_cents > 0 && (
+                              <span className="ml-1 tabular-nums text-amber-300/80">
+                                (+RM {(modifier.price_delta_cents / 100).toFixed(2)})
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                   {line.notes && (
-                    <div className="truncate text-[10px] italic text-muted-foreground">
+                    <div className="mt-0.5 break-words text-[11px] italic leading-4 text-muted-foreground">
                       “{line.notes}”
                     </div>
                   )}
-                  <div className="text-xs tabular-nums text-muted-foreground">
+                  <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">
                     {formatPrice(
                       posLineTotalCents(
                         line.item.price_cents,
@@ -274,7 +291,7 @@ export function PosSalePanel({
                     )}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="mt-0.5 flex shrink-0 items-center gap-1">
                   <button
                     type="button"
                     onClick={() => onChangeQuantity(line.key, -1)}

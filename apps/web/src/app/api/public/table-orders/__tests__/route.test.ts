@@ -237,6 +237,51 @@ describe('POST /api/public/table-orders', () => {
     })
   })
 
+  it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {
+    // Production menu fixtures use ids like 00000004-… (version nibble 0);
+    // z.uuid() rejected them, which blocked every table-QR order line.
+    const seededItem = '00000004-0000-0000-0000-000000000005'
+    const seededModifier = '00000003-0000-0000-0000-000000000001'
+    const seededGroup = '00000002-0000-0000-0000-000000000001'
+    const client = buildClient({
+      table: TABLE,
+      recent: [],
+      menu: [
+        { id: seededItem, name: 'Krapow Daging', price_cents: 1000, is_available: true },
+      ],
+      modifiers: [
+        {
+          id: seededModifier,
+          name: 'Medium Spice',
+          price_delta_cents: 0,
+          modifier_group_id: seededGroup,
+          is_available: true,
+        },
+      ],
+      junctions: [
+        { menu_item_id: seededItem, modifier_group_id: seededGroup, is_required: false },
+      ],
+      groups: [
+        { id: seededGroup, name: 'Tahap Kepedasan', min_selections: 1, max_selections: 1 },
+      ],
+    })
+    state.client = client
+
+    const response = await POST(
+      makeRequest({
+        table_token: TOKEN,
+        pax: 2,
+        items: [
+          { menu_item_id: seededItem, quantity: 1, modifier_ids: [seededModifier] },
+        ],
+      }) as never
+    )
+
+    expect(response.status).toBe(201)
+    const body = await response.json()
+    expect(body.total_cents).toBe(1000)
+  })
+
   it('rejects an unknown token', async () => {
     state.client = buildClient({ ...BASE_DATA, table: null })
     const response = await POST(makeRequest(VALID_BODY) as never)

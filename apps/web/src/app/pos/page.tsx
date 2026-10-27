@@ -8,8 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useRoleGuard } from '@/hooks/use-role-guard'
 import { useToastStore } from '@/stores/toast'
-import { getBrowserClient } from '@/lib/supabase/client'
-import { autoPrintOrder } from '@/lib/printing/client'
 import { MAX_MERGED_QUANTITY } from '@/lib/pos/table-orders'
 import {
   posCartLineKey,
@@ -28,7 +26,7 @@ import {
   type PosPaymentMethod,
   type PosPaymentTiming,
 } from './components/PosSalePanel'
-import { PosCompanyQrModal } from './components/PosCompanyQrModal'
+import { PosPayNowModal } from './components/PosPayNowModal'
 import { PosSettleModal } from './components/PosSettleModal'
 import { PosTableBoard } from './components/PosTableBoard'
 import { usePosData, type PosMenuItem, type PosModifierGroup } from './hooks/usePosData'
@@ -37,17 +35,19 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-/** Authenticated POST helper — the POS API accepts cookie or Bearer auth. */
+/**
+ * Authenticated POST helper for the POS.
+ *
+ * The web POS is same-origin and the staff session lives in Supabase's auth
+ * cookies, so the route authenticates from the cookie jar exactly like the
+ * admin API calls do. Do not gate the request on `auth.getSession()`: that
+ * adds a Web-Lock-protected auth round-trip to every tap and can leave the
+ * cashier staring at a button that never fires.
+ */
 async function posPost(path: string, body?: unknown) {
-  const supabase = getBrowserClient()
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
   const res = await fetch(path, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const json = await res.json().catch(() => null)
@@ -89,10 +89,12 @@ export default function PosPage() {
   } | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
   const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
-  const [qrConfirmOpen, setQrConfirmOpen] = useState(false)
+  const [payNowOpen, setPayNowOpen] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null)
   const [settleOrder, setSettleOrder] = useState<PosOpenOrder | null>(null)
+  const [settleError, setSettleError] = useState<string | null>(null)
   const [voidOrder, setVoidOrder] = useState<PosOpenOrder | null>(null)
   const [closeTableTarget, setCloseTableTarget] = useState<RestaurantTable | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -114,6 +116,13 @@ export default function PosPage() {
     () => new Map(summaries.map((summary) => [summary.table.id, summary])),
     [summaries]
   )
+
+  /** A pay-later ticket already open at the selected table, if any. */
+  const pendingOrderAtTable = useMemo(() => {
+    if (!selectedTableId) return null
+    const summary = summariesByTableId.get(selectedTableId)
+    return summary?.orders.find((order) => order.status === 'pending') ?? null
+  }, [selectedTableId, summariesByTableId])
 
   const totalCents = useMemo(
     () =>
@@ -254,7 +263,8 @@ export default function PosPage() {
     setCustomerName('')
     setPaymentMethod('cash')
     setPaymentTiming('pay_now')
-    setQrConfirmOpen(false)
+    setPayNowOpen(false)
+    setSubmitError(null)
   }, [])
 
   const handleRefresh = useCallback(async () => {
@@ -280,15 +290,9 @@ export default function PosPage() {
     const payLater = paymentTiming === 'pay_later'
     const method = payLater ? undefined : methodOverride ?? paymentMethod
 
-    // Company-QR pay-now is a two-step flow: show the QR, then create the
-    // order only after the cashier confirms the transfer.
-    if (!payLater && method === 'qr_pay' && !methodOverride) {
-      setQrConfirmOpen(true)
-      return
-    }
-
     submitLock.current = true
     setSubmitting(true)
+    setSubmitError(null)
     try {
       const { res, json } = await posPost('/api/pos/orders', {
         items: cart.map((line) => ({
@@ -306,11 +310,11 @@ export default function PosPage() {
       })
 
       if (!res.ok) {
-        addToast({
-          type: 'error',
-          title: 'Failed to create order',
-          description: json?.error ?? `HTTP ${res.status}`,
-        })
+        const message = json?.error ?? `HTTP ${res.status}`
+        // Keep the dialog open with the reason: a toast alone sits under the
+        // modal's top layer and reads as "nothing happened".
+        setSubmitError(message)
+        addToast({ type: 'error', title: 'Could not record the order', description: message })
         return
       }
 
@@ -319,50 +323,86 @@ export default function PosPage() {
           ? `Table ${json.table_label} · ${json.pax} pax`
           : 'Take-away'
       const orderCode = json.display_code ?? json.order_number
+      const createdOrder: PosOpenOrder = {
+        id: json.order_id,
+        display_code: json.display_code ?? null,
+        status: json.status ?? (payLater ? 'pending' : 'paid'),
+        total_cents: json.total_cents,
+        created_at: new Date().toISOString(),
+        customer_name: customerName.trim() || null,
+        pax: json.pax ?? null,
+        table_id: orderType === 'dine_in' ? selectedTableId : null,
+        table_label: json.table_label ?? null,
+        delivery_type: orderType === 'dine_in' ? 'dine_in' : 'self_pickup',
+        source: 'counter',
+      }
       setLastOrderNumber(orderCode)
       addToast({
         type: 'success',
-        title: payLater ? `Order ${orderCode} sent` : `Order ${orderCode} created`,
-        description: `${formatPrice(json.total_cents)} · ${context}${payLater ? ' · Pay later' : ''}`,
+        title: payLater
+          ? `Order ${orderCode} sent to the kitchen`
+          : `Order ${orderCode} paid`,
+        description: `${formatPrice(json.total_cents)} · ${context}${
+          payLater ? ' · Pay later' : ''
+        }`,
+        action: payLater
+          ? {
+              label: 'Collect payment',
+              onClick: () => {
+                setSettleError(null)
+                setSettleOrder(createdOrder)
+              },
+            }
+          : undefined,
       })
       resetSale()
+      // The kitchen docket (and, once settled, the receipt) is claimed and
+      // printed by the LAN bridge polling /api/print/jobs/claim. Printing
+      // from the page too would duplicate every ticket as a REPRINT.
       await refresh()
-      void autoPrintOrder(
-        json.order_id,
-        'counter',
-        (printError) =>
-          addToast({ type: 'error', title: 'Print failed', description: printError }),
-        { docketOnly: json.status === 'pending' }
-      )
     } catch {
-      addToast({ type: 'error', title: 'Network error creating order' })
+      // The request may have committed before the connection dropped. Tell the
+      // cashier to check the board first so a blind retry cannot double-ring.
+      const message =
+        'Network error. Check the table board before retrying — the order may already be recorded.'
+      setSubmitError(message)
+      addToast({ type: 'error', title: 'Network error creating order', description: message })
     } finally {
       setSubmitting(false)
       submitLock.current = false
     }
   }
 
+  /** Pay-now sales confirm inside the payment dialog before the order exists. */
   const handleSubmit = () => {
-    void submitOrder()
+    if (paymentTiming === 'pay_later') {
+      void submitOrder()
+      return
+    }
+    setSubmitError(null)
+    setPayNowOpen(true)
   }
 
-  const handleQrConfirm = () => {
-    void submitOrder('qr_pay')
+  const handlePayNowConfirm = () => {
+    void submitOrder(paymentMethod)
   }
 
   const handleSettle = async (method: 'cash' | 'qr_pay') => {
     if (!settleOrder || busyId) return
     setBusyId(settleOrder.id)
+    setSettleError(null)
     try {
       const { res, json } = await posPost(
         `/api/pos/orders/${settleOrder.id}/settle`,
         { payment_method: method }
       )
       if (!res.ok) {
+        const message = json?.error ?? `HTTP ${res.status}`
+        setSettleError(message)
         addToast({
           type: 'error',
           title: 'Could not collect payment',
-          description: json?.error ?? `HTTP ${res.status}`,
+          description: message,
         })
         return
       }
@@ -374,8 +414,10 @@ export default function PosPage() {
         )}`,
       })
       setSettleOrder(null)
+      setSettleError(null)
       await refresh()
     } catch {
+      setSettleError('Network error — check the connection and try again.')
       addToast({ type: 'error', title: 'Network error' })
     } finally {
       setBusyId(null)
@@ -545,6 +587,11 @@ export default function PosPage() {
             onPaxChange={setPax}
             customerName={customerName}
             onCustomerNameChange={setCustomerName}
+            pendingOrder={pendingOrderAtTable}
+            onCollectUnpaid={(order) => {
+              setSettleError(null)
+              setSettleOrder(order)
+            }}
             cart={cart}
             onChangeQuantity={changeQuantity}
             onRemove={removeLine}
@@ -565,22 +612,30 @@ export default function PosPage() {
           busyId={busyId}
           refreshing={refreshing}
           onNewOrder={startTableOrder}
-          onSettle={setSettleOrder}
+          onSettle={(order) => {
+            setSettleError(null)
+            setSettleOrder(order)
+          }}
           onVoid={setVoidOrder}
           onCloseTable={setCloseTableTarget}
           onRefresh={handleRefresh}
         />
       )}
 
-      <PosCompanyQrModal
-        open={qrConfirmOpen}
+      <PosPayNowModal
+        open={payNowOpen}
+        method={paymentMethod}
         amountCents={totalCents}
         label={qrLabel}
         busy={submitting}
+        error={submitError}
         onClose={() => {
-          if (!submitting) setQrConfirmOpen(false)
+          if (!submitting) {
+            setPayNowOpen(false)
+            setSubmitError(null)
+          }
         }}
-        onConfirm={handleQrConfirm}
+        onConfirm={handlePayNowConfirm}
       />
 
       {optionsItem && (
@@ -599,9 +654,13 @@ export default function PosPage() {
       <PosSettleModal
         key={settleOrder?.id ?? 'no-settle-order'}
         order={settleOrder}
-        busy={busyId === settleOrder?.id}
+        busy={busyId !== null}
+        error={settleError}
         onClose={() => {
-          if (!busyId) setSettleOrder(null)
+          if (!busyId) {
+            setSettleOrder(null)
+            setSettleError(null)
+          }
         }}
         onConfirm={handleSettle}
       />

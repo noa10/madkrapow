@@ -1,28 +1,45 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Check, Loader2, X } from 'lucide-react'
+import { Banknote, Check, Loader2, QrCode, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import type { PosPaymentMethod } from './PosSalePanel'
 import { CompanyQrPanel } from './CompanyQrPanel'
 
-interface PosCompanyQrModalProps {
+interface PosPayNowModalProps {
   open: boolean
+  method: PosPaymentMethod
   amountCents: number
   label?: string
   busy: boolean
+  /** Server-side failure from the last attempt; stays visible so it is not missed. */
+  error?: string | null
   onClose: () => void
   onConfirm: () => void
 }
 
-/** Pay-now confirmation: show the company QR, then record the payment. */
-export function PosCompanyQrModal({
+function formatPrice(cents: number): string {
+  return `RM ${(cents / 100).toFixed(2)}`
+}
+
+/**
+ * Take payment for a pay-now sale before the order is created.
+ *
+ * Both methods confirm explicitly in the top layer: cash ("Cash received")
+ * and company QR ("Payment received"). The order is only created after the
+ * cashier confirms, and a failure is shown inside the dialog — a toast alone
+ * can sit underneath a modal dialog's backdrop and look like nothing happened.
+ */
+export function PosPayNowModal({
   open,
+  method,
   amountCents,
   label,
   busy,
+  error,
   onClose,
   onConfirm,
-}: PosCompanyQrModalProps) {
+}: PosPayNowModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -47,9 +64,12 @@ export function PosCompanyQrModal({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [open, busy, onClose])
 
+  const isCash = method === 'cash'
+
   return (
     <dialog
       ref={dialogRef}
+      aria-labelledby="pos-pay-now-title"
       onClose={onClose}
       onClick={(event) => {
         if (event.target === dialogRef.current && !busy) onClose()
@@ -59,7 +79,17 @@ export function PosCompanyQrModal({
       <div className="rounded-xl border border-border bg-card p-5 text-foreground shadow-2xl shadow-black/40">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Scan to pay</h2>
+            <h2
+              id="pos-pay-now-title"
+              className="flex items-center gap-2 text-base font-semibold text-foreground"
+            >
+              {isCash ? (
+                <Banknote className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <QrCode className="h-4 w-4 text-primary" />
+              )}
+              {isCash ? 'Collect cash' : 'Scan to pay'}
+            </h2>
             {label && <p className="mt-1 text-xs text-muted-foreground">{label}</p>}
           </div>
           <button
@@ -73,9 +103,30 @@ export function PosCompanyQrModal({
           </button>
         </div>
 
-        <div className="mt-4">
-          <CompanyQrPanel amountCents={amountCents} />
-        </div>
+        {isCash ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-center text-3xl font-extrabold tabular-nums text-foreground">
+              {formatPrice(amountCents)}
+            </p>
+            <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center text-xs leading-5 text-muted-foreground">
+              Take the cash from the customer, then confirm. The order is sent to
+              the kitchen and recorded as paid.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <CompanyQrPanel amountCents={amountCents} />
+          </div>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-300"
+          >
+            {error}
+          </p>
+        )}
 
         <div className="mt-5 flex gap-2">
           <Button
@@ -92,7 +143,7 @@ export function PosCompanyQrModal({
             ) : (
               <Check className="h-4 w-4" />
             )}
-            Payment received
+            {isCash ? 'Cash received' : 'Payment received'}
           </Button>
         </div>
       </div>

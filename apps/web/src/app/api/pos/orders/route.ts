@@ -16,9 +16,13 @@ import {
 } from '@/lib/pos/table-orders'
 
 const PosOrderItemSchema = z.object({
-  menu_item_id: z.string().uuid(),
+  // Seeded menu/modifier ids are UUID-shaped but not RFC 4122 v4 (the fixture
+  // rows use ids like 00000004-0000-0000-0000-000000000001). `z.uuid()` rejects
+  // those, which silently blocked every POS order; `z.guid()` accepts any
+  // 8-4-4-4-12 hex shape. The database still enforces membership by FK.
+  menu_item_id: z.guid(),
   quantity: z.number().int().min(1).max(99),
-  modifier_ids: z.array(z.string().uuid()).max(MAX_MODIFIERS_PER_ITEM).default([]),
+  modifier_ids: z.array(z.guid()).max(MAX_MODIFIERS_PER_ITEM).default([]),
   notes: z.string().trim().max(MAX_ITEM_NOTES_LENGTH).optional(),
 })
 
@@ -27,7 +31,7 @@ const PosOrderSchema = z
     items: z.array(PosOrderItemSchema).min(1).max(50),
     /** Dine-in (table + pax) or take-away (customer name). */
     order_type: z.enum(['dine_in', 'take_away']).default('take_away'),
-    table_id: z.string().uuid().optional(),
+    table_id: z.guid().optional(),
     pax: z.number().int().min(1).max(50).optional(),
     /** Pay now (default) or send the ticket and collect later. */
     payment_timing: z.enum(['pay_now', 'pay_later']).default('pay_now'),
@@ -401,10 +405,21 @@ export async function POST(req: NextRequest) {
       })
       if (paymentError) {
         console.error('[API/POS] Payment insert failed:', paymentError)
+        // Do not leave a "paid" order without a ledger row: the cashier will
+        // retry, and a kept order would create a duplicate ticket (and a
+        // phantom sale in reports). Removing it keeps create + payment
+        // all-or-nothing, matching the item-failure path above.
+        const { error: cleanupError } = await supabase
+          .from('orders')
+          .delete()
+          .eq('id', order.id)
+        if (cleanupError) {
+          console.error('[API/POS] Payment cleanup failed:', cleanupError)
+        }
         return NextResponse.json(
           {
-            error: 'Order created but payment record failed — record the payment manually',
-            order_number: order.order_number,
+            error:
+              'The payment could not be recorded, so the order was not created. Please retry.',
           },
           { status: 500 }
         )

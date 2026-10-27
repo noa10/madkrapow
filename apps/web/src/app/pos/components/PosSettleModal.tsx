@@ -9,6 +9,8 @@ import { CompanyQrPanel } from './CompanyQrPanel'
 interface PosSettleModalProps {
   order: PosOpenOrder | null
   busy: boolean
+  /** Last settle failure, shown in the dialog so a modal backdrop cannot hide it. */
+  error?: string | null
   onClose: () => void
   onConfirm: (method: 'cash' | 'qr_pay') => void
 }
@@ -29,7 +31,13 @@ function orderContext(order: PosOpenOrder | null): string {
 }
 
 /** Collect payment for an unpaid POS order (table QR, pay-later dine-in or take-away). */
-export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleModalProps) {
+export function PosSettleModal({
+  order,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: PosSettleModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [stage, setStage] = useState<Stage>('method')
 
@@ -64,6 +72,7 @@ export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleMod
   return (
     <dialog
       ref={dialogRef}
+      aria-labelledby="pos-settle-title"
       onClose={onClose}
       onClick={(event) => {
         if (event.target === dialogRef.current && !busy) close()
@@ -73,7 +82,10 @@ export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleMod
       <div className="rounded-xl border border-border bg-card p-5 text-foreground shadow-2xl shadow-black/40">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-base font-semibold text-foreground">
+            <h2
+              id="pos-settle-title"
+              className="text-base font-semibold text-foreground"
+            >
               {stage === 'qr' ? 'Scan to pay' : 'Collect payment'}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -100,6 +112,14 @@ export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleMod
                 note="Confirm only after the customer shows a successful payment."
               />
             </div>
+            {error && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-300"
+              >
+                {error}
+              </p>
+            )}
             <div className="mt-5 flex gap-2">
               <Button
                 variant="outline"
@@ -129,6 +149,15 @@ export function PosSettleModal({ order, busy, onClose, onConfirm }: PosSettleMod
             <p className="mt-4 text-center text-3xl font-extrabold tabular-nums text-foreground">
               {order ? formatPrice(order.total_cents) : '—'}
             </p>
+
+            {error && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-300"
+              >
+                {error}
+              </p>
+            )}
 
             <div className="mt-5 space-y-2">
               <div className="grid grid-cols-2 gap-2">

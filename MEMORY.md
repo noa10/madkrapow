@@ -573,6 +573,20 @@ supabase/
   routes*; a typecheck error count that moves on its own is this file, not your change.
 - Store secrets/logs via `sanitizeForLog` (see the 2026-10-14 decision above). Never inline a
   private copy of a sanitiser — that duplication is what caused CodeQL alert #57.
+- **Zod 4 `z.uuid()` rejects the seeded menu/modifier ids** (`00000004-…`, `00000003-…` — the
+  UUID version nibble is `0`), so a route that validates them with `z.string().uuid()` returns
+  `400 Invalid request` for every real order. This silently blocked the POS and table-QR order
+  routes until 2026-10-27, and the dev-only toast bug below made the error invisible. Use
+  `z.guid()` for database ids (any 8-4-4-4-12 hex shape); the FK still enforces membership.
+  `promos/preview` and the GrabFood menu mapping/snooze routes still carry the strict check.
+- **Do not remove a toast in a `ToastItem` unmount cleanup.** React StrictMode's dev-only
+  mount → cleanup → mount cycle runs it immediately, so every success/error toast vanished
+  before it could be read in `npm run dev`. The store's timer owns dismissal.
+- **POS order creation is not idempotent.** If the response is lost after the server commits,
+  a retry creates a second paid order + payment + docket. The UI now tells the cashier to
+  check the table board first, but the real fix is a client `request_key` with a unique index
+  on `orders` (return the existing order on conflict) and a transactional
+  `pending → paid` + payment insert to replace the compensating delete.
 
 ---
 

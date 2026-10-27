@@ -42,30 +42,3 @@ export async function printViaBridge(
     return { ok: false, error: err instanceof Error ? err.message : 'Bridge unreachable' }
   }
 }
-
-/**
- * Auto-print the standard job set for an order (fire-and-forget helper):
- * GrabFood orders print the GrabFood ticket; counter orders print the kitchen
- * docket + receipt. A pay-later order (`docketOnly`) prints just the docket —
- * its receipt waits for settlement. Failures surface through `onError`
- * without throwing.
- */
-export async function autoPrintOrder(
-  orderId: string,
-  source: string,
-  onError?: (error: string) => void,
-  options: { docketOnly?: boolean } = {}
-): Promise<void> {
-  if (!isPrintBridgeConfigured()) return
-  const types: PrintJobType[] = options.docketOnly
-    ? ['kitchen_docket']
-    : source === 'grabfood'
-      ? ['grabfood_ticket']
-      : source === 'counter'
-        ? ['kitchen_docket', 'receipt']
-        : ['kitchen_docket']
-  for (const type of types) {
-    const result = await printViaBridge(orderId, type)
-    if (!result.ok) onError?.(result.error ?? 'Unknown print error')
-  }
-}

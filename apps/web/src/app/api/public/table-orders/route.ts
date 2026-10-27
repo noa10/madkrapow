@@ -36,13 +36,16 @@ export const runtime = 'nodejs'
  */
 
 const TableOrderItemSchema = z.object({
-  menu_item_id: z.string().uuid(),
+  // Seeded menu/modifier ids are UUID-shaped but not RFC 4122 v4; `z.uuid()`
+  // rejects them. `z.guid()` accepts any 8-4-4-4-12 hex shape and the database
+  // still enforces membership. See the POS order route for the same fix.
+  menu_item_id: z.guid(),
   quantity: z
     .number()
     .int()
     .min(MIN_ITEM_QUANTITY)
     .max(MAX_ITEM_QUANTITY),
-  modifier_ids: z.array(z.string().uuid()).max(MAX_MODIFIERS_PER_ITEM).default([]),
+  modifier_ids: z.array(z.guid()).max(MAX_MODIFIERS_PER_ITEM).default([]),
   notes: z.string().trim().max(MAX_ITEM_NOTES_LENGTH).optional(),
 })
 

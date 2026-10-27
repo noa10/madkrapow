@@ -4,6 +4,7 @@ import {
   buildTableSettleTarget,
   buildTableSettleTargetFromOrders,
   closeBlockedMessage,
+  closeTableWarning,
   isOpenDineInStatus,
   normaliseOpenOrder,
   parsePax,
@@ -107,15 +108,30 @@ describe('summarizeTable', () => {
     expect(summary.hasUnpaid).toBe(true)
     expect(summary.canClose).toBe(false)
     expect(summary.closeBlockReason).toBe('unpaid')
+    // Only the paid round is "still in the kitchen" for the close warning; the
+    // pending one blocks closing instead of being completed by it.
+    expect(summary.kitchenActiveOrderCount).toBe(1)
   })
 
-  it('blocks closing while the kitchen is still working', () => {
+  it('closes a paid table the kitchen never advanced', () => {
+    // Regression: the POS has no control that moves paid → preparing → ready,
+    // so requiring `ready` left every pay-now table permanently unclosable.
     const summary = summarizeTable(TABLE, [
-      order({ id: 'a', status: 'ready' }),
-      order({ id: 'b', status: 'preparing' }),
+      order({ id: 'a', status: 'paid' }),
+      order({ id: 'b', status: 'paid' }),
     ])
-    expect(summary.closeBlockReason).toBe('not_ready')
-    expect(summary.canClose).toBe(false)
+    expect(summary.canClose).toBe(true)
+    expect(summary.closeBlockReason).toBeNull()
+    expect(summary.kitchenActiveOrderCount).toBe(2)
+  })
+
+  it('closes a table whose kitchen tickets are still cooking', () => {
+    const summary = summarizeTable(TABLE, [
+      order({ id: 'a', status: 'preparing' }),
+      order({ id: 'b', status: 'accepted' }),
+    ])
+    expect(summary.canClose).toBe(true)
+    expect(summary.kitchenActiveOrderCount).toBe(2)
   })
 
   it('allows closing when every open order is ready', () => {
@@ -125,6 +141,7 @@ describe('summarizeTable', () => {
     ])
     expect(summary.canClose).toBe(true)
     expect(summary.closeBlockReason).toBeNull()
+    expect(summary.kitchenActiveOrderCount).toBe(0)
   })
 
   it('tracks the oldest open order time', () => {
@@ -140,8 +157,18 @@ describe('closeBlockedMessage', () => {
   it('explains every blocker', () => {
     expect(closeBlockedMessage('empty')).toMatch(/no open orders/i)
     expect(closeBlockedMessage('unpaid')).toMatch(/collect payment/i)
-    expect(closeBlockedMessage('not_ready')).toMatch(/ready/i)
     expect(closeBlockedMessage(null)).toBeNull()
+  })
+})
+
+describe('closeTableWarning', () => {
+  it('warns when closing would complete cooking tickets', () => {
+    expect(closeTableWarning(2)).toMatch(/2 orders are still in the kitchen/i)
+    expect(closeTableWarning(1)).toMatch(/1 order is still in the kitchen/i)
+  })
+
+  it('says nothing when the kitchen has finished', () => {
+    expect(closeTableWarning(0)).toBeNull()
   })
 })
 

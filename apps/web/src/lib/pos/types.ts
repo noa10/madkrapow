@@ -93,7 +93,13 @@ export interface PosSettleTarget {
   orderIds: string[]
 }
 
-export type TableCloseBlockReason = 'empty' | 'unpaid' | 'not_ready'
+/**
+ * Why a table cannot close. Only an unsettled bill blocks closing: the POS has
+ * no control that moves an order through the kitchen, so requiring `ready`
+ * stranded every pay-now table at `paid` with no way to finish (see migration
+ * 061).
+ */
+export type TableCloseBlockReason = 'empty' | 'unpaid'
 
 /** Derived view of one table plus its open orders. */
 export interface TableSummary {
@@ -107,6 +113,11 @@ export interface TableSummary {
   canClose: boolean
   closeBlockReason: TableCloseBlockReason | null
   oldestCreatedAt: string | null
+  /**
+   * Paid tickets the kitchen has not marked `ready`. Closing completes them
+   * (`reason: 'table_closed'`), so the confirm dialog warns about them.
+   */
+  kitchenActiveOrderCount: number
 }
 
 export interface TableOrderSuccess {

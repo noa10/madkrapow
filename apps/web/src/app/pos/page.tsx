@@ -18,6 +18,7 @@ import {
   buildOrderSettleTarget,
   buildTableSettleTarget,
   buildTableSettleTargetFromOrders,
+  closeTableWarning,
   summarizeTable,
 } from '@/lib/pos/tables'
 import type {
@@ -106,7 +107,7 @@ export default function PosPage() {
   const [settleTarget, setSettleTarget] = useState<PosSettleTarget | null>(null)
   const [settleError, setSettleError] = useState<string | null>(null)
   const [voidOrder, setVoidOrder] = useState<PosOpenOrder | null>(null)
-  const [closeTableTarget, setCloseTableTarget] = useState<RestaurantTable | null>(null)
+  const [closeTableTarget, setCloseTableTarget] = useState<TableSummary | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const submitLock = useRef(false)
@@ -517,11 +518,26 @@ export default function PosPage() {
 
   const handleCloseTable = async () => {
     if (!closeTableTarget || busyId) return
-    const table = closeTableTarget
+    const { table, orders } = closeTableTarget
     setBusyId(table.id)
     try {
-      const { res, json } = await posPost(`/api/pos/tables/${table.id}/close`)
+      // Send the exact tickets the dialog listed. The RPC refuses the close if
+      // the table gained or lost a round in the meantime.
+      const { res, json } = await posPost(`/api/pos/tables/${table.id}/close`, {
+        order_ids: orders.map((order) => order.id),
+      })
       if (!res.ok) {
+        if (json?.code === 'stale_close') {
+          setCloseTableTarget(null)
+          addToast({
+            type: 'error',
+            title: 'Table changed',
+            description:
+              'A round was added or paid while you were closing. Review the table and try again.',
+          })
+          await refresh()
+          return
+        }
         addToast({
           type: 'error',
           title: 'Could not close the table',
@@ -747,11 +763,14 @@ export default function PosPage() {
         onClose={() => {
           if (!busyId) setCloseTableTarget(null)
         }}
-        title={`Close table ${closeTableTarget?.label ?? ''}?`}
-        description="Every order at the table must be paid and ready. Closing marks them served and frees the table for the next guests."
+        title={`Close table ${closeTableTarget?.table.label ?? ''}?`}
+        description={
+          closeTableWarning(closeTableTarget?.kitchenActiveOrderCount ?? 0) ??
+          'Closing marks every order served and frees the table for the next guests.'
+        }
         confirmLabel="Close table"
         variant="warning"
-        loading={busyId !== null && busyId === closeTableTarget?.id}
+        loading={busyId !== null && busyId === closeTableTarget?.table.id}
         onConfirm={handleCloseTable}
       />
     </div>

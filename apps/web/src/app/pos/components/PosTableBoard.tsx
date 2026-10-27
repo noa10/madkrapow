@@ -38,7 +38,7 @@ interface PosTableBoardProps {
   /** Collect one take-away ticket or a table's grouped unpaid total. */
   onSettle: (target: PosSettleTarget) => void
   onVoid: (order: PosOpenOrder) => void
-  onCloseTable: (table: RestaurantTable) => void
+  onCloseTable: (summary: TableSummary) => void
   onRefresh: () => void
 }
 
@@ -395,7 +395,7 @@ export function PosTableBoard({
                   <Button
                     size="sm"
                     variant={summary.canClose ? 'default' : 'outline'}
-                    onClick={() => onCloseTable(table)}
+                    onClick={() => onCloseTable(summary)}
                     disabled={busy || !summary.canClose}
                     title={closeReason ?? 'Close the table'}
                   >

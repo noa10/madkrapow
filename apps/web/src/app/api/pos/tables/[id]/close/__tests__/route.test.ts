@@ -8,10 +8,14 @@ vi.mock('@/lib/admin/require-role', () => ({
 import { POST } from '../route'
 
 const TABLE_ID = '44444444-4444-4444-8444-444444444444'
+const ORDER_A = '55555555-5555-4555-8555-555555555555'
+const ORDER_B = '66666666-6666-4666-8666-666666666666'
 
-function makeRequest(): Request {
+function makeRequest(body: unknown = { order_ids: [ORDER_A, ORDER_B] }): Request {
   return new Request(`http://localhost/api/pos/tables/${TABLE_ID}/close`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   }) as unknown as Request
 }
 
@@ -33,7 +37,7 @@ describe('POST /api/pos/tables/[id]/close', () => {
     requireRoleMock.mockReset()
   })
 
-  it('closes the table through the atomic RPC', async () => {
+  it('closes the confirmed tickets through the atomic RPC', async () => {
     const auth = authWithRpc({ ok: true, closed: 2 })
     requireRoleMock.mockResolvedValue(auth)
 
@@ -43,7 +47,17 @@ describe('POST /api/pos/tables/[id]/close', () => {
     expect(auth.supabase.rpc).toHaveBeenCalledWith('close_dine_in_table', {
       p_table_id: TABLE_ID,
       p_actor_id: 'staff-user-id',
+      p_expected_order_ids: [ORDER_A, ORDER_B],
     })
+  })
+
+  it('returns 409 with a code when the table changed after confirmation', async () => {
+    requireRoleMock.mockResolvedValue(authWithRpc({ ok: false, code: 'stale_close' }))
+    const response = await POST(makeRequest() as never, context() as never)
+    expect(response.status).toBe(409)
+    const json = await response.json()
+    expect(json.code).toBe('stale_close')
+    expect(json.error).toMatch(/changed/i)
   })
 
   it('returns 409 for an unpaid table', async () => {
@@ -64,6 +78,16 @@ describe('POST /api/pos/tables/[id]/close', () => {
     requireRoleMock.mockResolvedValue(authWithRpc({ ok: false, code: 'not_found' }))
     const response = await POST(makeRequest() as never, context() as never)
     expect(response.status).toBe(404)
+  })
+
+  it('rejects a close without the confirmed order ids', async () => {
+    const auth = authWithRpc({ ok: true, closed: 0 })
+    requireRoleMock.mockResolvedValue(auth)
+    for (const body of [{}, { order_ids: [] }, { order_ids: ['nope'] }]) {
+      const response = await POST(makeRequest(body) as never, context() as never)
+      expect(response.status).toBe(400)
+    }
+    expect(auth.supabase.rpc).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid table id', async () => {

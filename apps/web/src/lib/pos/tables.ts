@@ -46,8 +46,10 @@ export function parsePax(value: unknown): number | null {
 /**
  * Derive the table board state from a table and its open orders.
  *
- * Closing follows the canonical order machine: every open order must already
- * be `ready`, which is the only status that may move to `picked_up`.
+ * Closing is gated on the bill, not the kitchen: the POS is where a cashier
+ * collects and closes, and it has no control that moves a ticket through
+ * paid → preparing → ready. Requiring `ready` therefore stranded every
+ * pay-now table (see migration 061). Unpaid tickets still block.
  */
 export function summarizeTable(
   table: RestaurantTable,
@@ -56,6 +58,12 @@ export function summarizeTable(
   const open = orders.filter((order) => isOpenDineInStatus(order.status))
   const totalCents = open.reduce((sum, order) => sum + order.total_cents, 0)
   const hasUnpaid = open.some((order) => order.status === 'pending')
+  // Paid tickets the kitchen has not finished. `pending` is excluded: it blocks
+  // closing on its own, and the warning promises the tickets will be marked
+  // served, which is only true of the ones already paid.
+  const kitchenActiveOrderCount = open.filter(
+    (order) => order.status !== 'ready' && order.status !== 'pending'
+  ).length
 
   // Multiple rounds at one table repeat the same party size; max avoids
   // multiplying it by the number of orders.
@@ -81,8 +89,6 @@ export function summarizeTable(
     closeBlockReason = 'empty'
   } else if (hasUnpaid) {
     closeBlockReason = 'unpaid'
-  } else if (open.some((order) => order.status !== 'ready')) {
-    closeBlockReason = 'not_ready'
   }
 
   return {
@@ -96,6 +102,7 @@ export function summarizeTable(
     canClose: closeBlockReason === null,
     closeBlockReason,
     oldestCreatedAt,
+    kitchenActiveOrderCount,
   }
 }
 
@@ -108,11 +115,23 @@ export function closeBlockedMessage(
       return 'This table has no open orders.'
     case 'unpaid':
       return 'Collect payment for the unpaid order before closing the table.'
-    case 'not_ready':
-      return 'The kitchen must mark every order ready before the table can close.'
     default:
       return null
   }
+}
+
+/**
+ * Warning for the close confirmation when the kitchen has not finished.
+ *
+ * Closing completes those tickets, so the cashier is told before confirming
+ * rather than discovering it afterwards.
+ */
+export function closeTableWarning(kitchenActiveOrderCount: number): string | null {
+  if (kitchenActiveOrderCount <= 0) return null
+  const plural = kitchenActiveOrderCount === 1 ? 'order is' : 'orders are'
+  return `${kitchenActiveOrderCount} ${plural} still in the kitchen. Closing marks ${
+    kitchenActiveOrderCount === 1 ? 'it' : 'them'
+  } served and frees the table.`
 }
 
 /** Label for the POS order-type toggle. */

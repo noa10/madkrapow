@@ -316,10 +316,16 @@ This file contains curated memories, decisions, and learnings that persist acros
   table-QR orders are `pending` (unpaid) and therefore visible on the kitchen
   board as `pending` dine-in tickets — pending delivery/pickup checkouts stay
   excluded. Cashier settles via `settle_dine_in_order` (`pending→paid`, writes
-  `payments`, `payment_collected` + `status_changed` events). Closing a table
-  requires every open order `ready`; `close_dine_in_table` then does
-  `ready→picked_up`. Both RPCs are `SECURITY DEFINER` with EXECUTE revoked
-  from PUBLIC/anon/authenticated and granted only to `service_role`.
+  `payments`, `payment_collected` + `status_changed` events). Closing a table is
+  gated on the bill, not the kitchen (migration 061): once nothing at the table
+  is `pending`, `close_dine_in_table` completes every open order to
+  `picked_up` with `reason: 'table_closed'` and the true prior status on the
+  event. The call carries the confirmed order ids (migration 062): if the open
+  set changed while the dialog was open, it returns `stale_close` without
+  writing. (057 required `ready` instead, which stranded every pay-now table —
+  the POS has no kitchen-advance control.) Both RPCs are `SECURITY DEFINER`
+  with EXECUTE revoked from PUBLIC/anon/authenticated and granted only to
+  `service_role`.
 - **Security**: public table ordering is anonymous; the 32-hex token is the
   capability, resolved server-side with the service role (no anon SELECT on
   `restaurant_tables`, so tokens cannot be enumerated). The route re-prices
@@ -330,8 +336,9 @@ This file contains curated memories, decisions, and learnings that persist acros
   `auth_insert_orders` policy** (anon could insert arbitrary orders) and
   revokes the settle/close RPCs from anon/authenticated.
 - **Roles**: `/api/admin/orders/[id]/status` now accepts
-  admin/manager/kitchen/cashier (needed so a shift without an admin can finish
-  settle→preparing→ready→close). POS/table orders can only become `paid`
+  admin/manager/kitchen/cashier (needed so a shift without an admin can move
+  paid→preparing→ready; closing itself only needs a settled bill — see the
+  2026-10-28 close-gate note). POS/table orders can only become `paid`
   through the settle RPC (it writes the payments row); the status route blocks
   a bare `pending→paid` for `source='counter'`/`delivery_type='dine_in'` even
   for managers. Web orders keep the admin/manager manual-paid override, and
@@ -595,6 +602,22 @@ supabase/
   The live `order_events` table was missing the `actor_id` column that 008 declares (migration
   drift), which made every settle/close RPC fail with `42703`; 059 adds it back idempotently. When
   a migration file and the live schema disagree, check the live columns before trusting the file.
+
+- **A gate whose only escape hatch is another screen strands the user.** Closing a dine-in table
+  required every order `ready` (057), but `paid → preparing → ready` is only reachable on the admin
+  kitchen board and the Flutter app — never from the POS, which is where a cashier lives. Every
+  pay-now table was created `paid` and could never be closed; the money was recorded correctly the
+  whole time. Migration 061 gates closing on the bill instead (nothing `pending`) and completes
+  still-cooking tickets to `picked_up` with `reason: 'table_closed'` plus the real prior status on
+  the event, so the timeline never claims a kitchen step that did not happen. Before adding a
+  blocker, check that the screen raising it also offers a way past it.
+
+- **A destructive batch needs the confirmed set, not just a good predicate.** Settle (060) and
+  close (062) both act on every row matching a predicate, and both showed the cashier a snapshot
+  first. Passing the snapshot's ids into the RPC and refusing on mismatch (`stale_settle`,
+  `stale_close`) is what makes the two agree; a predicate alone silently includes whatever landed
+  after the dialog opened. The same comparison also covers writers that bypass the advisory lock
+  (counter inserts), so the lock is no longer the only line of defence.
 
 ---
 

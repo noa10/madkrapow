@@ -2,11 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 import { generateOrderNumber } from '@/lib/orders/order-number'
-import { MAX_MERGED_QUANTITY } from '@/lib/pos/table-orders'
+import {
+  validateModifierSelections,
+  type CheckoutModifier,
+  type ModifierSelectionError,
+} from '@/lib/menu/checkout-modifiers'
+import {
+  MAX_ITEM_NOTES_LENGTH,
+  MAX_MERGED_QUANTITY,
+  MAX_MODIFIERS_PER_ITEM,
+  lineTotalCents,
+  mergeTableOrderItems,
+} from '@/lib/pos/table-orders'
 
 const PosOrderItemSchema = z.object({
   menu_item_id: z.string().uuid(),
   quantity: z.number().int().min(1).max(99),
+  modifier_ids: z.array(z.string().uuid()).max(MAX_MODIFIERS_PER_ITEM).default([]),
+  notes: z.string().trim().max(MAX_ITEM_NOTES_LENGTH).optional(),
 })
 
 const PosOrderSchema = z
@@ -54,20 +67,12 @@ const PosOrderSchema = z
       })
     }
   })
-  // Collapse duplicate item rows so price re-validation and totals stay exact.
-  .transform((data) => {
-    const merged = new Map<string, number>()
-    for (const item of data.items) {
-      merged.set(item.menu_item_id, (merged.get(item.menu_item_id) ?? 0) + item.quantity)
-    }
-    return {
-      ...data,
-      items: [...merged.entries()].map(([menu_item_id, quantity]) => ({
-        menu_item_id,
-        quantity,
-      })),
-    }
-  })
+  // Collapse duplicate lines with the same options and note so price
+  // re-validation and totals stay exact (different add-ons stay separate).
+  .transform((data) => ({
+    ...data,
+    items: mergeTableOrderItems(data.items),
+  }))
 
 /**
  * Counter POS order creation.
@@ -129,25 +134,61 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Re-validate every item from the database (never trust client prices).
-    const menuItemIds = items.map((i) => i.menu_item_id)
-    const { data: menuItems, error: menuError } = await supabase
-      .from('menu_items')
-      .select('id, name, price_cents, is_available')
-      .in('id', menuItemIds)
+    // Re-validate every item and add-on from the database. The client payload
+    // is never trusted for money: base prices, modifier deltas, membership,
+    // required minimums and maximums are all checked server-side.
+    const menuItemIds = [...new Set(items.map((item) => item.menu_item_id))]
+    const modifierIds = [...new Set(items.flatMap((item) => item.modifier_ids))]
 
-    if (menuError) {
-      console.error('[API/POS] Menu fetch failed:', menuError)
+    const [menuResult, modifierResult] = await Promise.all([
+      supabase
+        .from('menu_items')
+        .select('id, name, price_cents, is_available')
+        .in('id', menuItemIds),
+      modifierIds.length > 0
+        ? supabase
+            .from('modifiers')
+            .select('id, name, price_delta_cents, modifier_group_id, is_available')
+            .in('id', modifierIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+
+    if (menuResult.error || modifierResult.error) {
+      console.error('[API/POS] Menu validation failed:', menuResult.error ?? modifierResult.error)
       return NextResponse.json({ error: 'Failed to validate menu items' }, { status: 500 })
     }
 
-    const menuById = new Map((menuItems ?? []).map((m) => [m.id, m]))
+    type MenuRow = {
+      id: string
+      name: string
+      price_cents: number
+      is_available: boolean
+    }
+    type ModifierRow = CheckoutModifier & {
+      price_delta_cents: number
+      is_available: boolean
+    }
+    type JunctionRow = {
+      menu_item_id: string
+      modifier_group_id: string
+      is_required: boolean
+    }
+    type GroupRow = {
+      id: string
+      name: string
+      min_selections: number
+      max_selections: number
+    }
+
+    const menuById = new Map<string, MenuRow>(
+      ((menuResult.data ?? []) as MenuRow[]).map((item) => [item.id, item])
+    )
     const unavailable = items
-      .filter((i) => {
-        const m = menuById.get(i.menu_item_id)
-        return !m || !m.is_available
+      .filter((item) => {
+        const menuItem = menuById.get(item.menu_item_id)
+        return !menuItem || !menuItem.is_available
       })
-      .map((i) => menuById.get(i.menu_item_id)?.name ?? i.menu_item_id)
+      .map((item) => menuById.get(item.menu_item_id)?.name ?? item.menu_item_id)
     if (unavailable.length > 0) {
       return NextResponse.json(
         { error: 'Some items are unavailable', items: unavailable },
@@ -155,9 +196,90 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const modifiersById = new Map<string, ModifierRow>(
+      ((modifierResult.data ?? []) as ModifierRow[]).map((modifier) => [
+        modifier.id,
+        modifier,
+      ])
+    )
+    if ([...modifiersById.values()].some((modifier) => !modifier.is_available)) {
+      return NextResponse.json(
+        { error: 'An add-on you selected is no longer available' },
+        { status: 400 }
+      )
+    }
+
+    const { data: junctions, error: junctionsError } = await supabase
+      .from('menu_item_modifier_groups')
+      .select('menu_item_id, modifier_group_id, is_required')
+      .in('menu_item_id', menuItemIds)
+    if (junctionsError) {
+      console.error('[API/POS] Modifier junction fetch failed:', junctionsError)
+      return NextResponse.json({ error: 'Failed to validate add-ons' }, { status: 500 })
+    }
+
+    const junctionRows = (junctions ?? []) as JunctionRow[]
+    const groupIds = [...new Set(junctionRows.map((row) => row.modifier_group_id))]
+    let groupRows: GroupRow[] = []
+    if (groupIds.length > 0) {
+      const { data: groups, error: groupsError } = await supabase
+        .from('modifier_groups')
+        .select('id, name, min_selections, max_selections')
+        .in('id', groupIds)
+      if (groupsError) {
+        console.error('[API/POS] Modifier group fetch failed:', groupsError)
+        return NextResponse.json({ error: 'Failed to validate add-ons' }, { status: 500 })
+      }
+      groupRows = (groups ?? []) as GroupRow[]
+    }
+    const groupsById = new Map(groupRows.map((group) => [group.id, group]))
+
+    const validatedLines = items.map((item) => {
+      const menuItem = menuById.get(item.menu_item_id)!
+      const itemGroups = junctionRows
+        .filter((row) => row.menu_item_id === item.menu_item_id)
+        .flatMap((row) => {
+          const group = groupsById.get(row.modifier_group_id)
+          return group ? [{ ...group, is_required: row.is_required }] : []
+        })
+
+      const selectionError = validateModifierSelections({
+        itemName: menuItem.name,
+        groups: itemGroups,
+        selectedModifierIds: item.modifier_ids,
+        modifiersById,
+      })
+      if (selectionError) return { error: selectionError }
+
+      const deltas = item.modifier_ids.map(
+        (id) => modifiersById.get(id)?.price_delta_cents ?? 0
+      )
+      return {
+        item,
+        menuItem,
+        lineTotalCents: lineTotalCents(menuItem.price_cents, deltas, item.quantity),
+      }
+    })
+
+    const invalidLine = validatedLines.find(
+      (line): line is { error: ModifierSelectionError } => 'error' in line
+    )
+    if (invalidLine) {
+      return NextResponse.json(
+        { error: invalidLine.error.message, code: invalidLine.error.code },
+        { status: 400 }
+      )
+    }
+
+    const priced = validatedLines as Array<{
+      item: (typeof items)[number]
+      menuItem: MenuRow
+      lineTotalCents: number
+    }>
+
     // Integer-cents arithmetic only.
-    const subtotalCents = items.reduce(
-      (sum, i) => sum + (menuById.get(i.menu_item_id)?.price_cents ?? 0) * i.quantity,
+    const subtotalCents = priced.reduce(
+      (sum, line) => sum + line.lineTotalCents,
       0
     )
     const totalCents = subtotalCents
@@ -225,25 +347,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
     }
 
-    const { error: itemsError } = await supabase.from('order_items').insert(
-      items.map((i) => {
-        const menuItem = menuById.get(i.menu_item_id)!
-        return {
+    // Insert one line at a time so each line's id is known for its add-ons.
+    for (const line of priced) {
+      const { data: insertedItem, error: itemError } = await supabase
+        .from('order_items')
+        .insert({
           order_id: order.id,
-          menu_item_id: menuItem.id,
-          menu_item_name: menuItem.name,
-          menu_item_price_cents: menuItem.price_cents,
-          quantity: i.quantity,
-          line_total_cents: menuItem.price_cents * i.quantity,
+          menu_item_id: line.menuItem.id,
+          menu_item_name: line.menuItem.name,
+          menu_item_price_cents: line.menuItem.price_cents,
+          quantity: line.item.quantity,
+          line_total_cents: line.lineTotalCents,
+          notes: line.item.notes ?? null,
+        })
+        .select('id')
+        .single()
+
+      if (itemError || !insertedItem) {
+        console.error('[API/POS] Order item insert failed:', itemError)
+        await supabase.from('orders').delete().eq('id', order.id)
+        return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
+      }
+
+      if (line.item.modifier_ids.length > 0) {
+        const { error: modifierError } = await supabase
+          .from('order_item_modifiers')
+          .insert(
+            line.item.modifier_ids.map((modifierId) => {
+              const modifier = modifiersById.get(modifierId)!
+              return {
+                order_item_id: insertedItem.id,
+                modifier_id: modifier.id,
+                modifier_name: modifier.name,
+                modifier_price_delta_cents: modifier.price_delta_cents,
+              }
+            })
+          )
+        if (modifierError) {
+          console.error('[API/POS] Modifier insert failed:', modifierError)
+          await supabase.from('orders').delete().eq('id', order.id)
+          return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
         }
-      })
-    )
-    if (itemsError) {
-      console.error('[API/POS] Order items insert failed:', itemsError)
-      return NextResponse.json(
-        { error: 'Order created but items failed to record', order_number: order.order_number },
-        { status: 500 }
-      )
+      }
     }
 
     if (!payLater) {

@@ -11,10 +11,16 @@ import { useToastStore } from '@/stores/toast'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { autoPrintOrder } from '@/lib/printing/client'
 import { MAX_MERGED_QUANTITY } from '@/lib/pos/table-orders'
+import {
+  posCartLineKey,
+  posLineTotalCents,
+  type PosCartModifier,
+} from '@/lib/pos/cart'
 import { summarizeTable } from '@/lib/pos/tables'
 import type { PosOpenOrder, RestaurantTable, TableSummary } from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
 import { PosMenu } from './components/PosMenu'
+import { PosItemOptionsModal } from './components/PosItemOptionsModal'
 import {
   PosSalePanel,
   type PosCartLine,
@@ -60,6 +66,8 @@ export default function PosPage() {
   const {
     categories,
     itemsByCategory,
+    modifierGroupsByItem,
+    itemsWithModifiers,
     tables,
     openOrders,
     loading,
@@ -73,6 +81,7 @@ export default function PosPage() {
   const [pax, setPax] = useState(2)
   const [customerName, setCustomerName] = useState('')
   const [cart, setCart] = useState<PosCartLine[]>([])
+  const [optionsItem, setOptionsItem] = useState<PosMenuItem | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
   const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
   const [qrConfirmOpen, setQrConfirmOpen] = useState(false)
@@ -102,7 +111,12 @@ export default function PosPage() {
   )
 
   const totalCents = useMemo(
-    () => cart.reduce((sum, line) => sum + line.item.price_cents * line.quantity, 0),
+    () =>
+      cart.reduce(
+        (sum, line) =>
+          sum + posLineTotalCents(line.item.price_cents, line.modifiers, line.quantity),
+        0
+      ),
     [cart]
   )
 
@@ -126,28 +140,73 @@ export default function PosPage() {
       ? `${selectedTable?.label ? `Table ${selectedTable.label}` : 'Dine-in'} · ${pax} pax`
       : `Take-away · ${customerName.trim() || 'Walk-in'}`
 
-  const addToCart = useCallback((item: PosMenuItem) => {
-    setCart((previous) => {
-      const existing = previous.find((line) => line.item.id === item.id)
-      if (existing) {
-        return previous.map((line) =>
-          line.item.id === item.id
-            ? {
-                ...line,
-                quantity: Math.min(MAX_MERGED_QUANTITY, line.quantity + 1),
-              }
-            : line
-        )
-      }
-      return [...previous, { item, quantity: 1 }]
-    })
-  }, [])
+  const addToCart = useCallback(
+    (
+      item: PosMenuItem,
+      modifiers: PosCartModifier[] = [],
+      notes = '',
+      quantity = 1
+    ) => {
+      const key = posCartLineKey(
+        item.id,
+        modifiers.map((modifier) => modifier.id),
+        notes
+      )
+      setCart((previous) => {
+        const existing = previous.find((line) => line.key === key)
+        if (existing) {
+          return previous.map((line) =>
+            line.key === key
+              ? {
+                  ...line,
+                  quantity: Math.min(
+                    MAX_MERGED_QUANTITY,
+                    line.quantity + quantity
+                  ),
+                }
+              : line
+          )
+        }
+        return [
+          ...previous,
+          {
+            key,
+            item,
+            quantity: Math.min(MAX_MERGED_QUANTITY, quantity),
+            modifiers,
+            notes,
+          },
+        ]
+      })
+    },
+    []
+  )
 
-  const changeQuantity = useCallback((itemId: string, delta: number) => {
+  const handleMenuSelect = useCallback(
+    (item: PosMenuItem) => {
+      if (!itemsWithModifiers.has(item.id)) {
+        addToCart(item)
+        return
+      }
+      const groups = modifierGroupsByItem.get(item.id)
+      if (!groups || groups.length === 0) {
+        addToast({
+          type: 'error',
+          title: 'Options unavailable',
+          description: 'This dish needs options but they could not be loaded. Refresh and retry.',
+        })
+        return
+      }
+      setOptionsItem(item)
+    },
+    [itemsWithModifiers, modifierGroupsByItem, addToCart, addToast]
+  )
+
+  const changeQuantity = useCallback((lineKey: string, delta: number) => {
     setCart((previous) =>
       previous
         .map((line) =>
-          line.item.id === itemId
+          line.key === lineKey
             ? {
                 ...line,
                 quantity: Math.min(
@@ -161,8 +220,8 @@ export default function PosPage() {
     )
   }, [])
 
-  const removeLine = useCallback((itemId: string) => {
-    setCart((previous) => previous.filter((line) => line.item.id !== itemId))
+  const removeLine = useCallback((lineKey: string) => {
+    setCart((previous) => previous.filter((line) => line.key !== lineKey))
   }, [])
 
   const resetSale = useCallback(() => {
@@ -210,6 +269,8 @@ export default function PosPage() {
         items: cart.map((line) => ({
           menu_item_id: line.item.id,
           quantity: line.quantity,
+          modifier_ids: line.modifiers.map((modifier) => modifier.id),
+          notes: line.notes || undefined,
         })),
         payment_timing: payLater ? 'pay_later' : 'pay_now',
         payment_method: method,
@@ -445,7 +506,8 @@ export default function PosPage() {
           <PosMenu
             categories={categories}
             itemsByCategory={itemsByCategory}
-            onAdd={addToCart}
+            itemsWithModifiers={itemsWithModifiers}
+            onSelect={handleMenuSelect}
           />
           <PosSalePanel
             orderType={orderType}
@@ -495,6 +557,19 @@ export default function PosPage() {
         }}
         onConfirm={handleQrConfirm}
       />
+
+      {optionsItem && (
+        <PosItemOptionsModal
+          key={optionsItem.id}
+          item={optionsItem}
+          groups={modifierGroupsByItem.get(optionsItem.id) ?? []}
+          onClose={() => setOptionsItem(null)}
+          onAdd={({ quantity, modifiers, notes }) => {
+            addToCart(optionsItem, modifiers, notes, quantity)
+            setOptionsItem(null)
+          }}
+        />
+      )}
 
       <PosSettleModal
         key={settleOrder?.id ?? 'no-settle-order'}

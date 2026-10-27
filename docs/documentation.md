@@ -129,6 +129,8 @@ Decisions made during implementation that deviate from or clarify the original p
 
 | 2026-10-27 | POS | Optional payment for POS orders: pay now (cash / company DuitNow QR) or pay later; card disabled; migration 058 broadens settlement to counter orders | Staff can send a dine-in or take-away ticket to the kitchen before payment (`pending` with no payment row). Pending counter orders are kitchen-active and print a docket; the cashier collects later from the table board or the Unpaid take-away strip. Card stays disabled until a terminal integration. The company QR asset is public and receive-only. |
 
+| 2026-10-27 | POS | POS menu supports modifiers/add-ons like the online menu; server re-validates and snapshots them | Customizable dishes open an options dialog with the shared modifier UI and special instructions. Cart lines are keyed by dish + add-ons + note; the API re-validates membership/required/max, re-prices deltas, and writes `order_item_modifiers`, so crafted POS payloads cannot bypass required options or prices. |
+
 *Add rows as decisions are made during implementation.*
 
 ---

@@ -2,11 +2,13 @@
 
 import Image from 'next/image'
 import { Plus } from 'lucide-react'
+import { ModifierSummary } from '@/components/menu/ModifierSummary'
 import type { PosMenuItem } from '../hooks/usePosData'
 
 interface PosMenuCardProps {
   item: PosMenuItem
-  onAdd: (item: PosMenuItem) => void
+  hasModifiers: boolean
+  onSelect: (item: PosMenuItem) => void
 }
 
 function formatPrice(cents: number): string {
@@ -18,18 +20,23 @@ function formatPrice(cents: number): string {
  * a floating add affordance. Unlike the customer card, the whole card is the
  * tap target because the counter flow adds straight to the sale (no options).
  */
-export function PosMenuCard({ item, onAdd }: PosMenuCardProps) {
+export function PosMenuCard({ item, hasModifiers, onSelect }: PosMenuCardProps) {
   return (
     <button
       type="button"
-      onClick={() => onAdd(item)}
-      aria-label={`Add ${item.name} to the sale`}
+      onClick={() => onSelect(item)}
+      aria-label={
+        hasModifiers
+          ? `Choose options for ${item.name}`
+          : `Add ${item.name} to the sale`
+      }
       className="group relative isolate flex min-h-[112px] overflow-hidden rounded-xl border border-white/10 bg-card text-left transition hover:border-primary/50 hover:bg-white/5 active:translate-y-px"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
         <span className="line-clamp-2 text-sm font-bold leading-snug tracking-[-0.01em] text-foreground">
           {item.name}
         </span>
+        <ModifierSummary hasModifiers={hasModifiers} />
         {item.description && (
           <span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">
             {item.description}

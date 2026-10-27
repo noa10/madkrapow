@@ -10,11 +10,17 @@ import { PosMenuCard } from './PosMenuCard'
 interface PosMenuProps {
   categories: PosCategory[]
   itemsByCategory: Map<string, PosMenuItem[]>
-  onAdd: (item: PosMenuItem) => void
+  itemsWithModifiers: ReadonlySet<string>
+  onSelect: (item: PosMenuItem) => void
 }
 
 /** The sellable menu: search, category rail and photo cards. */
-export function PosMenu({ categories, itemsByCategory, onAdd }: PosMenuProps) {
+export function PosMenu({
+  categories,
+  itemsByCategory,
+  itemsWithModifiers,
+  onSelect,
+}: PosMenuProps) {
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
@@ -92,7 +98,12 @@ export function PosMenu({ categories, itemsByCategory, onAdd }: PosMenuProps) {
               </h2>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                 {category.items.map((item) => (
-                  <PosMenuCard key={item.id} item={item} onAdd={onAdd} />
+                  <PosMenuCard
+                    key={item.id}
+                    item={item}
+                    hasModifiers={itemsWithModifiers.has(item.id)}
+                    onSelect={onSelect}
+                  />
                 ))}
               </div>
             </section>

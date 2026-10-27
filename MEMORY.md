@@ -345,6 +345,12 @@ This file contains curated memories, decisions, and learnings that persist acros
 - **Printing**: table-QR tickets print a kitchen docket while `pending` and
   add a receipt after settlement (`jobTypesForOrder` takes status/delivery
   type); dockets show `TABLE X · N PAX`; cash receipts open the drawer.
+- **POS modifiers**: customizable dishes show a "Customizable" marker and open
+  an options dialog (shared `ModifierGroup` + special instructions). Cart lines
+  are keyed by dish + add-ons + note, totals include add-on deltas, and
+  `POST /api/pos/orders` re-validates modifier membership/required/max against
+  the DB, re-prices, and snapshots `order_item_modifiers`. Never add a POS item
+  with options directly to the cart without the server-side check.
 - **Optional payment (2026-10-27 follow-up)**: POS offers **Pay now** (Cash
   or Company DuitNow QR at `apps/web/public/company-qr.jpeg`) or **Pay
   later**; the **Card** option is disabled until a terminal integration

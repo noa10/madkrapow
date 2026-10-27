@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { posLineTotalCents, type PosCartModifier } from '@/lib/pos/cart'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
 import type { RestaurantTable, TableSummary } from '@/lib/pos/types'
 import type { PosMenuItem } from '../hooks/usePosData'
@@ -23,8 +24,11 @@ export type PosPaymentMethod = 'cash' | 'qr_pay'
 export type PosPaymentTiming = 'pay_now' | 'pay_later'
 
 export interface PosCartLine {
+  key: string
   item: PosMenuItem
   quantity: number
+  modifiers: PosCartModifier[]
+  notes: string
 }
 
 interface PosSalePanelProps {
@@ -39,8 +43,8 @@ interface PosSalePanelProps {
   customerName: string
   onCustomerNameChange: (name: string) => void
   cart: PosCartLine[]
-  onChangeQuantity: (itemId: string, delta: number) => void
-  onRemove: (itemId: string) => void
+  onChangeQuantity: (lineKey: string, delta: number) => void
+  onRemove: (lineKey: string) => void
   onClear: () => void
   paymentMethod: PosPaymentMethod
   onPaymentMethodChange: (method: PosPaymentMethod) => void
@@ -243,21 +247,37 @@ export function PosSalePanel({
           <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
             {cart.map((line) => (
               <li
-                key={line.item.id}
+                key={line.key}
                 className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-2 py-1.5"
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-foreground">
                     {line.item.name}
                   </div>
+                  {line.modifiers.length > 0 && (
+                    <div className="truncate text-[10px] text-amber-300">
+                      {line.modifiers.map((modifier) => `+ ${modifier.name}`).join(' · ')}
+                    </div>
+                  )}
+                  {line.notes && (
+                    <div className="truncate text-[10px] italic text-muted-foreground">
+                      “{line.notes}”
+                    </div>
+                  )}
                   <div className="text-xs tabular-nums text-muted-foreground">
-                    {formatPrice(line.item.price_cents * line.quantity)}
+                    {formatPrice(
+                      posLineTotalCents(
+                        line.item.price_cents,
+                        line.modifiers,
+                        line.quantity
+                      )
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => onChangeQuantity(line.item.id, -1)}
+                    onClick={() => onChangeQuantity(line.key, -1)}
                     aria-label={`Remove one ${line.item.name}`}
                     className="rounded p-1 hover:bg-white/10"
                   >
@@ -268,7 +288,7 @@ export function PosSalePanel({
                   </span>
                   <button
                     type="button"
-                    onClick={() => onChangeQuantity(line.item.id, 1)}
+                    onClick={() => onChangeQuantity(line.key, 1)}
                     aria-label={`Add one ${line.item.name}`}
                     className="rounded p-1 hover:bg-white/10"
                   >
@@ -276,7 +296,7 @@ export function PosSalePanel({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onRemove(line.item.id)}
+                    onClick={() => onRemove(line.key)}
                     aria-label={`Remove ${line.item.name}`}
                     className="rounded p-1 text-red-400 hover:bg-white/10"
                   >

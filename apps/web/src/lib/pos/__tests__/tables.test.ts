@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildOrderSettleTarget,
+  buildTableSettleTarget,
+  buildTableSettleTargetFromOrders,
   closeBlockedMessage,
   isOpenDineInStatus,
+  normaliseOpenOrder,
   parsePax,
   summarizeTable,
   tableQrUrl,
@@ -29,6 +33,7 @@ function order(overrides: Partial<PosOpenOrder> = {}): PosOpenOrder {
     pax: 2,
     table_id: TABLE.id,
     table_label: TABLE.label,
+    delivery_type: 'dine_in',
     ...overrides,
   }
 }
@@ -137,5 +142,119 @@ describe('closeBlockedMessage', () => {
     expect(closeBlockedMessage('unpaid')).toMatch(/collect payment/i)
     expect(closeBlockedMessage('not_ready')).toMatch(/ready/i)
     expect(closeBlockedMessage(null)).toBeNull()
+  })
+})
+
+describe('buildTableSettleTarget', () => {
+  it('groups every unpaid order into one total', () => {
+    const summary = summarizeTable(TABLE, [
+      order({ id: 'a', status: 'pending', total_cents: 1450 }),
+      order({ id: 'b', status: 'pending', total_cents: 400 }),
+      order({ id: 'c', status: 'paid', total_cents: 900 }),
+    ])
+
+    expect(buildTableSettleTarget(summary)).toEqual({
+      kind: 'table',
+      id: TABLE.id,
+      label: 'Table T1',
+      context: '2 unpaid orders',
+      amountCents: 1850,
+      orderCount: 2,
+      orderIds: ['a', 'b'],
+    })
+  })
+
+  it('uses singular copy and returns null when nothing is unpaid', () => {
+    const one = summarizeTable(TABLE, [
+      order({ id: 'a', status: 'pending', total_cents: 1450 }),
+    ])
+    expect(buildTableSettleTarget(one)?.context).toBe('1 unpaid order')
+
+    const paid = summarizeTable(TABLE, [order({ status: 'paid' })])
+    expect(buildTableSettleTarget(paid)).toBeNull()
+  })
+
+  it('de-duplicates the created order when it is also in the live list', () => {
+    const created = order({ id: 'new', status: 'pending', total_cents: 400 })
+    const target = buildTableSettleTargetFromOrders(TABLE, [
+      order({ id: 'existing', status: 'pending', total_cents: 1450 }),
+      created,
+      created,
+    ])
+    expect(target?.amountCents).toBe(1850)
+    expect(target?.orderCount).toBe(2)
+    expect(target?.orderIds).toEqual(['existing', 'new'])
+  })
+
+  it('ignores pending orders that are not dine-in, matching the settle RPC', () => {
+    const summary = summarizeTable(TABLE, [
+      order({ id: 'food', status: 'pending', total_cents: 1450 }),
+      order({
+        id: 'takeaway',
+        status: 'pending',
+        total_cents: 400,
+        delivery_type: 'self_pickup',
+      }),
+    ])
+    expect(buildTableSettleTarget(summary)).toMatchObject({
+      amountCents: 1450,
+      orderCount: 1,
+      orderIds: ['food'],
+    })
+  })
+})
+
+describe('buildOrderSettleTarget', () => {
+  it('labels a take-away ticket with its customer', () => {
+    expect(
+      buildOrderSettleTarget(
+        order({
+          display_code: 'MK-372',
+          customer_name: 'Aina',
+          total_cents: 400,
+        })
+      )
+    ).toEqual({
+      kind: 'order',
+      id: 'order-1',
+      label: 'MK-372',
+      context: 'Take-away · Aina',
+      amountCents: 400,
+      orderCount: 1,
+      orderIds: ['order-1'],
+    })
+  })
+
+  it('falls back to Walk-in copy without a name', () => {
+    expect(buildOrderSettleTarget(order()).context).toBe('Take-away')
+  })
+})
+
+describe('normaliseOpenOrder', () => {
+  it('moves the embedded dishes onto items', () => {
+    const row = {
+      ...order({ status: 'pending' }),
+      order_items: [
+        {
+          id: 'line-1',
+          menu_item_name: 'Krapow Daging',
+          quantity: 2,
+          line_total_cents: 2500,
+          notes: null,
+          order_item_modifiers: [
+            { modifier_name: 'Fried Egg', modifier_price_delta_cents: 200 },
+          ],
+        },
+      ],
+    }
+
+    const normalised = normaliseOpenOrder(row)
+    expect(normalised.items).toHaveLength(1)
+    expect(normalised.items?.[0].menu_item_name).toBe('Krapow Daging')
+    expect('order_items' in normalised).toBe(false)
+  })
+
+  it('defaults to an empty list when the embed is missing', () => {
+    expect(normaliseOpenOrder(order()).items).toEqual([])
   })
 })

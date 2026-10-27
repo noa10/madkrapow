@@ -14,8 +14,18 @@ import {
   posLineTotalCents,
   type PosCartModifier,
 } from '@/lib/pos/cart'
-import { summarizeTable } from '@/lib/pos/tables'
-import type { PosOpenOrder, RestaurantTable, TableSummary } from '@/lib/pos/types'
+import {
+  buildOrderSettleTarget,
+  buildTableSettleTarget,
+  buildTableSettleTargetFromOrders,
+  summarizeTable,
+} from '@/lib/pos/tables'
+import type {
+  PosOpenOrder,
+  PosSettleTarget,
+  RestaurantTable,
+  TableSummary,
+} from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
 import { PosMenu } from './components/PosMenu'
 import { PosItemOptionsModal } from './components/PosItemOptionsModal'
@@ -93,7 +103,7 @@ export default function PosPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null)
-  const [settleOrder, setSettleOrder] = useState<PosOpenOrder | null>(null)
+  const [settleTarget, setSettleTarget] = useState<PosSettleTarget | null>(null)
   const [settleError, setSettleError] = useState<string | null>(null)
   const [voidOrder, setVoidOrder] = useState<PosOpenOrder | null>(null)
   const [closeTableTarget, setCloseTableTarget] = useState<RestaurantTable | null>(null)
@@ -117,11 +127,11 @@ export default function PosPage() {
     [summaries]
   )
 
-  /** A pay-later ticket already open at the selected table, if any. */
-  const pendingOrderAtTable = useMemo(() => {
+  /** Grouped unpaid total at the selected table (one collect action). */
+  const pendingTargetAtTable = useMemo(() => {
     if (!selectedTableId) return null
     const summary = summariesByTableId.get(selectedTableId)
-    return summary?.orders.find((order) => order.status === 'pending') ?? null
+    return summary ? buildTableSettleTarget(summary) : null
   }, [selectedTableId, summariesByTableId])
 
   const totalCents = useMemo(
@@ -134,10 +144,14 @@ export default function PosPage() {
     [cart]
   )
 
-  const unpaidCount = useMemo(
-    () => openOrders.filter((order) => order.status === 'pending').length,
-    [openOrders]
-  )
+  // One count per bill: a table with two unpaid rounds is still one collect.
+  const unpaidCount = useMemo(() => {
+    const unpaidTables = summaries.filter((summary) => summary.hasUnpaid).length
+    const unpaidTakeawayOrders = openOrders.filter(
+      (order) => order.status === 'pending' && order.delivery_type === 'self_pickup'
+    ).length
+    return unpaidTables + unpaidTakeawayOrders
+  }, [summaries, openOrders])
 
   const unpaidTakeaway = useMemo(
     () =>
@@ -349,8 +363,18 @@ export default function PosPage() {
           ? {
               label: 'Collect payment',
               onClick: () => {
+                // Dine-in groups every unpaid round at the table; a take-away
+                // ticket is its own bill.
+                const target =
+                  orderType === 'dine_in' && selectedTable
+                    ? buildTableSettleTargetFromOrders(selectedTable, [
+                        ...(summariesByTableId.get(selectedTable.id)?.orders ?? []),
+                        createdOrder,
+                      ])
+                    : buildOrderSettleTarget(createdOrder)
+                if (!target) return
                 setSettleError(null)
-                setSettleOrder(createdOrder)
+                setSettleTarget(target)
               },
             }
           : undefined,
@@ -388,15 +412,47 @@ export default function PosPage() {
   }
 
   const handleSettle = async (method: 'cash' | 'qr_pay') => {
-    if (!settleOrder || busyId) return
-    setBusyId(settleOrder.id)
+    if (!settleTarget || busyId) return
+    setBusyId(settleTarget.id)
     setSettleError(null)
+    const path =
+      settleTarget.kind === 'table'
+        ? `/api/pos/tables/${settleTarget.id}/settle`
+        : `/api/pos/orders/${settleTarget.id}/settle`
+    const body =
+      settleTarget.kind === 'table'
+        ? { payment_method: method, order_ids: settleTarget.orderIds }
+        : { payment_method: method }
     try {
-      const { res, json } = await posPost(
-        `/api/pos/orders/${settleOrder.id}/settle`,
-        { payment_method: method }
-      )
+      const { res, json } = await posPost(path, body)
       if (!res.ok) {
+        const code = json?.code as string | undefined
+        // A table edited during the confirm window is a safe rejection: close,
+        // refresh and let the cashier review the new total.
+        if (code === 'stale_settle') {
+          setSettleTarget(null)
+          setSettleError(null)
+          addToast({
+            type: 'error',
+            title: 'Table changed',
+            description:
+              'A round was added or paid while you were collecting. Review the new total and try again.',
+          })
+          await refresh()
+          return
+        }
+        // Lost response after the server committed: the money is already in.
+        if (code === 'nothing_to_settle' || code === 'already_paid') {
+          setSettleTarget(null)
+          setSettleError(null)
+          addToast({
+            type: 'info',
+            title: 'Already collected',
+            description: 'This bill was paid from another screen. Nothing was charged twice.',
+          })
+          await refresh()
+          return
+        }
         const message = json?.error ?? `HTTP ${res.status}`
         setSettleError(message)
         addToast({
@@ -406,14 +462,18 @@ export default function PosPage() {
         })
         return
       }
+      const amount = json.amount_cents ?? settleTarget.amountCents
       addToast({
         type: 'success',
         title: 'Payment collected',
-        description: `${settleOrder.display_code ?? 'Order'} · ${formatPrice(
-          json.amount_cents ?? settleOrder.total_cents
-        )}`,
+        description:
+          settleTarget.kind === 'table'
+            ? `${settleTarget.label} · ${json.settled_count ?? settleTarget.orderCount} order${
+                (json.settled_count ?? settleTarget.orderCount) === 1 ? '' : 's'
+              } · ${formatPrice(amount)}`
+            : `${settleTarget.label} · ${formatPrice(amount)}`,
       })
-      setSettleOrder(null)
+      setSettleTarget(null)
       setSettleError(null)
       await refresh()
     } catch {
@@ -587,10 +647,10 @@ export default function PosPage() {
             onPaxChange={setPax}
             customerName={customerName}
             onCustomerNameChange={setCustomerName}
-            pendingOrder={pendingOrderAtTable}
-            onCollectUnpaid={(order) => {
+            pendingTarget={pendingTargetAtTable}
+            onCollectUnpaid={(target) => {
               setSettleError(null)
-              setSettleOrder(order)
+              setSettleTarget(target)
             }}
             cart={cart}
             onChangeQuantity={changeQuantity}
@@ -612,9 +672,9 @@ export default function PosPage() {
           busyId={busyId}
           refreshing={refreshing}
           onNewOrder={startTableOrder}
-          onSettle={(order) => {
+          onSettle={(target) => {
             setSettleError(null)
-            setSettleOrder(order)
+            setSettleTarget(target)
           }}
           onVoid={setVoidOrder}
           onCloseTable={setCloseTableTarget}
@@ -652,13 +712,17 @@ export default function PosPage() {
       )}
 
       <PosSettleModal
-        key={settleOrder?.id ?? 'no-settle-order'}
-        order={settleOrder}
+        key={
+          settleTarget
+            ? `${settleTarget.kind}:${settleTarget.id}`
+            : 'no-settle-target'
+        }
+        target={settleTarget}
         busy={busyId !== null}
         error={settleError}
         onClose={() => {
           if (!busyId) {
-            setSettleOrder(null)
+            setSettleTarget(null)
             setSettleError(null)
           }
         }}

@@ -39,6 +39,22 @@ export const OPEN_DINE_IN_STATUSES = [
 
 export type OpenDineInStatus = (typeof OPEN_DINE_IN_STATUSES)[number]
 
+/** One add-on on an embedded order item (table-card details). */
+export interface PosOrderItemModifier {
+  modifier_name: string
+  modifier_price_delta_cents: number
+}
+
+/** A dish on an open POS order, embedded in the open-orders query. */
+export interface PosOrderItem {
+  id: string
+  menu_item_name: string
+  quantity: number
+  line_total_cents: number
+  notes: string | null
+  order_item_modifiers: PosOrderItemModifier[] | null
+}
+
 /** The subset of an order the POS table board needs. */
 export interface PosOpenOrder {
   id: string
@@ -53,6 +69,28 @@ export interface PosOpenOrder {
   /** `dine_in` or `self_pickup` (pending counter take-away). */
   delivery_type?: string | null
   source?: string | null
+  /** Dishes on the ticket, newest fetch from the embedded select. */
+  items?: PosOrderItem[] | null
+}
+
+/**
+ * What a cashier is collecting: one take-away ticket or every unpaid order at
+ * a table. The table UI groups the money; the ledger stays per order.
+ */
+export interface PosSettleTarget {
+  kind: 'order' | 'table'
+  /** Order id for `order`, table id for `table`. */
+  id: string
+  label: string
+  context: string
+  amountCents: number
+  orderCount: number
+  /**
+   * Exactly which tickets the cashier is confirming. The table settle RPC
+   * rejects the call when the live pending set differs, so a round added while
+   * the modal is open can never be charged unseen.
+   */
+  orderIds: string[]
 }
 
 export type TableCloseBlockReason = 'empty' | 'unpaid' | 'not_ready'

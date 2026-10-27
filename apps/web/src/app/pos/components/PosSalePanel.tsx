@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { posLineTotalCents, type PosCartModifier } from '@/lib/pos/cart'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
-import type { PosOpenOrder, RestaurantTable, TableSummary } from '@/lib/pos/types'
+import type { PosSettleTarget, RestaurantTable, TableSummary } from '@/lib/pos/types'
 import type { PosMenuItem } from '../hooks/usePosData'
 
 export type PosOrderType = 'dine_in' | 'take_away'
@@ -42,9 +42,9 @@ interface PosSalePanelProps {
   onPaxChange: (pax: number) => void
   customerName: string
   onCustomerNameChange: (name: string) => void
-  /** First unpaid order at the selected table, if any — lets the cashier collect without leaving the sale. */
-  pendingOrder: PosOpenOrder | null
-  onCollectUnpaid: (order: PosOpenOrder) => void
+  /** Grouped unpaid total at the selected table, if any. */
+  pendingTarget: PosSettleTarget | null
+  onCollectUnpaid: (target: PosSettleTarget) => void
   cart: PosCartLine[]
   onChangeQuantity: (lineKey: string, delta: number) => void
   onRemove: (lineKey: string) => void
@@ -79,7 +79,7 @@ export function PosSalePanel({
   onPaxChange,
   customerName,
   onCustomerNameChange,
-  pendingOrder,
+  pendingTarget,
   onCollectUnpaid,
   cart,
   onChangeQuantity,
@@ -210,20 +210,19 @@ export function PosSalePanel({
             </div>
           </div>
 
-          {pendingOrder && (
+          {pendingTarget && (
             <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-300">
                   Unpaid at this table
                 </p>
                 <p className="truncate text-[11px] leading-4 text-amber-200/90">
-                  {pendingOrder.display_code ?? 'Open order'} ·{' '}
-                  {formatPrice(pendingOrder.total_cents)}
+                  {pendingTarget.context} · {formatPrice(pendingTarget.amountCents)}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => onCollectUnpaid(pendingOrder)}
+                onClick={() => onCollectUnpaid(pendingTarget)}
                 className="shrink-0 rounded-md border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-xs font-bold text-amber-200 transition hover:bg-amber-400/20"
               >
                 Collect

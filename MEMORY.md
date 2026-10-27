@@ -587,6 +587,14 @@ supabase/
   check the table board first, but the real fix is a client `request_key` with a unique index
   on `orders` (return the existing order on conflict) and a transactional
   `pending → paid` + payment insert to replace the compensating delete.
+- **POS collects a table's unpaid rounds as one bill.** `settle_dine_in_table` (migrations 059/060)
+  locks and settles every pending dine-in order at a table in one transaction and writes one
+  `payments` row per order; the table card and sale panel show one grouped total. The call carries
+  the **expected order ids** the cashier confirmed; if the pending set changed (a round added or
+  paid), the RPC returns `stale_settle` without writing, so an unshown round can never be charged.
+  The live `order_events` table was missing the `actor_id` column that 008 declares (migration
+  drift), which made every settle/close RPC fail with `42703`; 059 adds it back idempotently. When
+  a migration file and the live schema disagree, check the live columns before trusting the file.
 
 ---
 

@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Banknote, Check, CreditCard, Loader2, QrCode, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { PosOpenOrder } from '@/lib/pos/types'
+import type { PosSettleTarget } from '@/lib/pos/types'
 import { CompanyQrPanel } from './CompanyQrPanel'
 
 interface PosSettleModalProps {
-  order: PosOpenOrder | null
+  /** One take-away ticket or the grouped total for a table. */
+  target: PosSettleTarget | null
   busy: boolean
   /** Last settle failure, shown in the dialog so a modal backdrop cannot hide it. */
   error?: string | null
@@ -21,18 +22,14 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-function orderContext(order: PosOpenOrder | null): string {
-  if (!order) return ''
-  if (order.table_label) return ` · Table ${order.table_label}`
-  if (order.delivery_type === 'self_pickup') {
-    return ` · Take-away${order.customer_name ? ` · ${order.customer_name}` : ''}`
-  }
-  return ''
-}
-
-/** Collect payment for an unpaid POS order (table QR, pay-later dine-in or take-away). */
+/**
+ * Collect payment for an unpaid POS order or every unpaid order at a table.
+ *
+ * The amount and label come from the settle target, so the grouped total shown
+ * here is the same number the card and the sale panel used.
+ */
 export function PosSettleModal({
-  order,
+  target,
   busy,
   error,
   onClose,
@@ -44,15 +41,15 @@ export function PosSettleModal({
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
-    if (order) {
+    if (target) {
       if (!dialog.open) dialog.showModal()
     } else if (dialog.open) {
       dialog.close()
     }
-  }, [order])
+  }, [target])
 
   useEffect(() => {
-    if (!order) return
+    if (!target) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -61,13 +58,15 @@ export function PosSettleModal({
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [order, busy, onClose])
+  }, [target, busy, onClose])
 
   const close = () => {
     if (busy) return
     setStage('method')
     onClose()
   }
+
+  const amountCents = target?.amountCents ?? 0
 
   return (
     <dialog
@@ -89,8 +88,8 @@ export function PosSettleModal({
               {stage === 'qr' ? 'Scan to pay' : 'Collect payment'}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {order?.display_code ?? 'Order'}
-              {orderContext(order)}
+              {target?.label ?? 'Order'}
+              {target?.context ? ` · ${target.context}` : ''}
             </p>
           </div>
           <button
@@ -108,7 +107,7 @@ export function PosSettleModal({
           <>
             <div className="mt-4">
               <CompanyQrPanel
-                amountCents={order?.total_cents ?? 0}
+                amountCents={amountCents}
                 note="Confirm only after the customer shows a successful payment."
               />
             </div>
@@ -147,8 +146,13 @@ export function PosSettleModal({
         ) : (
           <>
             <p className="mt-4 text-center text-3xl font-extrabold tabular-nums text-foreground">
-              {order ? formatPrice(order.total_cents) : '—'}
+              {target ? formatPrice(amountCents) : '—'}
             </p>
+            {target && target.orderCount > 1 && (
+              <p className="mt-1 text-center text-xs text-muted-foreground">
+                Settles all {target.orderCount} unpaid orders at this table.
+              </p>
+            )}
 
             {error && (
               <p

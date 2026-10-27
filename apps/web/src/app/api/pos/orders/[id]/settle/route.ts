@@ -83,7 +83,7 @@ export async function POST(
         )
       case 'already_paid':
         return NextResponse.json(
-          { error: 'This order is already paid' },
+          { error: 'This order is already paid', code: 'already_paid' },
           { status: 409 }
         )
       case 'not_pending':
@@ -91,6 +91,7 @@ export async function POST(
           {
             error: 'Only unpaid orders can be settled',
             status: result.status ?? null,
+            code: 'not_pending',
           },
           { status: 409 }
         )

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getBrowserClient } from '@/lib/supabase/client'
 import type { Modifier, ModifierGroup } from '@/lib/queries/menu'
 import { OPEN_DINE_IN_STATUSES, type PosOpenOrder, type RestaurantTable } from '@/lib/pos/types'
+import { normaliseOpenOrder, type PosOpenOrderRow } from '@/lib/pos/tables'
 
 export interface PosCategory {
   id: string
@@ -30,6 +31,9 @@ export type PosModifierGroup = ModifierGroup & {
 
 const POS_ORDER_COLUMNS =
   'id, display_code, status, total_cents, created_at, customer_name, pax, table_id, table_label, delivery_type, source'
+
+/** Dine-in cards expand to show the dishes; take-away rows do not, so skip the payload there. */
+const POS_ORDER_COLUMNS_WITH_ITEMS = `${POS_ORDER_COLUMNS}, order_items(id, menu_item_name, quantity, line_total_cents, notes, order_item_modifiers(modifier_name, modifier_price_delta_cents))`
 
 /**
  * Data for the counter POS: the sellable menu, the active floor plan and the
@@ -259,7 +263,7 @@ export function usePosData(enabled: boolean) {
     const [dineInResult, takeawayResult] = await Promise.all([
       supabase
         .from('orders')
-        .select(POS_ORDER_COLUMNS)
+        .select(POS_ORDER_COLUMNS_WITH_ITEMS)
         .eq('delivery_type', 'dine_in')
         .in('status', OPEN_DINE_IN_STATUSES)
         .order('created_at', { ascending: true }),
@@ -277,8 +281,8 @@ export function usePosData(enabled: boolean) {
       return
     }
     setOpenOrders([
-      ...((dineInResult.data ?? []) as PosOpenOrder[]),
-      ...((takeawayResult.data ?? []) as PosOpenOrder[]),
+      ...((dineInResult.data ?? []) as PosOpenOrderRow[]).map(normaliseOpenOrder),
+      ...((takeawayResult.data ?? []) as PosOpenOrderRow[]).map(normaliseOpenOrder),
     ])
   }, [])
 

@@ -304,6 +304,51 @@ This file contains curated memories, decisions, and learnings that persist acros
   moves instead. Verified with a local `next start`: `/menu?category=x` →
   307 → `/?category=x`, `/menu/` → 308 → `/menu`.
 
+### 2026-10-27: POS dine-in (tables + pax) and table-QR ordering
+- **Decision**: Added a web-only dine-in POS. `restaurant_tables`
+  (label/zone/seats/opaque `qr_token`/active) + `orders.table_id`,
+  `table_label` (snapshot), `pax`; `delivery_type` widened with `dine_in`.
+  Staff key dine-in/take-away orders at `/pos`; the table board is derived
+  from open dine-in orders. Diners scan `${NEXT_PUBLIC_URL}/t/<token>`, order
+  from the live menu (modifiers included), enter pax (required) + optional
+  name. Customers pay at the counter.
+- **Status semantics (no new statuses)**: merchant POS orders are `paid`;
+  table-QR orders are `pending` (unpaid) and therefore visible on the kitchen
+  board as `pending` dine-in tickets — pending delivery/pickup checkouts stay
+  excluded. Cashier settles via `settle_dine_in_order` (`pending→paid`, writes
+  `payments`, `payment_collected` + `status_changed` events). Closing a table
+  requires every open order `ready`; `close_dine_in_table` then does
+  `ready→picked_up`. Both RPCs are `SECURITY DEFINER` with EXECUTE revoked
+  from PUBLIC/anon/authenticated and granted only to `service_role`.
+- **Security**: public table ordering is anonymous; the 32-hex token is the
+  capability, resolved server-side with the service role (no anon SELECT on
+  `restaurant_tables`, so tokens cannot be enumerated). The route re-prices
+  items + modifiers, validates required/max options, caps payloads and
+  rate-limits per table (4 / 5 min, 10 s gap). The limit is enforced atomically
+  by a `BEFORE INSERT` trigger with a per-table advisory lock (the route's
+  pre-check is only a fast path). Migration 057 **drops the legacy
+  `auth_insert_orders` policy** (anon could insert arbitrary orders) and
+  revokes the settle/close RPCs from anon/authenticated.
+- **Roles**: `/api/admin/orders/[id]/status` now accepts
+  admin/manager/kitchen/cashier (needed so a shift without an admin can finish
+  settle→preparing→ready→close), but marking `pending→paid` manually and
+  cancelling remain admin/manager-only — except a cashier may void an unpaid
+  (`pending`) dine-in order from the POS table board.
+- **Payment snapshot**: `orders.payment_method` is written by the POS create
+  and settle paths so admin cards show Cash/QR Pay; `payments` stays the
+  ledger.
+- **Printing**: table-QR tickets print a kitchen docket while `pending` and
+  add a receipt after settlement (`jobTypesForOrder` takes status/delivery
+  type); dockets show `TABLE X · N PAX`; cash receipts open the drawer.
+- **Known limits**: Flutter merchant kitchen excludes pending tickets and
+  labels `dine_in` as a generic delivery badge (web-only scope decision);
+  analytics delivery/pickup buckets ignore dine-in (totals include it);
+  migration 057 is written but **not applied**.- **Gotcha**: the shared menu components (`useItemOrder`, `RichMenuCard`) now
+  read the cart from a `CartStoreProvider` context (default = the delivery
+  cart); the table page injects a per-table store. Do not add another
+  component that imports `useCartStore` directly and render it inside the
+  table page — it would read the wrong cart.
+
 ---
 
 ## Critical Patterns

@@ -67,6 +67,7 @@ function buildMockClient(opts: Opts = {}) {
         eq: (col: string, val: unknown) => unknown
         in: (col: string, vals: unknown[]) => unknown
         gte: (col: string, val: unknown) => unknown
+        or: (filter: string) => unknown
         order: (col: string, opts?: unknown) => unknown
         limit: (n: number) => unknown
         insert: (payload: unknown) => unknown
@@ -84,6 +85,9 @@ function buildMockClient(opts: Opts = {}) {
           return builder
         },
         gte(_col: string, _val: unknown) {
+          return builder
+        },
+        or(_filter: string) {
           return builder
         },
         order(_col: string, _opts?: unknown) {
@@ -166,6 +170,47 @@ describe('GET /api/print/jobs/claim', () => {
       'printed_kitchen_docket',
       'printed_receipt',
     ])
+  })
+
+  it('claims a pending dine-in docket but skips a pending web checkout', async () => {
+    const dineInPending = {
+      ...ORDER_ROW,
+      id: 'dine-in-1',
+      source: 'web',
+      status: 'pending',
+      delivery_type: 'dine_in',
+    }
+    const webPending = {
+      ...ORDER_ROW,
+      id: 'web-1',
+      source: 'web',
+      status: 'pending',
+      delivery_type: 'delivery',
+    }
+    const client = buildMockClient({
+      orders: [dineInPending, webPending],
+      liveOrderRow: dineInPending,
+      orderRow: dineInPending,
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    // Unpaid table-QR order: the kitchen needs the docket immediately; the
+    // receipt waits for settlement. Abandoned web checkouts never print.
+    expect(json.jobs.map((job: { type: string }) => job.type)).toEqual([
+      'kitchen_docket',
+    ])
+    const markers = client.attemptedInserts.filter(
+      (insert) => insert.table === 'order_events'
+    )
+    expect(markers).toHaveLength(1)
+    expect(markers[0].payload).toMatchObject({
+      order_id: 'dine-in-1',
+      event_type: 'printed_kitchen_docket',
+    })
   })
 
   it('does not re-claim orders that already have printed markers', async () => {

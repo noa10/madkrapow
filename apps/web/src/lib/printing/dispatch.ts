@@ -2,9 +2,13 @@
  * Which jobs an order prints, and how they render — shared by the claim and
  * render routes so the bridge and manual reprints stay byte-identical.
  *
- * Job matrix (v1): GrabFood orders print a GrabFood ticket; counter orders
- * print a kitchen docket + customer receipt (receipt kicks the cash drawer on
- * cash payments); other sources print a kitchen docket.
+ * Job matrix (v1):
+ * - GrabFood orders print a GrabFood ticket.
+ * - Counter orders print a kitchen docket + customer receipt.
+ * - Table-QR dine-in orders print the docket while still unpaid (`pending`,
+ *   the kitchen starts immediately) and additionally print a receipt once the
+ *   POS marks them paid.
+ * - Other sources print a kitchen docket.
  */
 
 import {
@@ -18,9 +22,18 @@ import { env } from '@/lib/validators/env'
 
 export const PRINTED_EVENT_PREFIX = 'printed_'
 
-export function jobTypesForOrder(source: string): PrintJobType[] {
-  if (source === 'grabfood') return ['grabfood_ticket']
-  if (source === 'counter') return ['kitchen_docket', 'receipt']
+export function jobTypesForOrder(order: {
+  source: string
+  status?: string | null
+  delivery_type?: string | null
+}): PrintJobType[] {
+  if (order.source === 'grabfood') return ['grabfood_ticket']
+  if (order.source === 'counter') return ['kitchen_docket', 'receipt']
+  if (order.delivery_type === 'dine_in') {
+    return order.status === 'pending'
+      ? ['kitchen_docket']
+      : ['kitchen_docket', 'receipt']
+  }
   return ['kitchen_docket']
 }
 
@@ -39,7 +52,9 @@ export function buildJobBytes(
   options: RenderOptions = {}
 ): Uint8Array {
   const cashDrawer =
-    type === 'receipt' && order.source === 'counter' && order.paymentMethod === 'cash'
+    type === 'receipt' &&
+    order.paymentMethod === 'cash' &&
+    (order.source === 'counter' || Boolean(order.tableLabel))
   switch (type) {
     case 'kitchen_docket':
       return renderJob(buildKitchenDocket(order, { reprint: options.reprint }), options)

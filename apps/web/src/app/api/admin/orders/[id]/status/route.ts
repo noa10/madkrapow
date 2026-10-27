@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/admin/require-admin';
+import { requireRole } from '@/lib/admin/require-role';
 import { ADMIN_VALID_TRANSITIONS } from '@/lib/orders/status';
 import { z } from 'zod';
 
@@ -14,7 +14,13 @@ export async function POST(
   try {
     const { id } = await params;
 
-    const guard = await requireAdmin(req);
+    // All staff roles may advance a ticket: the merchant app has always shown
+    // these buttons to cashier/kitchen, and RLS `staff_all_orders` already
+    // permits the write. The canonical transition map below is the real gate.
+    // This is required for the dine-in flow to finish without an admin on
+    // shift: settle (cashier) → preparing/ready (kitchen) → close table
+    // (cashier).
+    const guard = await requireRole(req, ['admin', 'manager', 'kitchen', 'cashier']);
     if ("error" in guard) {
       return guard.error;
     }
@@ -37,7 +43,7 @@ export async function POST(
 
     const { data: order, error: fetchError } = await db
       .from('orders')
-      .select('status')
+      .select('status, delivery_type')
       .eq('id', id)
       .single();
 
@@ -45,6 +51,37 @@ export async function POST(
       return NextResponse.json(
         { error: fetchError ? `Database error: ${fetchError.message}` : 'Order not found' },
         { status: fetchError ? 500 : 404 }
+      );
+    }
+
+    // Every staff role may move kitchen state (paid → preparing → ready), but
+    // money-state and destructive transitions stay with admins/managers.
+    // Cashiers collect table-QR payments through the POS settle route, which
+    // writes a payments row — not by marking an order paid here.
+    const actorRole = user.app_metadata?.role as string | undefined;
+    const isManagerial = actorRole === 'admin' || actorRole === 'manager';
+    if (!isManagerial && newStatus === 'paid' && order.status === 'pending') {
+      return NextResponse.json(
+        {
+          error:
+            'Only an admin or manager can mark an order paid manually. Use the POS to collect payment.',
+        },
+        { status: 403 }
+      );
+    }
+    // A cashier alone on shift must be able to clear an abandoned table-QR
+    // order (diner left / mis-ordered) without waiting for a manager. The void
+    // is scoped to unpaid dine-in orders; everything else still needs a
+    // manager.
+    const canVoidPendingDineIn =
+      actorRole === 'cashier' &&
+      order.status === 'pending' &&
+      order.delivery_type === 'dine_in' &&
+      newStatus === 'cancelled';
+    if (!isManagerial && newStatus === 'cancelled' && !canVoidPendingDineIn) {
+      return NextResponse.json(
+        { error: 'Only an admin or manager can cancel an order.' },
+        { status: 403 }
       );
     }
 

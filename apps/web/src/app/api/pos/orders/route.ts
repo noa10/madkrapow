@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { generateOrderNumber } from '@/lib/orders/order-number'
+import { MAX_MERGED_QUANTITY } from '@/lib/pos/table-orders'
 
 const PosOrderItemSchema = z.object({
   menu_item_id: z.string().uuid(),
@@ -10,9 +12,30 @@ const PosOrderItemSchema = z.object({
 const PosOrderSchema = z
   .object({
     items: z.array(PosOrderItemSchema).min(1).max(50),
+    /** Dine-in (table + pax) or take-away (customer name). */
+    order_type: z.enum(['dine_in', 'take_away']).default('take_away'),
+    table_id: z.string().uuid().optional(),
+    pax: z.number().int().min(1).max(50).optional(),
     payment_method: z.enum(['cash', 'qr_pay']),
     customer_name: z.string().trim().max(120).optional(),
     notes: z.string().trim().max(500).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.order_type !== 'dine_in') return
+    if (!data.table_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['table_id'],
+        message: 'A table is required for dine-in orders',
+      })
+    }
+    if (data.pax == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pax'],
+        message: 'Pax is required for dine-in orders',
+      })
+    }
   })
   // Collapse duplicate item rows so price re-validation and totals stay exact.
   .transform((data) => {
@@ -29,17 +52,18 @@ const PosOrderSchema = z
     }
   })
 
-function generateOrderNumber(): string {
-  const timestamp = Date.now().toString(36).toUpperCase()
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase()
-  return `MK${timestamp}${random}`
-}
-
 /**
  * Counter POS order creation.
  *
- * Prices are NEVER taken from the client: the route re-reads menu_items from the
- * database and recomputes the total. Orders are created as source='counter',
+ * Two order types share the same price re-validation and payment recording:
+ *
+ * - `dine_in`  → `delivery_type='dine_in'`, table + pax snapshot, customer
+ *                name optional. Multiple rounds per table are allowed.
+ * - `take_away` → the original behaviour: `self_pickup`, customer name or
+ *                `Walk-in`.
+ *
+ * Prices are NEVER taken from the client: the route re-reads menu_items from
+ * the database and recomputes the total. Orders are created as source='counter',
  * status='paid' (the customer pays at the counter — no Stripe session), and a
  * payments row records the money movement (cash or QR Pay).
  */
@@ -63,7 +87,24 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
-    const { items, payment_method, customer_name, notes } = parsed.data
+    const {
+      items,
+      order_type,
+      table_id,
+      pax,
+      payment_method,
+      customer_name,
+      notes,
+    } = parsed.data
+
+    // The transform above collapses duplicate rows; a crafted payload could
+    // still push one dish past the per-line cap.
+    if (items.some((item) => item.quantity > MAX_MERGED_QUANTITY)) {
+      return NextResponse.json(
+        { error: 'One of the items has too large a quantity' },
+        { status: 400 }
+      )
+    }
 
     // Re-validate every item from the database (never trust client prices).
     const menuItemIds = items.map((i) => i.menu_item_id)
@@ -98,6 +139,29 @@ export async function POST(req: NextRequest) {
     )
     const totalCents = subtotalCents
 
+    // Dine-in must point at an active table; the label is snapshotted so the
+    // receipt still reads correctly after a rename or deactivation.
+    let tableLabel: string | null = null
+    if (order_type === 'dine_in') {
+      const { data: table, error: tableError } = await supabase
+        .from('restaurant_tables')
+        .select('id, label, is_active')
+        .eq('id', table_id!)
+        .maybeSingle()
+
+      if (tableError) {
+        console.error('[API/POS] Table fetch failed:', tableError)
+        return NextResponse.json({ error: 'Failed to validate table' }, { status: 500 })
+      }
+      if (!table || !table.is_active) {
+        return NextResponse.json(
+          { error: 'That table is not available. Pick another table.' },
+          { status: 400 }
+        )
+      }
+      tableLabel = table.label as string
+    }
+
     const orderNumber = generateOrderNumber()
     const now = new Date().toISOString()
 
@@ -106,10 +170,17 @@ export async function POST(req: NextRequest) {
       .insert({
         order_number: orderNumber,
         customer_id: null,
-        customer_name: customer_name || 'Walk-in',
+        customer_name:
+          order_type === 'dine_in'
+            ? customer_name || null
+            : customer_name || 'Walk-in',
         status: 'paid',
         source: 'counter',
-        delivery_type: 'self_pickup',
+        delivery_type: order_type === 'dine_in' ? 'dine_in' : 'self_pickup',
+        table_id: order_type === 'dine_in' ? table_id : null,
+        table_label: tableLabel,
+        pax: order_type === 'dine_in' ? pax : null,
+        payment_method,
         fulfillment_type: 'asap',
         order_kind: 'standard',
         dispatch_status: 'not_ready',
@@ -118,9 +189,10 @@ export async function POST(req: NextRequest) {
         delivery_fee_cents: 0,
         total_cents: totalCents,
         notes: notes ?? null,
-        include_cutlery: true,
+        // Dine-in food is served on plates; there is nothing to pack.
+        include_cutlery: order_type !== 'dine_in',
       })
-      .select('id, order_number')
+      .select('id, order_number, display_code')
       .single()
 
     if (orderError || !order) {
@@ -171,14 +243,26 @@ export async function POST(req: NextRequest) {
       order_id: order.id,
       event_type: 'created',
       actor_id: user.id,
-      new_value: { source: 'counter', payment_method, total_cents: totalCents },
+      new_value: {
+        source: 'counter',
+        order_type,
+        table_id: order_type === 'dine_in' ? table_id : null,
+        table_label: tableLabel,
+        pax: order_type === 'dine_in' ? pax : null,
+        payment_method,
+        total_cents: totalCents,
+      },
     })
 
     return NextResponse.json(
       {
         order_id: order.id,
         order_number: order.order_number,
+        display_code: order.display_code,
         total_cents: totalCents,
+        order_type,
+        table_label: tableLabel,
+        pax: order_type === 'dine_in' ? pax : null,
       },
       { status: 201 }
     )

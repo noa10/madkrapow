@@ -10,6 +10,7 @@ import {
   MapPin,
   Loader2,
   Package,
+  Flame,
   Printer,
   Globe,
   MessageCircle,
@@ -100,6 +101,8 @@ export function KitchenOrderCard({
   const note = order.notes?.trim();
   const dishCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const isDelivery = order.delivery_type === 'delivery';
+  const isDineIn = order.delivery_type === 'dine_in';
+  const isUnpaidDineIn = isDineIn && order.status === 'pending';
 
   return (
     <Card className="overflow-hidden hover:shadow-xl transition-all cursor-default border-2 border-border bg-card shadow-sm rounded-xl">
@@ -125,6 +128,11 @@ export function KitchenOrderCard({
             >
               {statusConfig.label}
             </Badge>
+            {isUnpaidDineIn && (
+              <Badge className="border-none bg-amber-500 text-black text-base md:text-lg px-3 py-1 font-bold">
+                Unpaid
+              </Badge>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 text-base md:text-lg mt-1">
@@ -142,6 +150,22 @@ export function KitchenOrderCard({
 
       <CardContent className="p-5 md:p-6 bg-card">
         <div className="space-y-4">
+          {isDineIn && (
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg p-1.5 bg-primary/10 flex-shrink-0">
+                <UtensilsCrossed className="h-4 w-4 text-primary" />
+              </div>
+              <div className="text-base md:text-lg">
+                <div className="font-semibold text-foreground">
+                  Table {order.table_label ?? '—'}
+                </div>
+                <div className="text-muted-foreground font-medium">
+                  {order.pax ?? '—'} pax
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-start gap-3">
             <div className="rounded-lg p-1.5 bg-primary/10 flex-shrink-0">
               <User className="h-4 w-4 text-primary" />
@@ -323,6 +347,7 @@ interface KitchenStatusTransitionButtonsProps {
 }
 
 const KITCHEN_STATUS_FLOW = [
+  { status: 'paid', label: 'Start Preparing', icon: Flame, next: 'preparing' },
   { status: 'preparing', label: 'Mark Ready', icon: Package, next: 'ready' },
 ];
 

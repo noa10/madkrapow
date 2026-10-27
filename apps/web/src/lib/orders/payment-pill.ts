@@ -42,13 +42,12 @@ const EVIDENCE_BACKED_PROVIDERS = new Set<PaymentProvider>([
  * A `pending` order (or one whose provider mapping resolves to `pending`) is
  * `unpaid` with no method; every other order is `paid`.
  *
- * The method is only reported when the data actually proves it. `orders` has no
- * persisted payment-method column — the POS route writes it to the separate
- * `payments` table (`api/pos/orders/route.ts`) — so a paid counter order is
- * indistinguishable from a QR-paid one at this layer. Reporting the catch-all
- * "Cash" for both would mislabel a QR payment, so the pill stays method-less
- * unless the row proves Stripe / a delivery platform / an explicitly supplied
- * `payment_method` (a caller may enrich the row from `payments.method`).
+ * The method is only reported when the data actually proves it. `orders`
+ * carries a `payment_method` snapshot written by the POS/settle paths; the
+ * `payments` table remains the ledger, and Stripe/Billplz/platform evidence
+ * still takes precedence. A paid counter order created before that snapshot
+ * existed is indistinguishable from a QR-paid one, so the pill stays
+ * method-less unless the row itself proves a method.
  */
 export function getPaymentPill(order: PaymentPillOrder): PaymentPill {
   const badge = getPaymentBadge({

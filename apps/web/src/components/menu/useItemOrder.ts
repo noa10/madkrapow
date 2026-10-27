@@ -1,7 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useCartStore, type SelectedModifier } from '@/stores/cart'
+import { useStore } from 'zustand'
+import type { SelectedModifier } from '@/stores/cart'
+import { useCartStoreInstance } from '@/stores/cart-context'
 import { useToastStore } from '@/stores/toast'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
 import { MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY } from '@/lib/menu/quantity'
@@ -21,7 +23,8 @@ export const MAX_QUANTITY = MAX_ITEM_QUANTITY
  * and the cart payload can never drift apart between the two surfaces.
  */
 export function useItemOrder(item: FullMenuItem) {
-  const addItem = useCartStore((state) => state.addItem)
+  const cart = useCartStoreInstance()
+  const addItem = useStore(cart, (state) => state.addItem)
   const addToast = useToastStore((state) => state.addToast)
 
   const [quantity, setQuantity] = useState(1)

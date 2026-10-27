@@ -89,6 +89,44 @@ describe('buildReceipt', () => {
   })
 })
 
+describe('dine-in tickets', () => {
+  const DINE_IN: PrintOrder = {
+    ...ORDER,
+    source: 'web',
+    externalOrderNumber: undefined,
+    paymentMethod: 'cash',
+    fulfillmentLabel: 'Dine In',
+    tableLabel: 'T3',
+    pax: 4,
+  }
+
+  const textsOf = (job: ReturnType<typeof buildKitchenDocket>) =>
+    job.lines.map((line) =>
+      line.kind === 'text'
+        ? line.text
+        : line.kind === 'columns'
+          ? `${line.label}|${line.value}`
+          : line.kind
+    )
+
+  it('prints the table and pax prominently on the kitchen docket', () => {
+    expect(textsOf(buildKitchenDocket(DINE_IN))).toContain('TABLE T3 · 4 PAX')
+  })
+
+  it('prints the table, pax and dine-in type on the receipt', () => {
+    const texts = textsOf(buildReceipt(DINE_IN, STORE))
+    expect(texts).toContain('Type|Dine In')
+    expect(texts).toContain('Table|T3')
+    expect(texts).toContain('Pax|4')
+  })
+
+  it('omits the table line for orders without a table', () => {
+    expect(textsOf(buildKitchenDocket(ORDER))).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^TABLE /)])
+    )
+  })
+})
+
 describe('renderJob', () => {
   it('produces ESC/POS bytes ending in feed + cut', () => {
     const bytes = Array.from(renderJob(buildKitchenDocket(ORDER)))

@@ -1309,6 +1309,8 @@ export type Database = {
           notes: string | null
           order_kind: string
           order_number: string
+          pax: number | null
+          payment_method: string | null
           promo_code_id: string | null
           requested_window_end: string | null
           requested_window_start: string | null
@@ -1322,6 +1324,8 @@ export type Database = {
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
           subtotal_cents: number
+          table_id: string | null
+          table_label: string | null
           total_cents: number
           updated_at: string
         }
@@ -1372,6 +1376,8 @@ export type Database = {
           notes?: string | null
           order_kind?: string
           order_number: string
+          pax?: number | null
+          payment_method?: string | null
           promo_code_id?: string | null
           requested_window_end?: string | null
           requested_window_start?: string | null
@@ -1385,6 +1391,8 @@ export type Database = {
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           subtotal_cents: number
+          table_id?: string | null
+          table_label?: string | null
           total_cents: number
           updated_at?: string
         }
@@ -1435,6 +1443,8 @@ export type Database = {
           notes?: string | null
           order_kind?: string
           order_number?: string
+          pax?: number | null
+          payment_method?: string | null
           promo_code_id?: string | null
           requested_window_end?: string | null
           requested_window_start?: string | null
@@ -1448,6 +1458,8 @@ export type Database = {
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
           subtotal_cents?: number
+          table_id?: string | null
+          table_label?: string | null
           total_cents?: number
           updated_at?: string
         }
@@ -1705,6 +1717,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      restaurant_tables: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          qr_token: string
+          seats: number
+          sort_order: number
+          updated_at: string
+          zone: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          qr_token?: string
+          seats?: number
+          sort_order?: number
+          updated_at?: string
+          zone?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          qr_token?: string
+          seats?: number
+          sort_order?: number
+          updated_at?: string
+          zone?: string | null
+        }
+        Relationships: []
       }
       store_branding: {
         Row: {

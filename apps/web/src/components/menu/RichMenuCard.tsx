@@ -3,7 +3,8 @@
 import { memo } from "react";
 import Image from "next/image";
 import { Plus } from "lucide-react";
-import { useCartStore } from "@/stores/cart";
+import { useStore } from "zustand";
+import { useCartStoreInstance } from "@/stores/cart-context";
 import { useIsClient } from "@/hooks/useIsClient";
 import type { MenuItemWithModifiers } from "@/lib/queries/menu";
 import { SpiceLevel } from "./SpiceLevel";
@@ -24,7 +25,8 @@ export const RichMenuCard = memo(function RichMenuCard({ item, onSelect }: RichM
   // Live in-cart count for this item (all modifier variants combined) — the
   // floating badge mirrors it, owner.com style. Primitive selector, so the
   // card only re-renders when its own count changes.
-  const cartQuantity = useCartStore((state) =>
+  const cart = useCartStoreInstance();
+  const cartQuantity = useStore(cart, (state) =>
     state.items.reduce(
       (sum, line) => (line.menu_item_id === item.id ? sum + line.quantity : sum),
       0

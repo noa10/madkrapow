@@ -36,7 +36,20 @@ export function getSourceLabel(source: string): string {
   return SOURCE_LABELS[source as OrderSource] ?? source
 }
 
-/** Fulfillment label: `Pickup` for self-pickup orders, `Delivery` otherwise. */
+/** Fulfillment label: `Dine In`, `Pickup` for self-pickup, otherwise `Delivery`. */
 export function getFulfillmentLabel(order: Pick<Order, "delivery_type">): string {
+  if (order.delivery_type === "dine_in") return "Dine In"
   return order.delivery_type === "self_pickup" ? "Pickup" : "Delivery"
+}
+
+/**
+ * Extra fulfillment context shown next to the label — table + party size for
+ * dine-in orders. `null` for every other fulfillment type.
+ */
+export function getFulfillmentDetail(
+  order: Pick<Order, "delivery_type" | "table_label" | "pax">
+): string | null {
+  if (order.delivery_type !== "dine_in") return null
+  const table = order.table_label ? `Table ${order.table_label}` : "Dine in"
+  return order.pax != null ? `${table} · ${order.pax} pax` : table
 }

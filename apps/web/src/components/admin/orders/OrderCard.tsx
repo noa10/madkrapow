@@ -17,6 +17,7 @@ import {
   SOURCE_PILL_CLASSES,
   getSourceLabel,
   getFulfillmentLabel,
+  getFulfillmentDetail,
 } from "./order-source"
 import type { Order } from "@/types/orders"
 
@@ -277,6 +278,9 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
             <div className="flex flex-wrap items-center gap-1.5">
               <TextPill className="border-white/15 text-muted-foreground">
                 {getFulfillmentLabel(order)}
+                {getFulfillmentDetail(order)
+                  ? ` · ${getFulfillmentDetail(order)}`
+                  : ''}
               </TextPill>
               <SourcePill order={order} />
             </div>
@@ -327,6 +331,9 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
             <SourcePill order={order} />
             <TextPill className="border-white/15 text-muted-foreground">
               {getFulfillmentLabel(order)}
+              {getFulfillmentDetail(order)
+                ? ` · ${getFulfillmentDetail(order)}`
+                : ''}
             </TextPill>
             <MetaBadges order={order} />
           </div>

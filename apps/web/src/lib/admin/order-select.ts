@@ -12,13 +12,15 @@
  *  - status                    → pills, transitions, summaries
  *  - total_cents               → card total + history summary
  *  - created_at                → ordering + urgency
- *  - delivery_type             → fulfillment label (Pickup/Delivery)
+ *  - delivery_type             → fulfillment label (Pickup/Delivery/Dine In)
+ *  - table_label / pax         → dine-in table + party size on the card
  *  - fulfillment_type          → Scheduled badge + realtime tab assignment
  *  - dispatch_status           → Dispatch Failed badge
  *  - customer_name             → card customer line + search
  *  - customer_phone            → search
  *  - order_kind                → Bulk badge + realtime tab assignment
  *  - source                    → source pill + payment pill
+ *  - payment_method            → payment pill for POS/settled table orders
  *  - stripe_payment_intent_id  → payment pill
  *  - stripe_session_id         → payment pill
  *  - billplz_bill_id           → payment pill
@@ -36,12 +38,15 @@ export const ADMIN_ORDER_LIST_COLUMNS = [
   "total_cents",
   "created_at",
   "delivery_type",
+  "table_label",
+  "pax",
   "fulfillment_type",
   "dispatch_status",
   "customer_name",
   "customer_phone",
   "order_kind",
   "source",
+  "payment_method",
   "stripe_payment_intent_id",
   "stripe_session_id",
   "billplz_bill_id",

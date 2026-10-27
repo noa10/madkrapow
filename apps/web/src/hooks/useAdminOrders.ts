@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
+import { isKitchenActive, KITCHEN_QUEUE_OR_FILTER } from "@/lib/orders/kitchen";
 
 export interface AdminOrder {
   id: string;
@@ -15,6 +16,10 @@ export interface AdminOrder {
   customer_phone: string | null;
   customer_name: string | null;
   delivery_type: string;
+  /** Dine-in table label snapshot (delivery_type = 'dine_in'). */
+  table_label?: string | null;
+  /** Dine-in party size. */
+  pax?: number | null;
   fulfillment_type: string;
   scheduled_for: string | null;
   /** Free-text note the customer left for the whole order. */
@@ -36,8 +41,12 @@ export function useAdminOrders() {
       const { data, error } = await supabase
         .from("orders")
         .select("*")
+        // Only tickets the kitchen board can show. This keeps completed
+        // orders and abandoned web checkouts from crowding out active
+        // tickets under the row cap.
+        .or(KITCHEN_QUEUE_OR_FILTER)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(200);
 
       if (error) {
         setError(error.message);
@@ -56,7 +65,15 @@ export function useAdminOrders() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "orders" },
         (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
-          setOrders((prev) => [payload.new as AdminOrder, ...prev]);
+          const nextOrder = payload.new as AdminOrder;
+          if (!isKitchenActive(nextOrder)) return;
+          setOrders((prev) =>
+            prev.some((order) => order.id === nextOrder.id)
+              ? prev.map((order) =>
+                  order.id === nextOrder.id ? nextOrder : order
+                )
+              : [nextOrder, ...prev]
+          );
           window.dispatchEvent(new Event("new-order-alert"));
         }
       )
@@ -65,11 +82,18 @@ export function useAdminOrders() {
         { event: "UPDATE", schema: "public", table: "orders" },
         (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
           const nextOrder = payload.new as AdminOrder;
-          setOrders((prev) =>
-            prev.map((order) =>
-              order.id === nextOrder.id ? nextOrder : order
-            )
-          );
+          setOrders((prev) => {
+            // A ticket that left the active set (ready → picked_up, or a
+            // cancellation) disappears from the board immediately.
+            if (!isKitchenActive(nextOrder)) {
+              return prev.filter((order) => order.id !== nextOrder.id);
+            }
+            return prev.some((order) => order.id === nextOrder.id)
+              ? prev.map((order) =>
+                  order.id === nextOrder.id ? nextOrder : order
+                )
+              : [nextOrder, ...prev];
+          });
         }
       )
       .subscribe();

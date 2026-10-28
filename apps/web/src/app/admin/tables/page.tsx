@@ -11,7 +11,7 @@ import { useIsClient } from '@/hooks/useIsClient'
 import { useToastStore } from '@/stores/toast'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { tableQrUrl } from '@/lib/pos/tables'
-import type { RestaurantTable } from '@/lib/pos/types'
+import type { TableWithToken } from '@/lib/pos/types'
 import { TableCard } from './components/TableCard'
 import { TableFormModal } from './components/TableFormModal'
 
@@ -19,7 +19,7 @@ export default function AdminTablesPage() {
   const { hasAccess, isLoading: accessLoading } = useRoleGuard(['admin', 'manager'])
   const addToast = useToastStore((state) => state.addToast)
 
-  const [tables, setTables] = useState<RestaurantTable[]>([])
+  const [tables, setTables] = useState<TableWithToken[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // `NEXT_PUBLIC_URL` is validated in production; the browser origin covers
@@ -29,22 +29,22 @@ export default function AdminTablesPage() {
   const baseUrl =
     process.env.NEXT_PUBLIC_URL || (isClient ? window.location.origin : '')
   const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<RestaurantTable | null>(null)
-  const [rotating, setRotating] = useState<RestaurantTable | null>(null)
+  const [editing, setEditing] = useState<TableWithToken | null>(null)
+  const [rotating, setRotating] = useState<TableWithToken | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const loadTables = useCallback(async () => {
     const supabase = getBrowserClient()
     const { data, error: loadError } = await supabase
       .from('restaurant_tables')
-      .select('*')
+      .select('id, label, zone, seats, qr_token, is_active, sort_order')
       .order('sort_order', { ascending: true })
       .order('label', { ascending: true })
 
     if (loadError) {
       setError(loadError.message)
     } else {
-      setTables((data ?? []) as RestaurantTable[])
+      setTables((data ?? []) as TableWithToken[])
       setError(null)
     }
     setLoading(false)
@@ -63,7 +63,7 @@ export default function AdminTablesPage() {
   }, [addToast, loadTables])
 
   const handleToggleActive = useCallback(
-    async (table: RestaurantTable) => {
+    async (table: TableWithToken) => {
       setBusyId(table.id)
       try {
         const res = await fetch(`/api/admin/tables/${table.id}`, {

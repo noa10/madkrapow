@@ -5,11 +5,11 @@ import { Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { RestaurantTable } from '@/lib/pos/types'
+import type { TableWithToken } from '@/lib/pos/types'
 
 interface TableFormModalProps {
   open: boolean
-  table: RestaurantTable | null
+  table: TableWithToken | null
   onClose: () => void
   onSaved: () => void
 }
@@ -30,7 +30,7 @@ const EMPTY_FORM: FormState = {
   is_active: true,
 }
 
-function toFormState(table: RestaurantTable | null): FormState {
+function toFormState(table: TableWithToken | null): FormState {
   if (!table) return EMPTY_FORM
   return {
     label: table.label,

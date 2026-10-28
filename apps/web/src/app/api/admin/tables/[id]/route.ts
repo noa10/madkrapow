@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { recordTableEvent } from '@/lib/pos/table-events'
 
 const TableId = z.string().uuid()
 
@@ -27,7 +28,7 @@ export async function PATCH(
 
     const auth = await requireRole(req, ['admin', 'manager'])
     if ('error' in auth) return auth.error
-    const { supabase } = auth
+    const { user, supabase } = auth
 
     let body: unknown
     try {
@@ -56,24 +57,50 @@ export async function PATCH(
     }
 
     // Deactivating a table with open orders would make those orders
-    // unreachable on the POS table board. Close the table first.
+    // unreachable on the POS table board. `deactivate_restaurant_table` locks
+    // the row, checks and writes in one transaction, so a counter order cannot
+    // land between the count and the write. It also records the audit event.
+    let deactivatedTable: Record<string, unknown> | null = null
     if (parsed.data.is_active === false) {
-      const { count, error: openOrdersError } = await supabase
-        .from('orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('table_id', id)
-        .in('status', ['pending', 'paid', 'accepted', 'preparing', 'ready'])
+      const { data: deactivateData, error: deactivateError } = await supabase.rpc(
+        'deactivate_restaurant_table',
+        { p_table_id: id, p_actor_id: user.id }
+      )
 
-      if (openOrdersError) {
-        console.error('[API/AdminTables] Open order check failed:', openOrdersError)
+      if (deactivateError) {
+        console.error('[API/AdminTables] Deactivate RPC failed:', deactivateError)
         return NextResponse.json({ error: 'Failed to update table' }, { status: 500 })
       }
-      if ((count ?? 0) > 0) {
-        return NextResponse.json(
-          { error: 'This table still has open orders. Close the table before deactivating it.' },
-          { status: 409 }
-        )
+
+      const result = deactivateData as
+        | { ok?: boolean; code?: string; table?: Record<string, unknown> }
+        | null
+
+      if (!result?.ok) {
+        if (result?.code === 'has_orders') {
+          return NextResponse.json(
+            {
+              error:
+                'This table still has open orders. Close the table before deactivating it.',
+            },
+            { status: 409 }
+          )
+        }
+        if (result?.code === 'not_found') {
+          return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+        }
+        return NextResponse.json({ error: 'Failed to update table' }, { status: 500 })
       }
+
+      deactivatedTable = result.table ?? null
+      delete updates.is_active
+    }
+
+    // The RPC already applied the deactivation; a combined edit only needs the
+    // remaining fields. If that update fails the table stays deactivated — the
+    // guard has passed, and the manager can retry the field change.
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ table: deactivatedTable })
     }
 
     const { data, error } = await supabase
@@ -95,6 +122,25 @@ export async function PATCH(
     }
     if (!data) {
       return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    }
+
+    const changedFields = Object.keys(updates).filter((key) => key !== 'is_active')
+    if (parsed.data.is_active === true) {
+      await recordTableEvent(supabase, {
+        tableId: data.id,
+        tableLabel: data.label,
+        eventType: 'activated',
+        actorId: user.id,
+        details: { fields: changedFields },
+      })
+    } else if (changedFields.length > 0) {
+      await recordTableEvent(supabase, {
+        tableId: data.id,
+        tableLabel: data.label,
+        eventType: 'updated',
+        actorId: user.id,
+        details: { fields: changedFields },
+      })
     }
 
     return NextResponse.json({ table: data })
@@ -125,10 +171,11 @@ export async function DELETE(
 
     const auth = await requireRole(req, ['admin', 'manager'])
     if ('error' in auth) return auth.error
-    const { supabase } = auth
+    const { user, supabase } = auth
 
     const { data, error } = await supabase.rpc('delete_restaurant_table', {
       p_table_id: id,
+      p_actor_id: user.id,
     })
 
     if (error) {

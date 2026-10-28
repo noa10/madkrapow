@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { recordTableEvent } from '@/lib/pos/table-events'
 
 export const runtime = 'nodejs'
 
@@ -25,13 +26,13 @@ export async function POST(
 
     const auth = await requireRole(req, ['admin', 'manager'])
     if ('error' in auth) return auth.error
-    const { supabase } = auth
+    const { user, supabase } = auth
 
     const { data, error } = await supabase
       .from('restaurant_tables')
       .update({ qr_token: randomBytes(16).toString('hex') })
       .eq('id', id)
-      .select('id, qr_token')
+      .select('id, label, qr_token')
       .maybeSingle()
 
     if (error) {
@@ -41,6 +42,15 @@ export async function POST(
     if (!data) {
       return NextResponse.json({ error: 'Table not found' }, { status: 404 })
     }
+
+    // Rotation invalidates every printed QR for the table, so it is a
+    // security-sensitive action: record who did it (migration 064).
+    await recordTableEvent(supabase, {
+      tableId: data.id,
+      tableLabel: data.label,
+      eventType: 'token_rotated',
+      actorId: user.id,
+    })
 
     return NextResponse.json({ table: data })
   } catch (err) {

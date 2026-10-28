@@ -18,7 +18,6 @@ const TABLE: RestaurantTable = {
   label: 'T1',
   zone: 'Indoor',
   seats: 4,
-  qr_token: 'a'.repeat(32),
   is_active: true,
   sort_order: 0,
 }

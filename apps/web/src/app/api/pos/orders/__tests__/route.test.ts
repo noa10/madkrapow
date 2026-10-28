@@ -288,6 +288,9 @@ describe('POST /api/pos/orders', () => {
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.error).toMatch(/not created/i)
+    // The identifiers are the only durable trace of the cash sale (the failed
+    // payments row would cascade away with the order).
+    expect(body.order_number).toBe('MKTEST1234')
 
     // The half-written order must be removed so a retry cannot duplicate it.
     const deleteCall = client.calls.find((c) => c.table === 'orders' && c.op === 'delete')

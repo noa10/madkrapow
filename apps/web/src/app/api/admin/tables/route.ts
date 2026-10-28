@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { recordTableEvent } from '@/lib/pos/table-events'
 
 export const runtime = 'nodejs'
 
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await requireRole(req, ['admin', 'manager'])
     if ('error' in auth) return auth.error
-    const { supabase } = auth
+    const { user, supabase } = auth
 
     let body: unknown
     try {
@@ -69,6 +70,18 @@ export async function POST(req: NextRequest) {
       console.error('[API/AdminTables] Create failed:', error)
       return NextResponse.json({ error: 'Failed to create table' }, { status: 500 })
     }
+
+    await recordTableEvent(supabase, {
+      tableId: data.id,
+      tableLabel: data.label,
+      eventType: 'created',
+      actorId: user.id,
+      details: {
+        zone: data.zone,
+        seats: data.seats,
+        is_active: data.is_active,
+      },
+    })
 
     return NextResponse.json({ table: data }, { status: 201 })
   } catch (err) {

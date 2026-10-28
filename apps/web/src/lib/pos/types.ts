@@ -8,15 +8,25 @@
 /** How a POS sale is fulfilled. Take-away reuses the existing pickup path. */
 export type PosOrderType = 'dine_in' | 'take_away'
 
-/** A physical table row (public columns — qr_token is staff-only). */
+/**
+ * A physical table row as the POS needs it.
+ *
+ * Deliberately excludes `qr_token`: the token is the capability for
+ * `/t/<token>`, and cashiers/kitchen can read this table through RLS. Only the
+ * admin tables surface, which is admin/manager-only, selects the token.
+ */
 export interface RestaurantTable {
   id: string
   label: string
   zone: string | null
   seats: number
-  qr_token: string
   is_active: boolean
   sort_order: number
+}
+
+/** A table plus its QR capability token — `/admin/tables` only. */
+export interface TableWithToken extends RestaurantTable {
+  qr_token: string
 }
 
 /** Safe table fields rendered on the public table-QR ordering page. */

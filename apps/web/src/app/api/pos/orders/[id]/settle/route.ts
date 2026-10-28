@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { isMissingRpcError } from '@/lib/pos/rpc-errors'
 
 const SettleSchema = z.object({
   payment_method: z.enum(['cash', 'qr_pay']),
@@ -54,6 +55,18 @@ export async function POST(
 
     if (error) {
       console.error('[API/POS] Settle RPC failed:', error)
+      // `settle_dine_in_order` is created in 057 and replaced in 058 (the
+      // counter-order guard). A deploy that lands before those migrations
+      // should say so, not read as a payment failure.
+      if (isMissingRpcError(error)) {
+        return NextResponse.json(
+          {
+            error:
+              'Payment recording is not available yet — apply the POS payment migrations and retry.',
+          },
+          { status: 503 }
+        )
+      }
       return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
     }
 

@@ -180,6 +180,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 3. Per-table rate limit ────────────────────────────────────────────
+    // Scope: anonymous QR orders only (`source = 'web'`). Counter/POS rounds
+    // are staff-authenticated and deliberately excluded — counting them would
+    // let a busy table's own POS traffic exhaust the diners' cap. The BEFORE
+    // INSERT trigger (063) uses the same filter, so this pre-check and the
+    // authority stay identical.
     const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
     const { data: recent, error: rateError } = await supabase
       .from('orders')
@@ -189,6 +194,10 @@ export async function POST(req: NextRequest) {
       .eq('source', 'web')
       .gte('created_at', windowStart)
       .order('created_at', { ascending: false })
+      // The cap check only needs to know whether the window is full. If a
+      // future message needs "retry in N minutes", drop this limit: it
+      // truncates the window, so the oldest row here is not necessarily the
+      // oldest order in it.
       .limit(MAX_ORDERS_PER_WINDOW)
 
     if (rateError) {
@@ -402,6 +411,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           { error: 'Too many orders for this table. Please call a staff member.' },
           { status: 429 }
+        )
+      }
+      // The table was deactivated between the lookup and the insert; the
+      // BEFORE INSERT trigger (064) rejects the order rather than landing it
+      // on a table the POS board no longer lists.
+      if (message.includes('table_inactive')) {
+        return NextResponse.json(
+          { error: 'This table QR is not active. Please ask a staff member.' },
+          { status: 409 }
         )
       }
       console.error('[API/TableOrder] Order insert failed:', orderError)

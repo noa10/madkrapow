@@ -243,9 +243,11 @@ export function usePosData(enabled: boolean) {
 
   const loadTables = useCallback(async () => {
     const supabase = getBrowserClient()
+    // Explicit columns: `qr_token` is the table's ordering capability and must
+    // not reach a cashier/kitchen browser (staff can SELECT this table).
     const { data, error: tablesError } = await supabase
       .from('restaurant_tables')
-      .select('*')
+      .select('id, label, zone, seats, is_active, sort_order')
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
       .order('label', { ascending: true })

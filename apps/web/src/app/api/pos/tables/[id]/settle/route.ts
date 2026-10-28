@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
+import { isMissingRpcError } from '@/lib/pos/rpc-errors'
 
 const TABLE_ID = z.string().uuid()
 
@@ -55,6 +56,18 @@ export async function POST(
 
     if (error) {
       console.error('[API/POS] Settle table RPC failed:', error)
+      // `settle_dine_in_table` only exists after migration 060. A deploy that
+      // lands before its migration should say so, not read as a payment
+      // failure the cashier will retry forever.
+      if (isMissingRpcError(error)) {
+        return NextResponse.json(
+          {
+            error:
+              'Payment recording is not available yet — apply migration 060 and retry.',
+          },
+          { status: 503 }
+        )
+      }
       return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
     }
 

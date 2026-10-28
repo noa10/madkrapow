@@ -48,8 +48,11 @@ export async function POST(
       .single();
 
     if (fetchError || !order) {
+      if (fetchError) {
+        console.error('[Status API] Order lookup failed:', fetchError);
+      }
       return NextResponse.json(
-        { error: fetchError ? `Database error: ${fetchError.message}` : 'Order not found' },
+        { error: fetchError ? 'Failed to load order' : 'Order not found' },
         { status: fetchError ? 500 : 404 }
       );
     }
@@ -62,28 +65,28 @@ export async function POST(
       order.source === 'counter' || order.delivery_type === 'dine_in';
 
     // POS/table orders become paid only through the settle RPC, which writes
-    // the payments row atomically. Allowing a bare status write here would
-    // produce a paid order with no money record.
-    if (newStatus === 'paid' && order.status === 'pending' && isPosOrder) {
-      return NextResponse.json(
-        {
-          error:
-            'Collect payment through the POS settle flow (it records a payments row).',
-        },
-        { status: 403 }
-      );
-    }
-
-    // Cashiers collect table-QR/pay-later payments through the POS settle
-    // route, which writes a payments row — not by marking an order paid here.
-    if (!isManagerial && newStatus === 'paid' && order.status === 'pending') {
-      return NextResponse.json(
-        {
-          error:
-            'Only an admin or manager can mark an order paid manually. Use the POS to collect payment.',
-        },
-        { status: 403 }
-      );
+    // the payments row atomically. A bare status write here would produce a
+    // paid order with no money record. For every other pending order, manual
+    // payment stays managerial.
+    if (newStatus === 'paid' && order.status === 'pending') {
+      if (isPosOrder) {
+        return NextResponse.json(
+          {
+            error:
+              'Collect payment through the POS settle flow (it records a payments row).',
+          },
+          { status: 403 }
+        );
+      }
+      if (!isManagerial) {
+        return NextResponse.json(
+          {
+            error:
+              'Only an admin or manager can mark an order paid manually. Use the POS to collect payment.',
+          },
+          { status: 403 }
+        );
+      }
     }
     // A cashier alone on shift must be able to clear an abandoned unpaid
     // ticket (diner left / mis-ordered / pay-later take-away never collected)
@@ -119,7 +122,8 @@ export async function POST(
       .select('id');
 
     if (updateError) {
-      return NextResponse.json({ error: 'Failed to update order', details: updateError.message }, { status: 500 });
+      console.error('[Status API] Order update failed:', updateError);
+      return NextResponse.json({ error: 'Failed to update order' }, { status: 500 });
     }
     if (!updated || updated.length === 0) {
       return NextResponse.json(
@@ -146,12 +150,9 @@ export async function POST(
 
     return NextResponse.json({ success: true, status: newStatus });
   } catch (error) {
+    // Never echo an internal message to the client: it can carry SQL,
+    // constraint names or connection details. The log keeps the full error.
     console.error('[Status API] Unexpected error:', error);
-    const errorMessage =
-      error instanceof Error ? error.message :
-      typeof error === 'string' ? error :
-      typeof error === 'object' && error !== null && 'message' in error ? String((error as Record<string, unknown>).message) :
-      'Internal server error';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

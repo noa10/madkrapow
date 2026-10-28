@@ -17,12 +17,18 @@ function makeRequest(body: unknown): Request {
 
 function authWithInsert(result: { data: unknown; error: unknown }) {
   const inserted: Record<string, unknown>[] = []
+  const events: Record<string, unknown>[] = []
   return {
     inserted,
+    events,
     user: { id: 'admin-user' },
     supabase: {
-      from: () => ({
+      from: (table: string) => ({
         insert: (row: Record<string, unknown>) => {
+          if (table === 'table_events') {
+            events.push(row)
+            return Promise.resolve({ error: null })
+          }
           inserted.push(row)
           return {
             select: () => ({
@@ -70,6 +76,15 @@ describe('POST /api/admin/tables', () => {
     expect(auth.inserted[0]).toMatchObject({ label: 'T1', zone: 'Indoor', seats: 4 })
     expect(auth.inserted[0].qr_token).toMatch(/^[0-9a-f]{32}$/)
     expect(auth.inserted[0].qr_token).not.toBe('known-token')
+    expect(auth.events).toEqual([
+      {
+        table_id: 'table-1',
+        table_label: 'T1',
+        event_type: 'created',
+        actor_id: 'admin-user',
+        details: { zone: 'Indoor', seats: 4, is_active: true },
+      },
+    ])
   })
 
   it('rejects an empty label', async () => {

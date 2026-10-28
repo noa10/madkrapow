@@ -7,15 +7,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToastStore } from '@/stores/toast'
 import { tableQrUrl } from '@/lib/pos/tables'
-import type { RestaurantTable } from '@/lib/pos/types'
+import type { TableWithToken } from '@/lib/pos/types'
 
 interface TableCardProps {
-  table: RestaurantTable
+  table: TableWithToken
   baseUrl: string
   busy: boolean
-  onEdit: (table: RestaurantTable) => void
-  onRotate: (table: RestaurantTable) => void
-  onToggleActive: (table: RestaurantTable) => void
+  onEdit: (table: TableWithToken) => void
+  onRotate: (table: TableWithToken) => void
+  onToggleActive: (table: TableWithToken) => void
 }
 
 /** A floor table with its printable QR code and management actions. */

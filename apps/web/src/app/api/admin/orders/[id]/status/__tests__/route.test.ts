@@ -191,4 +191,30 @@ describe('POST /api/admin/orders/[id]/status role gates', () => {
     const response = await POST(makeRequest('preparing') as never, context() as never)
     expect(response.status).toBe(400)
   })
+
+  it('does not leak database error text to the client', async () => {
+    const client = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: null,
+              error: { message: 'relation "orders" secret internal detail' },
+            }),
+          }),
+        }),
+      }),
+    }
+    requireRoleMock.mockResolvedValue({
+      user: { id: 'staff-user', app_metadata: { role: 'admin' } },
+      supabase: client,
+    })
+
+    const response = await POST(makeRequest('preparing') as never, context() as never)
+
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body.error).toBe('Failed to load order')
+    expect(JSON.stringify(body)).not.toContain('secret internal detail')
+  })
 })

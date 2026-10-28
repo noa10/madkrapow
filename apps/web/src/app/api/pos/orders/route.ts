@@ -347,6 +347,18 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (orderError || !order) {
+      // The table was deactivated between the lookup and the insert; the
+      // BEFORE INSERT trigger (064) rejects the order.
+      if (
+        (orderError as { message?: string } | null)?.message?.includes(
+          'table_inactive'
+        )
+      ) {
+        return NextResponse.json(
+          { error: 'That table is not available. Pick another table.' },
+          { status: 409 }
+        )
+      }
       console.error('[API/POS] Order insert failed:', orderError)
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
     }
@@ -409,7 +421,15 @@ export async function POST(req: NextRequest) {
         paid_at: now,
       })
       if (paymentError) {
-        console.error('[API/POS] Payment insert failed:', paymentError)
+        // A failed `payments` row cannot be kept: `payments.order_id` is
+        // ON DELETE CASCADE, so the compensating delete below would remove it
+        // with the order. Log the identifiers instead — for a cash sale the
+        // till has already taken money, so the order id and number are what a
+        // reconciliation needs.
+        console.error(
+          `[API/POS] Payment insert failed for order ${order.id} (${order.order_number}):`,
+          paymentError
+        )
         // Do not leave a "paid" order without a ledger row: the cashier will
         // retry, and a kept order would create a duplicate ticket (and a
         // phantom sale in reports). Removing it keeps create + payment
@@ -425,6 +445,7 @@ export async function POST(req: NextRequest) {
           {
             error:
               'The payment could not be recorded, so the order was not created. Please retry.',
+            order_number: order.order_number,
           },
           { status: 500 }
         )

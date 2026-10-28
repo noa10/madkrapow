@@ -133,6 +133,15 @@ describe('POST /api/pos/tables/[id]/settle', () => {
     expect(response.status).toBe(500)
   })
 
+  it('reports a missing RPC as a deployment problem, not a payment failure', async () => {
+    requireRoleMock.mockResolvedValue(
+      authWithRpc(null, { message: 'function not found', code: 'PGRST202' })
+    )
+    const response = await POST(makeRequest() as never, context() as never)
+    expect(response.status).toBe(503)
+    expect((await response.json()).error).toMatch(/migration 060/i)
+  })
+
   it('propagates the role guard denial', async () => {
     const { NextResponse } = await import('next/server')
     requireRoleMock.mockResolvedValue({

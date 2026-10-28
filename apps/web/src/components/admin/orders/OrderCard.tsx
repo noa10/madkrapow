@@ -245,6 +245,9 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
     />
   )
 
+  // Both layouts render the same pill; compute the detail once per card.
+  const fulfillmentDetail = getFulfillmentDetail(order)
+
   return (
     <>
       {/* Card-level click is a mouse convenience only: the order code is a real
@@ -278,9 +281,7 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
             <div className="flex flex-wrap items-center gap-1.5">
               <TextPill className="border-white/15 text-muted-foreground">
                 {getFulfillmentLabel(order)}
-                {getFulfillmentDetail(order)
-                  ? ` · ${getFulfillmentDetail(order)}`
-                  : ''}
+                {fulfillmentDetail ? ` · ${fulfillmentDetail}` : ''}
               </TextPill>
               <SourcePill order={order} />
             </div>
@@ -331,9 +332,7 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
             <SourcePill order={order} />
             <TextPill className="border-white/15 text-muted-foreground">
               {getFulfillmentLabel(order)}
-              {getFulfillmentDetail(order)
-                ? ` · ${getFulfillmentDetail(order)}`
-                : ''}
+              {fulfillmentDetail ? ` · ${fulfillmentDetail}` : ''}
             </TextPill>
             <MetaBadges order={order} />
           </div>

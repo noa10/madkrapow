@@ -58,7 +58,12 @@ export function mergeTableOrderItems(
   return [...merged.values()]
 }
 
-/** Integer-cents line total: (base + sum of modifier deltas) × quantity. */
+/**
+ * Integer-cents line total: (base + sum of modifier deltas) × quantity.
+ *
+ * Floored at zero: a negative delta larger than the base price must not turn a
+ * line (or the order) negative — `orders.total_cents` has no CHECK >= 0.
+ */
 export function lineTotalCents(
   basePriceCents: number,
   modifierDeltas: readonly number[],
@@ -68,5 +73,5 @@ export function lineTotalCents(
     (sum, delta) => sum + delta,
     basePriceCents
   )
-  return unit * quantity
+  return Math.max(0, unit) * quantity
 }

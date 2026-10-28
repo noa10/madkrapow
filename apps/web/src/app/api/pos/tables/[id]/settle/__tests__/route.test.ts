@@ -71,13 +71,20 @@ describe('POST /api/pos/tables/[id]/settle', () => {
     expect(body.error).toMatch(/review the new total/i)
   })
 
-  it('returns 409 when another cashier already collected the table', async () => {
+  it('reports a retried settle as success, not a conflict', async () => {
+    // The first response was lost after commit; the retry finds nothing left
+    // to charge. A 409 here would read as failure to every consumer.
     requireRoleMock.mockResolvedValue(
       authWithRpc({ ok: false, code: 'nothing_to_settle' })
     )
     const response = await POST(makeRequest() as never, context() as never)
-    expect(response.status).toBe(409)
-    expect((await response.json()).error).toMatch(/nothing left to collect/i)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      success: true,
+      already_settled: true,
+      settled_count: 0,
+      amount_cents: 0,
+    })
   })
 
   it('returns 400 for an unsupported method', async () => {

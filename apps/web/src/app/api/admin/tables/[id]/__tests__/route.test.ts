@@ -128,48 +128,36 @@ describe('DELETE /api/admin/tables/[id]', () => {
     requireRoleMock.mockReset()
   })
 
-  it('blocks deletion when orders reference the table', async () => {
-    requireRoleMock.mockResolvedValue({
+  function authWithRpc(result: unknown) {
+    return {
       user: { id: 'admin-user' },
-      supabase: {
-        from: () => ({
-          select: () => ({
-            eq: async () => ({ count: 3, error: null }),
-          }),
-        }),
-      },
-    })
+      supabase: { rpc: vi.fn().mockResolvedValue({ data: result, error: null }) },
+    }
+  }
+
+  it('blocks deletion when orders reference the table', async () => {
+    const auth = authWithRpc({ ok: false, code: 'has_orders' })
+    requireRoleMock.mockResolvedValue(auth)
 
     const response = await DELETE(makeRequest('DELETE') as never, context() as never)
     expect(response.status).toBe(409)
     expect((await response.json()).error).toMatch(/deactivate/i)
+    expect(auth.supabase.rpc).toHaveBeenCalledWith('delete_restaurant_table', {
+      p_table_id: TABLE_ID,
+    })
   })
 
   it('deletes a table with no order history', async () => {
-    const deleted: string[] = []
-    requireRoleMock.mockResolvedValue({
-      user: { id: 'admin-user' },
-      supabase: {
-        from: (table: string) =>
-          table === 'orders'
-            ? {
-                select: () => ({
-                  eq: async () => ({ count: 0, error: null }),
-                }),
-              }
-            : {
-                delete: () => ({
-                  eq: async (_column: string, id: string) => {
-                    deleted.push(id)
-                    return { error: null }
-                  },
-                }),
-              },
-      },
-    })
+    requireRoleMock.mockResolvedValue(authWithRpc({ ok: true }))
 
     const response = await DELETE(makeRequest('DELETE') as never, context() as never)
     expect(response.status).toBe(200)
-    expect(deleted).toEqual([TABLE_ID])
+    expect(await response.json()).toEqual({ success: true })
+  })
+
+  it('returns 404 for a missing table', async () => {
+    requireRoleMock.mockResolvedValue(authWithRpc({ ok: false, code: 'not_found' }))
+    const response = await DELETE(makeRequest('DELETE') as never, context() as never)
+    expect(response.status).toBe(404)
   })
 })

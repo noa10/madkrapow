@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Armchair,
   Ban,
@@ -46,8 +46,8 @@ function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
-function minutesSince(iso: string): number {
-  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000))
+function minutesSince(iso: string, now: number): number {
+  return Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60_000))
 }
 
 /** Dishes on one ticket, revealed by the chevron on its row. */
@@ -115,6 +115,13 @@ export function PosTableBoard({
   const unpaidTableCount = summaries.filter((summary) => summary.hasUnpaid).length
   const toCollect = unpaidTableCount + unpaidTakeaway.length
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
+  // The age labels would otherwise freeze until an unrelated re-render; a
+  // minute tick keeps "12 min" honest on a board that can sit open all shift.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const toggleOrder = (orderId: string) => {
     setExpandedOrders((previous) => {
@@ -191,7 +198,7 @@ export function PosTableBoard({
                     </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {formatPrice(order.total_cents)} · {minutesSince(order.created_at)} min
+                    {formatPrice(order.total_cents)} · {minutesSince(order.created_at, now)} min
                   </div>
                 </div>
                 <Button
@@ -337,7 +344,7 @@ export function PosTableBoard({
                                 </div>
                                 <div className="text-[10px] text-muted-foreground">
                                   {formatPrice(order.total_cents)} ·{' '}
-                                  {minutesSince(order.created_at)} min
+                                  {minutesSince(order.created_at, now)} min
                                 </div>
                               </div>
                               <button

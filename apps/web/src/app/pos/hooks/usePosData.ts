@@ -241,7 +241,8 @@ export function usePosData(enabled: boolean) {
     []
   )
 
-  const loadTables = useCallback(async () => {    const supabase = getBrowserClient()
+  const loadTables = useCallback(async () => {
+    const supabase = getBrowserClient()
     const { data, error: tablesError } = await supabase
       .from('restaurant_tables')
       .select('*')

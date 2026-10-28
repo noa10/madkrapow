@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 
-const TABLE_ID = z.guid()
+const TABLE_ID = z.string().uuid()
 
 const SettleTableSchema = z.object({
   payment_method: z.enum(['cash', 'qr_pay']),
@@ -84,13 +84,15 @@ export async function POST(
           { status: 409 }
         )
       case 'nothing_to_settle':
-        return NextResponse.json(
-          {
-            error: 'Nothing left to collect at this table — it may have just been paid.',
-            code: 'nothing_to_settle',
-          },
-          { status: 409 }
-        )
+        // Not an error: the response to an earlier, committed call was lost and
+        // the retry found nothing left to charge. A 409 would tell any consumer
+        // (including the Flutter app) that a completed operation failed.
+        return NextResponse.json({
+          success: true,
+          already_settled: true,
+          settled_count: 0,
+          amount_cents: 0,
+        })
       case 'invalid_method':
         return NextResponse.json({ error: 'Unsupported payment method' }, { status: 400 })
       default:

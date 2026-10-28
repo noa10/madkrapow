@@ -426,6 +426,19 @@ export default function PosPage() {
         : { payment_method: method }
     try {
       const { res, json } = await posPost(path, body)
+      // A retry whose first response was lost: the RPC found nothing left to
+      // charge and reports success. Nothing was charged twice.
+      if (json?.already_settled) {
+        setSettleTarget(null)
+        setSettleError(null)
+        addToast({
+          type: 'info',
+          title: 'Already collected',
+          description: 'This bill was paid from another screen. Nothing was charged twice.',
+        })
+        await refresh()
+        return
+      }
       if (!res.ok) {
         const code = json?.code as string | undefined
         // A table edited during the confirm window is a safe rejection: close,
@@ -443,7 +456,7 @@ export default function PosPage() {
           return
         }
         // Lost response after the server committed: the money is already in.
-        if (code === 'nothing_to_settle' || code === 'already_paid') {
+        if (code === 'already_paid') {
           setSettleTarget(null)
           setSettleError(null)
           addToast({

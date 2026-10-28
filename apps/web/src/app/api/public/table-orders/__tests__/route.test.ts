@@ -14,11 +14,20 @@ const ITEM = '11111111-1111-4111-8111-111111111111'
 const MOD = '22222222-2222-4222-8222-222222222222'
 const GROUP = '33333333-3333-4333-8333-333333333333'
 
-type Call = { table: string; op: string; row?: Record<string, unknown>; rows?: unknown }
+type Call = {
+  table: string
+  op: string
+  row?: Record<string, unknown>
+  rows?: Record<string, unknown>[]
+}
 
 interface MockOptions {
   table?: Record<string, unknown> | null
   recent?: { created_at: string }[]
+  /** Order returned by an idempotency-key lookup. */
+  existingOrder?: Record<string, unknown> | null
+  /** Simulate the orders insert failing (e.g. a 23505 unique violation). */
+  orderInsertError?: { message: string; code?: string } | null
   menu?: Record<string, unknown>[]
   modifiers?: Record<string, unknown>[]
   junctions?: Record<string, unknown>[]
@@ -39,7 +48,6 @@ function queryResult(data: unknown, error: unknown = null) {
 
 function buildClient(options: MockOptions) {
   const calls: Call[] = []
-  let lineCounter = 0
 
   const client = {
     calls,
@@ -56,18 +64,38 @@ function buildClient(options: MockOptions) {
 
       if (table === 'orders') {
         return {
-          select: () => queryResult(options.recent ?? []),
+          select: () => {
+            let idempotencyLookup = false
+            const builder: Record<string, unknown> = {}
+            builder.eq = (column: string) => {
+              if (column === 'idempotency_key') idempotencyLookup = true
+              return builder
+            }
+            for (const method of ['in', 'gte', 'order', 'limit']) {
+              builder[method] = () => builder
+            }
+            builder.maybeSingle = async () => ({
+              data: idempotencyLookup ? (options.existingOrder ?? null) : null,
+              error: null,
+            })
+            builder.single = async () => ({ data: null, error: null })
+            builder.then = (resolve: (value: unknown) => void) =>
+              resolve({ data: options.recent ?? [], error: null })
+            return builder
+          },
           insert: (row: Record<string, unknown>) => {
             calls.push({ table, op: 'insert', row })
             return {
               select: () => ({
                 single: async () => ({
-                  data: {
-                    id: 'order-1',
-                    order_number: 'MKTEST1234',
-                    display_code: 'MK-001',
-                  },
-                  error: null,
+                  data: options.orderInsertError
+                    ? null
+                    : {
+                        id: 'order-1',
+                        order_number: 'MKTEST1234',
+                        display_code: 'MK-001',
+                      },
+                  error: options.orderInsertError ?? null,
                 }),
               }),
             }
@@ -96,15 +124,15 @@ function buildClient(options: MockOptions) {
 
       if (table === 'order_items') {
         return {
-          insert: (row: Record<string, unknown>) => {
-            calls.push({ table, op: 'insert', row })
+          insert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
+            calls.push({
+              table,
+              op: 'insert',
+              rows: Array.isArray(rows) ? rows : [rows],
+            })
             return {
-              select: () => ({
-                single: async () => ({
-                  data: { id: `line-${++lineCounter}` },
-                  error: null,
-                }),
-              }),
+              then: (resolve: (value: unknown) => void) =>
+                resolve({ error: null }),
             }
           },
         }
@@ -112,8 +140,12 @@ function buildClient(options: MockOptions) {
 
       if (table === 'order_item_modifiers' || table === 'order_events') {
         return {
-          insert: (rows: unknown) => {
-            calls.push({ table, op: 'insert', rows })
+          insert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
+            calls.push({
+              table,
+              op: 'insert',
+              rows: Array.isArray(rows) ? rows : [rows],
+            })
             return {
               then: (resolve: (value: unknown) => void) =>
                 resolve({ error: null }),
@@ -208,7 +240,7 @@ describe('POST /api/public/table-orders', () => {
     const itemInsert = client.calls.find(
       (call) => call.table === 'order_items' && call.op === 'insert'
     )
-    expect(itemInsert?.row).toMatchObject({
+    expect(itemInsert?.rows?.[0]).toMatchObject({
       menu_item_id: ITEM,
       menu_item_name: 'Krapow',
       menu_item_price_cents: 1250,
@@ -231,7 +263,7 @@ describe('POST /api/public/table-orders', () => {
     const eventInsert = client.calls.find(
       (call) => call.table === 'order_events' && call.op === 'insert'
     )
-    expect(eventInsert?.rows).toMatchObject({
+    expect(eventInsert?.rows?.[0]).toMatchObject({
       event_type: 'table_order_placed',
       actor_id: null,
     })
@@ -308,13 +340,94 @@ describe('POST /api/public/table-orders', () => {
     expect(response.status).toBe(429)
   })
 
-  it('rate-limits a second order within ten seconds', async () => {
+  it('accepts a second order inside ten seconds', async () => {
+    // Two diners at one table sending within seconds is normal; the 4 / 5 min
+    // cap is the abuse bound (the 10 s gap was removed in migration 063).
     state.client = buildClient({
       ...BASE_DATA,
       recent: [{ created_at: new Date(Date.now() - 2_000).toISOString() }],
     })
     const response = await POST(makeRequest(VALID_BODY) as never)
-    expect(response.status).toBe(429)
+    expect(response.status).toBe(201)
+  })
+
+  it('returns the existing order when a submission is retried with the same key', async () => {
+    const client = buildClient({
+      ...BASE_DATA,
+      // Even with the table at its cap, a retry must resolve to the order that
+      // already landed rather than a 429.
+      recent: Array.from({ length: 4 }, () => ({
+        created_at: new Date(Date.now() - 120_000).toISOString(),
+      })),
+      existingOrder: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+      },
+    })
+    state.client = client
+
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      order_id: 'order-9',
+      display_code: 'MK-009',
+      total_cents: 2900,
+      duplicate: true,
+    })
+    expect(
+      client.calls.some((call) => call.table === 'orders' && call.op === 'insert')
+    ).toBe(false)
+  })
+
+  it('rejects a key that was already used at another table', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      existingOrder: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T9',
+        table_id: 'another-table',
+      },
+    })
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toMatch(/another table/i)
+  })
+
+  it('returns the original order when a concurrent retry wins the insert race', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      orderInsertError: {
+        message: 'duplicate key value violates unique constraint',
+        code: '23505',
+      },
+      existingOrder: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+      },
+    })
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).duplicate).toBe(true)
   })
 
   it('rejects unavailable menu items', async () => {

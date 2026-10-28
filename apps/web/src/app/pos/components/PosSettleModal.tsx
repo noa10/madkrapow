@@ -72,7 +72,12 @@ export function PosSettleModal({
     <dialog
       ref={dialogRef}
       aria-labelledby="pos-settle-title"
-      onClose={onClose}
+      // Fires when the dialog closes natively. Guard on `target`: the effect
+      // above also calls `dialog.close()` after the parent clears the target,
+      // and that must not invoke `onClose` a second time.
+      onClose={() => {
+        if (target) onClose()
+      }}
       onClick={(event) => {
         if (event.target === dialogRef.current && !busy) close()
       }}

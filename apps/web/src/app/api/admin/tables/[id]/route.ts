@@ -104,12 +104,14 @@ export async function PATCH(
   }
 }
 
-const PG_FOREIGN_KEY_VIOLATION = '23503'
-
 /**
  * Delete a table only when no order references it. Historical orders keep a
  * `table_label` snapshot, but deleting the row would null their `table_id`;
  * deactivate instead when the table has history.
+ *
+ * The history check and the delete run inside `delete_restaurant_table`, so a
+ * counter order cannot land between them and be orphaned by the FK's
+ * ON DELETE SET NULL.
  */
 export async function DELETE(
   req: NextRequest,
@@ -125,36 +127,33 @@ export async function DELETE(
     if ('error' in auth) return auth.error
     const { supabase } = auth
 
-    const { count, error: countError } = await supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('table_id', id)
+    const { data, error } = await supabase.rpc('delete_restaurant_table', {
+      p_table_id: id,
+    })
 
-    if (countError) {
-      console.error('[API/AdminTables] Order reference check failed:', countError)
+    if (error) {
+      console.error('[API/AdminTables] Delete RPC failed:', error)
       return NextResponse.json({ error: 'Failed to delete table' }, { status: 500 })
     }
-    if ((count ?? 0) > 0) {
+
+    const result = data as { ok?: boolean; code?: string } | null
+
+    if (result?.ok) {
+      return NextResponse.json({ success: true })
+    }
+
+    if (result?.code === 'has_orders') {
       return NextResponse.json(
         { error: 'This table has order history. Deactivate it instead of deleting.' },
         { status: 409 }
       )
     }
 
-    const { error } = await supabase.from('restaurant_tables').delete().eq('id', id)
-
-    if (error) {
-      if ((error as { code?: string }).code === PG_FOREIGN_KEY_VIOLATION) {
-        return NextResponse.json(
-          { error: 'This table is still in use. Deactivate it instead.' },
-          { status: 409 }
-        )
-      }
-      console.error('[API/AdminTables] Delete failed:', error)
-      return NextResponse.json({ error: 'Failed to delete table' }, { status: 500 })
+    if (result?.code === 'not_found') {
+      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ error: 'Failed to delete table' }, { status: 500 })
   } catch (err) {
     console.error('[API/AdminTables] Unexpected delete error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

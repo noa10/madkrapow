@@ -55,11 +55,38 @@ const TableOrderSchema = z.object({
   customer_name: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(MAX_ORDER_NOTES_LENGTH).optional(),
   items: z.array(TableOrderItemSchema).min(1).max(MAX_TABLE_ORDER_ITEMS),
+  /**
+   * Client-generated key for this submission. A retry (lost response, double
+   * tap) returns the order that already landed instead of creating a duplicate.
+   * Optional so a page loaded before this deploy still works, unguarded.
+   */
+  idempotency_key: z.string().trim().min(16).max(128).optional(),
 })
 
 const RATE_WINDOW_MS = 5 * 60 * 1000
 const MAX_ORDERS_PER_WINDOW = 4
-const MIN_ORDER_GAP_MS = 10 * 1000
+
+type ExistingOrder = {
+  id: string
+  order_number: string
+  display_code: string | null
+  total_cents: number
+  pax: number | null
+  table_label: string | null
+  table_id: string | null
+}
+
+function existingOrderPayload(order: ExistingOrder) {
+  return {
+    order_id: order.id,
+    order_number: order.order_number,
+    display_code: order.display_code,
+    total_cents: order.total_cents,
+    table_label: order.table_label,
+    pax: order.pax,
+    duplicate: true,
+  }
+}
 
 type MenuRow = {
   id: string
@@ -123,7 +150,36 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── 2. Per-table rate limit ────────────────────────────────────────────
+    // ── 2. Idempotent retry ────────────────────────────────────────────────
+    // Checked before the rate limit: a retry of an order that already landed
+    // must return that order even when the table has hit its 4 / 5 min cap.
+    if (input.idempotency_key) {
+      const { data: existing, error: existingError } = await supabase
+        .from('orders')
+        .select(
+          'id, order_number, display_code, total_cents, pax, table_label, table_id'
+        )
+        .eq('idempotency_key', input.idempotency_key)
+        .maybeSingle()
+
+      if (existingError) {
+        console.error('[API/TableOrder] Idempotency lookup failed:', existingError)
+        return NextResponse.json({ error: 'Unable to place order' }, { status: 500 })
+      }
+      if (existing) {
+        if (existing.table_id !== table.id) {
+          return NextResponse.json(
+            { error: 'This order key was already used at another table' },
+            { status: 409 }
+          )
+        }
+        return NextResponse.json(existingOrderPayload(existing as ExistingOrder), {
+          status: 200,
+        })
+      }
+    }
+
+    // ── 3. Per-table rate limit ────────────────────────────────────────────
     const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
     const { data: recent, error: rateError } = await supabase
       .from('orders')
@@ -147,17 +203,8 @@ export async function POST(req: NextRequest) {
         { status: 429 }
       )
     }
-    if (
-      recentOrders[0] &&
-      Date.now() - new Date(recentOrders[0].created_at).getTime() < MIN_ORDER_GAP_MS
-    ) {
-      return NextResponse.json(
-        { error: 'Please wait a few seconds before sending another order.' },
-        { status: 429 }
-      )
-    }
 
-    // ── 3. Normalise lines ────────────────────────────────────────────────
+    // ── 4. Normalise lines ────────────────────────────────────────────────
     const lineItems = mergeTableOrderItems(input.items)
     if (lineItems.some((item) => item.quantity > MAX_MERGED_QUANTITY)) {
       return NextResponse.json(
@@ -169,7 +216,7 @@ export async function POST(req: NextRequest) {
     const menuItemIds = [...new Set(lineItems.map((item) => item.menu_item_id))]
     const modifierIds = [...new Set(lineItems.flatMap((item) => item.modifier_ids))]
 
-    // ── 4. Re-price from the database ─────────────────────────────────────
+    // ── 5. Re-price from the database ─────────────────────────────────────
     const [menuResult, modifierResult] = await Promise.all([
       supabase
         .from('menu_items')
@@ -300,7 +347,7 @@ export async function POST(req: NextRequest) {
 
     const subtotalCents = priced.reduce((sum, line) => sum + line.lineTotalCents, 0)
 
-    // ── 5. Create the order ───────────────────────────────────────────────
+    // ── 6. Create the order ───────────────────────────────────────────────
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
@@ -322,13 +369,34 @@ export async function POST(req: NextRequest) {
         total_cents: subtotalCents,
         notes: input.notes ?? null,
         include_cutlery: false,
+        idempotency_key: input.idempotency_key ?? null,
       })
       .select('id, order_number, display_code')
       .single()
 
     if (orderError || !order) {
-      // The BEFORE INSERT trigger enforces the same limits under a per-table
-      // advisory lock. Map its exceptions to the same 429 the pre-check uses.
+      // A concurrent retry with the same key lost the race to the unique
+      // index: the other request created the order, so return that one.
+      if (
+        (orderError as { code?: string } | null)?.code === '23505' &&
+        input.idempotency_key
+      ) {
+        const { data: existing } = await supabase
+          .from('orders')
+          .select(
+            'id, order_number, display_code, total_cents, pax, table_label, table_id'
+          )
+          .eq('idempotency_key', input.idempotency_key)
+          .maybeSingle()
+        if (existing && existing.table_id === table.id) {
+          return NextResponse.json(existingOrderPayload(existing as ExistingOrder), {
+            status: 200,
+          })
+        }
+      }
+
+      // The BEFORE INSERT trigger enforces the same limit under a per-table
+      // advisory lock. Map its exception to the same 429 the pre-check uses.
       const message = orderError?.message ?? ''
       if (message.includes('table_order_rate_limited')) {
         return NextResponse.json(
@@ -336,59 +404,57 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         )
       }
-      if (message.includes('table_order_too_soon')) {
-        return NextResponse.json(
-          { error: 'Please wait a few seconds before sending another order.' },
-          { status: 429 }
-        )
-      }
       console.error('[API/TableOrder] Order insert failed:', orderError)
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
     }
 
-    // Insert one line at a time so each line's id is unambiguously known for
-    // its modifiers (two lines can share a menu item with different options).
-    for (const line of priced) {
-      const { data: insertedItem, error: itemError } = await supabase
-        .from('order_items')
-        .insert({
-          order_id: order.id,
-          menu_item_id: line.menuItem.id,
-          menu_item_name: line.menuItem.name,
-          menu_item_price_cents: line.menuItem.price_cents,
-          quantity: line.item.quantity,
-          line_total_cents: line.lineTotalCents,
-          notes: line.item.notes ?? null,
-        })
-        .select('id')
-        .single()
+    // Insert all lines in one statement, then all add-ons in one statement.
+    // Generating the line ids here keeps each line's modifiers unambiguously
+    // attached (two lines can share a dish with different options) and cuts a
+    // submit from up to 100 round-trips to two, shrinking the window in which
+    // a crash would leave an item-less ticket.
+    const itemRows = priced.map((line) => ({
+      id: crypto.randomUUID(),
+      order_id: order.id,
+      menu_item_id: line.menuItem.id,
+      menu_item_name: line.menuItem.name,
+      menu_item_price_cents: line.menuItem.price_cents,
+      quantity: line.item.quantity,
+      line_total_cents: line.lineTotalCents,
+      notes: line.item.notes ?? null,
+    }))
 
-      if (itemError || !insertedItem) {
-        console.error('[API/TableOrder] Order item insert failed:', itemError)
+    const { error: itemError } = await supabase
+      .from('order_items')
+      .insert(itemRows)
+
+    if (itemError) {
+      console.error('[API/TableOrder] Order item insert failed:', itemError)
+      await supabase.from('orders').delete().eq('id', order.id)
+      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
+    }
+
+    const modifierRows = priced.flatMap((line, index) =>
+      line.item.modifier_ids.map((id) => {
+        const modifier = modifiersById.get(id)!
+        return {
+          order_item_id: itemRows[index].id,
+          modifier_id: modifier.id,
+          modifier_name: modifier.name,
+          modifier_price_delta_cents: modifier.price_delta_cents,
+        }
+      })
+    )
+
+    if (modifierRows.length > 0) {
+      const { error: modifierError } = await supabase
+        .from('order_item_modifiers')
+        .insert(modifierRows)
+
+      if (modifierError) {
+        console.error('[API/TableOrder] Modifier insert failed:', modifierError)
         await supabase.from('orders').delete().eq('id', order.id)
         return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-      }
-
-      if (line.item.modifier_ids.length > 0) {
-        const { error: modifierError } = await supabase
-          .from('order_item_modifiers')
-          .insert(
-            line.item.modifier_ids.map((id) => {
-              const modifier = modifiersById.get(id)!
-              return {
-                order_item_id: insertedItem.id,
-                modifier_id: modifier.id,
-                modifier_name: modifier.name,
-                modifier_price_delta_cents: modifier.price_delta_cents,
-              }
-            })
-          )
-
-        if (modifierError) {
-          console.error('[API/TableOrder] Modifier insert failed:', modifierError)
-          await supabase.from('orders').delete().eq('id', order.id)
-          return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-        }
       }
     }
 

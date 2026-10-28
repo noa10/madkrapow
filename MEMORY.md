@@ -619,6 +619,14 @@ supabase/
   after the dialog opened. The same comparison also covers writers that bypass the advisory lock
   (counter inserts), so the lock is no longer the only line of defence.
 
+- **An anonymous write that can time out needs an idempotency key, not a cooldown.** The table-QR
+  route tried to stop duplicates with a 10 s per-table gap. A lost response then had two bad
+  outcomes: the retry hit the gap (429, though the order existed) or, after 10 s, created a second
+  ticket staff could not tell from a real round. The gap also rejected a second diner at the same
+  table, which is ordinary. The fix is a client-generated key with a unique index: a retry returns
+  the original order, concurrent duplicates lose to the index, and the 4 / 5 min cap still bounds
+  abuse. A cooldown punishes the honest retry and misses the dishonest one.
+
 ---
 
 **Philosophy**: This file grows over time. Add what's worth remembering. Remove what's no longer relevant. Keep it focused and actionable.

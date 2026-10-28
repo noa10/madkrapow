@@ -1301,6 +1301,7 @@ export type Database = {
           hubbo_pos_sync_status: string | null
           hubbo_pos_trans_id: string | null
           id: string
+          idempotency_key: string | null
           include_cutlery: boolean
           kitchen_lead_minutes: number | null
           lalamove_order_id: string | null
@@ -1368,6 +1369,7 @@ export type Database = {
           hubbo_pos_sync_status?: string | null
           hubbo_pos_trans_id?: string | null
           id?: string
+          idempotency_key?: string | null
           include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null
@@ -1435,6 +1437,7 @@ export type Database = {
           hubbo_pos_sync_status?: string | null
           hubbo_pos_trans_id?: string | null
           id?: string
+          idempotency_key?: string | null
           include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
           lalamove_order_id?: string | null

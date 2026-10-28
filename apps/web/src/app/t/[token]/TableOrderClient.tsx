@@ -86,6 +86,8 @@ function TableOrderInner({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<TableOrderSuccess | null>(null)
   const submitLock = useRef(false)
+  // One key per submission attempt, reused by retries; see submitOrder.
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   const menuNameById = useMemo(() => {
     const names = new Map<string, string>()
@@ -156,6 +158,13 @@ function TableOrderInner({
       return
     }
 
+    // Stable across retries of this submission: a lost response followed by a
+    // retry returns the order that already landed instead of creating a second
+    // ticket. Reset only after success (the cart is cleared then).
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
+
     // A ref lock closes the double-tap window before React re-renders with
     // `submitting=true`; without it two rapid taps both POST.
     submitLock.current = true
@@ -170,6 +179,7 @@ function TableOrderInner({
           pax,
           customer_name: customerName.trim() || undefined,
           notes: notes.trim() || undefined,
+          idempotency_key: idempotencyKeyRef.current,
           items: items.map((item) => ({
             menu_item_id: item.menu_item_id,
             quantity: item.quantity,
@@ -184,13 +194,16 @@ function TableOrderInner({
         return
       }
 
+      idempotencyKeyRef.current = null
       cart.getState().clear()
       setSuccess(data as TableOrderSuccess)
       setReviewOpen(false)
       setCustomerName('')
       setNotes('')
     } catch {
-      setError('Network error — please check your connection and try again')
+      setError(
+        'Network error — please check your connection and try again. Retrying will not send the order twice.'
+      )
     } finally {
       submitLock.current = false
       setSubmitting(false)

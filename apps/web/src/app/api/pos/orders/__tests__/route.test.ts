@@ -209,13 +209,13 @@ describe('POST /api/pos/orders', () => {
     const itemInserts = client.calls.filter(
       (c) => c.table === 'order_items' && c.op === 'insert'
     )
-    expect(itemInserts).toHaveLength(2)
-    expect(itemInserts[0].row).toMatchObject({
+    expect(itemInserts).toHaveLength(1)
+    expect(itemInserts[0]?.rows?.[0]).toMatchObject({
       menu_item_price_cents: 1250,
       quantity: 2,
       line_total_cents: 2500,
     })
-    expect(itemInserts[1].row).toMatchObject({
+    expect(itemInserts[0]?.rows?.[1]).toMatchObject({
       menu_item_price_cents: 250,
       quantity: 1,
       line_total_cents: 250,
@@ -315,7 +315,7 @@ describe('POST /api/pos/orders', () => {
       (c) => c.table === 'order_items' && c.op === 'insert'
     )
     expect(itemInserts).toHaveLength(1)
-    expect(itemInserts[0].row).toMatchObject({ quantity: 3 })
+    expect(itemInserts[0]?.rows?.[0]).toMatchObject({ quantity: 3 })
   })
 
   it('rejects unavailable menu items', async () => {
@@ -534,7 +534,7 @@ describe('POST /api/pos/orders', () => {
     const itemInsert = client.calls.find(
       (c) => c.table === 'order_items' && c.op === 'insert'
     )
-    expect(itemInsert?.row).toMatchObject({
+    expect(itemInsert?.rows?.[0]).toMatchObject({
       menu_item_price_cents: 1250,
       quantity: 2,
       line_total_cents: 2900,
@@ -546,7 +546,7 @@ describe('POST /api/pos/orders', () => {
     )
     expect(modifierInsert?.rows).toEqual([
       {
-        order_item_id: 'line-1',
+        order_item_id: expect.any(String),
         modifier_id: MODIFIER_ID,
         modifier_name: 'Fried Egg',
         modifier_price_delta_cents: 200,

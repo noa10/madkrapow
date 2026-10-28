@@ -351,47 +351,52 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
     }
 
-    // Insert one line at a time so each line's id is known for its add-ons.
-    for (const line of priced) {
-      const { data: insertedItem, error: itemError } = await supabase
-        .from('order_items')
-        .insert({
-          order_id: order.id,
-          menu_item_id: line.menuItem.id,
-          menu_item_name: line.menuItem.name,
-          menu_item_price_cents: line.menuItem.price_cents,
-          quantity: line.item.quantity,
-          line_total_cents: line.lineTotalCents,
-          notes: line.item.notes ?? null,
-        })
-        .select('id')
-        .single()
+    // Insert all lines in one statement, then all add-ons in one statement.
+    // Generating the line ids here keeps each line's modifiers unambiguously
+    // attached (two lines can share a dish with different options) and cuts a
+    // submit from up to 100 round-trips to two, shrinking the window in which
+    // a crash would leave an item-less ticket.
+    const itemRows = priced.map((line) => ({
+      id: crypto.randomUUID(),
+      order_id: order.id,
+      menu_item_id: line.menuItem.id,
+      menu_item_name: line.menuItem.name,
+      menu_item_price_cents: line.menuItem.price_cents,
+      quantity: line.item.quantity,
+      line_total_cents: line.lineTotalCents,
+      notes: line.item.notes ?? null,
+    }))
 
-      if (itemError || !insertedItem) {
-        console.error('[API/POS] Order item insert failed:', itemError)
+    const { error: itemError } = await supabase
+      .from('order_items')
+      .insert(itemRows)
+
+    if (itemError) {
+      console.error('[API/POS] Order item insert failed:', itemError)
+      await supabase.from('orders').delete().eq('id', order.id)
+      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
+    }
+
+    const modifierRows = priced.flatMap((line, index) =>
+      line.item.modifier_ids.map((modifierId) => {
+        const modifier = modifiersById.get(modifierId)!
+        return {
+          order_item_id: itemRows[index].id,
+          modifier_id: modifier.id,
+          modifier_name: modifier.name,
+          modifier_price_delta_cents: modifier.price_delta_cents,
+        }
+      })
+    )
+
+    if (modifierRows.length > 0) {
+      const { error: modifierError } = await supabase
+        .from('order_item_modifiers')
+        .insert(modifierRows)
+      if (modifierError) {
+        console.error('[API/POS] Modifier insert failed:', modifierError)
         await supabase.from('orders').delete().eq('id', order.id)
         return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-      }
-
-      if (line.item.modifier_ids.length > 0) {
-        const { error: modifierError } = await supabase
-          .from('order_item_modifiers')
-          .insert(
-            line.item.modifier_ids.map((modifierId) => {
-              const modifier = modifiersById.get(modifierId)!
-              return {
-                order_item_id: insertedItem.id,
-                modifier_id: modifier.id,
-                modifier_name: modifier.name,
-                modifier_price_delta_cents: modifier.price_delta_cents,
-              }
-            })
-          )
-        if (modifierError) {
-          console.error('[API/POS] Modifier insert failed:', modifierError)
-          await supabase.from('orders').delete().eq('id', order.id)
-          return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-        }
       }
     }
 

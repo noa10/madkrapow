@@ -65,4 +65,11 @@ describe('lineTotalCents', () => {
     expect(lineTotalCents(1250, [], 1)).toBe(1250)
     expect(lineTotalCents(0, [250], 3)).toBe(750)
   })
+
+  it('never returns a negative line total', () => {
+    // A discount modifier larger than the base price must not make the line —
+    // or the order total — negative; orders.total_cents has no CHECK.
+    expect(lineTotalCents(500, [-800], 1)).toBe(0)
+    expect(lineTotalCents(500, [-800], 3)).toBe(0)
+  })
 })

@@ -130,9 +130,6 @@ export interface TableSummary {
   kitchenActiveOrderCount: number
 }
 
-/** The two statuses a freshly created table-QR order can come back in. */
-export type TableOrderStatus = 'pending' | 'paid'
-
 export interface TableOrderSuccess {
   order_id: string
   order_number: string
@@ -141,11 +138,13 @@ export interface TableOrderSuccess {
   table_label: string
   pax: number
   /**
-   * The order's real status at create time. `pending` for a new order; `paid`
-   * when a retried create returns an order the diner has already claimed, so
-   * the success screen never asks a paid order to pay again.
+   * The order's real status at create time. `pending` for a new order, `paid`
+   * when a retried create returns an order the diner has already claimed, and
+   * `cancelled` if staff cancelled it in between. Typed as `string` because it
+   * is parsed from JSON: the success screen must treat an unrecognised value
+   * as not-paid rather than trust the shape.
    */
-  status: TableOrderStatus
+  status: string
   paid_at?: string | null
 }
 

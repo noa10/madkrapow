@@ -193,6 +193,32 @@ describe('TableOrderSuccessView', () => {
     // the ticket before the diner pays.
     expect(html).toContain('/receipt/')
   })
+
+  it('does not show a paid receipt for a cancelled order', () => {
+    // A diner retrying create after staff cancelled the order gets the row's
+    // real status. Rendering it as "Payment received" would hand them a screen
+    // claiming a payment that never happened.
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'cancelled', paid_at: null },
+        onOrderMore: () => {},
+      })
+    )
+    expect(html).not.toContain('Payment received')
+    expect(html).toContain('cancelled')
+  })
+
+  it('does not show a paid receipt for an unknown status', () => {
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'something-new', paid_at: null },
+        onOrderMore: () => {},
+      })
+    )
+    expect(html).not.toContain('Payment received')
+  })
 })
 
 describe('PaymentView claim states', () => {

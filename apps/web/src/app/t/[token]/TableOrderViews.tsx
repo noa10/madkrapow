@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CompanyQrPanel } from '@/app/pos/components/CompanyQrPanel'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
+import { isPaidOrderStatus } from '@/lib/pos/receipt'
 import type { TablePaymentChoice } from '@/lib/pos/table-orders'
 import type { PublicTable, TableOrderSuccess } from '@/lib/pos/types'
 
@@ -436,15 +437,19 @@ interface TableOrderSuccessViewProps {
 /**
  * The confirmation screen.
  *
- * Branches on the order's real status: a paid order gets the receipt link the
- * diner shows the cashier; a pending one is told to pay at the counter.
+ * Branches on the order's real status, not on the payment choice: a paid order
+ * gets the receipt link the diner shows the cashier, a pending one is told to
+ * pay at the counter, and a cancelled one says so. Only the paid allowlist may
+ * render "Payment received" — a status this module has not seen is not proof
+ * of payment.
  */
 export function TableOrderSuccessView({
   table,
   success,
   onOrderMore,
 }: TableOrderSuccessViewProps) {
-  const paid = success.status !== 'pending'
+  const paid = isPaidOrderStatus(success.status)
+  const cancelled = success.status === 'cancelled'
   const receiptHref = `/t/${table.token}/receipt/${success.order_id}`
 
   return (
@@ -452,7 +457,11 @@ export function TableOrderSuccessView({
       <div className="w-full max-w-sm text-center">
         <CheckCircle2 className="mx-auto h-16 w-16 text-emerald-400" />
         <h1 className="mt-4 font-display text-2xl font-extrabold text-foreground">
-          {paid ? 'Payment received' : 'Order sent to the kitchen'}
+          {paid
+            ? 'Payment received'
+            : cancelled
+              ? 'Order cancelled'
+              : 'Order sent to the kitchen'}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Table {table.label} · {success.pax} pax
@@ -474,6 +483,11 @@ export function TableOrderSuccessView({
           <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
             Show the receipt at the counter if the cashier asks. Keep this code
             to collect your order.
+          </p>
+        ) : cancelled ? (
+          <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
+            This order was cancelled. Please ask a staff member if you were
+            charged.
           </p>
         ) : (
           <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">

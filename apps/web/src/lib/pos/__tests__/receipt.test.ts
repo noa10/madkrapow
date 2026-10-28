@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest'
+import {
+  isClaimedByDiner,
+  receiptPaymentLabel,
+  receiptStatus,
+  PAID_ORDER_STATUSES,
+} from '../receipt'
+
+describe('receiptStatus', () => {
+  it('maps pending dine-in orders to unpaid', () => {
+    expect(receiptStatus('pending')).toBe('unpaid')
+  })
+
+  it('maps every progressed paid status to paid', () => {
+    for (const status of [
+      'paid',
+      'accepted',
+      'preparing',
+      'ready',
+      'picked_up',
+      'delivered',
+    ]) {
+      expect(receiptStatus(status)).toBe('paid')
+    }
+  })
+
+  it('maps cancelled to cancelled and unknown statuses to unpaid', () => {
+    expect(receiptStatus('cancelled')).toBe('cancelled')
+    // Unknown is not proof of payment: the diner must not be shown a PAID
+    // receipt the cashier cannot verify.
+    expect(receiptStatus('something-new')).toBe('unpaid')
+  })
+
+  it('exposes exactly the statuses it treats as paid', () => {
+    expect([...PAID_ORDER_STATUSES].sort()).toEqual([
+      'accepted',
+      'delivered',
+      'paid',
+      'picked_up',
+      'preparing',
+      'ready',
+    ])
+  })
+})
+
+describe('receiptPaymentLabel', () => {
+  it('labels qr_pay as QR Pay, cash as Cash and null as a dash', () => {
+    expect(receiptPaymentLabel('qr_pay')).toBe('QR Pay')
+    expect(receiptPaymentLabel('cash')).toBe('Cash')
+    expect(receiptPaymentLabel(null)).toBe('—')
+  })
+
+  it('labels the online gateways as Card and passes other methods through', () => {
+    expect(receiptPaymentLabel('stripe')).toBe('Card')
+    expect(receiptPaymentLabel('billplz')).toBe('Card')
+    expect(receiptPaymentLabel('ewallet')).toBe('ewallet')
+  })
+})
+
+describe('isClaimedByDiner', () => {
+  it('detects a diner-claimed payment', () => {
+    expect(isClaimedByDiner({ claimed_via: 'table_qr' })).toBe(true)
+  })
+
+  it('rejects other, missing and non-object payloads', () => {
+    expect(isClaimedByDiner({})).toBe(false)
+    expect(isClaimedByDiner(null)).toBe(false)
+    expect(isClaimedByDiner(undefined)).toBe(false)
+    expect(isClaimedByDiner('table_qr')).toBe(false)
+    expect(isClaimedByDiner({ claimed_via: 'stripe_webhook' })).toBe(false)
+  })
+})

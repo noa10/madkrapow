@@ -12,6 +12,7 @@ import { getTableCartStore } from '@/stores/table-cart'
 import { useToastStore } from '@/stores/toast'
 import { useIsClient } from '@/hooks/useIsClient'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
+import { isPaidOrderStatus } from '@/lib/pos/receipt'
 import {
   buildTablePaymentClaimPayload,
   nextStepAfterCreate,
@@ -284,6 +285,16 @@ function TableOrderInner({
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
+        // A 409 can mean the bill was settled elsewhere (a cashier marked it
+        // paid) between the diner's scan and their tap. Showing a paid receipt
+        // there is right; asking for money again is the double-charge bug.
+        if (res.status === 409 && isPaidOrderStatus(data?.status)) {
+          setSuccess((current) =>
+            current ? { ...current, status: 'paid' } : current
+          )
+          setStep('success')
+          return
+        }
         setError(data?.error ?? `Could not record the payment (HTTP ${res.status})`)
         return
       }
@@ -300,7 +311,9 @@ function TableOrderInner({
       )
       setStep('success')
     } catch {
-      setError('Network error — please check your connection and try again.')
+      setError(
+        "Network error — the payment may already be recorded. Tap I have paid to retry; it will not charge twice."
+      )
     } finally {
       claimLock.current = false
       setClaiming(false)
@@ -335,8 +348,10 @@ function TableOrderInner({
         error={error}
         onBack={() => {
           if (!claiming) {
+            // The order already exists and the cart is cleared, so there is no
+            // review to return to: back goes to the order's status screen.
             setError(null)
-            setStep('review')
+            setStep('success')
           }
         }}
         onClaim={claimPayment}

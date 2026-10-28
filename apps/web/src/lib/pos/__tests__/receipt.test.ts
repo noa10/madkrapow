@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isClaimedByDiner,
+  isPaidOrderStatus,
   receiptPaymentLabel,
   receiptStatus,
   PAID_ORDER_STATUSES,
@@ -40,6 +41,20 @@ describe('receiptStatus', () => {
       'preparing',
       'ready',
     ])
+  })
+})
+
+describe('isPaidOrderStatus', () => {
+  it('accepts every paid status and the unknown/blank ones it does not know', () => {
+    for (const status of PAID_ORDER_STATUSES) {
+      expect(isPaidOrderStatus(status)).toBe(true)
+    }
+    expect(isPaidOrderStatus('pending')).toBe(false)
+    expect(isPaidOrderStatus('cancelled')).toBe(false)
+    expect(isPaidOrderStatus('')).toBe(false)
+    expect(isPaidOrderStatus(null)).toBe(false)
+    expect(isPaidOrderStatus(undefined)).toBe(false)
+    expect(isPaidOrderStatus(42)).toBe(false)
   })
 })
 

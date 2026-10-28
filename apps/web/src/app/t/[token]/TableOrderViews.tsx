@@ -363,7 +363,7 @@ export function PaymentView({
             type="button"
             onClick={onBack}
             disabled={claiming}
-            aria-label="Back to review"
+            aria-label="Back to order status"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border-2 text-foreground transition hover:bg-surface-2 disabled:opacity-40"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -481,14 +481,16 @@ export function TableOrderSuccessView({
           </p>
         )}
 
-        {paid && (
-          <Button asChild className="mt-4 min-h-11 w-full rounded-full font-bold">
-            <a href={receiptHref}>
-              <Receipt className="h-4 w-4" />
-              Show receipt
-            </a>
-          </Button>
-        )}
+        <Button
+          asChild
+          variant={paid ? 'default' : 'outline'}
+          className="mt-4 min-h-11 w-full rounded-full font-bold"
+        >
+          <a href={receiptHref}>
+            <Receipt className="h-4 w-4" />
+            {paid ? 'Show receipt' : 'Open receipt'}
+          </a>
+        </Button>
 
         <Button
           onClick={onOrderMore}

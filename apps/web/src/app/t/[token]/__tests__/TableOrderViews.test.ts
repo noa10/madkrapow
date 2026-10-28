@@ -180,7 +180,7 @@ describe('TableOrderSuccessView', () => {
     expect(html).toContain('MK-001')
   })
 
-  it('renders the pay-at-counter state for a pending order', () => {
+  it('renders the pay-at-counter state for a pending order, with its receipt', () => {
     const html = renderToStaticMarkup(
       createElement(TableOrderSuccessView, {
         table: TABLE,
@@ -189,6 +189,28 @@ describe('TableOrderSuccessView', () => {
       })
     )
     expect(html).toContain('Pay at the counter')
-    expect(html).not.toContain('/receipt/')
+    // The pending receipt renders PAY AT COUNTER, so the cashier can reconcile
+    // the ticket before the diner pays.
+    expect(html).toContain('/receipt/')
+  })
+})
+
+describe('PaymentView claim states', () => {
+  it('renders the claim error and keeps both actions enabled', () => {
+    const html = renderToStaticMarkup(
+      createElement(PaymentView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending' },
+        claiming: false,
+        error: 'Network error — the payment may already be recorded.',
+        onBack: () => {},
+        onClaim: () => {},
+        onPayAtCounter: () => {},
+      })
+    )
+    expect(html).toContain('the payment may already be recorded')
+    expect(html).toContain('I have paid')
+    expect(html).toContain('Pay at the counter instead')
+    expect(html).not.toMatch(/disabled=""/)
   })
 })

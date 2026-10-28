@@ -23,6 +23,17 @@ export type ReceiptStatus = 'paid' | 'unpaid' | 'cancelled'
 const PAID_SET: ReadonlySet<string> = new Set<string>(PAID_ORDER_STATUSES)
 
 /**
+ * True when this status means the bill is settled.
+ *
+ * Used by the payment step on a 409: an order already marked paid (by a
+ * cashier, or by an earlier claim) must show its receipt, not ask for money
+ * again.
+ */
+export function isPaidOrderStatus(status: unknown): boolean {
+  return typeof status === 'string' && PAID_SET.has(status)
+}
+
+/**
  * What the receipt badge says.
  *
  * An unknown status maps to `unpaid`: showing PAID on a status this module has

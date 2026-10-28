@@ -130,6 +130,9 @@ export interface TableSummary {
   kitchenActiveOrderCount: number
 }
 
+/** The two statuses a freshly created table-QR order can come back in. */
+export type TableOrderStatus = 'pending' | 'paid'
+
 export interface TableOrderSuccess {
   order_id: string
   order_number: string
@@ -137,6 +140,13 @@ export interface TableOrderSuccess {
   total_cents: number
   table_label: string
   pax: number
+  /**
+   * The order's real status at create time. `pending` for a new order; `paid`
+   * when a retried create returns an order the diner has already claimed, so
+   * the success screen never asks a paid order to pay again.
+   */
+  status: TableOrderStatus
+  paid_at?: string | null
 }
 
 /**
@@ -148,6 +158,8 @@ export interface TableOrderSuccess {
  * success screen must show the recorded method rather than assume `qr_pay`.
  */
 export interface TablePaymentClaim {
+  ok: true
+  order_id: string
   status: string
   amount_cents: number
   payment_method: string | null

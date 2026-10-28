@@ -75,3 +75,37 @@ export function lineTotalCents(
   )
   return Math.max(0, unit) * quantity
 }
+
+/** How the diner chose to settle the bill on the review step. */
+export type TablePaymentChoice = 'qr' | 'counter'
+
+/** Which screen the table-QR page is showing. */
+export type TableOrderStep = 'menu' | 'review' | 'payment' | 'success'
+
+/**
+ * The step that follows a successful create.
+ *
+ * A QR choice goes through the payment screen so the diner can scan and claim;
+ * a counter choice is done once the order reaches the kitchen.
+ */
+export function nextStepAfterCreate(
+  choice: TablePaymentChoice
+): 'payment' | 'success' {
+  return choice === 'qr' ? 'payment' : 'success'
+}
+
+/**
+ * Body for `POST /api/public/table-orders/[id]/pay`.
+ *
+ * The idempotency key is the order's own create key: it is what proves the
+ * caller created this order, so it must survive the create request.
+ */
+export function buildTablePaymentClaimPayload(input: {
+  tableToken: string
+  idempotencyKey: string
+}): { table_token: string; idempotency_key: string } {
+  return {
+    table_token: input.tableToken,
+    idempotency_key: input.idempotencyKey,
+  }
+}

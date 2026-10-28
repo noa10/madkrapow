@@ -1,17 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
-import {
-  CheckCircle2,
-  Loader2,
-  Minus,
-  Plus,
-  Search,
-  ShoppingBag,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { Search, ShoppingBag, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ItemQuickView } from '@/components/menu/ItemQuickView'
@@ -20,15 +11,30 @@ import { CartStoreProvider, useCartStoreInstance } from '@/stores/cart-context'
 import { getTableCartStore } from '@/stores/table-cart'
 import { useToastStore } from '@/stores/toast'
 import { useIsClient } from '@/hooks/useIsClient'
-import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
-import { useDialogFocus } from '@/hooks/useDialogFocus'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
+import {
+  buildTablePaymentClaimPayload,
+  nextStepAfterCreate,
+  type TableOrderStep,
+  type TablePaymentChoice,
+} from '@/lib/pos/table-orders'
 import type {
   CategoryWithMenuItems,
   MenuItemWithModifiers,
   ModifierGroupsByMenuItem,
 } from '@/lib/queries/menu'
-import type { PublicTable, TableOrderSuccess } from '@/lib/pos/types'
+import type {
+  PublicTable,
+  TableOrderSuccess,
+  TablePaymentClaim,
+} from '@/lib/pos/types'
+import {
+  PaymentView,
+  ReviewView,
+  TableOrderSuccessView,
+  formatPrice,
+  type TableOrderViewItem,
+} from './TableOrderViews'
 
 interface TableOrderClientProps {
   table: PublicTable
@@ -36,15 +42,15 @@ interface TableOrderClientProps {
   modifierGroupsByItem: ModifierGroupsByMenuItem | null
 }
 
-function formatPrice(cents: number): string {
-  return `RM ${(cents / 100).toFixed(2)}`
-}
-
 /**
  * The public table-QR ordering surface.
  *
  * Wraps the shared menu/quick-view in an isolated per-table cart so a diner's
  * table order never mixes with the delivery cart on the same phone.
+ *
+ * The flow is a four-step machine — menu → review → (payment) → success — so
+ * the diner sees their full order and the required pax before anything is
+ * sent, and can pay by QR from the same phone.
  */
 export function TableOrderClient({
   table,
@@ -77,16 +83,22 @@ function TableOrderInner({
   const cartReady = isClient && isHydrated
 
   const [query, setQuery] = useState('')
-  const [pax, setPax] = useState(2)
+  // Null until the diner picks: the kitchen plans portions from pax, so there
+  // is no safe default to send on their behalf.
+  const [pax, setPax] = useState<number | null>(null)
   const [customerName, setCustomerName] = useState('')
   const [notes, setNotes] = useState('')
   const [quickViewItem, setQuickViewItem] = useState<MenuItemWithModifiers | null>(null)
-  const [reviewOpen, setReviewOpen] = useState(false)
+  const [step, setStep] = useState<TableOrderStep>('menu')
+  const [paymentChoice, setPaymentChoice] = useState<TablePaymentChoice>('counter')
   const [submitting, setSubmitting] = useState(false)
+  const [claiming, setClaiming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<TableOrderSuccess | null>(null)
   const submitLock = useRef(false)
-  // One key per submission attempt, reused by retries; see submitOrder.
+  const claimLock = useRef(false)
+  // The create request's key, kept after success: it is the order's secret for
+  // the payment claim. Reset only when the diner starts a new order.
   const idempotencyKeyRef = useRef<string | null>(null)
 
   const menuNameById = useMemo(() => {
@@ -124,6 +136,31 @@ function TableOrderInner({
     }
   }, [quickViewItem, categories, modifierGroupsByItem])
 
+  const viewItems = useMemo<TableOrderViewItem[]>(
+    () =>
+      items.map((item) => {
+        const modifierIds = item.selected_modifiers.map((modifier) => modifier.id)
+        const modifierTotal = item.selected_modifiers.reduce(
+          (sum, modifier) => sum + modifier.price_delta_cents,
+          0
+        )
+        return {
+          key: `${item.menu_item_id}-${modifierIds.join('-')}`,
+          menuItemId: item.menu_item_id,
+          name: menuNameById.get(item.menu_item_id) ?? 'Item',
+          quantity: item.quantity,
+          lineTotalCents: (item.unit_price + modifierTotal) * item.quantity,
+          modifiers: item.selected_modifiers.map((modifier) => ({
+            id: modifier.id,
+            name: modifier.name,
+            priceDeltaCents: modifier.price_delta_cents,
+          })),
+          notes: item.special_instructions,
+        }
+      }),
+    [items, menuNameById]
+  )
+
   const handleSelectItem = useCallback(
     (item: MenuItemWithModifiers) => {
       // Never open an item that needs options without its groups — the diner
@@ -148,19 +185,33 @@ function TableOrderInner({
   const displayedSubtotalCents = cartReady ? subtotalCents : 0
 
   const changePax = (delta: number) => {
-    setPax((current) => Math.min(MAX_PAX, Math.max(MIN_PAX, current + delta)))
+    setPax((current) => {
+      if (current === null) return delta > 0 ? MIN_PAX : null
+      return Math.min(MAX_PAX, Math.max(MIN_PAX, current + delta))
+    })
+  }
+
+  const updateQuantity = (viewItem: TableOrderViewItem, quantity: number) => {
+    const modifierIds = viewItem.modifiers.map((modifier) => modifier.id)
+    cart.getState().updateQuantity(viewItem.menuItemId, modifierIds, quantity)
+  }
+
+  const removeItem = (viewItem: TableOrderViewItem) => {
+    const modifierIds = viewItem.modifiers.map((modifier) => modifier.id)
+    cart.getState().removeItem(viewItem.menuItemId, modifierIds)
   }
 
   const submitOrder = async () => {
     if (submitLock.current || items.length === 0) return
-    if (!Number.isInteger(pax) || pax < MIN_PAX || pax > MAX_PAX) {
-      setError(`Pax must be between ${MIN_PAX} and ${MAX_PAX}`)
+    if (pax === null || !Number.isInteger(pax) || pax < MIN_PAX || pax > MAX_PAX) {
+      setError(`Select the number of diners (${MIN_PAX}–${MAX_PAX})`)
       return
     }
+    const paxValue = pax
 
     // Stable across retries of this submission: a lost response followed by a
     // retry returns the order that already landed instead of creating a second
-    // ticket. Reset only after success (the cart is cleared then).
+    // ticket. Kept after success — it is the claim secret.
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = crypto.randomUUID()
     }
@@ -176,7 +227,7 @@ function TableOrderInner({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           table_token: table.token,
-          pax,
+          pax: paxValue,
           customer_name: customerName.trim() || undefined,
           notes: notes.trim() || undefined,
           idempotency_key: idempotencyKeyRef.current,
@@ -194,12 +245,16 @@ function TableOrderInner({
         return
       }
 
-      idempotencyKeyRef.current = null
+      const created = data as TableOrderSuccess
       cart.getState().clear()
-      setSuccess(data as TableOrderSuccess)
-      setReviewOpen(false)
+      setSuccess(created)
       setCustomerName('')
       setNotes('')
+      // A duplicate response can already be paid (a retry after a claim):
+      // never route a paid order through the payment step again.
+      setStep(
+        created.status === 'pending' ? nextStepAfterCreate(paymentChoice) : 'success'
+      )
     } catch {
       setError(
         'Network error — please check your connection and try again. Retrying will not send the order twice.'
@@ -210,12 +265,116 @@ function TableOrderInner({
     }
   }
 
-  if (success) {
+  const claimPayment = async () => {
+    if (!success || claimLock.current || !idempotencyKeyRef.current) return
+
+    claimLock.current = true
+    setClaiming(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/public/table-orders/${success.order_id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          buildTablePaymentClaimPayload({
+            tableToken: table.token,
+            idempotencyKey: idempotencyKeyRef.current,
+          })
+        ),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(data?.error ?? `Could not record the payment (HTTP ${res.status})`)
+        return
+      }
+
+      const claim = data as TablePaymentClaim
+      setSuccess((current) =>
+        current
+          ? {
+              ...current,
+              status: claim.status === 'pending' ? 'pending' : 'paid',
+              paid_at: claim.paid_at,
+            }
+          : current
+      )
+      setStep('success')
+    } catch {
+      setError('Network error — please check your connection and try again.')
+    } finally {
+      claimLock.current = false
+      setClaiming(false)
+    }
+  }
+
+  const startNewOrder = () => {
+    // A new round is a new order: the old key would collide with the order it
+    // already created.
+    idempotencyKeyRef.current = null
+    setSuccess(null)
+    setError(null)
+    setStep('menu')
+  }
+
+  if (step === 'success' && success) {
     return (
       <TableOrderSuccessView
         table={table}
         success={success}
-        onOrderMore={() => setSuccess(null)}
+        onOrderMore={startNewOrder}
+      />
+    )
+  }
+
+  if (step === 'payment' && success) {
+    return (
+      <PaymentView
+        table={table}
+        success={success}
+        claiming={claiming}
+        error={error}
+        onBack={() => {
+          if (!claiming) {
+            setError(null)
+            setStep('review')
+          }
+        }}
+        onClaim={claimPayment}
+        onPayAtCounter={() => {
+          // The order already reached the kitchen as `pending`; the cashier
+          // collects at the counter as before.
+          setError(null)
+          setStep('success')
+        }}
+      />
+    )
+  }
+
+  if (step === 'review') {
+    return (
+      <ReviewView
+        table={table}
+        items={viewItems}
+        pax={pax}
+        subtotalCents={subtotalCents}
+        customerName={customerName}
+        notes={notes}
+        paymentChoice={paymentChoice}
+        submitting={submitting}
+        error={error}
+        onBack={() => {
+          if (!submitting) {
+            setError(null)
+            setStep('menu')
+          }
+        }}
+        onChangePax={changePax}
+        onCustomerNameChange={setCustomerName}
+        onNotesChange={setNotes}
+        onPaymentChoiceChange={setPaymentChoice}
+        onUpdateQuantity={updateQuantity}
+        onRemoveItem={removeItem}
+        onSubmit={submitOrder}
       />
     )
   }
@@ -234,35 +393,6 @@ function TableOrderInner({
             <p className="text-[11px] text-muted-foreground">
               {[table.zone, `${table.seats} seats`].filter(Boolean).join(' · ')}
             </p>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Pax
-            </span>
-            <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-border-2 bg-surface p-1">
-              <button
-                type="button"
-                onClick={() => changePax(-1)}
-                disabled={pax <= MIN_PAX}
-                aria-label="Fewer diners"
-                className="grid h-8 w-8 place-items-center rounded-full text-foreground transition hover:bg-surface-2 disabled:opacity-40"
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <span className="w-6 text-center text-sm font-extrabold tabular-nums text-foreground">
-                {pax}
-              </span>
-              <button
-                type="button"
-                onClick={() => changePax(1)}
-                disabled={pax >= MAX_PAX}
-                aria-label="More diners"
-                className="grid h-8 w-8 place-items-center rounded-full text-foreground transition hover:bg-surface-2 disabled:opacity-40"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
           </div>
         </div>
       </header>
@@ -309,7 +439,10 @@ function TableOrderInner({
             </p>
           </div>
           <Button
-            onClick={() => setReviewOpen(true)}
+            onClick={() => {
+              setError(null)
+              setStep('review')
+            }}
             disabled={itemCount === 0 || !cartReady}
             className="min-h-12 rounded-full px-6 text-[15px] font-bold"
           >
@@ -322,322 +455,6 @@ function TableOrderInner({
       {quickViewFull && (
         <ItemQuickView item={quickViewFull} onClose={() => setQuickViewItem(null)} />
       )}
-
-      {reviewOpen && (
-        <ReviewSheet
-          table={table}
-          pax={pax}
-          onChangePax={changePax}
-          customerName={customerName}
-          onCustomerNameChange={setCustomerName}
-          notes={notes}
-          onNotesChange={setNotes}
-          subtotalCents={subtotalCents}
-          submitting={submitting}
-          error={error}
-          menuNameById={menuNameById}
-          onClose={() => {
-            if (!submitting) setReviewOpen(false)
-          }}
-          onSubmit={submitOrder}
-        />
-      )}
-    </main>
-  )
-}
-
-interface ReviewSheetProps {
-  table: PublicTable
-  pax: number
-  onChangePax: (delta: number) => void
-  customerName: string
-  onCustomerNameChange: (value: string) => void
-  notes: string
-  onNotesChange: (value: string) => void
-  subtotalCents: number
-  submitting: boolean
-  error: string | null
-  menuNameById: ReadonlyMap<string, string>
-  onClose: () => void
-  onSubmit: () => void
-}
-
-function ReviewSheet({
-  table,
-  pax,
-  onChangePax,
-  customerName,
-  onCustomerNameChange,
-  notes,
-  onNotesChange,
-  subtotalCents,
-  submitting,
-  error,
-  menuNameById,
-  onClose,
-  onSubmit,
-}: ReviewSheetProps) {
-  const cart = useCartStoreInstance()
-  const items = useStore(cart, (state) => state.items)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  useBodyScrollLock(true)
-  useDialogFocus(panelRef)
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [submitting, onClose])
-
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Review your order"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !submitting) onClose()
-      }}
-    >
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-2xl outline-none sm:rounded-2xl"
-      >
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <h2 className="flex-1 text-[15px] font-extrabold text-foreground">
-            Your order · Table {table.label}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Close review"
-            className="grid h-9 w-9 place-items-center rounded-full bg-surface-2 text-foreground transition hover:bg-surface-3"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          <ul className="space-y-3">
-            {items.map((item) => {
-              const modifierIds = item.selected_modifiers.map((modifier) => modifier.id)
-              const modifierTotal = item.selected_modifiers.reduce(
-                (sum, modifier) => sum + modifier.price_delta_cents,
-                0
-              )
-              return (
-                <li
-                  key={`${item.menu_item_id}-${modifierIds.join('-')}`}
-                  className="flex items-start gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-foreground">
-                      {item.quantity}×{' '}
-                      {menuNameById.get(item.menu_item_id) ?? 'Item'}
-                    </p>
-                    {item.selected_modifiers.length > 0 && (
-                      <ul className="mt-1 space-y-0.5">
-                        {item.selected_modifiers.map((modifier) => (
-                          <li
-                            key={modifier.id}
-                            className="text-[11px] leading-4 text-amber-200"
-                          >
-                            + {modifier.name}
-                            {modifier.price_delta_cents > 0 && (
-                              <span className="ml-1 tabular-nums text-amber-300/80">
-                                (+RM {(modifier.price_delta_cents / 100).toFixed(2)})
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {item.special_instructions.trim() && (
-                      <p className="mt-0.5 text-xs italic text-muted-foreground">
-                        “{item.special_instructions.trim()}”
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                    {formatPrice(
-                      (item.unit_price + modifierTotal) * item.quantity
-                    )}
-                  </span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        cart.getState().updateQuantity(item.menu_item_id, modifierIds, item.quantity - 1)
-                      }
-                      aria-label="Remove one"
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2"
-                    >
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        cart.getState().updateQuantity(item.menu_item_id, modifierIds, item.quantity + 1)
-                      }
-                      aria-label="Add one"
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => cart.getState().removeItem(item.menu_item_id, modifierIds)}
-                      aria-label="Remove item"
-                      className="grid h-7 w-7 place-items-center rounded-full text-red-400 hover:bg-red-500/10"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-
-          <div className="rounded-xl border border-border bg-background p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-foreground">Pax (required)</span>
-              <div className="inline-flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onChangePax(-1)}
-                  disabled={pax <= MIN_PAX}
-                  aria-label="Fewer diners"
-                  className="grid h-8 w-8 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2 disabled:opacity-40"
-                >
-                  <Minus className="h-3.5 w-3.5" />
-                </button>
-                <span className="w-6 text-center text-base font-extrabold tabular-nums text-foreground">
-                  {pax}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onChangePax(1)}
-                  disabled={pax >= MAX_PAX}
-                  aria-label="More diners"
-                  className="grid h-8 w-8 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2 disabled:opacity-40"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="table-customer-name" className="text-sm font-semibold text-foreground">
-              Name (optional)
-            </label>
-            <Input
-              id="table-customer-name"
-              value={customerName}
-              onChange={(event) => onCustomerNameChange(event.target.value)}
-              placeholder="So we can call your order"
-              maxLength={120}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="table-order-notes" className="text-sm font-semibold text-foreground">
-              Notes (optional)
-            </label>
-            <textarea
-              id="table-order-notes"
-              value={notes}
-              onChange={(event) => onNotesChange(event.target.value)}
-              placeholder="Allergies, preferences…"
-              maxLength={500}
-              rows={2}
-              className="w-full resize-none rounded-lg border border-border-2 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-              {error}
-            </p>
-          )}
-        </div>
-
-        <div className="border-t border-border px-4 py-3">
-          <div className="mb-3 flex items-baseline justify-between">
-            <span className="text-sm font-semibold text-foreground">Total</span>
-            <span className="text-xl font-extrabold tabular-nums text-ember-text">
-              {formatPrice(subtotalCents)}
-            </span>
-          </div>
-          <Button
-            onClick={onSubmit}
-            disabled={submitting || items.length === 0}
-            className="min-h-12 w-full rounded-full text-[15px] font-bold"
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              `Send order · ${formatPrice(subtotalCents)}`
-            )}
-          </Button>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Pay at the counter after sending your order.
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function TableOrderSuccessView({
-  table,
-  success,
-  onOrderMore,
-}: {
-  table: PublicTable
-  success: TableOrderSuccess
-  onOrderMore: () => void
-}) {
-  return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-6">
-      <div className="w-full max-w-sm text-center">
-        <CheckCircle2 className="mx-auto h-16 w-16 text-emerald-400" />
-        <h1 className="mt-4 font-display text-2xl font-extrabold text-foreground">
-          Order sent to the kitchen
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Table {table.label} · {success.pax} pax
-        </p>
-
-        <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Order code
-          </p>
-          <p className="mt-1 font-display text-3xl font-extrabold tabular-nums text-gold">
-            {success.display_code || success.order_number}
-          </p>
-          <p className="mt-3 text-lg font-extrabold tabular-nums text-ember-text">
-            {formatPrice(success.total_cents)}
-          </p>
-        </div>
-
-        <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
-          Please pay at the counter. Keep this code to collect your order.
-        </p>
-
-        <Button
-          onClick={onOrderMore}
-          variant="outline"
-          className="mt-6 min-h-11 w-full rounded-full font-bold"
-        >
-          Order more
-        </Button>
-      </div>
     </main>
   )
 }

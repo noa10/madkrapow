@@ -74,6 +74,7 @@ type ExistingOrder = {
   pax: number | null
   table_label: string | null
   table_id: string | null
+  status: string | null
 }
 
 function existingOrderPayload(order: ExistingOrder) {
@@ -84,6 +85,10 @@ function existingOrderPayload(order: ExistingOrder) {
     total_cents: order.total_cents,
     table_label: order.table_label,
     pax: order.pax,
+    // The real status, never a literal: a retried create after the diner has
+    // claimed the order must say `paid`, or the success screen would ask them
+    // to pay a second time.
+    status: order.status,
     duplicate: true,
   }
 }
@@ -157,7 +162,7 @@ export async function POST(req: NextRequest) {
       const { data: existing, error: existingError } = await supabase
         .from('orders')
         .select(
-          'id, order_number, display_code, total_cents, pax, table_label, table_id'
+          'id, order_number, display_code, total_cents, pax, table_label, table_id, status'
         )
         .eq('idempotency_key', input.idempotency_key)
         .maybeSingle()
@@ -393,7 +398,7 @@ export async function POST(req: NextRequest) {
         const { data: existing } = await supabase
           .from('orders')
           .select(
-            'id, order_number, display_code, total_cents, pax, table_label, table_id'
+            'id, order_number, display_code, total_cents, pax, table_label, table_id, status'
           )
           .eq('idempotency_key', input.idempotency_key)
           .maybeSingle()
@@ -497,6 +502,7 @@ export async function POST(req: NextRequest) {
         total_cents: subtotalCents,
         table_label: table.label,
         pax: input.pax,
+        status: 'pending' as const,
       },
       { status: 201 }
     )

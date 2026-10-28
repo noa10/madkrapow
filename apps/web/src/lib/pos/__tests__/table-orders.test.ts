@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildTablePaymentClaimPayload,
   lineTotalCents,
   mergeTableOrderItems,
+  nextStepAfterCreate,
   type TableOrderItemInput,
 } from '../table-orders'
 
@@ -71,5 +73,23 @@ describe('lineTotalCents', () => {
     // or the order total — negative; orders.total_cents has no CHECK.
     expect(lineTotalCents(500, [-800], 1)).toBe(0)
     expect(lineTotalCents(500, [-800], 3)).toBe(0)
+  })
+})
+
+describe('nextStepAfterCreate', () => {
+  it('routes a QR choice to the payment step and a counter choice to success', () => {
+    expect(nextStepAfterCreate('qr')).toBe('payment')
+    expect(nextStepAfterCreate('counter')).toBe('success')
+  })
+})
+
+describe('buildTablePaymentClaimPayload', () => {
+  it('builds the claim payload with snake_case keys', () => {
+    expect(
+      buildTablePaymentClaimPayload({
+        tableToken: 't'.repeat(32),
+        idempotencyKey: 'k'.repeat(20),
+      })
+    ).toEqual({ table_token: 't'.repeat(32), idempotency_key: 'k'.repeat(20) })
   })
 })

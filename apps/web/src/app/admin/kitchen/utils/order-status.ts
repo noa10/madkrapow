@@ -7,13 +7,17 @@
  * the pending colour — a wrong status on the ticket the kitchen cooks from.
  */
 
+import { KITCHEN_ACTIVE_STATUSES } from '@/lib/orders/kitchen'
+
 export interface StatusConfig {
   color: string
   label: string
 }
 
 /** Order statuses the kitchen is actively working on. */
-export const ACTIVE_STATUSES = ['paid', 'accepted', 'preparing', 'ready']
+export const ACTIVE_STATUSES: readonly string[] = KITCHEN_ACTIVE_STATUSES
+
+export { isKitchenActive } from '@/lib/orders/kitchen'
 
 export const STATUS_CONFIG: Record<string, StatusConfig> = {
   pending: {

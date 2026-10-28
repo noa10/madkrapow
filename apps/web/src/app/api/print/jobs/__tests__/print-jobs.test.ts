@@ -67,6 +67,7 @@ function buildMockClient(opts: Opts = {}) {
         eq: (col: string, val: unknown) => unknown
         in: (col: string, vals: unknown[]) => unknown
         gte: (col: string, val: unknown) => unknown
+        or: (filter: string) => unknown
         order: (col: string, opts?: unknown) => unknown
         limit: (n: number) => unknown
         insert: (payload: unknown) => unknown
@@ -84,6 +85,9 @@ function buildMockClient(opts: Opts = {}) {
           return builder
         },
         gte(_col: string, _val: unknown) {
+          return builder
+        },
+        or(_filter: string) {
           return builder
         },
         order(_col: string, _opts?: unknown) {
@@ -165,6 +169,60 @@ describe('GET /api/print/jobs/claim', () => {
     expect(markersOf(client).sort()).toEqual([
       'printed_kitchen_docket',
       'printed_receipt',
+    ])
+  })
+
+  it('claims pending dine-in and counter dockets but skips pending web checkouts', async () => {
+    const dineInPending = {
+      ...ORDER_ROW,
+      id: 'dine-in-1',
+      source: 'web',
+      status: 'pending',
+      delivery_type: 'dine_in',
+    }
+    const webPending = {
+      ...ORDER_ROW,
+      id: 'web-1',
+      source: 'web',
+      status: 'pending',
+      delivery_type: 'delivery',
+    }
+    const counterPending = {
+      ...ORDER_ROW,
+      id: 'counter-1',
+      source: 'counter',
+      status: 'pending',
+      delivery_type: 'self_pickup',
+    }
+    const client = buildMockClient({
+      orders: [dineInPending, webPending, counterPending],
+      liveOrderRow: dineInPending,
+      orderRow: dineInPending,
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    // Unpaid tickets print the docket immediately; receipts wait for
+    // settlement. Abandoned web checkouts never print.
+    expect(json.jobs.map((job: { type: string }) => job.type)).toEqual([
+      'kitchen_docket',
+      'kitchen_docket',
+    ])
+    const markers = client.attemptedInserts.filter(
+      (insert) => insert.table === 'order_events'
+    )
+    expect(markers.map((marker) => marker.payload)).toEqual([
+      expect.objectContaining({
+        order_id: 'dine-in-1',
+        event_type: 'printed_kitchen_docket',
+      }),
+      expect.objectContaining({
+        order_id: 'counter-1',
+        event_type: 'printed_kitchen_docket',
+      }),
     ])
   })
 

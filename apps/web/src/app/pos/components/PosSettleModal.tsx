@@ -1,0 +1,211 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Banknote, Check, CreditCard, Loader2, QrCode, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import type { PosSettleTarget } from '@/lib/pos/types'
+import { CompanyQrPanel } from './CompanyQrPanel'
+
+interface PosSettleModalProps {
+  /** One take-away ticket or the grouped total for a table. */
+  target: PosSettleTarget | null
+  busy: boolean
+  /** Last settle failure, shown in the dialog so a modal backdrop cannot hide it. */
+  error?: string | null
+  onClose: () => void
+  onConfirm: (method: 'cash' | 'qr_pay') => void
+}
+
+type Stage = 'method' | 'qr'
+
+function formatPrice(cents: number): string {
+  return `RM ${(cents / 100).toFixed(2)}`
+}
+
+/**
+ * Collect payment for an unpaid POS order or every unpaid order at a table.
+ *
+ * The amount and label come from the settle target, so the grouped total shown
+ * here is the same number the card and the sale panel used.
+ */
+export function PosSettleModal({
+  target,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: PosSettleModalProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [stage, setStage] = useState<Stage>('method')
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (target) {
+      if (!dialog.open) dialog.showModal()
+    } else if (dialog.open) {
+      dialog.close()
+    }
+  }, [target])
+
+  useEffect(() => {
+    if (!target) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!busy) onClose()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [target, busy, onClose])
+
+  const close = () => {
+    if (busy) return
+    setStage('method')
+    onClose()
+  }
+
+  const amountCents = target?.amountCents ?? 0
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="pos-settle-title"
+      // Fires when the dialog closes natively. Guard on `target`: the effect
+      // above also calls `dialog.close()` after the parent clears the target,
+      // and that must not invoke `onClose` a second time.
+      onClose={() => {
+        if (target) onClose()
+      }}
+      onClick={(event) => {
+        if (event.target === dialogRef.current && !busy) close()
+      }}
+      className="m-auto w-[calc(100%-2rem)] max-w-md border-none bg-transparent p-0 backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+    >
+      <div className="rounded-xl border border-border bg-card p-5 text-foreground shadow-2xl shadow-black/40">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2
+              id="pos-settle-title"
+              className="text-base font-semibold text-foreground"
+            >
+              {stage === 'qr' ? 'Scan to pay' : 'Collect payment'}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {target?.label ?? 'Order'}
+              {target?.context ? ` · ${target.context}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={close}
+            disabled={busy}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-white/5 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {stage === 'qr' ? (
+          <>
+            <div className="mt-4">
+              <CompanyQrPanel
+                amountCents={amountCents}
+                note="Confirm only after the customer shows a successful payment."
+              />
+            </div>
+            {error && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-300"
+              >
+                {error}
+              </p>
+            )}
+            <div className="mt-5 flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStage('method')}
+                disabled={busy}
+                className="min-h-11 flex-1"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button
+                onClick={() => onConfirm('qr_pay')}
+                disabled={busy}
+                className="min-h-11 flex-1 font-bold"
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Payment received
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-4 text-center text-3xl font-extrabold tabular-nums text-foreground">
+              {target ? formatPrice(amountCents) : '—'}
+            </p>
+            {target && target.orderCount > 1 && (
+              <p className="mt-1 text-center text-xs text-muted-foreground">
+                Settles all {target.orderCount} unpaid orders at this table.
+              </p>
+            )}
+
+            {error && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-300"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="mt-5 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => onConfirm('cash')}
+                  disabled={busy}
+                  className="min-h-12"
+                >
+                  <Banknote className="h-4 w-4" />
+                  Cash
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setStage('qr')}
+                  disabled={busy}
+                  className="min-h-12"
+                >
+                  <QrCode className="h-4 w-4" />
+                  Company QR
+                </Button>
+              </div>
+              <Button
+                variant="outline"
+                disabled
+                title="Card terminal integration is coming soon"
+                className="min-h-11 w-full opacity-50"
+              >
+                <CreditCard className="h-4 w-4" />
+                Card terminal — coming soon
+              </Button>
+            </div>
+
+            <p className="mt-3 text-center text-[11px] text-muted-foreground">
+              The order is marked paid and the kitchen is notified.
+            </p>
+          </>
+        )}
+      </div>
+    </dialog>
+  )
+}

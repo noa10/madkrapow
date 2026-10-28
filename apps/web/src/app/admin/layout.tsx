@@ -12,6 +12,8 @@ import {
   FileBarChart2,
   BadgePercent,
   Settings,
+  Store,
+  Armchair,
 } from "lucide-react"
 import { getBrowserClient } from "@/lib/supabase/client";
 import { type StaffRole } from "@/lib/auth/roles";
@@ -37,6 +39,8 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", href: "/admin", icon: LayoutDashboard, roles: ["admin", "manager", "cashier", "kitchen"] },
   { key: "orders", label: "Orders", href: "/admin/orders", icon: ClipboardList, roles: ["admin", "manager", "cashier"] },
+  { key: "pos", label: "POS", href: "/pos", icon: Store, roles: ["admin", "manager", "cashier"] },
+  { key: "tables", label: "Tables", href: "/admin/tables", icon: Armchair, roles: ["admin", "manager"] },
   { key: "kitchen", label: "Kitchen", href: "/admin/kitchen", icon: ChefHat, roles: ["admin", "manager", "kitchen"] },
   { key: "menu", label: "Menu", href: "/admin/menu", icon: UtensilsCrossed, roles: ["admin", "manager"] },
   { key: "employees", label: "Employees", href: "/admin/employees", icon: Users, roles: ["admin", "manager"] },

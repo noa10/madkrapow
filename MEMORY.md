@@ -304,6 +304,83 @@ This file contains curated memories, decisions, and learnings that persist acros
   moves instead. Verified with a local `next start`: `/menu?category=x` →
   307 → `/?category=x`, `/menu/` → 308 → `/menu`.
 
+### 2026-10-27: POS dine-in (tables + pax) and table-QR ordering
+- **Decision**: Added a web-only dine-in POS. `restaurant_tables`
+  (label/zone/seats/opaque `qr_token`/active) + `orders.table_id`,
+  `table_label` (snapshot), `pax`; `delivery_type` widened with `dine_in`.
+  Staff key dine-in/take-away orders at `/pos`; the table board is derived
+  from open dine-in orders. Diners scan `${NEXT_PUBLIC_URL}/t/<token>`, order
+  from the live menu (modifiers included), enter pax (required) + optional
+  name. Customers pay at the counter.
+- **Status semantics (no new statuses)**: merchant POS orders are `paid`;
+  table-QR orders are `pending` (unpaid) and therefore visible on the kitchen
+  board as `pending` dine-in tickets — pending delivery/pickup checkouts stay
+  excluded. Cashier settles via `settle_dine_in_order` (`pending→paid`, writes
+  `payments`, `payment_collected` + `status_changed` events). Closing a table is
+  gated on the bill, not the kitchen (migration 061): once nothing at the table
+  is `pending`, `close_dine_in_table` completes every open order to
+  `picked_up` with `reason: 'table_closed'` and the true prior status on the
+  event. The call carries the confirmed order ids (migration 062): if the open
+  set changed while the dialog was open, it returns `stale_close` without
+  writing. (057 required `ready` instead, which stranded every pay-now table —
+  the POS has no kitchen-advance control.) Both RPCs are `SECURITY DEFINER`
+  with EXECUTE revoked from PUBLIC/anon/authenticated and granted only to
+  `service_role`.
+- **Security**: public table ordering is anonymous; the 32-hex token is the
+  capability, resolved server-side with the service role (no anon SELECT on
+  `restaurant_tables`, so tokens cannot be enumerated). The route re-prices
+  items + modifiers, validates required/max options, caps payloads and
+  rate-limits per table (4 / 5 min, 10 s gap). The limit is enforced atomically
+  by a `BEFORE INSERT` trigger with a per-table advisory lock (the route's
+  pre-check is only a fast path). Migration 057 **drops the legacy
+  `auth_insert_orders` policy** (anon could insert arbitrary orders) and
+  revokes the settle/close RPCs from anon/authenticated.
+- **Roles**: `/api/admin/orders/[id]/status` now accepts
+  admin/manager/kitchen/cashier (needed so a shift without an admin can move
+  paid→preparing→ready; closing itself only needs a settled bill — see the
+  2026-10-28 close-gate note). POS/table orders can only become `paid`
+  through the settle RPC (it writes the payments row); the status route blocks
+  a bare `pending→paid` for `source='counter'`/`delivery_type='dine_in'` even
+  for managers. Web orders keep the admin/manager manual-paid override, and
+  cancellations remain admin/manager-only — except a cashier may void an
+  unpaid (`pending`) dine-in or POS counter order from the table board. Status
+  updates are optimistic-concurrency guarded (`eq('status', readStatus)` →
+  409 on a concurrent settle/void).
+- **Payment snapshot**: `orders.payment_method` is written by the POS create
+  and settle paths so admin cards show Cash/QR Pay; `payments` stays the
+  ledger.
+- **Printing**: table-QR tickets print a kitchen docket while `pending` and
+  add a receipt after settlement (`jobTypesForOrder` takes status/delivery
+  type); dockets show `TABLE X · N PAX`; cash receipts open the drawer.
+- **POS modifiers**: customizable dishes show a "Customizable" marker and open
+  an options dialog (shared `ModifierGroup` + special instructions). Cart lines
+  are keyed by dish + add-ons + note, totals include add-on deltas, and
+  `POST /api/pos/orders` re-validates modifier membership/required/max against
+  the DB, re-prices, and snapshots `order_item_modifiers`. Never add a POS item
+  with options directly to the cart without the server-side check.
+- **Optional payment (2026-10-27 follow-up)**: POS offers **Pay now** (Cash
+  or Company DuitNow QR at `apps/web/public/company-qr.jpeg`) or **Pay
+  later**; the **Card** option is disabled until a terminal integration
+  exists. Pay-later creates a `pending` counter order with no payment row;
+  the kitchen starts immediately (pending source=counter is now
+  kitchen-active) and the cashier settles later from the table board or the
+  new Unpaid take-away strip. Migration 058 broadens `settle_dine_in_order`
+  to POS counter orders; the print bridge prints the docket only while
+  pending and the receipt after settlement.
+- **POS UI follow-up**: the POS menu uses storefront-style photo cards
+  (`PosMenuCard` with `image_url`/description), the Add Table modal uses
+  foreground-contrast labels/buttons, and `<html>` carries
+  `data-scroll-behavior="smooth"` to silence the Next.js route-transition
+  warning.
+- **Known limits**: Flutter merchant kitchen excludes pending tickets and
+  labels `dine_in` as a generic delivery badge (web-only scope decision);
+  analytics delivery/pickup buckets ignore dine-in (totals include it);
+  migration 057 is written but **not applied**.- **Gotcha**: the shared menu components (`useItemOrder`, `RichMenuCard`) now
+  read the cart from a `CartStoreProvider` context (default = the delivery
+  cart); the table page injects a per-table store. Do not add another
+  component that imports `useCartStore` directly and render it inside the
+  table page — it would read the wrong cart.
+
 ---
 
 ## Critical Patterns
@@ -503,6 +580,52 @@ supabase/
   routes*; a typecheck error count that moves on its own is this file, not your change.
 - Store secrets/logs via `sanitizeForLog` (see the 2026-10-14 decision above). Never inline a
   private copy of a sanitiser — that duplication is what caused CodeQL alert #57.
+- **Zod 4 `z.uuid()` rejects the seeded menu/modifier ids** (`00000004-…`, `00000003-…` — the
+  UUID version nibble is `0`), so a route that validates them with `z.string().uuid()` returns
+  `400 Invalid request` for every real order. This silently blocked the POS and table-QR order
+  routes until 2026-10-27, and the dev-only toast bug below made the error invisible. Use
+  `z.guid()` for database ids (any 8-4-4-4-12 hex shape); the FK still enforces membership.
+  `promos/preview` and the GrabFood menu mapping/snooze routes still carry the strict check.
+- **Do not remove a toast in a `ToastItem` unmount cleanup.** React StrictMode's dev-only
+  mount → cleanup → mount cycle runs it immediately, so every success/error toast vanished
+  before it could be read in `npm run dev`. The store's timer owns dismissal.
+- **POS order creation is not idempotent.** If the response is lost after the server commits,
+  a retry creates a second paid order + payment + docket. The UI now tells the cashier to
+  check the table board first, but the real fix is a client `request_key` with a unique index
+  on `orders` (return the existing order on conflict) and a transactional
+  `pending → paid` + payment insert to replace the compensating delete.
+- **POS collects a table's unpaid rounds as one bill.** `settle_dine_in_table` (migrations 059/060)
+  locks and settles every pending dine-in order at a table in one transaction and writes one
+  `payments` row per order; the table card and sale panel show one grouped total. The call carries
+  the **expected order ids** the cashier confirmed; if the pending set changed (a round added or
+  paid), the RPC returns `stale_settle` without writing, so an unshown round can never be charged.
+  The live `order_events` table was missing the `actor_id` column that 008 declares (migration
+  drift), which made every settle/close RPC fail with `42703`; 059 adds it back idempotently. When
+  a migration file and the live schema disagree, check the live columns before trusting the file.
+
+- **A gate whose only escape hatch is another screen strands the user.** Closing a dine-in table
+  required every order `ready` (057), but `paid → preparing → ready` is only reachable on the admin
+  kitchen board and the Flutter app — never from the POS, which is where a cashier lives. Every
+  pay-now table was created `paid` and could never be closed; the money was recorded correctly the
+  whole time. Migration 061 gates closing on the bill instead (nothing `pending`) and completes
+  still-cooking tickets to `picked_up` with `reason: 'table_closed'` plus the real prior status on
+  the event, so the timeline never claims a kitchen step that did not happen. Before adding a
+  blocker, check that the screen raising it also offers a way past it.
+
+- **A destructive batch needs the confirmed set, not just a good predicate.** Settle (060) and
+  close (062) both act on every row matching a predicate, and both showed the cashier a snapshot
+  first. Passing the snapshot's ids into the RPC and refusing on mismatch (`stale_settle`,
+  `stale_close`) is what makes the two agree; a predicate alone silently includes whatever landed
+  after the dialog opened. The same comparison also covers writers that bypass the advisory lock
+  (counter inserts), so the lock is no longer the only line of defence.
+
+- **An anonymous write that can time out needs an idempotency key, not a cooldown.** The table-QR
+  route tried to stop duplicates with a 10 s per-table gap. A lost response then had two bad
+  outcomes: the retry hit the gap (429, though the order existed) or, after 10 s, created a second
+  ticket staff could not tell from a real round. The gap also rejected a second diner at the same
+  table, which is ordinary. The fix is a client-generated key with a unique index: a retry returns
+  the original order, concurrent duplicates lose to the index, and the 4 / 5 min cap still bounds
+  abuse. A cooldown punishes the honest retry and misses the dishonest one.
 
 ---
 

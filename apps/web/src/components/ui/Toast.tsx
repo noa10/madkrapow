@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect } from 'react'
 import { X, CheckCircle, AlertCircle, Info, Tag } from 'lucide-react'
 import { useToastStore, type ToastType } from '@/stores/toast'
 import { cn } from '@/lib/utils'
@@ -30,10 +29,10 @@ interface ToastItemProps {
 export function ToastItem({ id, type, title, description, action }: ToastItemProps) {
   const removeToast = useToastStore((state) => state.removeToast)
 
-  useEffect(() => {
-    return () => removeToast(id)
-  }, [id, removeToast])
-
+  // Dismissal is owned by the store's timer. Do not remove the toast in an
+  // unmount cleanup: React StrictMode mounts, cleans up and re-mounts every
+  // component in development, so that cleanup removed each toast the instant
+  // it appeared and made every success/error message invisible in dev.
   return (
     <div
       className={cn(

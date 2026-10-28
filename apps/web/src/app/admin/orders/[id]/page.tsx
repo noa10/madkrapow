@@ -65,6 +65,9 @@ interface Order {
   driver_phone: string | null;
   driver_plate_number: string | null;
   delivery_type: string;
+  table_id: string | null;
+  table_label: string | null;
+  pax: number | null;
   fulfillment_type: string;
   scheduled_for: string | null;
   dispatch_status: string | null;
@@ -567,7 +570,12 @@ export default function AdminOrderDetailPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  {order.delivery_type === 'self_pickup' ? 'Pickup' : 'Delivery'} scheduled for
+                  {order.delivery_type === 'dine_in'
+                    ? 'Dine-in'
+                    : order.delivery_type === 'self_pickup'
+                      ? 'Pickup'
+                      : 'Delivery'}{' '}
+                  scheduled for
                 </p>
                 <p className="font-semibold">
                   {format(new Date(order.scheduled_for), "MMMM d, yyyy 'at' h:mm a")}
@@ -594,7 +602,26 @@ export default function AdminOrderDetailPage() {
         </Card>
       )}
 
-      {order.status === 'pending' && (
+      {order.status === 'pending' &&
+        (order.delivery_type === 'dine_in' || order.source === 'counter') && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="pt-4 flex items-start gap-3">
+            <Clock className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-yellow-800">Awaiting payment at the counter</p>
+              <p className="text-sm text-yellow-700">
+                {order.source === 'counter'
+                  ? `This pay-later ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
+                  : 'This dine-in order came from the table QR. The kitchen already sees it; collect cash or Company QR in the POS table board to mark it paid.'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {order.status === 'pending' &&
+        order.delivery_type !== 'dine_in' &&
+        order.source !== 'counter' && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="pt-4 flex items-start gap-3">
             <Clock className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />
@@ -752,11 +779,21 @@ export default function AdminOrderDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>
-                {order.delivery_type === 'self_pickup' ? 'Pickup' : 'Delivery'} Address
+                {order.delivery_type === 'dine_in'
+                  ? 'Dine In'
+                  : order.delivery_type === 'self_pickup'
+                    ? 'Pickup'
+                    : 'Delivery'}{' '}
+                {order.delivery_type === 'dine_in' ? '' : 'Address'}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {order.delivery_type === 'self_pickup' ? (
+              {order.delivery_type === 'dine_in' ? (
+                <p className="text-muted-foreground">
+                  Table {order.table_label ?? '—'}
+                  {order.pax != null ? ` · ${order.pax} pax` : ''}
+                </p>
+              ) : order.delivery_type === 'self_pickup' ? (
                 <p className="text-muted-foreground">Customer will pick up from store</p>
               ) : (
                 <div className="flex items-start gap-2">
@@ -843,7 +880,7 @@ export default function AdminOrderDetailPage() {
                   );
                 }}
               />
-              {order.delivery_type !== 'self_pickup' && (
+              {order.delivery_type === 'delivery' && (
                 <DeliveryMap
                   driverLatitude={shipment?.driver_latitude ?? null}
                   driverLongitude={shipment?.driver_longitude ?? null}

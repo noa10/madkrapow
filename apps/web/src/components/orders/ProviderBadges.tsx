@@ -1,4 +1,4 @@
-import { Banknote, Bike, CreditCard, Hourglass, Landmark, Store, Truck, Wallet } from "lucide-react"
+import { Banknote, Bike, CreditCard, Hourglass, Landmark, Store, Truck, UtensilsCrossed, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   getDeliveryBadge,
@@ -47,6 +47,10 @@ const DELIVERY_STYLE: Record<DeliveryProvider, { className: string; Icon: typeof
   self_pickup: {
     className: "bg-sky-500/15 text-sky-400 border-sky-500/30",
     Icon: Store,
+  },
+  dine_in: {
+    className: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    Icon: UtensilsCrossed,
   },
   in_house: {
     className: "bg-teal-500/15 text-teal-400 border-teal-500/30",

@@ -34,6 +34,10 @@ export interface PrintOrder {
   paymentMethod?: string | null
   /** Dine-in/takeaway label for counter orders. */
   fulfillmentLabel?: string
+  /** Dine-in table label snapshot (e.g. "T3"). */
+  tableLabel?: string | null
+  /** Dine-in party size. */
+  pax?: number | null
 }
 
 export type PrintJobType = 'kitchen_docket' | 'receipt' | 'grabfood_ticket'
@@ -103,6 +107,13 @@ export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boole
     lines.push({ kind: 'text', text: `Grab: ${order.externalOrderNumber}`, style: { align: 'center' } })
   }
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
+  if (order.tableLabel) {
+    lines.push({
+      kind: 'text',
+      text: `TABLE ${order.tableLabel}${order.pax ? ` · ${order.pax} PAX` : ''}`,
+      style: { align: 'center', bold: true },
+    })
+  }
   lines.push({ kind: 'divider' })
   lines.push(...itemLines(order, false))
   lines.push({ kind: 'divider' })
@@ -158,6 +169,12 @@ export function buildReceipt(
   lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })
   if (order.fulfillmentLabel) {
     lines.push({ kind: 'columns', label: 'Type', value: order.fulfillmentLabel })
+  }
+  if (order.tableLabel) {
+    lines.push({ kind: 'columns', label: 'Table', value: order.tableLabel })
+  }
+  if (order.pax != null) {
+    lines.push({ kind: 'columns', label: 'Pax', value: String(order.pax) })
   }
   if (order.customerName) {
     lines.push({ kind: 'columns', label: 'Customer', value: order.customerName })

@@ -29,8 +29,14 @@ export interface Order {
   item_count?: number
   source: OrderSource
   customer_id: string | null
-  // No `payment_method` here: `orders` has no such column. The persisted method
-  // lives in `payments.method` — see the derivation note in lib/orders/payment-pill.ts.
+  /** Dine-in table reference (delivery_type = 'dine_in'). */
+  table_id?: string | null
+  /** Table label snapshot captured when the order was placed. */
+  table_label?: string | null
+  /** Party size for dine-in orders. */
+  pax?: number | null
+  /** Payment-method snapshot written by the POS/settle paths (payments is the ledger). */
+  payment_method?: string | null
   stripe_payment_intent_id: string | null
   stripe_session_id: string | null
   billplz_bill_id: string | null

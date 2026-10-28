@@ -16,26 +16,79 @@ const MENU_ROWS = [
   { id: '33333333-3333-4333-8333-333333333333', name: 'Sold Out Item', price_cents: 900, is_available: false },
 ]
 
-type Call = { table: string; op: 'insert' | 'select'; row?: Record<string, unknown>; rows?: Record<string, unknown>[] }
+const TABLE_ID = '44444444-4444-4444-8444-444444444444'
+const INACTIVE_TABLE_ID = '55555555-5555-4555-8555-555555555555'
+const TABLES = [
+  { id: TABLE_ID, label: 'T7', is_active: true },
+  { id: INACTIVE_TABLE_ID, label: 'Old Patio', is_active: false },
+]
 
-function buildMockClient() {
+type Call = { table: string; op: 'insert' | 'select' | 'delete'; row?: Record<string, unknown>; rows?: Record<string, unknown>[] }
+
+interface MockOptions {
+  menu?: Record<string, unknown>[]
+  modifiers?: Record<string, unknown>[]
+  junctions?: Record<string, unknown>[]
+  groups?: Record<string, unknown>[]
+  /** Simulate the payments ledger insert failing after the order was written. */
+  paymentError?: { message: string; code?: string }
+}
+
+function buildMockClient(options: MockOptions = {}) {
   const calls: Call[] = []
+  let lineCounter = 0
+
+  const rowsFor = (table: string, column: string, ids: string[]) => {
+    let rows: Record<string, unknown>[]
+    if (table === 'menu_items') rows = options.menu ?? MENU_ROWS
+    else if (table === 'modifiers') rows = options.modifiers ?? []
+    else if (table === 'menu_item_modifier_groups') rows = options.junctions ?? []
+    else if (table === 'modifier_groups') rows = options.groups ?? []
+    else rows = []
+    return rows.filter((row) => ids.includes(String(row[column])))
+  }
+
   const client = {
     calls,
     from(table: string) {
+      if (table === 'restaurant_tables') {
+        return {
+          select() {
+            return {
+              eq(_column: string, id: string) {
+                return {
+                  maybeSingle: async () => {
+                    calls.push({ table, op: 'select' })
+                    return {
+                      data: TABLES.find((row) => row.id === id) ?? null,
+                      error: null,
+                    }
+                  },
+                }
+              },
+            }
+          },
+        }
+      }
+
       return {
         select() {
-          return {
-            in(_col: string, ids: string[]) {
-              return {
-                then(resolve: (v: { data: unknown; error: null }) => void) {
-                  calls.push({ table, op: 'select' })
-                  const data = MENU_ROWS.filter((m) => ids.includes(m.id))
-                  resolve({ data, error: null })
-                },
-              }
+          let data: Record<string, unknown>[] = []
+          const builder = {
+            eq: () => builder,
+            in: (column: string, ids: string[]) => {
+              data = rowsFor(table, column, ids)
+              calls.push({ table, op: 'select' })
+              return builder
             },
+            order: () => builder,
+            gte: () => builder,
+            limit: () => builder,
+            maybeSingle: async () => ({ data: data[0] ?? null, error: null }),
+            then: (resolve: (value: { data: unknown; error: null }) => void) =>
+              resolve({ data, error: null }),
           }
+          return builder
         },
         insert(rowOrRows: Record<string, unknown> | Record<string, unknown>[]) {
           const rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
@@ -44,14 +97,34 @@ function buildMockClient() {
             select() {
               return {
                 single: async () => ({
-                  data: { id: 'order-uuid-1', order_number: 'MKTEST1234' },
+                  data:
+                    table === 'order_items'
+                      ? { id: `line-${++lineCounter}` }
+                      : {
+                          id: 'order-uuid-1',
+                          order_number: 'MKTEST1234',
+                          display_code: 'MK-001',
+                        },
                   error: null,
                 }),
               }
             },
-            then(resolve: (v: { error: null }) => void) {
+            then(resolve: (v: { error: unknown }) => void) {
+              if (table === 'payments' && options.paymentError) {
+                resolve({ error: options.paymentError })
+                return
+              }
               resolve({ error: null })
             },
+          }
+        },
+        delete() {
+          calls.push({ table, op: 'delete' })
+          return {
+            eq: () => ({
+              then: (resolve: (v: { error: null }) => void) =>
+                resolve({ error: null }),
+            }),
           }
         },
       }
@@ -71,6 +144,24 @@ function makeRequest(body: unknown): Request {
 const SET_KRAPOW = MENU_ROWS[0].id
 const KICKAPOO = MENU_ROWS[1].id
 const SOLD_OUT = MENU_ROWS[2].id
+
+const MODIFIER_ID = '66666666-6666-4666-8666-666666666666'
+const GROUP_ID = '77777777-7777-4777-8777-777777777777'
+const MODIFIER_ROWS = [
+  {
+    id: MODIFIER_ID,
+    name: 'Fried Egg',
+    price_delta_cents: 200,
+    modifier_group_id: GROUP_ID,
+    is_available: true,
+  },
+]
+const JUNCTION_ROWS = [
+  { menu_item_id: SET_KRAPOW, modifier_group_id: GROUP_ID, is_required: false },
+]
+const GROUP_ROWS = [
+  { id: GROUP_ID, name: 'Add-ons', min_selections: 0, max_selections: 2 },
+]
 
 describe('POST /api/pos/orders', () => {
   beforeEach(() => {
@@ -101,24 +192,33 @@ describe('POST /api/pos/orders', () => {
     const body = await res.json()
     // 2 x RM12.50 + 1 x RM2.50 — recomputed from the DB, not the client.
     expect(body.total_cents).toBe(2750)
+    expect(body.display_code).toBe('MK-001')
 
     const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
     expect(orderInsert?.row).toMatchObject({
       source: 'counter',
       status: 'paid',
       delivery_type: 'self_pickup',
+      payment_method: 'cash',
       subtotal_cents: 2750,
       total_cents: 2750,
       discount_cents: 0,
       customer_name: 'Walk-in',
     })
 
-    const itemInsert = client.calls.find((c) => c.table === 'order_items' && c.op === 'insert')
-    expect(itemInsert?.rows).toHaveLength(2)
-    expect(itemInsert?.rows?.[0]).toMatchObject({
+    const itemInserts = client.calls.filter(
+      (c) => c.table === 'order_items' && c.op === 'insert'
+    )
+    expect(itemInserts).toHaveLength(1)
+    expect(itemInserts[0]?.rows?.[0]).toMatchObject({
       menu_item_price_cents: 1250,
       quantity: 2,
       line_total_cents: 2500,
+    })
+    expect(itemInserts[0]?.rows?.[1]).toMatchObject({
+      menu_item_price_cents: 250,
+      quantity: 1,
+      line_total_cents: 250,
     })
 
     const paymentInsert = client.calls.find((c) => c.table === 'payments' && c.op === 'insert')
@@ -127,6 +227,74 @@ describe('POST /api/pos/orders', () => {
       amount_cents: 2750,
       status: 'succeeded',
     })
+  })
+
+  it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {
+    // Production menu fixtures use ids like 00000004-… (version nibble 0).
+    // z.uuid() rejected them and silently blocked every POS order; z.guid()
+    // must keep accepting them.
+    const seededItem = '00000004-0000-0000-0000-000000000005'
+    const seededModifier = '00000003-0000-0000-0000-000000000001'
+    const seededGroup = '00000002-0000-0000-0000-000000000001'
+    const client = buildMockClient({
+      menu: [
+        { id: seededItem, name: 'Krapow Daging Sahaja', price_cents: 1000, is_available: true },
+      ],
+      modifiers: [
+        {
+          id: seededModifier,
+          name: 'Medium Spice',
+          price_delta_cents: 0,
+          modifier_group_id: seededGroup,
+          is_available: true,
+        },
+      ],
+      junctions: [
+        { menu_item_id: seededItem, modifier_group_id: seededGroup, is_required: false },
+      ],
+      groups: [
+        { id: seededGroup, name: 'Tahap Kepedasan', min_selections: 1, max_selections: 1 },
+      ],
+    })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [
+          { menu_item_id: seededItem, quantity: 1, modifier_ids: [seededModifier] },
+        ],
+        payment_method: 'cash',
+      }) as never,
+    )
+
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.total_cents).toBe(1000)
+  })
+
+  it('deletes the order when the payment ledger write fails (no paid order without a payment)', async () => {
+    const client = buildMockClient({
+      paymentError: { message: 'payments insert failed', code: '23514' },
+    })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: KICKAPOO, quantity: 1 }],
+        payment_method: 'cash',
+      }) as never,
+    )
+
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toMatch(/not created/i)
+    // The identifiers are the only durable trace of the cash sale (the failed
+    // payments row would cascade away with the order).
+    expect(body.order_number).toBe('MKTEST1234')
+
+    // The half-written order must be removed so a retry cannot duplicate it.
+    const deleteCall = client.calls.find((c) => c.table === 'orders' && c.op === 'delete')
+    expect(deleteCall).toBeTruthy()
   })
 
   it('merges duplicate item rows before pricing', async () => {
@@ -146,9 +314,11 @@ describe('POST /api/pos/orders', () => {
     const body = await res.json()
     expect(body.total_cents).toBe(750) // 3 x RM2.50
 
-    const itemInsert = client.calls.find((c) => c.table === 'order_items' && c.op === 'insert')
-    expect(itemInsert?.rows).toHaveLength(1)
-    expect(itemInsert?.rows?.[0]).toMatchObject({ quantity: 3 })
+    const itemInserts = client.calls.filter(
+      (c) => c.table === 'order_items' && c.op === 'insert'
+    )
+    expect(itemInserts).toHaveLength(1)
+    expect(itemInserts[0]?.rows?.[0]).toMatchObject({ quantity: 3 })
   })
 
   it('rejects unavailable menu items', async () => {
@@ -185,6 +355,248 @@ describe('POST /api/pos/orders', () => {
       makeRequest({ items: [], payment_method: 'cash' }) as never,
     )
     expect(res.status).toBe(400)
+  })
+
+  it('creates a dine-in order with the table snapshot and pax', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'qr_pay',
+        order_type: 'dine_in',
+        table_id: TABLE_ID,
+        pax: 4,
+      }) as never,
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      order_type: 'dine_in',
+      table_label: 'T7',
+      pax: 4,
+      total_cents: 1250,
+      display_code: 'MK-001',
+    })
+
+    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
+    expect(orderInsert?.row).toMatchObject({
+      source: 'counter',
+      status: 'paid',
+      delivery_type: 'dine_in',
+      table_id: TABLE_ID,
+      table_label: 'T7',
+      pax: 4,
+      customer_name: null,
+      include_cutlery: false,
+      payment_method: 'qr_pay',
+    })
+  })
+
+  it('requires a table and pax for dine-in', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const noTable = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'cash',
+        order_type: 'dine_in',
+        pax: 2,
+      }) as never,
+    )
+    expect(noTable.status).toBe(400)
+
+    const noPax = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'cash',
+        order_type: 'dine_in',
+        table_id: TABLE_ID,
+      }) as never,
+    )
+    expect(noPax.status).toBe(400)
+  })
+
+  it('rejects an inactive or unknown table', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const inactive = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'cash',
+        order_type: 'dine_in',
+        table_id: INACTIVE_TABLE_ID,
+        pax: 2,
+      }) as never,
+    )
+    expect(inactive.status).toBe(400)
+    expect((await inactive.json()).error).toMatch(/not available/i)
+
+    const unknown = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'cash',
+        order_type: 'dine_in',
+        table_id: '99999999-9999-4999-8999-999999999999',
+        pax: 2,
+      }) as never,
+    )
+    expect(unknown.status).toBe(400)
+  })
+
+  it('creates a pay-later order with no payment record', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 2 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_later',
+      }) as never,
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      status: 'pending',
+      payment_timing: 'pay_later',
+      total_cents: 2500,
+    })
+
+    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
+    expect(orderInsert?.row).toMatchObject({
+      status: 'pending',
+      source: 'counter',
+      delivery_type: 'self_pickup',
+      payment_method: null,
+      total_cents: 2500,
+    })
+    expect(client.calls.find((c) => c.table === 'payments')).toBeUndefined()
+  })
+
+  it('requires a payment method when paying now', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_now',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a payment method on a pay-later order', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+        payment_timing: 'pay_later',
+        payment_method: 'cash',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('prices add-ons from the database and snapshots them', async () => {
+    const client = buildMockClient({
+      modifiers: MODIFIER_ROWS,
+      junctions: JUNCTION_ROWS,
+      groups: GROUP_ROWS,
+    })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [
+          {
+            menu_item_id: SET_KRAPOW,
+            quantity: 2,
+            modifier_ids: [MODIFIER_ID],
+            notes: 'less rice',
+          },
+        ],
+        payment_method: 'cash',
+      }) as never,
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.total_cents).toBe(2900) // (1250 + 200) × 2
+
+    const itemInsert = client.calls.find(
+      (c) => c.table === 'order_items' && c.op === 'insert'
+    )
+    expect(itemInsert?.rows?.[0]).toMatchObject({
+      menu_item_price_cents: 1250,
+      quantity: 2,
+      line_total_cents: 2900,
+      notes: 'less rice',
+    })
+
+    const modifierInsert = client.calls.find(
+      (c) => c.table === 'order_item_modifiers' && c.op === 'insert'
+    )
+    expect(modifierInsert?.rows).toEqual([
+      {
+        order_item_id: expect.any(String),
+        modifier_id: MODIFIER_ID,
+        modifier_name: 'Fried Egg',
+        modifier_price_delta_cents: 200,
+      },
+    ])
+  })
+
+  it('rejects a modifier that is not attached to the item', async () => {
+    const client = buildMockClient({
+      modifiers: [{ ...MODIFIER_ROWS[0], modifier_group_id: 'other-group' }],
+      junctions: JUNCTION_ROWS,
+      groups: GROUP_ROWS,
+    })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [
+          {
+            menu_item_id: SET_KRAPOW,
+            quantity: 1,
+            modifier_ids: [MODIFIER_ID],
+          },
+        ],
+        payment_method: 'cash',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('INVALID_MODIFIER')
+  })
+
+  it('rejects a missing required add-on', async () => {
+    const client = buildMockClient({
+      modifiers: MODIFIER_ROWS,
+      junctions: [{ ...JUNCTION_ROWS[0], is_required: true }],
+      groups: GROUP_ROWS,
+    })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        payment_method: 'cash',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('REQUIRED_MODIFIER_MISSING')
   })
 
   it('returns 403 when the staff guard rejects', async () => {

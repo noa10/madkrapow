@@ -1,188 +1,589 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Minus, Plus, ShoppingBag, Store, Trash2 } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { ArrowLeft, Loader2, Store } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useRoleGuard } from '@/hooks/use-role-guard'
 import { useToastStore } from '@/stores/toast'
-import { getBrowserClient } from '@/lib/supabase/client'
-import { autoPrintOrder } from '@/lib/printing/client'
+import { MAX_MERGED_QUANTITY } from '@/lib/pos/table-orders'
+import {
+  posCartLineKey,
+  posLineTotalCents,
+  type PosCartModifier,
+} from '@/lib/pos/cart'
+import {
+  buildOrderSettleTarget,
+  buildTableSettleTarget,
+  buildTableSettleTargetFromOrders,
+  closeTableWarning,
+  summarizeTable,
+} from '@/lib/pos/tables'
+import type {
+  PosOpenOrder,
+  PosSettleTarget,
+  RestaurantTable,
+  TableSummary,
+} from '@/lib/pos/types'
 import { cn } from '@/lib/utils'
-
-interface PosMenuItem {
-  id: string
-  name: string
-  price_cents: number
-  is_available: boolean
-  category_id: string
-}
-
-interface PosCategory {
-  id: string
-  name: string
-  sort_order: number
-  is_active: boolean
-}
-
-interface CartLine {
-  menuItem: PosMenuItem
-  quantity: number
-}
-
-type PaymentMethod = 'cash' | 'qr_pay'
-
-const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'qr_pay', label: 'QR Pay' },
-]
+import { PosMenu } from './components/PosMenu'
+import { PosItemOptionsModal } from './components/PosItemOptionsModal'
+import {
+  PosSalePanel,
+  type PosCartLine,
+  type PosOrderType,
+  type PosPaymentMethod,
+  type PosPaymentTiming,
+} from './components/PosSalePanel'
+import { PosPayNowModal } from './components/PosPayNowModal'
+import { PosSettleModal } from './components/PosSettleModal'
+import { PosTableBoard } from './components/PosTableBoard'
+import { usePosData, type PosMenuItem, type PosModifierGroup } from './hooks/usePosData'
 
 function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
 }
 
+/**
+ * Authenticated POST helper for the POS.
+ *
+ * The web POS is same-origin and the staff session lives in Supabase's auth
+ * cookies, so the route authenticates from the cookie jar exactly like the
+ * admin API calls do. Do not gate the request on `auth.getSession()`: that
+ * adds a Web-Lock-protected auth round-trip to every tap and can leave the
+ * cashier staring at a button that never fires.
+ */
+async function posPost(path: string, body?: unknown) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => null)
+  return { res, json }
+}
+
+type PosView = 'sale' | 'tables'
+
 export default function PosPage() {
-  const { hasAccess, isLoading: isAccessLoading } = useRoleGuard([
+  const { hasAccess, isLoading: accessLoading } = useRoleGuard([
     'admin',
     'manager',
     'cashier',
   ])
-  const addToast = useToastStore((s) => s.addToast)
+  const addToast = useToastStore((state) => state.addToast)
+  const {
+    categories,
+    itemsByCategory,
+    modifierGroupsByItem,
+    itemsWithModifiers,
+    noModifierItems,
+    loadModifierGroupsForItem,
+    tables,
+    openOrders,
+    loading,
+    error,
+    refresh,
+  } = usePosData(Boolean(hasAccess))
 
-  const [loading, setLoading] = useState(true)
-  const [categories, setCategories] = useState<PosCategory[]>([])
-  const [menuItems, setMenuItems] = useState<PosMenuItem[]>([])
-  const [cart, setCart] = useState<CartLine[]>([])
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
+  const [view, setView] = useState<PosView>('sale')
+  const [orderType, setOrderType] = useState<PosOrderType>('dine_in')
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
+  const [pax, setPax] = useState(2)
   const [customerName, setCustomerName] = useState('')
+  const [cart, setCart] = useState<PosCartLine[]>([])
+  const [optionsItem, setOptionsItem] = useState<{
+    item: PosMenuItem
+    groups: PosModifierGroup[]
+  } | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
+  const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
+  const [payNowOpen, setPayNowOpen] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null)
+  const [settleTarget, setSettleTarget] = useState<PosSettleTarget | null>(null)
+  const [settleError, setSettleError] = useState<string | null>(null)
+  const [voidOrder, setVoidOrder] = useState<PosOpenOrder | null>(null)
+  const [closeTableTarget, setCloseTableTarget] = useState<TableSummary | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const submitLock = useRef(false)
 
-  useEffect(() => {
-    if (!hasAccess) return
-    let cancelled = false
-    ;(async () => {
-      const supabase = getBrowserClient()
-      const [catsRes, itemsRes] = await Promise.all([
-        supabase
-          .from('categories')
-          .select('id, name, sort_order, is_active')
-          .eq('is_active', true)
-          .order('sort_order'),
-        supabase
-          .from('menu_items')
-          .select('id, name, price_cents, is_available, category_id')
-          .eq('is_available', true)
-          .order('sort_order'),
-      ])
-      if (cancelled) return
-      if (catsRes.error || itemsRes.error) {
-        addToast({ type: 'error', title: 'Failed to load menu' })
-      } else {
-        setCategories((catsRes.data as PosCategory[]) ?? [])
-        setMenuItems((itemsRes.data as PosMenuItem[]) ?? [])
-      }
-      setLoading(false)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [hasAccess, addToast])
+  const summaries = useMemo<TableSummary[]>(
+    () =>
+      tables.map((table) =>
+        summarizeTable(
+          table,
+          openOrders.filter((order) => order.table_id === table.id)
+        )
+      ),
+    [tables, openOrders]
+  )
 
-  const itemsByCategory = useMemo(() => {
-    const map = new Map<string, PosMenuItem[]>()
-    for (const item of menuItems) {
-      const list = map.get(item.category_id) ?? []
-      list.push(item)
-      map.set(item.category_id, list)
-    }
-    return map
-  }, [menuItems])
+  const summariesByTableId = useMemo(
+    () => new Map(summaries.map((summary) => [summary.table.id, summary])),
+    [summaries]
+  )
+
+  /** Grouped unpaid total at the selected table (one collect action). */
+  const pendingTargetAtTable = useMemo(() => {
+    if (!selectedTableId) return null
+    const summary = summariesByTableId.get(selectedTableId)
+    return summary ? buildTableSettleTarget(summary) : null
+  }, [selectedTableId, summariesByTableId])
 
   const totalCents = useMemo(
-    () => cart.reduce((sum, line) => sum + line.menuItem.price_cents * line.quantity, 0),
+    () =>
+      cart.reduce(
+        (sum, line) =>
+          sum + posLineTotalCents(line.item.price_cents, line.modifiers, line.quantity),
+        0
+      ),
     [cart]
   )
 
-  const addToCart = useCallback((menuItem: PosMenuItem) => {
-    setCart((prev) => {
-      const existing = prev.find((l) => l.menuItem.id === menuItem.id)
-      if (existing) {
-        return prev.map((l) =>
-          l.menuItem.id === menuItem.id ? { ...l, quantity: l.quantity + 1 } : l
-        )
-      }
-      return [...prev, { menuItem, quantity: 1 }]
-    })
-  }, [])
+  // One count per bill: a table with two unpaid rounds is still one collect.
+  const unpaidCount = useMemo(() => {
+    const unpaidTables = summaries.filter((summary) => summary.hasUnpaid).length
+    const unpaidTakeawayOrders = openOrders.filter(
+      (order) => order.status === 'pending' && order.delivery_type === 'self_pickup'
+    ).length
+    return unpaidTables + unpaidTakeawayOrders
+  }, [summaries, openOrders])
 
-  const changeQuantity = useCallback((menuItemId: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((l) =>
-          l.menuItem.id === menuItemId ? { ...l, quantity: l.quantity + delta } : l
-        )
-        .filter((l) => l.quantity > 0)
-    )
-  }, [])
+  const unpaidTakeaway = useMemo(
+    () =>
+      openOrders.filter(
+        (order) =>
+          order.status === 'pending' && order.delivery_type === 'self_pickup'
+      ),
+    [openOrders]
+  )
 
-  const resetCart = useCallback(() => {
-    setCart([])
-    setCustomerName('')
-    setPaymentMethod('cash')
-  }, [])
+  const selectedTable = tables.find((table) => table.id === selectedTableId)
+  const qrLabel =
+    orderType === 'dine_in'
+      ? `${selectedTable?.label ? `Table ${selectedTable.label}` : 'Dine-in'} · ${pax} pax`
+      : `Take-away · ${customerName.trim() || 'Walk-in'}`
 
-  const submitOrder = useCallback(async () => {
-    if (cart.length === 0 || submitting) return
-    setSubmitting(true)
-    try {
-      const supabase = getBrowserClient()
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-      const res = await fetch('/api/pos/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          items: cart.map((l) => ({ menu_item_id: l.menuItem.id, quantity: l.quantity })),
-          payment_method: paymentMethod,
-          customer_name: customerName.trim() || undefined,
-        }),
+  const addToCart = useCallback(
+    (
+      item: PosMenuItem,
+      modifiers: PosCartModifier[] = [],
+      notes = '',
+      quantity = 1
+    ) => {
+      const key = posCartLineKey(
+        item.id,
+        modifiers.map((modifier) => modifier.id),
+        notes
+      )
+      setCart((previous) => {
+        const existing = previous.find((line) => line.key === key)
+        if (existing) {
+          return previous.map((line) =>
+            line.key === key
+              ? {
+                  ...line,
+                  quantity: Math.min(
+                    MAX_MERGED_QUANTITY,
+                    line.quantity + quantity
+                  ),
+                }
+              : line
+          )
+        }
+        return [
+          ...previous,
+          {
+            key,
+            item,
+            quantity: Math.min(MAX_MERGED_QUANTITY, quantity),
+            modifiers,
+            notes,
+          },
+        ]
       })
-      const data = await res.json()
-      if (!res.ok) {
+    },
+    []
+  )
+
+  const handleMenuSelect = useCallback(
+    async (item: PosMenuItem) => {
+      const cached = modifierGroupsByItem.get(item.id)
+      if (cached && cached.length > 0) {
+        setOptionsItem({ item, groups: cached })
+        return
+      }
+
+      if (noModifierItems.has(item.id)) {
+        addToCart(item)
+        return
+      }
+
+      // Prefetch empty/stale or groups missing: check the DB before adding, so
+      // a customizable dish can never be added without its options.
+      const groups = await loadModifierGroupsForItem(item.id)
+      if (groups === null) {
         addToast({
           type: 'error',
-          title: 'Failed to create order',
-          description: data?.error ?? `HTTP ${res.status}`,
+          title: 'Could not load options',
+          description: 'Please retry. The dish was not added to the sale.',
         })
         return
       }
-      setLastOrderNumber(data.order_number)
+      if (groups.length > 0) {
+        setOptionsItem({ item, groups })
+        return
+      }
+
+      addToCart(item)
+    },
+    [
+      modifierGroupsByItem,
+      noModifierItems,
+      loadModifierGroupsForItem,
+      addToCart,
+      addToast,
+    ]
+  )
+
+  const changeQuantity = useCallback((lineKey: string, delta: number) => {
+    setCart((previous) =>
+      previous
+        .map((line) =>
+          line.key === lineKey
+            ? {
+                ...line,
+                quantity: Math.min(
+                  MAX_MERGED_QUANTITY,
+                  Math.max(0, line.quantity + delta)
+                ),
+              }
+            : line
+        )
+        .filter((line) => line.quantity > 0)
+    )
+  }, [])
+
+  const removeLine = useCallback((lineKey: string) => {
+    setCart((previous) => previous.filter((line) => line.key !== lineKey))
+  }, [])
+
+  const resetSale = useCallback(() => {
+    setCart([])
+    setCustomerName('')
+    setPaymentMethod('cash')
+    setPaymentTiming('pay_now')
+    setPayNowOpen(false)
+    setSubmitError(null)
+  }, [])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [refresh])
+
+  const submitOrder = async (methodOverride?: PosPaymentMethod) => {
+    if (submitLock.current || cart.length === 0) return
+    if (orderType === 'dine_in' && !selectedTableId) {
+      addToast({ type: 'error', title: 'Pick a table for a dine-in order' })
+      return
+    }
+    if (orderType === 'take_away' && !customerName.trim()) {
+      addToast({ type: 'error', title: 'Enter the customer name for take-away' })
+      return
+    }
+
+    const payLater = paymentTiming === 'pay_later'
+    const method = payLater ? undefined : methodOverride ?? paymentMethod
+
+    submitLock.current = true
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const { res, json } = await posPost('/api/pos/orders', {
+        items: cart.map((line) => ({
+          menu_item_id: line.item.id,
+          quantity: line.quantity,
+          modifier_ids: line.modifiers.map((modifier) => modifier.id),
+          notes: line.notes || undefined,
+        })),
+        payment_timing: payLater ? 'pay_later' : 'pay_now',
+        payment_method: method,
+        order_type: orderType,
+        table_id: orderType === 'dine_in' ? selectedTableId : undefined,
+        pax: orderType === 'dine_in' ? pax : undefined,
+        customer_name: customerName.trim() || undefined,
+      })
+
+      if (!res.ok) {
+        const message = json?.error ?? `HTTP ${res.status}`
+        // Keep the dialog open with the reason: a toast alone sits under the
+        // modal's top layer and reads as "nothing happened".
+        setSubmitError(message)
+        addToast({ type: 'error', title: 'Could not record the order', description: message })
+        return
+      }
+
+      const context =
+        orderType === 'dine_in'
+          ? `Table ${json.table_label} · ${json.pax} pax`
+          : 'Take-away'
+      const orderCode = json.display_code ?? json.order_number
+      const createdOrder: PosOpenOrder = {
+        id: json.order_id,
+        display_code: json.display_code ?? null,
+        status: json.status ?? (payLater ? 'pending' : 'paid'),
+        total_cents: json.total_cents,
+        created_at: new Date().toISOString(),
+        customer_name: customerName.trim() || null,
+        pax: json.pax ?? null,
+        table_id: orderType === 'dine_in' ? selectedTableId : null,
+        table_label: json.table_label ?? null,
+        delivery_type: orderType === 'dine_in' ? 'dine_in' : 'self_pickup',
+        source: 'counter',
+      }
+      setLastOrderNumber(orderCode)
       addToast({
         type: 'success',
-        title: `Order ${data.order_number} created`,
-        description: `${formatPrice(data.total_cents)} — ${paymentMethod === 'cash' ? 'Cash' : 'QR Pay'}`,
+        title: payLater
+          ? `Order ${orderCode} sent to the kitchen`
+          : `Order ${orderCode} paid`,
+        description: `${formatPrice(json.total_cents)} · ${context}${
+          payLater ? ' · Pay later' : ''
+        }`,
+        action: payLater
+          ? {
+              label: 'Collect payment',
+              onClick: () => {
+                // Dine-in groups every unpaid round at the table; a take-away
+                // ticket is its own bill.
+                const target =
+                  orderType === 'dine_in' && selectedTable
+                    ? buildTableSettleTargetFromOrders(selectedTable, [
+                        ...(summariesByTableId.get(selectedTable.id)?.orders ?? []),
+                        createdOrder,
+                      ])
+                    : buildOrderSettleTarget(createdOrder)
+                if (!target) return
+                setSettleError(null)
+                setSettleTarget(target)
+              },
+            }
+          : undefined,
       })
-      resetCart()
-      // Auto-print kitchen docket + receipt via the LAN bridge (no-op when
-      // unconfigured); failures never block the counter flow.
-      void autoPrintOrder(data.order_id, 'counter', (error) =>
-        addToast({ type: 'error', title: 'Print failed', description: error })
-      )
-    } catch (err) {
-      addToast({ type: 'error', title: 'Network error creating order' })
-      console.error('[POS] submit failed:', err)
+      resetSale()
+      // The kitchen docket (and, once settled, the receipt) is claimed and
+      // printed by the LAN bridge polling /api/print/jobs/claim. Printing
+      // from the page too would duplicate every ticket as a REPRINT.
+      await refresh()
+    } catch {
+      // The request may have committed before the connection dropped. Tell the
+      // cashier to check the board first so a blind retry cannot double-ring.
+      const message =
+        'Network error. Check the table board before retrying — the order may already be recorded.'
+      setSubmitError(message)
+      addToast({ type: 'error', title: 'Network error creating order', description: message })
     } finally {
       setSubmitting(false)
+      submitLock.current = false
     }
-  }, [cart, submitting, paymentMethod, customerName, addToast, resetCart])
+  }
 
-  if (isAccessLoading || loading) {
+  /** Pay-now sales confirm inside the payment dialog before the order exists. */
+  const handleSubmit = () => {
+    if (paymentTiming === 'pay_later') {
+      void submitOrder()
+      return
+    }
+    setSubmitError(null)
+    setPayNowOpen(true)
+  }
+
+  const handlePayNowConfirm = () => {
+    void submitOrder(paymentMethod)
+  }
+
+  const handleSettle = async (method: 'cash' | 'qr_pay') => {
+    if (!settleTarget || busyId) return
+    setBusyId(settleTarget.id)
+    setSettleError(null)
+    const path =
+      settleTarget.kind === 'table'
+        ? `/api/pos/tables/${settleTarget.id}/settle`
+        : `/api/pos/orders/${settleTarget.id}/settle`
+    const body =
+      settleTarget.kind === 'table'
+        ? { payment_method: method, order_ids: settleTarget.orderIds }
+        : { payment_method: method }
+    try {
+      const { res, json } = await posPost(path, body)
+      // A retry whose first response was lost: the RPC found nothing left to
+      // charge and reports success. Nothing was charged twice.
+      if (json?.already_settled) {
+        setSettleTarget(null)
+        setSettleError(null)
+        addToast({
+          type: 'info',
+          title: 'Already collected',
+          description: 'This bill was paid from another screen. Nothing was charged twice.',
+        })
+        await refresh()
+        return
+      }
+      if (!res.ok) {
+        const code = json?.code as string | undefined
+        // A table edited during the confirm window is a safe rejection: close,
+        // refresh and let the cashier review the new total.
+        if (code === 'stale_settle') {
+          setSettleTarget(null)
+          setSettleError(null)
+          addToast({
+            type: 'error',
+            title: 'Table changed',
+            description:
+              'A round was added or paid while you were collecting. Review the new total and try again.',
+          })
+          await refresh()
+          return
+        }
+        // Lost response after the server committed: the money is already in.
+        if (code === 'already_paid') {
+          setSettleTarget(null)
+          setSettleError(null)
+          addToast({
+            type: 'info',
+            title: 'Already collected',
+            description: 'This bill was paid from another screen. Nothing was charged twice.',
+          })
+          await refresh()
+          return
+        }
+        const message = json?.error ?? `HTTP ${res.status}`
+        setSettleError(message)
+        addToast({
+          type: 'error',
+          title: 'Could not collect payment',
+          description: message,
+        })
+        return
+      }
+      const amount = json.amount_cents ?? settleTarget.amountCents
+      addToast({
+        type: 'success',
+        title: 'Payment collected',
+        description:
+          settleTarget.kind === 'table'
+            ? `${settleTarget.label} · ${json.settled_count ?? settleTarget.orderCount} order${
+                (json.settled_count ?? settleTarget.orderCount) === 1 ? '' : 's'
+              } · ${formatPrice(amount)}`
+            : `${settleTarget.label} · ${formatPrice(amount)}`,
+      })
+      setSettleTarget(null)
+      setSettleError(null)
+      await refresh()
+    } catch {
+      setSettleError('Network error — check the connection and try again.')
+      addToast({ type: 'error', title: 'Network error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleVoid = async () => {
+    if (!voidOrder || busyId) return
+    const order = voidOrder
+    setBusyId(order.id)
+    try {
+      const { res, json } = await posPost(
+        `/api/admin/orders/${order.id}/status`,
+        { status: 'cancelled' }
+      )
+      if (!res.ok) {
+        addToast({
+          type: 'error',
+          title: 'Could not void the order',
+          description: json?.error ?? `HTTP ${res.status}`,
+        })
+        return
+      }
+      addToast({
+        type: 'success',
+        title: `Order ${order.display_code ?? ''} voided`,
+        description: 'The unpaid ticket was removed from the kitchen queue.',
+      })
+      setVoidOrder(null)
+      await refresh()
+    } catch {
+      addToast({ type: 'error', title: 'Network error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleCloseTable = async () => {
+    if (!closeTableTarget || busyId) return
+    const { table, orders } = closeTableTarget
+    setBusyId(table.id)
+    try {
+      // Send the exact tickets the dialog listed. The RPC refuses the close if
+      // the table gained or lost a round in the meantime.
+      const { res, json } = await posPost(`/api/pos/tables/${table.id}/close`, {
+        order_ids: orders.map((order) => order.id),
+      })
+      if (!res.ok) {
+        if (json?.code === 'stale_close') {
+          setCloseTableTarget(null)
+          addToast({
+            type: 'error',
+            title: 'Table changed',
+            description:
+              'A round was added or paid while you were closing. Review the table and try again.',
+          })
+          await refresh()
+          return
+        }
+        addToast({
+          type: 'error',
+          title: 'Could not close the table',
+          description: json?.error ?? `HTTP ${res.status}`,
+        })
+        return
+      }
+      addToast({
+        type: 'success',
+        title: `Table ${table.label} closed`,
+        description: `${json.closed} order${json.closed === 1 ? '' : 's'} marked served.`,
+      })
+      setCloseTableTarget(null)
+      if (selectedTableId === table.id) setSelectedTableId(null)
+      await refresh()
+    } catch {
+      addToast({ type: 'error', title: 'Network error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const startTableOrder = (table: RestaurantTable, summary: TableSummary) => {
+    setOrderType('dine_in')
+    setSelectedTableId(table.id)
+    setPax(summary.pax ?? 2)
+    resetSale()
+    setView('sale')
+  }
+
+  if (accessLoading || loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     )
@@ -190,153 +591,201 @@ export default function PosPage() {
 
   if (!hasAccess) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Staff access required.</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+    <div className="flex h-dvh flex-col bg-background">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
         <div className="flex items-center gap-2">
           <Store className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">Counter POS</h1>
+          <h1 className="text-base font-bold text-foreground">Counter POS</h1>
+          {lastOrderNumber && (
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              Last: {lastOrderNumber}
+            </span>
+          )}
         </div>
-        {lastOrderNumber && (
-          <span className="text-xs text-muted-foreground">Last: {lastOrderNumber}</span>
-        )}
+
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-white/10 bg-white/5 p-0.5">
+            <button
+              type="button"
+              onClick={() => setView('sale')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-bold transition',
+                view === 'sale'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Sale
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('tables')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition',
+                view === 'tables'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Tables
+              {unpaidCount > 0 && (
+                <Badge className="border-none bg-amber-500 px-1.5 text-[10px] text-black">
+                  {unpaidCount}
+                </Badge>
+              )}
+            </button>
+          </div>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/admin">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Admin
+            </Link>
+          </Button>
+        </div>
       </header>
 
-      <div className="flex flex-col lg:flex-row">
-        {/* Item grid */}
-        <div className="flex-1 p-4 space-y-6">
-          {categories.map((category) => {
-            const items = itemsByCategory.get(category.id) ?? []
-            if (items.length === 0) return null
-            return (
-              <section key={category.id}>
-                <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  {category.name}
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => addToCart(item)}
-                      className="rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-3 text-left"
-                    >
-                      <div className="text-sm font-medium leading-tight">{item.name}</div>
-                      <div className="text-xs text-muted-foreground mt-1 tabular-nums">
-                        {formatPrice(item.price_cents)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )
-          })}
+      {error && (
+        <p className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          {error}
+        </p>
+      )}
+
+      {view === 'sale' ? (
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <PosMenu
+            categories={categories}
+            itemsByCategory={itemsByCategory}
+            itemsWithModifiers={itemsWithModifiers}
+            onSelect={handleMenuSelect}
+          />
+          <PosSalePanel
+            orderType={orderType}
+            onOrderTypeChange={setOrderType}
+            tables={tables}
+            summaries={summariesByTableId}
+            selectedTableId={selectedTableId}
+            onSelectTable={setSelectedTableId}
+            pax={pax}
+            onPaxChange={setPax}
+            customerName={customerName}
+            onCustomerNameChange={setCustomerName}
+            pendingTarget={pendingTargetAtTable}
+            onCollectUnpaid={(target) => {
+              setSettleError(null)
+              setSettleTarget(target)
+            }}
+            cart={cart}
+            onChangeQuantity={changeQuantity}
+            onRemove={removeLine}
+            onClear={resetSale}
+            paymentMethod={paymentMethod}
+            onPaymentMethodChange={setPaymentMethod}
+            paymentTiming={paymentTiming}
+            onPaymentTimingChange={setPaymentTiming}
+            totalCents={totalCents}
+            submitting={submitting}
+            onSubmit={handleSubmit}
+          />
         </div>
+      ) : (
+        <PosTableBoard
+          summaries={summaries}
+          unpaidTakeaway={unpaidTakeaway}
+          busyId={busyId}
+          refreshing={refreshing}
+          onNewOrder={startTableOrder}
+          onSettle={(target) => {
+            setSettleError(null)
+            setSettleTarget(target)
+          }}
+          onVoid={setVoidOrder}
+          onCloseTable={setCloseTableTarget}
+          onRefresh={handleRefresh}
+        />
+      )}
 
-        {/* Cart */}
-        <aside className="lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-white/10 p-4 space-y-4 lg:sticky lg:top-0 lg:h-screen overflow-y-auto">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Current Sale</span>
-          </div>
+      <PosPayNowModal
+        open={payNowOpen}
+        method={paymentMethod}
+        amountCents={totalCents}
+        label={qrLabel}
+        busy={submitting}
+        error={submitError}
+        onClose={() => {
+          if (!submitting) {
+            setPayNowOpen(false)
+            setSubmitError(null)
+          }
+        }}
+        onConfirm={handlePayNowConfirm}
+      />
 
-          {cart.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Tap items to add them.</p>
-          ) : (
-            <ul className="space-y-2">
-              {cart.map((line) => (
-                <li
-                  key={line.menuItem.id}
-                  className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-2 py-1.5"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm truncate">{line.menuItem.name}</div>
-                    <div className="text-xs text-muted-foreground tabular-nums">
-                      {formatPrice(line.menuItem.price_cents * line.quantity)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => changeQuantity(line.menuItem.id, -1)}
-                      className="rounded p-1 hover:bg-white/10"
-                      aria-label={`Remove one ${line.menuItem.name}`}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <span className="text-sm tabular-nums w-5 text-center">
-                      {line.quantity}
-                    </span>
-                    <button
-                      onClick={() => changeQuantity(line.menuItem.id, 1)}
-                      className="rounded p-1 hover:bg-white/10"
-                      aria-label={`Add one ${line.menuItem.name}`}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={() => changeQuantity(line.menuItem.id, -line.quantity)}
-                      className="rounded p-1 hover:bg-white/10 text-red-400"
-                      aria-label={`Clear ${line.menuItem.name}`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+      {optionsItem && (
+        <PosItemOptionsModal
+          key={optionsItem.item.id}
+          item={optionsItem.item}
+          groups={optionsItem.groups}
+          onClose={() => setOptionsItem(null)}
+          onAdd={({ quantity, modifiers, notes }) => {
+            addToCart(optionsItem.item, modifiers, notes, quantity)
+            setOptionsItem(null)
+          }}
+        />
+      )}
 
-          <div className="space-y-2">
-            <Input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Customer name (optional)"
-              className="h-8 text-sm bg-white/5"
-              maxLength={120}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setPaymentMethod(opt.value)}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                    paymentMethod === opt.value
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <PosSettleModal
+        key={
+          settleTarget
+            ? `${settleTarget.kind}:${settleTarget.id}`
+            : 'no-settle-target'
+        }
+        target={settleTarget}
+        busy={busyId !== null}
+        error={settleError}
+        onClose={() => {
+          if (!busyId) {
+            setSettleTarget(null)
+            setSettleError(null)
+          }
+        }}
+        onConfirm={handleSettle}
+      />
 
-          <div className="flex items-baseline justify-between border-t border-white/10 pt-3">
-            <span className="text-sm text-muted-foreground">Total</span>
-            <span className="text-xl font-semibold tabular-nums">
-              {formatPrice(totalCents)}
-            </span>
-          </div>
+      <ConfirmModal
+        open={voidOrder !== null}
+        onClose={() => {
+          if (!busyId) setVoidOrder(null)
+        }}
+        title={`Void order ${voidOrder?.display_code ?? ''}?`}
+        description="This cancels the unpaid order and removes it from the kitchen queue. Use it when a customer left or the order was keyed incorrectly."
+        confirmLabel="Void order"
+        variant="danger"
+        loading={busyId !== null && busyId === voidOrder?.id}
+        onConfirm={handleVoid}
+      />
 
-          <Button
-            onClick={submitOrder}
-            disabled={cart.length === 0 || submitting}
-            className="w-full"
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              `Charge ${formatPrice(totalCents)}`
-            )}
-          </Button>
-        </aside>
-      </div>
+      <ConfirmModal
+        open={closeTableTarget !== null}
+        onClose={() => {
+          if (!busyId) setCloseTableTarget(null)
+        }}
+        title={`Close table ${closeTableTarget?.table.label ?? ''}?`}
+        description={
+          closeTableWarning(closeTableTarget?.kitchenActiveOrderCount ?? 0) ??
+          'Closing marks every order served and frees the table for the next guests.'
+        }
+        confirmLabel="Close table"
+        variant="warning"
+        loading={busyId !== null && busyId === closeTableTarget?.table.id}
+        onConfirm={handleCloseTable}
+      />
     </div>
   )
 }

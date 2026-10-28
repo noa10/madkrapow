@@ -10,6 +10,7 @@
  * - Cash as the manual fallback for confirmed orders
  *
  * Delivery:
+ * - Dine In when delivery_type === "dine_in"
  * - Self Pickup when delivery_type === "self_pickup"
  * - Platform rider for grabfood/foodpanda delivery orders
  * - Lalamove when lalamove_order_id or lalamove_quote_id is set
@@ -27,6 +28,7 @@ export type PaymentProvider =
 export type DeliveryProvider =
   | "lalamove"
   | "self_pickup"
+  | "dine_in"
   | "in_house"
   | "platform"
   | "pending"
@@ -79,6 +81,9 @@ export function getPaymentBadge(order: ProviderSourceFields): PaymentBadge {
 }
 
 export function getDeliveryBadge(order: ProviderSourceFields): DeliveryBadge {
+  if (order.delivery_type === "dine_in") {
+    return { provider: "dine_in", label: "Dine In" }
+  }
   if (order.delivery_type === "self_pickup") {
     return { provider: "self_pickup", label: "Self Pickup" }
   }

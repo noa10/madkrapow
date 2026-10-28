@@ -98,13 +98,16 @@ export async function finalizePaidOrder(
   const deliveryType = order.delivery_type || 'delivery'
   const fulfillmentType = order.fulfillment_type || 'asap'
 
-  if (deliveryType === 'self_pickup') {
+  if (deliveryType !== 'delivery') {
+    // Pickup and dine-in never dispatch a rider. Dine-in is normally settled
+    // through the POS (no Stripe webhook), but keeping this branch explicit
+    // prevents a future online dine-in payment from booking Lalamove.
     await supabase
       .from('orders')
       .update({ dispatch_status: 'not_ready' })
       .eq('id', orderId)
 
-    console.log(`[${options.logLabel}] Self-pickup dispatch not_ready:`, orderId)
+    console.log(`[${options.logLabel}] Non-delivery dispatch not_ready:`, orderId)
   } else if (fulfillmentType === 'scheduled') {
     await supabase
       .from('orders')

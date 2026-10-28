@@ -18,7 +18,7 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled';
 
-export type DeliveryType = 'delivery' | 'self_pickup';
+export type DeliveryType = 'delivery' | 'self_pickup' | 'dine_in';
 
 export type ColorRole =
   | 'primary'

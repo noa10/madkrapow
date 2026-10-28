@@ -52,10 +52,18 @@ export async function GET(req: NextRequest) {
 
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('id, source')
-    .in('source', AUTO_PRINT_SOURCES)
-    .in('status', ACTIVE_STATUSES)
-    .gte('created_at', since)
+    .select('id, source, status, delivery_type')
+    // Dine-in tickets print as soon as the order exists — a table-QR order is
+    // still 'pending' (pay at the counter) but the kitchen must cook it. Other
+    // pending orders are unpaid web checkouts and must never print.
+    // The window uses updated_at so a pay-later order settled after the
+    // 24-hour creation window still prints its receipt (the docket marker
+    // dedupes the reprint).
+    .in('status', [...ACTIVE_STATUSES, 'pending'])
+    .or(
+      `source.in.(${AUTO_PRINT_SOURCES.join(',')}),delivery_type.eq.dine_in`
+    )
+    .gte('updated_at', since)
     .order('created_at', { ascending: true })
   if (error) {
     return NextResponse.json({ error: `Failed to load orders: ${error.message}` }, { status: 500 })
@@ -69,6 +77,16 @@ export async function GET(req: NextRequest) {
   }> = []
 
   for (const row of orders ?? []) {
+    // The status filter above also admits unpaid web checkouts; only dine-in
+    // and POS counter (pay-later) pending orders are real tickets.
+    if (
+      row.status === 'pending' &&
+      row.delivery_type !== 'dine_in' &&
+      row.source !== 'counter'
+    ) {
+      continue
+    }
+
     // The order may have been deleted/voided since the query above. Confirm it
     // still exists before doing the (more expensive) render work; the marker
     // insert below re-checks, since a delete can land in between.
@@ -79,7 +97,11 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
     if (!liveOrder) continue
 
-    for (const type of jobTypesForOrder(row.source as string)) {
+    for (const type of jobTypesForOrder({
+      source: row.source as string,
+      status: row.status as string,
+      delivery_type: row.delivery_type as string | null,
+    })) {
       const marker = printedMarkerFor(type)
       const { data: existing } = await supabase
         .from('order_events')

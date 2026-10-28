@@ -136,7 +136,11 @@ export interface TableOrderSuccess {
   display_code: string | null
   total_cents: number
   table_label: string
-  pax: number
+  /**
+   * Nullable: a duplicate/idempotent create returns the stored row, and
+   * `orders.pax` is nullable.
+   */
+  pax: number | null
   /**
    * The order's real status at create time. `pending` for a new order, `paid`
    * when a retried create returns an order the diner has already claimed, and

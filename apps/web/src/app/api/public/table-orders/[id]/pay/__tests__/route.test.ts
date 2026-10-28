@@ -148,9 +148,12 @@ describe('POST /api/public/table-orders/[id]/pay', () => {
     expect(json.error).toMatch(/cancelled/i)
   })
 
-  it('returns 409 when the order is not payable for another reason', async () => {
+  it('returns 409 with generic copy for a status this build does not know', async () => {
+    // Today the RPC only emits `not_pending` for a cancelled order; this test
+    // covers the defensive branch for a terminal status added later, so a new
+    // status cannot fall through to a 200 that reads as a successful claim.
     const { client } = buildClient({
-      rpcResult: { ok: false, code: 'not_pending', status: 'paid' },
+      rpcResult: { ok: false, code: 'not_pending', status: 'refunded' },
     })
     state.client = client
 
@@ -158,8 +161,35 @@ describe('POST /api/public/table-orders/[id]/pay', () => {
     const json = await res.json()
 
     expect(res.status).toBe(409)
-    expect(json.status).toBe('paid')
+    expect(json.status).toBe('refunded')
     expect(json.error).toMatch(/no longer be paid online/i)
+  })
+
+  it('returns 500 when the RPC returns a result it cannot interpret', async () => {
+    // Fail closed: an empty result is not a successful claim. Reporting 200
+    // here would tell the diner their payment was recorded when nothing was.
+    const { client } = buildClient({ rpcResult: {} })
+    state.client = client
+
+    const res = await POST(makeRequest(VALID_BODY) as never, context())
+
+    expect(res.status).toBe(500)
+    expect((await res.json()).ok).toBeUndefined()
+  })
+
+  it('logs the claim code instead of dumping the whole RPC result', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { client } = buildClient({
+      rpcResult: { ok: false, code: 'unexpected_shape' },
+    })
+    state.client = client
+
+    await POST(makeRequest(VALID_BODY) as never, context())
+
+    const logged = spy.mock.calls.flat().join(' ')
+    expect(logged).toContain('unexpected_shape')
+    expect(logged).not.toContain('[object Object]')
+    spy.mockRestore()
   })
 
   it('returns 404 for an inactive table token before calling the RPC', async () => {

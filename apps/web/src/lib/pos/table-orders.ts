@@ -7,6 +7,7 @@
  */
 
 import { MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY } from '@/lib/menu/quantity'
+import { isPaidOrderStatus } from '@/lib/pos/receipt'
 
 export const MAX_TABLE_ORDER_ITEMS = 50
 /** After merging duplicate lines a single dish may exceed one line's cap. */
@@ -108,4 +109,91 @@ export function buildTablePaymentClaimPayload(input: {
     table_token: input.tableToken,
     idempotency_key: input.idempotencyKey,
   }
+}
+
+/**
+ * The status the success screen shows after a claim (or after a 409).
+ *
+ * A paid allowlist status, or `already_paid` from the ledger, means the money
+ * moved even if `status` still reads `pending`; anything else is adopted as
+ * given so a cancelled order cannot keep a scannable QR on screen.
+ */
+export function resolveClaimStatus(
+  current: string,
+  claim: { status: string; already_paid?: boolean } | null
+): string {
+  if (!claim) return current
+  if (claim.already_paid === true || isPaidOrderStatus(claim.status)) {
+    return 'paid'
+  }
+  return claim.status
+}
+
+/**
+ * The order a diner just created, as resumed after a reload.
+ *
+ * The payment step tells the diner to open their banking app; on a phone the
+ * page can be discarded while they do, taking the order id and the claim key
+ * with it. Persisting both to `sessionStorage` (per-tab, cleared with the tab —
+ * never `localStorage`, which would outlive the meal on a shared phone) lets
+ * the page resume the payment step instead of stranding a paid diner.
+ */
+export interface StoredTableOrder {
+  success: {
+    order_id: string
+    order_number: string
+    display_code: string | null
+    total_cents: number
+    table_label: string
+    pax: number | null
+    status: string
+    paid_at?: string | null
+  }
+  idempotencyKey: string
+}
+
+export function serializeStoredTableOrder(order: StoredTableOrder): string {
+  return JSON.stringify(order)
+}
+
+/**
+ * Parse a stored order, or null when it is absent or does not have the shape
+ * this module wrote. Session storage is writable by any script on the origin,
+ * so a partial or foreign payload must not become state.
+ */
+export function parseStoredTableOrder(raw: string | null): StoredTableOrder | null {
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const candidate = parsed as {
+    success?: unknown
+    idempotencyKey?: unknown
+  }
+  const key = candidate.idempotencyKey
+  if (typeof key !== 'string' || key.length === 0) return null
+
+  const success = candidate.success
+  if (typeof success !== 'object' || success === null) return null
+  const order = success as Record<string, unknown>
+  if (typeof order.order_id !== 'string' || order.order_id.length === 0) return null
+  if (typeof order.order_number !== 'string') return null
+  if (typeof order.total_cents !== 'number') return null
+  if (typeof order.table_label !== 'string') return null
+  if (typeof order.status !== 'string') return null
+  if (order.pax !== null && typeof order.pax !== 'number') return null
+  if (
+    order.display_code !== null &&
+    order.display_code !== undefined &&
+    typeof order.display_code !== 'string'
+  ) {
+    return null
+  }
+
+  return parsed as StoredTableOrder
 }

@@ -102,8 +102,21 @@ export async function POST(req: NextRequest) {
 
     const parsed = PosOrderSchema.safeParse(body)
     if (!parsed.success) {
+      // A POS tab loaded before pay-later was removed still sends
+      // `payment_timing` and no `payment_method`. "Invalid request" would leave
+      // the cashier retrying; say what actually fixes it.
+      const stalePayLaterPage =
+        typeof body === 'object' &&
+        body !== null &&
+        'payment_timing' in body &&
+        !('payment_method' in body)
       return NextResponse.json(
-        { error: 'Invalid request', details: parsed.error.flatten() },
+        {
+          error: stalePayLaterPage
+            ? 'Reload the POS to update before charging — this page is running an older version.'
+            : 'Invalid request',
+          details: parsed.error.flatten(),
+        },
         { status: 400 }
       )
     }

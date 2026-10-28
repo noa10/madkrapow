@@ -41,8 +41,25 @@ export function isPaidOrderStatus(status: unknown): boolean {
  * reconcile, and would invite a second payment to be skipped.
  */
 export function receiptStatus(status: string): ReceiptStatus {
-  if (status === 'cancelled') return 'cancelled'
-  if (PAID_SET.has(status)) return 'paid'
+  return resolveReceiptStatus(status, null)
+}
+
+/**
+ * The receipt badge for a stored order plus its payment rows.
+ *
+ * A succeeded payment is proof the money moved even if `orders.status` has not
+ * caught up, so the badge follows the ledger. Cancellation outranks both: a
+ * refunded sale must never surface as a PAID receipt.
+ */
+export function resolveReceiptStatus(
+  orderStatus: string,
+  payments: readonly { status: string }[] | null
+): ReceiptStatus {
+  if (orderStatus === 'cancelled') return 'cancelled'
+  if (PAID_SET.has(orderStatus)) return 'paid'
+  if ((payments ?? []).some((payment) => payment.status === 'succeeded')) {
+    return 'paid'
+  }
   return 'unpaid'
 }
 

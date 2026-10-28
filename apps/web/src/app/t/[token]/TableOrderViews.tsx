@@ -7,7 +7,16 @@
  * flow can be asserted with `react-dom/server` in a node test environment.
  */
 
-import { ArrowLeft, CheckCircle2, Loader2, Minus, Plus, Receipt, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  Minus,
+  Plus,
+  QrCode,
+  Receipt,
+  Trash2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CompanyQrPanel } from '@/app/pos/components/CompanyQrPanel'
@@ -164,24 +173,27 @@ export function ReviewView({
                 <button
                   type="button"
                   onClick={() => onUpdateQuantity(item, item.quantity - 1)}
+                  disabled={submitting}
                   aria-label={`Remove one ${item.name}`}
-                  className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground transition hover:bg-surface-2 disabled:opacity-40"
                 >
                   <Minus className="h-3 w-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onUpdateQuantity(item, item.quantity + 1)}
+                  disabled={submitting}
                   aria-label={`Add one ${item.name}`}
-                  className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-border-2 text-foreground transition hover:bg-surface-2 disabled:opacity-40"
                 >
                   <Plus className="h-3 w-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onRemoveItem(item)}
+                  disabled={submitting}
                   aria-label={`Remove ${item.name}`}
-                  className="grid h-7 w-7 place-items-center rounded-full text-red-400 hover:bg-red-500/10"
+                  className="grid h-7 w-7 place-items-center rounded-full text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -199,7 +211,7 @@ export function ReviewView({
               <button
                 type="button"
                 onClick={() => onChangePax(-1)}
-                disabled={pax === null || pax <= MIN_PAX}
+                disabled={submitting || pax === null || pax <= MIN_PAX}
                 aria-label="Fewer diners"
                 className="grid h-8 w-8 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2 disabled:opacity-40"
               >
@@ -211,7 +223,7 @@ export function ReviewView({
               <button
                 type="button"
                 onClick={() => onChangePax(1)}
-                disabled={pax !== null && pax >= MAX_PAX}
+                disabled={submitting || (pax !== null && pax >= MAX_PAX)}
                 aria-label="More diners"
                 className="grid h-8 w-8 place-items-center rounded-full border border-border-2 text-foreground hover:bg-surface-2 disabled:opacity-40"
               >
@@ -238,8 +250,9 @@ export function ReviewView({
                   key={option.value}
                   type="button"
                   onClick={() => onPaymentChoiceChange(option.value)}
+                  disabled={submitting}
                   aria-pressed={selected}
-                  className={`rounded-xl border p-3 text-left transition ${
+                  className={`rounded-xl border p-3 text-left transition disabled:opacity-40 ${
                     selected
                       ? 'border-primary bg-primary/10'
                       : 'border-border-2 hover:bg-surface-2'
@@ -268,6 +281,7 @@ export function ReviewView({
             id="table-customer-name"
             value={customerName}
             onChange={(event) => onCustomerNameChange(event.target.value)}
+            disabled={submitting}
             placeholder="So we can call your order"
             maxLength={120}
           />
@@ -284,6 +298,7 @@ export function ReviewView({
             id="table-order-notes"
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
+            disabled={submitting}
             placeholder="Allergies, preferences…"
             maxLength={500}
             rows={2}
@@ -432,6 +447,8 @@ interface TableOrderSuccessViewProps {
   table: PublicTable
   success: TableOrderSuccess
   onOrderMore: () => void
+  /** Enter the QR payment step from a pending order. */
+  onPayByQr?: () => void
 }
 
 /**
@@ -447,6 +464,7 @@ export function TableOrderSuccessView({
   table,
   success,
   onOrderMore,
+  onPayByQr,
 }: TableOrderSuccessViewProps) {
   const paid = isPaidOrderStatus(success.status)
   const cancelled = success.status === 'cancelled'
@@ -464,7 +482,8 @@ export function TableOrderSuccessView({
               : 'Order sent to the kitchen'}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Table {table.label} · {success.pax} pax
+          Table {table.label}
+          {success.pax ? ` · ${success.pax} pax` : ''}
         </p>
 
         <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
@@ -495,10 +514,23 @@ export function TableOrderSuccessView({
           </p>
         )}
 
+        {/* A pending order can still be paid from the phone: a diner who chose
+            "pay at counter" on review, or one whose page was reloaded before
+            they paid, must not be stranded. */}
+        {!paid && !cancelled && onPayByQr && (
+          <Button
+            onClick={onPayByQr}
+            className="mt-4 min-h-11 w-full rounded-full font-bold"
+          >
+            <QrCode className="h-4 w-4" />
+            Pay now by QR
+          </Button>
+        )}
+
         <Button
           asChild
           variant={paid ? 'default' : 'outline'}
-          className="mt-4 min-h-11 w-full rounded-full font-bold"
+          className="mt-3 min-h-11 w-full rounded-full font-bold"
         >
           <a href={receiptHref}>
             <Receipt className="h-4 w-4" />

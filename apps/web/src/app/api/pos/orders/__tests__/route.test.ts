@@ -537,6 +537,27 @@ describe('POST /api/pos/orders', () => {
     expect(client.calls.find((c) => c.table === 'payments' && c.op === 'insert')).toBeDefined()
   })
 
+  it('tells a stale POS page to reload when it sends only payment_timing', async () => {
+    // Pay-later was removed, so a POS tab loaded before the deploy sends
+    // `payment_timing` and no `payment_method`. "Invalid request" would leave
+    // the cashier retrying; the copy has to say what actually fixes it.
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        payment_timing: 'pay_later',
+      }) as never,
+    )
+    const json = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(json.error).toMatch(/reload the pos/i)
+    expect(client.calls.find((c) => c.table === 'orders')).toBeUndefined()
+  })
+
   it('prices add-ons from the database and snapshots them', async () => {
     const client = buildMockClient({
       modifiers: MODIFIER_ROWS,

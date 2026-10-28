@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,10 +12,12 @@ import { getTableCartStore } from '@/stores/table-cart'
 import { useToastStore } from '@/stores/toast'
 import { useIsClient } from '@/hooks/useIsClient'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
-import { isPaidOrderStatus } from '@/lib/pos/receipt'
 import {
   buildTablePaymentClaimPayload,
   nextStepAfterCreate,
+  parseStoredTableOrder,
+  resolveClaimStatus,
+  serializeStoredTableOrder,
   type TableOrderStep,
   type TablePaymentChoice,
 } from '@/lib/pos/table-orders'
@@ -101,6 +103,58 @@ function TableOrderInner({
   // The create request's key, kept after success: it is the order's secret for
   // the payment claim. Reset only when the diner starts a new order.
   const idempotencyKeyRef = useRef<string | null>(null)
+  // Per-tab (not localStorage: a shared phone must not keep the key past the
+  // meal). The payment step sends the diner into their banking app, and the
+  // page can be discarded while they are there.
+  const storageKey = `mkp:table-order:${table.token}`
+  const resumeAttempted = useRef(false)
+
+  const persistOrder = useCallback(
+    (order: TableOrderSuccess, idempotencyKey: string) => {
+      try {
+        window.sessionStorage.setItem(
+          storageKey,
+          serializeStoredTableOrder({ success: { ...order, pax: order.pax ?? null }, idempotencyKey })
+        )
+      } catch {
+        // Private mode / blocked storage: the flow still works in this tab.
+      }
+    },
+    [storageKey]
+  )
+
+  const clearPersistedOrder = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(storageKey)
+    } catch {
+      // Nothing to do: a stale entry expires with the tab.
+    }
+  }, [storageKey])
+
+  // Resume the diner's own order after a reload (they left to pay in their
+  // banking app). Without this the page returns to an empty menu and the
+  // order is stranded unpaid.
+  useEffect(() => {
+    if (resumeAttempted.current) return
+    resumeAttempted.current = true
+    let stored: ReturnType<typeof parseStoredTableOrder> = null
+    try {
+      stored = parseStoredTableOrder(window.sessionStorage.getItem(storageKey))
+    } catch {
+      stored = null
+    }
+    if (!stored) return
+    idempotencyKeyRef.current = stored.idempotencyKey
+    // sessionStorage is browser-only, so this cannot be lazy initial state
+    // without breaking hydration; one resume per mount is the point.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSuccess(stored.success as TableOrderSuccess)
+    // Always the status screen, never straight back into the QR payment: the
+    // stored order does not record whether the diner chose the counter, and
+    // re-opening the QR for a diner who is paying cash invites a second
+    // payment. "Pay now by QR" on that screen enters the payment step.
+    setStep('success')
+  }, [storageKey])
 
   const menuNameById = useMemo(() => {
     const names = new Map<string, string>()
@@ -251,6 +305,12 @@ function TableOrderInner({
       setSuccess(created)
       setCustomerName('')
       setNotes('')
+      // Persist before routing: if the phone kills the tab while the diner is
+      // in their banking app, the resumed page still has the order and its
+      // claim key.
+      if (idempotencyKeyRef.current) {
+        persistOrder(created, idempotencyKeyRef.current)
+      }
       // A duplicate response can already be paid (a retry after a claim):
       // never route a paid order through the payment step again.
       setStep(
@@ -285,13 +345,25 @@ function TableOrderInner({
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
-        // A 409 can mean the bill was settled elsewhere (a cashier marked it
-        // paid) between the diner's scan and their tap. Showing a paid receipt
-        // there is right; asking for money again is the double-charge bug.
-        if (res.status === 409 && isPaidOrderStatus(data?.status)) {
-          setSuccess((current) =>
-            current ? { ...current, status: 'paid' } : current
-          )
+        // Any 409 means this order is not payable from the phone any more: a
+        // cashier settled it, or staff cancelled it. Leaving the diner on the
+        // payment screen would keep the QR scannable — they could transfer
+        // money for an order that cannot be paid. Adopt the real status and
+        // leave the screen either way.
+        if (res.status === 409) {
+          const claimed =
+            data && typeof data.status === 'string'
+              ? { status: data.status }
+              : null
+          const status = resolveClaimStatus(success.status, claimed)
+          setSuccess((current) => (current ? { ...current, status } : current))
+          if (idempotencyKeyRef.current) {
+            persistOrder(
+              { ...success, status },
+              idempotencyKeyRef.current
+            )
+          }
+          setError(null)
           setStep('success')
           return
         }
@@ -300,15 +372,19 @@ function TableOrderInner({
       }
 
       const claim = data as TablePaymentClaim
-      setSuccess((current) =>
-        current
-          ? {
-              ...current,
-              status: claim.status === 'pending' ? 'pending' : 'paid',
-              paid_at: claim.paid_at,
-            }
-          : current
-      )
+      // Trust the flag as well as the status: an already-paid order can still be
+      // `pending` if its payment row landed without the status bump.
+      const nextStatus = resolveClaimStatus(success.status, claim)
+      setSuccess((current) => {
+        if (!current) return current
+        if (idempotencyKeyRef.current) {
+          persistOrder(
+            { ...current, status: nextStatus, paid_at: claim.paid_at },
+            idempotencyKeyRef.current
+          )
+        }
+        return { ...current, status: nextStatus, paid_at: claim.paid_at }
+      })
       setStep('success')
     } catch {
       setError(
@@ -322,11 +398,25 @@ function TableOrderInner({
 
   const startNewOrder = () => {
     // A new round is a new order: the old key would collide with the order it
-    // already created.
+    // already created, and the persisted copy would resume the finished one.
     idempotencyKeyRef.current = null
+    clearPersistedOrder()
     setSuccess(null)
     setError(null)
     setStep('menu')
+  }
+
+  const payByQr = () => {
+    if (!idempotencyKeyRef.current) {
+      addToast({
+        type: 'error',
+        title: 'Pay by QR unavailable',
+        description: 'Please ask a staff member to take your payment.',
+      })
+      return
+    }
+    setError(null)
+    setStep('payment')
   }
 
   if (step === 'success' && success) {
@@ -335,6 +425,7 @@ function TableOrderInner({
         table={table}
         success={success}
         onOrderMore={startNewOrder}
+        onPayByQr={payByQr}
       />
     )
   }

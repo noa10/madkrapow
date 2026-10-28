@@ -71,18 +71,43 @@ function reviewMarkup(overrides: Record<string, unknown> = {}): string {
   )
 }
 
+/** The opening tag of the last `<button>` — the primary CTA in each view. */
+function lastButtonTag(html: string): string {
+  const start = html.lastIndexOf('<button')
+  return html.slice(start, html.indexOf('>', start) + 1)
+}
+
+/** The opening tag of the button carrying this aria-label. */
+function buttonTag(html: string, ariaLabel: string): string {
+  return (
+    html.match(new RegExp(`<button[^>]*aria-label="${ariaLabel}"[^>]*>`))?.[0] ?? ''
+  )
+}
+
 describe('ReviewView', () => {
   it('disables the CTA and asks for diners while pax is unset', () => {
     const html = reviewMarkup()
     expect(html).toContain('Select the number of diners')
     expect(html).toContain('Pax (required)')
-    expect(html).toMatch(/disabled=""/)
+    expect(lastButtonTag(html)).toContain('disabled=""')
   })
 
   it('enables the CTA once pax is set', () => {
     const html = reviewMarkup({ pax: 2 })
     expect(html).not.toContain('Select the number of diners')
-    expect(html).not.toMatch(/disabled=""/)
+    expect(lastButtonTag(html)).not.toContain('disabled=""')
+  })
+
+  it('locks the whole form while the order is being sent', () => {
+    // The create request is in flight: editing a line or flipping the payment
+    // choice now would change a payload that has already gone out.
+    const html = reviewMarkup({ pax: 2, submitting: true })
+    expect(lastButtonTag(html)).toContain('disabled=""')
+    expect(buttonTag(html, 'Add one Pad Kra Pao')).toContain('disabled=""')
+    const paymentChoice = html.match(
+      /<button[^>]*aria-pressed="(?:true|false)"[^>]*>/
+    )?.[0]
+    expect(paymentChoice).toContain('disabled=""')
   })
 
   it('shows both payment choices with the current one selected', () => {
@@ -218,6 +243,42 @@ describe('TableOrderSuccessView', () => {
       })
     )
     expect(html).not.toContain('Payment received')
+  })
+
+  it('omits the pax line when the stored order has no pax', () => {
+    // `orders.pax` is nullable and a duplicate create echoes the stored row, so
+    // the screen must not render "null pax".
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending', pax: null },
+        onOrderMore: () => {},
+      })
+    )
+    expect(html).toContain('Table T3')
+    expect(html).not.toContain('pax')
+  })
+
+  it('offers the QR payment on a pending order, and not once it is paid', () => {
+    const pending = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
+        onOrderMore: () => {},
+        onPayByQr: () => {},
+      })
+    )
+    expect(pending).toContain('Pay now by QR')
+
+    const paid = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: SUCCESS_PAID,
+        onOrderMore: () => {},
+        onPayByQr: () => {},
+      })
+    )
+    expect(paid).not.toContain('Pay now by QR')
   })
 })
 

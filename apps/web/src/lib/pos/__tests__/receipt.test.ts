@@ -4,6 +4,7 @@ import {
   isPaidOrderStatus,
   receiptPaymentLabel,
   receiptStatus,
+  resolveReceiptStatus,
   PAID_ORDER_STATUSES,
 } from '../receipt'
 
@@ -41,6 +42,34 @@ describe('receiptStatus', () => {
       'preparing',
       'ready',
     ])
+  })
+})
+
+describe('resolveReceiptStatus', () => {
+  it('treats a succeeded payment row as paid even while the order is pending', () => {
+    // The claim writes the payment row and bumps the status in one function, but
+    // a receipt rendered mid-transaction — or after a payment recorded another
+    // way — must still reconcile: the money moved.
+    expect(resolveReceiptStatus('pending', [{ status: 'succeeded' }])).toBe('paid')
+  })
+
+  it('lets a cancellation win over a stale payment row', () => {
+    expect(resolveReceiptStatus('cancelled', [{ status: 'succeeded' }])).toBe(
+      'cancelled'
+    )
+  })
+
+  it('ignores failed and absent payment rows', () => {
+    expect(resolveReceiptStatus('pending', [{ status: 'failed' }])).toBe('unpaid')
+    expect(resolveReceiptStatus('pending', [])).toBe('unpaid')
+    expect(resolveReceiptStatus('pending', null)).toBe('unpaid')
+  })
+
+  it('maps progressed statuses exactly as receiptStatus does', () => {
+    for (const status of PAID_ORDER_STATUSES) {
+      expect(resolveReceiptStatus(status, null)).toBe('paid')
+    }
+    expect(resolveReceiptStatus('weird', null)).toBe('unpaid')
   })
 })
 

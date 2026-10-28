@@ -5,7 +5,7 @@ import { getServiceClient } from '@/lib/supabase/server'
 import {
   isClaimedByDiner,
   receiptPaymentLabel,
-  receiptStatus,
+  resolveReceiptStatus,
 } from '@/lib/pos/receipt'
 
 export const dynamic = 'force-dynamic'
@@ -116,7 +116,7 @@ export default async function TableReceiptPage({ params }: ReceiptPageProps) {
     (receipt.payments ?? []).find((row) => row.status === 'succeeded') ??
     (receipt.payments ?? [])[0] ??
     null
-  const status = receiptStatus(receipt.status)
+  const status = resolveReceiptStatus(receipt.status, receipt.payments)
 
   const badge =
     status === 'paid'

@@ -103,7 +103,7 @@ export async function POST(
     return NextResponse.json({ error: 'Unable to record payment' }, { status: 500 })
   }
 
-  if (result.ok === false) {
+  if (result.ok !== true) {
     if (result.code === 'not_found') {
       // Same copy for a wrong table and a wrong key: do not reveal which.
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -121,7 +121,13 @@ export async function POST(
         { status: 409 }
       )
     }
-    console.error('[API/TableOrderPay] Unexpected claim result:', sanitizeForLog(result))
+    // Fail closed: a result without `ok: true` is never a recorded payment.
+    // Answering 200 here would tell the diner their money was recorded when
+    // nothing was written.
+    console.error(
+      '[API/TableOrderPay] Unexpected claim result:',
+      result.code ?? 'no code'
+    )
     return NextResponse.json({ error: 'Unable to record payment' }, { status: 500 })
   }
 

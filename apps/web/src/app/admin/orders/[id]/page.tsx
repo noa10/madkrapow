@@ -611,7 +611,7 @@ export default function AdminOrderDetailPage() {
               <p className="font-medium text-yellow-800">Awaiting payment at the counter</p>
               <p className="text-sm text-yellow-700">
                 {order.source === 'counter'
-                  ? `This pay-later ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
+                  ? `This ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is not paid yet and is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
                   : 'This dine-in order came from the table QR. The kitchen already sees it; collect cash or Company QR in the POS table board to mark it paid.'}
               </p>
             </div>

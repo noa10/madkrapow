@@ -21,7 +21,6 @@ import type { PosMenuItem } from '../hooks/usePosData'
 
 export type PosOrderType = 'dine_in' | 'take_away'
 export type PosPaymentMethod = 'cash' | 'qr_pay'
-export type PosPaymentTiming = 'pay_now' | 'pay_later'
 
 export interface PosCartLine {
   key: string
@@ -51,8 +50,6 @@ interface PosSalePanelProps {
   onClear: () => void
   paymentMethod: PosPaymentMethod
   onPaymentMethodChange: (method: PosPaymentMethod) => void
-  paymentTiming: PosPaymentTiming
-  onPaymentTimingChange: (timing: PosPaymentTiming) => void
   totalCents: number
   submitting: boolean
   onSubmit: () => void
@@ -87,8 +84,6 @@ export function PosSalePanel({
   onClear,
   paymentMethod,
   onPaymentMethodChange,
-  paymentTiming,
-  onPaymentTimingChange,
   totalCents,
   submitting,
   onSubmit,
@@ -354,61 +349,35 @@ export function PosSalePanel({
       {/* Payment + submit */}
       <div className="space-y-2 border-t border-white/10 pt-3">
         <div className="grid grid-cols-2 gap-2">
-          {(['pay_now', 'pay_later'] as const).map((timing) => (
-            <button
-              key={timing}
-              type="button"
-              onClick={() => onPaymentTimingChange(timing)}
-              className={cn(
-                'rounded-lg border px-3 py-2 text-xs font-bold transition',
-                paymentTiming === timing
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10'
-              )}
-            >
-              {timing === 'pay_now' ? 'Pay now' : 'Pay later'}
-            </button>
-          ))}
+          {PAYMENT_OPTIONS.map((option) => {
+            const Icon = option.icon
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onPaymentMethodChange(option.value)}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition',
+                  paymentMethod === option.value
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {option.label}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            disabled
+            title="Card terminal integration is coming soon"
+            className="col-span-2 flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted-foreground/60"
+          >
+            <CreditCard className="h-4 w-4" />
+            Card terminal — coming soon
+          </button>
         </div>
-
-        {paymentTiming === 'pay_now' ? (
-          <div className="grid grid-cols-2 gap-2">
-            {PAYMENT_OPTIONS.map((option) => {
-              const Icon = option.icon
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => onPaymentMethodChange(option.value)}
-                  className={cn(
-                    'flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition',
-                    paymentMethod === option.value
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10'
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {option.label}
-                </button>
-              )
-            })}
-            <button
-              type="button"
-              disabled
-              title="Card terminal integration is coming soon"
-              className="col-span-2 flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted-foreground/60"
-            >
-              <CreditCard className="h-4 w-4" />
-              Card terminal — coming soon
-            </button>
-          </div>
-        ) : (
-          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-4 text-amber-300">
-            The kitchen docket prints now; the receipt prints when payment is
-            collected from the{' '}
-            {orderType === 'dine_in' ? 'table board' : 'Unpaid take-away list'}.
-          </p>
-        )}
 
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-muted-foreground">Total</span>
@@ -424,8 +393,6 @@ export function PosSalePanel({
         >
           {submitting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
-          ) : paymentTiming === 'pay_later' ? (
-            'Send to kitchen · Pay later'
           ) : (
             `Charge ${formatPrice(totalCents)}`
           )}

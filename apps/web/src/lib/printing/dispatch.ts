@@ -4,11 +4,12 @@
  *
  * Job matrix (v1):
  * - GrabFood orders print a GrabFood ticket.
- * - Counter orders print a kitchen docket + customer receipt; a pay-later
- *   counter order prints only the docket until the POS settles it.
+ * - Counter orders print a kitchen docket + customer receipt. Counter sales
+ *   are always paid now; the `pending` branch below remains for legacy
+ *   pay-later tickets created before that was removed.
  * - Table-QR dine-in orders print the docket while still unpaid (`pending`,
  *   the kitchen starts immediately) and additionally print a receipt once the
- *   POS marks them paid.
+ *   diner claims payment or the POS settles it.
  * - Other sources print a kitchen docket.
  */
 
@@ -30,8 +31,8 @@ export function jobTypesForOrder(order: {
 }): PrintJobType[] {
   if (order.source === 'grabfood') return ['grabfood_ticket']
   if (order.source === 'counter') {
-    // A pay-later ticket prints the kitchen docket immediately; the receipt
-    // waits until the POS settles it (the docket marker dedupes the reprint).
+    // Legacy pay-later tickets (no longer created) print the kitchen docket
+    // immediately; the receipt waits until the POS settles them.
     return order.status === 'pending'
       ? ['kitchen_docket']
       : ['kitchen_docket', 'receipt']

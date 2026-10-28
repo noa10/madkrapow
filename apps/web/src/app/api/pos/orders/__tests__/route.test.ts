@@ -447,7 +447,24 @@ describe('POST /api/pos/orders', () => {
     expect(unknown.status).toBe(400)
   })
 
-  it('creates a pay-later order with no payment record', async () => {
+  it('rejects a request without a payment method and writes nothing', async () => {
+    const client = buildMockClient()
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(
+      makeRequest({
+        items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+        order_type: 'take_away',
+        customer_name: 'Aina',
+      }) as never,
+    )
+    expect(res.status).toBe(400)
+    // Nothing may reach the kitchen unpaid: no order, no payment row.
+    expect(client.calls.find((c) => c.table === 'orders' && c.op === 'insert')).toBeUndefined()
+    expect(client.calls.find((c) => c.table === 'payments')).toBeUndefined()
+  })
+
+  it('creates a paid order with its payment record for the chosen method', async () => {
     const client = buildMockClient()
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
@@ -456,29 +473,33 @@ describe('POST /api/pos/orders', () => {
         items: [{ menu_item_id: SET_KRAPOW, quantity: 2 }],
         order_type: 'take_away',
         customer_name: 'Aina',
-        payment_timing: 'pay_later',
+        payment_method: 'qr_pay',
       }) as never,
     )
     expect(res.status).toBe(201)
-    const body = await res.json()
-    expect(body).toMatchObject({
-      status: 'pending',
-      payment_timing: 'pay_later',
+    expect(await res.json()).toMatchObject({
+      status: 'paid',
       total_cents: 2500,
     })
 
     const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
     expect(orderInsert?.row).toMatchObject({
-      status: 'pending',
+      status: 'paid',
       source: 'counter',
       delivery_type: 'self_pickup',
-      payment_method: null,
+      payment_method: 'qr_pay',
       total_cents: 2500,
     })
-    expect(client.calls.find((c) => c.table === 'payments')).toBeUndefined()
+
+    const paymentInsert = client.calls.find((c) => c.table === 'payments' && c.op === 'insert')
+    expect(paymentInsert?.row).toMatchObject({
+      method: 'qr_pay',
+      amount_cents: 2500,
+      status: 'succeeded',
+    })
   })
 
-  it('requires a payment method when paying now', async () => {
+  it('rejects an unsupported payment method', async () => {
     const client = buildMockClient()
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
@@ -486,14 +507,17 @@ describe('POST /api/pos/orders', () => {
       makeRequest({
         items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
         order_type: 'take_away',
-        customer_name: 'Aina',
-        payment_timing: 'pay_now',
+        payment_method: 'card',
       }) as never,
     )
     expect(res.status).toBe(400)
+    expect(client.calls.find((c) => c.table === 'orders')).toBeUndefined()
   })
 
-  it('rejects a payment method on a pay-later order', async () => {
+  it('ignores a stale pay-later flag and still creates the order paid', async () => {
+    // An old POS build that still sends `payment_timing` must not be able to
+    // create an unpaid ticket: unknown keys are stripped, so the order is paid
+    // with the method it sent.
     const client = buildMockClient()
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
@@ -501,12 +525,16 @@ describe('POST /api/pos/orders', () => {
       makeRequest({
         items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
         order_type: 'take_away',
-        customer_name: 'Aina',
-        payment_timing: 'pay_later',
         payment_method: 'cash',
+        payment_timing: 'pay_later',
       }) as never,
     )
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ status: 'paid' })
+
+    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
+    expect(orderInsert?.row).toMatchObject({ status: 'paid', payment_method: 'cash' })
+    expect(client.calls.find((c) => c.table === 'payments' && c.op === 'insert')).toBeDefined()
   })
 
   it('prices add-ons from the database and snapshots them', async () => {

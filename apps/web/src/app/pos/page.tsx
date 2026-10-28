@@ -15,9 +15,7 @@ import {
   type PosCartModifier,
 } from '@/lib/pos/cart'
 import {
-  buildOrderSettleTarget,
   buildTableSettleTarget,
-  buildTableSettleTargetFromOrders,
   closeTableWarning,
   summarizeTable,
 } from '@/lib/pos/tables'
@@ -35,7 +33,6 @@ import {
   type PosCartLine,
   type PosOrderType,
   type PosPaymentMethod,
-  type PosPaymentTiming,
 } from './components/PosSalePanel'
 import { PosPayNowModal } from './components/PosPayNowModal'
 import { PosSettleModal } from './components/PosSettleModal'
@@ -99,7 +96,6 @@ export default function PosPage() {
     groups: PosModifierGroup[]
   } | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>('cash')
-  const [paymentTiming, setPaymentTiming] = useState<PosPaymentTiming>('pay_now')
   const [payNowOpen, setPayNowOpen] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -277,7 +273,6 @@ export default function PosPage() {
     setCart([])
     setCustomerName('')
     setPaymentMethod('cash')
-    setPaymentTiming('pay_now')
     setPayNowOpen(false)
     setSubmitError(null)
   }, [])
@@ -302,8 +297,7 @@ export default function PosPage() {
       return
     }
 
-    const payLater = paymentTiming === 'pay_later'
-    const method = payLater ? undefined : methodOverride ?? paymentMethod
+    const method = methodOverride ?? paymentMethod
 
     submitLock.current = true
     setSubmitting(true)
@@ -316,7 +310,6 @@ export default function PosPage() {
           modifier_ids: line.modifiers.map((modifier) => modifier.id),
           notes: line.notes || undefined,
         })),
-        payment_timing: payLater ? 'pay_later' : 'pay_now',
         payment_method: method,
         order_type: orderType,
         table_id: orderType === 'dine_in' ? selectedTableId : undefined,
@@ -338,47 +331,11 @@ export default function PosPage() {
           ? `Table ${json.table_label} · ${json.pax} pax`
           : 'Take-away'
       const orderCode = json.display_code ?? json.order_number
-      const createdOrder: PosOpenOrder = {
-        id: json.order_id,
-        display_code: json.display_code ?? null,
-        status: json.status ?? (payLater ? 'pending' : 'paid'),
-        total_cents: json.total_cents,
-        created_at: new Date().toISOString(),
-        customer_name: customerName.trim() || null,
-        pax: json.pax ?? null,
-        table_id: orderType === 'dine_in' ? selectedTableId : null,
-        table_label: json.table_label ?? null,
-        delivery_type: orderType === 'dine_in' ? 'dine_in' : 'self_pickup',
-        source: 'counter',
-      }
       setLastOrderNumber(orderCode)
       addToast({
         type: 'success',
-        title: payLater
-          ? `Order ${orderCode} sent to the kitchen`
-          : `Order ${orderCode} paid`,
-        description: `${formatPrice(json.total_cents)} · ${context}${
-          payLater ? ' · Pay later' : ''
-        }`,
-        action: payLater
-          ? {
-              label: 'Collect payment',
-              onClick: () => {
-                // Dine-in groups every unpaid round at the table; a take-away
-                // ticket is its own bill.
-                const target =
-                  orderType === 'dine_in' && selectedTable
-                    ? buildTableSettleTargetFromOrders(selectedTable, [
-                        ...(summariesByTableId.get(selectedTable.id)?.orders ?? []),
-                        createdOrder,
-                      ])
-                    : buildOrderSettleTarget(createdOrder)
-                if (!target) return
-                setSettleError(null)
-                setSettleTarget(target)
-              },
-            }
-          : undefined,
+        title: `Order ${orderCode} paid`,
+        description: `${formatPrice(json.total_cents)} · ${context}`,
       })
       resetSale()
       // The kitchen docket (and, once settled, the receipt) is claimed and
@@ -398,12 +355,8 @@ export default function PosPage() {
     }
   }
 
-  /** Pay-now sales confirm inside the payment dialog before the order exists. */
+  /** A POS sale is confirmed in the payment dialog before the order exists. */
   const handleSubmit = () => {
-    if (paymentTiming === 'pay_later') {
-      void submitOrder()
-      return
-    }
     setSubmitError(null)
     setPayNowOpen(true)
   }
@@ -687,8 +640,6 @@ export default function PosPage() {
             onClear={resetSale}
             paymentMethod={paymentMethod}
             onPaymentMethodChange={setPaymentMethod}
-            paymentTiming={paymentTiming}
-            onPaymentTimingChange={setPaymentTiming}
             totalCents={totalCents}
             submitting={submitting}
             onSubmit={handleSubmit}

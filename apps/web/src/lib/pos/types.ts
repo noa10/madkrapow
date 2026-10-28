@@ -138,3 +138,19 @@ export interface TableOrderSuccess {
   table_label: string
   pax: number
 }
+
+/**
+ * Result of the diner's "I've paid" claim (`POST .../[id]/pay`).
+ *
+ * `status` is the order's real status: a retry can return an order that has
+ * already advanced through the kitchen. `payment_method` may be `cash` when a
+ * cashier settled the bill between the diner's scan and their tap, so the
+ * success screen must show the recorded method rather than assume `qr_pay`.
+ */
+export interface TablePaymentClaim {
+  status: string
+  amount_cents: number
+  payment_method: string | null
+  paid_at: string | null
+  already_paid: boolean
+}

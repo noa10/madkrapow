@@ -14,9 +14,17 @@ import { useIsClient } from '@/hooks/useIsClient'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
 import {
   buildTablePaymentClaimPayload,
+  buildTablePaymentStatusPayload,
+  isChangedDuplicate,
+  isPayableOrder,
+  isStaleLiveRead,
   nextStepAfterCreate,
   parseStoredTableOrder,
-  resolveClaimStatus,
+  parseTableOrderStatus,
+  parseTableOrderSuccess,
+  parseTablePaymentClaim,
+  resolveClaimOutcome,
+  resolveLiveStatus,
   serializeStoredTableOrder,
   type TableOrderStep,
   type TablePaymentChoice,
@@ -28,8 +36,8 @@ import type {
 } from '@/lib/queries/menu'
 import type {
   PublicTable,
+  TableOrderStatus,
   TableOrderSuccess,
-  TablePaymentClaim,
 } from '@/lib/pos/types'
 import {
   PaymentView,
@@ -98,8 +106,23 @@ function TableOrderInner({
   const [claiming, setClaiming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<TableOrderSuccess | null>(null)
+  /**
+   * True only when the SERVER has confirmed the order is still pending and
+   * unpaid. A stale snapshot must never put a live QR on an order that is
+   * already paid: the diner would scan it, transfer the money again, and be
+   * out of pocket.
+   */
+  const [payable, setPayable] = useState(false)
+  const [checking, setChecking] = useState(false)
+  /** The order can never be paid from the phone (the claim said so). */
+  const [paymentBlocked, setPaymentBlocked] = useState(false)
+  /** A standing message for the status screen (e.g. a duplicate order). */
+  const [notice, setNotice] = useState<string | null>(null)
   const submitLock = useRef(false)
   const claimLock = useRef(false)
+  // The last order the client knows about, readable from a callback without
+  // waiting for a re-render.
+  const successRef = useRef<TableOrderSuccess | null>(null)
   // The create request's key, kept after success: it is the order's secret for
   // the payment claim. Reset only when the diner starts a new order.
   const idempotencyKeyRef = useRef<string | null>(null)
@@ -131,6 +154,152 @@ function TableOrderInner({
     }
   }, [storageKey])
 
+  const applySuccess = useCallback((next: TableOrderSuccess | null) => {
+    successRef.current = next
+    setSuccess(next)
+  }, [])
+
+  /**
+   * Record the order in state and in session storage.
+   *
+   * The write is deliberately outside any state updater: React may run an
+   * updater more than once, and a side effect must not depend on how many
+   * times the framework calls it.
+   */
+  const commitSuccess = useCallback(
+    (next: TableOrderSuccess) => {
+      applySuccess(next)
+      const key = idempotencyKeyRef.current
+      if (key) persistOrder(next, key)
+    },
+    [applySuccess, persistOrder]
+  )
+
+  /**
+   * Ask the server what the order's real status is.
+   *
+   * The phone's own snapshot can be stale: a claim whose response was lost
+   * (the phone switched to the banking app) leaves it saying "pending" for an
+   * order that is already paid. Only the server knows.
+   */
+  const refreshStatus = useCallback(async (): Promise<TableOrderStatus | null> => {
+    const current = successRef.current
+    const key = idempotencyKeyRef.current
+    if (!current || !key) return null
+    try {
+      const res = await fetch(
+        `/api/public/table-orders/${current.order_id}/status`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            buildTablePaymentStatusPayload({
+              tableToken: table.token,
+              idempotencyKey: key,
+            })
+          ),
+        }
+      )
+      if (!res.ok) return null
+      const data = await res.json().catch(() => null)
+      return parseTableOrderStatus(data)
+    } catch {
+      return null
+    }
+  }, [table.token])
+
+  /** Adopt a server-confirmed status. */
+  const applyLiveStatus = useCallback(
+    (live: TableOrderStatus) => {
+      const current = successRef.current
+      if (!current) return
+      // A late response for an earlier order (a refresh still in flight when
+      // the diner started a new round) must never be merged into the order
+      // now on screen.
+      if (live.order_id && live.order_id !== current.order_id) return
+      // A "pending" read that lands after the claim committed is a stale
+      // response, not a reversal: applying it would put a live QR back on a
+      // paid order.
+      if (isStaleLiveRead(current.status, live.status)) return
+
+      const status = resolveLiveStatus(live.status, live.payment_recorded)
+      const paidAt = live.paid_at ?? current.paid_at ?? null
+      const paymentMethod =
+        live.payment_method ?? current.payment_method ?? null
+      // Only touch state when something actually changed: the payment screen
+      // re-checks on a timer, and an unconditional write would re-render (and
+      // re-run the effect) forever.
+      if (
+        status !== current.status ||
+        (current.paid_at ?? null) !== paidAt ||
+        (current.payment_method ?? null) !== paymentMethod
+      ) {
+        commitSuccess({
+          ...current,
+          status,
+          paid_at: paidAt,
+          payment_method: paymentMethod,
+        })
+      }
+      // Only a pending, unpaid order can still be paid from the phone.
+      setPayable(
+        isPayableOrder({ status, paymentRecorded: live.payment_recorded })
+      )
+    },
+    [commitSuccess]
+  )
+
+  /** Re-read the order's status on demand (the "check status" button). */
+  const checkStatus = useCallback(async () => {
+    setChecking(true)
+    try {
+      const live = await refreshStatus()
+      if (live) {
+        applyLiveStatus(live)
+        setPaymentBlocked(false)
+      } else {
+        setNotice(
+          'We could not confirm your order status. Please ask a staff member before paying again.'
+        )
+      }
+    } finally {
+      setChecking(false)
+    }
+  }, [applyLiveStatus, refreshStatus])
+
+  /**
+   * After an ambiguous claim failure, ask the server what actually happened.
+   *
+   * - `payable`: the ledger says the money never moved, so a retry is safe.
+   * - `unconfirmed`: the server could not be reached; the QR is hidden.
+   * - `moved-on`: the order is paid or cancelled; the screen moved to it.
+   */
+  const reconcileAfterFailedClaim = useCallback(
+    async (): Promise<'payable' | 'unconfirmed' | 'moved-on'> => {
+      const live = await refreshStatus()
+      if (!live) {
+        // We cannot confirm the order is still payable, so stop showing a
+        // scannable QR. The status screen's "check status" button can recover.
+        setPayable(false)
+        setPaymentBlocked(true)
+        return 'unconfirmed'
+      }
+      applyLiveStatus(live)
+      if (
+        isPayableOrder({
+          status: live.status,
+          paymentRecorded: live.payment_recorded,
+        })
+      ) {
+        setPaymentBlocked(false)
+        return 'payable'
+      }
+      setStep('success')
+      return 'moved-on'
+    },
+    [applyLiveStatus, refreshStatus]
+  )
+
   // Resume the diner's own order after a reload (they left to pay in their
   // banking app). Without this the page returns to an empty menu and the
   // order is stranded unpaid.
@@ -148,13 +317,62 @@ function TableOrderInner({
     // sessionStorage is browser-only, so this cannot be lazy initial state
     // without breaking hydration; one resume per mount is the point.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSuccess(stored.success as TableOrderSuccess)
+    applySuccess(stored.success)
     // Always the status screen, never straight back into the QR payment: the
     // stored order does not record whether the diner chose the counter, and
     // re-opening the QR for a diner who is paying cash invites a second
     // payment. "Pay now by QR" on that screen enters the payment step.
     setStep('success')
-  }, [storageKey])
+    // The snapshot is not the truth. A claim whose response was lost leaves it
+    // saying "pending" for an order that is already paid, so confirm with the
+    // server before offering the payment QR.
+    void refreshStatus().then((live) => {
+      if (live) applyLiveStatus(live)
+    })
+  }, [applyLiveStatus, applySuccess, refreshStatus, storageKey])
+
+  // A cashier can settle the bill, or staff can cancel the order, while the
+  // diner sits on the payment screen. Re-check while it is open so a live QR
+  // is never left in front of an order that is already paid — and re-check
+  // when the phone comes back from the banking app.
+  useEffect(() => {
+    if (step !== 'payment') return
+    let cancelled = false
+    const check = async () => {
+      // Never race the claim itself.
+      if (claimLock.current) return
+      const live = await refreshStatus()
+      if (cancelled || !live) return
+      applyLiveStatus(live)
+      if (
+        !isPayableOrder({
+          status: live.status,
+          paymentRecorded: live.payment_recorded,
+        })
+      ) {
+        setStep('success')
+      } else {
+        // The order is confirmed payable again (the network recovered after an
+        // "unconfirmed" failure): unblock the QR and the claim button.
+        setPaymentBlocked(false)
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => {
+      void check()
+    }, 15000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void check()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [applyLiveStatus, refreshStatus, step])
 
   const menuNameById = useMemo(() => {
     const names = new Map<string, string>()
@@ -300,17 +518,41 @@ function TableOrderInner({
         return
       }
 
-      const created = data as TableOrderSuccess
+      const created = parseTableOrderSuccess(data)
+      if (!created) {
+        // A 2xx we cannot read is not an order. The request may well have
+        // landed, so the cart stays: the diner must not lose the order they
+        // just built because the response body was truncated.
+        setError(
+          'We could not read the server’s response, so we cannot confirm your order. Please check with a staff member before paying again.'
+        )
+        return
+      }
+
+      // A retry after a lost response returns the order that already landed.
+      // If the cart has changed since then, that order holds the OLD items:
+      // the edit was never sent and the amount on the QR is the old one.
+      if (isChangedDuplicate(created, subtotalCents)) {
+        // The cart still holds the items already sent PLUS the diner's edits.
+        // Keeping it would let "Order more" re-send the whole cart and bill
+        // the sent dishes a second time, so it is cleared and the diner adds
+        // only the extras.
+        cart.getState().clear()
+        commitSuccess(created)
+        setNotice(
+          'This order was already sent to the kitchen with your earlier items, so your latest changes were not applied. Add any extras as a new order.'
+        )
+        setPayable(isPayableOrder({ status: created.status }))
+        setStep('success')
+        return
+      }
+
       cart.getState().clear()
-      setSuccess(created)
+      commitSuccess(created)
       setCustomerName('')
       setNotes('')
-      // Persist before routing: if the phone kills the tab while the diner is
-      // in their banking app, the resumed page still has the order and its
-      // claim key.
-      if (idempotencyKeyRef.current) {
-        persistOrder(created, idempotencyKeyRef.current)
-      }
+      setNotice(null)
+      setPayable(isPayableOrder({ status: created.status }))
       // A duplicate response can already be paid (a retry after a claim):
       // never route a paid order through the payment step again.
       setStep(
@@ -327,22 +569,26 @@ function TableOrderInner({
   }
 
   const claimPayment = async () => {
-    if (!success || claimLock.current || !idempotencyKeyRef.current) return
+    const current = successRef.current
+    if (!current || claimLock.current || !idempotencyKeyRef.current) return
 
     claimLock.current = true
     setClaiming(true)
     setError(null)
     try {
-      const res = await fetch(`/api/public/table-orders/${success.order_id}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          buildTablePaymentClaimPayload({
-            tableToken: table.token,
-            idempotencyKey: idempotencyKeyRef.current,
-          })
-        ),
-      })
+      const res = await fetch(
+        `/api/public/table-orders/${current.order_id}/pay`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            buildTablePaymentClaimPayload({
+              tableToken: table.token,
+              idempotencyKey: idempotencyKeyRef.current,
+            })
+          ),
+        }
+      )
       const data = await res.json().catch(() => null)
       if (!res.ok) {
         // Any 409 means this order is not payable from the phone any more: a
@@ -355,41 +601,89 @@ function TableOrderInner({
             data && typeof data.status === 'string'
               ? { status: data.status }
               : null
-          const status = resolveClaimStatus(success.status, claimed)
-          setSuccess((current) => (current ? { ...current, status } : current))
-          if (idempotencyKeyRef.current) {
-            persistOrder(
-              { ...success, status },
-              idempotencyKeyRef.current
-            )
-          }
+          const outcome = resolveClaimOutcome(current.status, claimed)
+          commitSuccess({ ...current, status: outcome.status })
+          setPayable(false)
           setError(null)
           setStep('success')
           return
         }
-        setError(data?.error ?? `Could not record the payment (HTTP ${res.status})`)
+        if (res.status === 404) {
+          // This order can never be claimed (the key does not match, or it is
+          // not a table order). Hide the QR: a diner who already transferred
+          // must not be handed a scannable code for an order that can never
+          // take the money.
+          setPaymentBlocked(true)
+          setPayable(false)
+          setError(
+            'This order can no longer be paid online. If you have already made a transfer, please ask a staff member.'
+          )
+          return
+        }
+        // A 5xx or a gateway error can arrive AFTER the RPC committed. Re-read
+        // the order instead of leaving a live QR next to an error — the diner
+        // may already have transferred.
+        const state = await reconcileAfterFailedClaim()
+        if (state === 'payable') {
+          setError(
+            'Your payment was not recorded. You can try “I have paid” again, or pay at the counter.'
+          )
+        } else if (state === 'unconfirmed') {
+          setError(
+            'We could not confirm whether your payment was recorded. If you have already made a transfer, please do not pay again — ask a staff member to check.'
+          )
+        }
         return
       }
 
-      const claim = data as TablePaymentClaim
-      // Trust the flag as well as the status: an already-paid order can still be
-      // `pending` if its payment row landed without the status bump.
-      const nextStatus = resolveClaimStatus(success.status, claim)
-      setSuccess((current) => {
-        if (!current) return current
-        if (idempotencyKeyRef.current) {
-          persistOrder(
-            { ...current, status: nextStatus, paid_at: claim.paid_at },
-            idempotencyKeyRef.current
+      const claim = parseTablePaymentClaim(data)
+      if (!claim) {
+        // The claim may have landed behind an unreadable body. Ask the server
+        // what the order's real status is before letting the diner pay again.
+        const state = await reconcileAfterFailedClaim()
+        if (state === 'payable') {
+          setError(
+            'We could not read the server’s response. Your payment was not recorded — you can try “I have paid” again, or pay at the counter.'
+          )
+        } else if (state === 'unconfirmed') {
+          setError(
+            'We could not confirm whether your payment was recorded. If you have already made a transfer, please do not pay again — ask a staff member to check.'
           )
         }
-        return { ...current, status: nextStatus, paid_at: claim.paid_at }
+        return
+      }
+
+      // Trust the flag as well as the status: an already-paid order can still
+      // be `pending` if its payment row landed without the status bump. The
+      // recorded method matters too — a cashier-settled order must not be
+      // shown as "payment received" for a QR transfer that never landed.
+      const outcome = resolveClaimOutcome(current.status, claim)
+      commitSuccess({
+        ...current,
+        status: outcome.status,
+        paid_at: claim.paid_at ?? current.paid_at ?? null,
+        payment_method: claim.payment_method ?? current.payment_method ?? null,
+        already_paid: claim.already_paid,
       })
+      setPayable(false)
+      setPaymentBlocked(false)
+      setNotice(null)
+      setError(null)
       setStep('success')
     } catch {
-      setError(
-        "Network error — the payment may already be recorded. Tap I have paid to retry; it will not charge twice."
-      )
+      // The request may have landed: the phone switched to the banking app and
+      // the response never came back. Re-read the order before leaving the
+      // diner with a live QR on an order that is already paid.
+      const state = await reconcileAfterFailedClaim()
+      if (state === 'payable') {
+        setError(
+          'Network error — your payment was not recorded. You can try “I have paid” again, or pay at the counter.'
+        )
+      } else if (state === 'unconfirmed') {
+        setError(
+          'Network error — we could not confirm whether your payment was recorded. If you have already made a transfer, please do not pay again — ask a staff member to check.'
+        )
+      }
     } finally {
       claimLock.current = false
       setClaiming(false)
@@ -401,8 +695,11 @@ function TableOrderInner({
     // already created, and the persisted copy would resume the finished one.
     idempotencyKeyRef.current = null
     clearPersistedOrder()
-    setSuccess(null)
+    applySuccess(null)
     setError(null)
+    setNotice(null)
+    setPayable(false)
+    setPaymentBlocked(false)
     setStep('menu')
   }
 
@@ -416,6 +713,7 @@ function TableOrderInner({
       return
     }
     setError(null)
+    setPaymentBlocked(false)
     setStep('payment')
   }
 
@@ -426,6 +724,10 @@ function TableOrderInner({
         success={success}
         onOrderMore={startNewOrder}
         onPayByQr={payByQr}
+        canPayByQr={payable}
+        onCheckStatus={checkStatus}
+        checking={checking}
+        notice={notice}
       />
     )
   }
@@ -437,6 +739,7 @@ function TableOrderInner({
         success={success}
         claiming={claiming}
         error={error}
+        blocked={paymentBlocked}
         onBack={() => {
           if (!claiming) {
             // The order already exists and the cart is cleared, so there is no

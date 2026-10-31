@@ -247,4 +247,23 @@ describe('POST /api/public/table-orders/[id]/pay', () => {
 
     expect(res.status).toBe(500)
   })
+
+  it('rate-limits a flood of claims from one table token', async () => {
+    // The claim takes a row lock in a SECURITY DEFINER function; an
+    // unthrottled caller must not be able to serialise on it.
+    const { client } = buildClient({ rpcResult: PAID_RESULT })
+    state.client = client
+    const floodToken = 'q'.repeat(32)
+
+    let lastStatus = 200
+    for (let i = 0; i < 31; i += 1) {
+      const res = await POST(
+        makeRequest({ table_token: floodToken, idempotency_key: KEY }) as never,
+        context()
+      )
+      lastStatus = res.status
+    }
+
+    expect(lastStatus).toBe(429)
+  })
 })

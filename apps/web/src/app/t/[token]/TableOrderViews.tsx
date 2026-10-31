@@ -21,8 +21,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CompanyQrPanel } from '@/app/pos/components/CompanyQrPanel'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
-import { isPaidOrderStatus } from '@/lib/pos/receipt'
-import type { TablePaymentChoice } from '@/lib/pos/table-orders'
+import { receiptPaymentLabel } from '@/lib/pos/receipt'
+import { tablePaymentTone, type TablePaymentChoice } from '@/lib/pos/table-orders'
 import type { PublicTable, TableOrderSuccess } from '@/lib/pos/types'
 
 export function formatPrice(cents: number): string {
@@ -348,6 +348,13 @@ interface PaymentViewProps {
   success: TableOrderSuccess
   claiming: boolean
   error: string | null
+  /**
+   * True when the order can never be paid from this phone (the server said so).
+   *
+   * The QR is hidden: a diner who already transferred must not be handed a
+   * scannable code for an order that can never take the money.
+   */
+  blocked?: boolean
   onBack: () => void
   onClaim: () => void
   onPayAtCounter: () => void
@@ -367,6 +374,7 @@ export function PaymentView({
   success,
   claiming,
   error,
+  blocked = false,
   onBack,
   onClaim,
   onPayAtCounter,
@@ -399,10 +407,19 @@ export function PaymentView({
       </header>
 
       <div className="mx-auto max-w-md space-y-4 px-4 pt-5">
-        <CompanyQrPanel
-          amountCents={success.total_cents}
-          instruction={DINER_QR_INSTRUCTION}
-        />
+        {!blocked && (
+          <CompanyQrPanel
+            amountCents={success.total_cents}
+            instruction={DINER_QR_INSTRUCTION}
+          />
+        )}
+
+        {blocked && (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            This order cannot be paid from this phone. Please ask a staff member
+            to settle the bill.
+          </p>
+        )}
 
         {error && (
           <p
@@ -413,20 +430,22 @@ export function PaymentView({
           </p>
         )}
 
-        <Button
-          onClick={onClaim}
-          disabled={claiming}
-          className="min-h-12 w-full rounded-full text-[15px] font-bold"
-        >
-          {claiming ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Recording your payment…
-            </>
-          ) : (
-            'I have paid'
-          )}
-        </Button>
+        {!blocked && (
+          <Button
+            onClick={onClaim}
+            disabled={claiming}
+            className="min-h-12 w-full rounded-full text-[15px] font-bold"
+          >
+            {claiming ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Recording your payment…
+              </>
+            ) : (
+              'I have paid'
+            )}
+          </Button>
+        )}
 
         <button
           type="button"
@@ -449,42 +468,91 @@ interface TableOrderSuccessViewProps {
   onOrderMore: () => void
   /** Enter the QR payment step from a pending order. */
   onPayByQr?: () => void
+  /**
+   * True when the SERVER confirmed the order is still pending and unpaid.
+   *
+   * The payment button is hidden unless this is true: a stale snapshot must
+   * not put a live QR on an order that is already paid, or the diner scans it
+   * and transfers the money a second time.
+   */
+  canPayByQr?: boolean
+  /** Re-read the order's status from the server. */
+  onCheckStatus?: () => void
+  checking?: boolean
+  /** A standing message for this screen (e.g. a duplicate order). */
+  notice?: string | null
 }
 
 /**
  * The confirmation screen.
  *
- * Branches on the order's real status, not on the payment choice: a paid order
- * gets the receipt link the diner shows the cashier, a pending one is told to
- * pay at the counter, and a cancelled one says so. Only the paid allowlist may
- * render "Payment received" — a status this module has not seen is not proof
- * of payment.
+ * Branches on the order's real status and the recorded payment method, not on
+ * the payment choice: a paid order gets the receipt link the diner shows the
+ * cashier, a pending one is told to pay at the counter, and a cancelled one
+ * says so. Only the paid allowlist may render "Payment received" — a status
+ * this module has not seen is not proof of payment, and an order paid by a
+ * cashier is not proof that this diner's QR transfer landed.
  */
 export function TableOrderSuccessView({
   table,
   success,
   onOrderMore,
   onPayByQr,
+  canPayByQr = false,
+  onCheckStatus,
+  checking = false,
+  notice = null,
 }: TableOrderSuccessViewProps) {
-  const paid = isPaidOrderStatus(success.status)
-  const cancelled = success.status === 'cancelled'
+  const tone = tablePaymentTone({
+    status: success.status,
+    paymentMethod: success.payment_method,
+  })
+  const paid = tone === 'paid_by_qr' || tone === 'paid_elsewhere'
+  const cancelled = tone === 'cancelled'
+  const showPay = canPayByQr && !paid && !cancelled
   const receiptHref = `/t/${table.token}/receipt/${success.order_id}`
+  const methodLabel = receiptPaymentLabel(success.payment_method ?? null)
+
+  const title =
+    tone === 'paid_by_qr'
+      ? 'Payment received'
+      : tone === 'paid_elsewhere'
+        ? `Already paid by ${methodLabel}`
+        : cancelled
+          ? 'Order cancelled'
+          : 'Order sent to the kitchen'
+
+  const detail =
+    tone === 'paid_by_qr'
+      ? 'Show the receipt at the counter if the cashier asks. Keep this code to collect your order.'
+      : tone === 'paid_elsewhere'
+        ? 'This order was already settled. If you have made a transfer, please check with a staff member — do not pay again.'
+        : cancelled
+          ? 'This order was cancelled. Please ask a staff member if you were charged.'
+          : showPay
+            ? 'Pay at the counter. Keep this code to collect your order.'
+            : 'Please ask a staff member to settle this order.'
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-6">
       <div className="w-full max-w-sm text-center">
         <CheckCircle2 className="mx-auto h-16 w-16 text-emerald-400" />
         <h1 className="mt-4 font-display text-2xl font-extrabold text-foreground">
-          {paid
-            ? 'Payment received'
-            : cancelled
-              ? 'Order cancelled'
-              : 'Order sent to the kitchen'}
+          {title}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Table {table.label}
           {success.pax ? ` · ${success.pax} pax` : ''}
         </p>
+
+        {notice && (
+          <p
+            role="status"
+            className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+          >
+            {notice}
+          </p>
+        )}
 
         <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -498,32 +566,39 @@ export function TableOrderSuccessView({
           </p>
         </div>
 
-        {paid ? (
-          <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
-            Show the receipt at the counter if the cashier asks. Keep this code
-            to collect your order.
-          </p>
-        ) : cancelled ? (
-          <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
-            This order was cancelled. Please ask a staff member if you were
-            charged.
-          </p>
-        ) : (
-          <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
-            Pay at the counter. Keep this code to collect your order.
-          </p>
-        )}
+        <p className="mt-5 rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">
+          {detail}
+        </p>
 
         {/* A pending order can still be paid from the phone: a diner who chose
             "pay at counter" on review, or one whose page was reloaded before
-            they paid, must not be stranded. */}
-        {!paid && !cancelled && onPayByQr && (
+            they paid, must not be stranded. The button appears only once the
+            server has confirmed the order is still payable. */}
+        {showPay && onPayByQr && (
           <Button
             onClick={onPayByQr}
             className="mt-4 min-h-11 w-full rounded-full font-bold"
           >
             <QrCode className="h-4 w-4" />
             Pay now by QR
+          </Button>
+        )}
+
+        {!paid && !cancelled && !showPay && onCheckStatus && (
+          <Button
+            onClick={onCheckStatus}
+            disabled={checking}
+            variant="outline"
+            className="mt-4 min-h-11 w-full rounded-full font-bold"
+          >
+            {checking ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking…
+              </>
+            ) : (
+              'Check order status'
+            )}
           </Button>
         )}
 

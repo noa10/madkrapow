@@ -211,6 +211,7 @@ describe('TableOrderSuccessView', () => {
         table: TABLE,
         success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
         onOrderMore: () => {},
+        canPayByQr: true,
       })
     )
     expect(html).toContain('Pay at the counter')
@@ -266,6 +267,7 @@ describe('TableOrderSuccessView', () => {
         success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
         onOrderMore: () => {},
         onPayByQr: () => {},
+        canPayByQr: true,
       })
     )
     expect(pending).toContain('Pay now by QR')
@@ -276,9 +278,67 @@ describe('TableOrderSuccessView', () => {
         success: SUCCESS_PAID,
         onOrderMore: () => {},
         onPayByQr: () => {},
+        canPayByQr: true,
       })
     )
     expect(paid).not.toContain('Pay now by QR')
+  })
+
+  it('hides the QR payment until the server confirms the order is payable', () => {
+    // A stale snapshot says "pending" for an order that may already be paid.
+    // Showing the QR here is how a diner transfers the money twice.
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
+        onOrderMore: () => {},
+        onPayByQr: () => {},
+        onCheckStatus: () => {},
+      })
+    )
+    expect(html).not.toContain('Pay now by QR')
+    expect(html).toContain('Check order status')
+  })
+
+  it('does not call a cashier settlement a received QR payment', () => {
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: {
+          ...SUCCESS_PAID,
+          status: 'paid',
+          payment_method: 'cash',
+          already_paid: true,
+        },
+        onOrderMore: () => {},
+      })
+    )
+    expect(html).not.toContain('Payment received')
+    expect(html).toContain('Already paid by Cash')
+    expect(html).toContain('do not pay again')
+  })
+
+  it('still reads a QR claim as received', () => {
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, payment_method: 'qr_pay' },
+        onOrderMore: () => {},
+      })
+    )
+    expect(html).toContain('Payment received')
+  })
+
+  it('shows a standing notice above the order', () => {
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
+        onOrderMore: () => {},
+        notice: 'This order was already sent to the kitchen.',
+      })
+    )
+    expect(html).toContain('This order was already sent to the kitchen.')
   })
 })
 
@@ -299,5 +359,26 @@ describe('PaymentView claim states', () => {
     expect(html).toContain('I have paid')
     expect(html).toContain('Pay at the counter instead')
     expect(html).not.toMatch(/disabled=""/)
+  })
+
+  it('hides the scannable QR once the order can never be paid online', () => {
+    // The diner may already have transferred. Leaving a live QR next to the
+    // error invites a second transfer for an order that cannot take it.
+    const html = renderToStaticMarkup(
+      createElement(PaymentView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending' },
+        claiming: false,
+        error: 'This order can no longer be paid online.',
+        blocked: true,
+        onBack: () => {},
+        onClaim: () => {},
+        onPayAtCounter: () => {},
+      })
+    )
+    expect(html).not.toContain('Scan with any Malaysian banking app')
+    expect(html).not.toContain('I have paid')
+    expect(html).toContain('cannot be paid from this phone')
+    expect(html).toContain('Pay at the counter instead')
   })
 })

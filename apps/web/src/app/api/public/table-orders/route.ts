@@ -75,6 +75,7 @@ type ExistingOrder = {
   table_label: string | null
   table_id: string | null
   status: string | null
+  payment_method: string | null
 }
 
 function existingOrderPayload(order: ExistingOrder) {
@@ -89,6 +90,9 @@ function existingOrderPayload(order: ExistingOrder) {
     // claimed the order must say `paid`, or the success screen would ask them
     // to pay a second time.
     status: order.status,
+    // The recorded method too: a cashier-settled order must not read as a
+    // received QR payment on the success screen.
+    payment_method: order.payment_method,
     duplicate: true,
   }
 }
@@ -162,7 +166,7 @@ export async function POST(req: NextRequest) {
       const { data: existing, error: existingError } = await supabase
         .from('orders')
         .select(
-          'id, order_number, display_code, total_cents, pax, table_label, table_id, status'
+          'id, order_number, display_code, total_cents, pax, table_label, table_id, status, payment_method'
         )
         .eq('idempotency_key', input.idempotency_key)
         .maybeSingle()
@@ -398,7 +402,7 @@ export async function POST(req: NextRequest) {
         const { data: existing } = await supabase
           .from('orders')
           .select(
-            'id, order_number, display_code, total_cents, pax, table_label, table_id, status'
+            'id, order_number, display_code, total_cents, pax, table_label, table_id, status, payment_method'
           )
           .eq('idempotency_key', input.idempotency_key)
           .maybeSingle()

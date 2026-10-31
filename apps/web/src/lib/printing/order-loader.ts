@@ -7,6 +7,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isClaimedByDiner } from '@/lib/pos/receipt'
 import type { PrintOrder, PrintOrderItem } from './jobs'
 
 const FULFILLMENT_LABELS: Record<string, string> = {
@@ -70,7 +71,7 @@ export async function loadPrintOrder(
 
   const { data: payment } = await supabase
     .from('payments')
-    .select('method')
+    .select('method, raw')
     .eq('order_id', orderId)
     .eq('status', 'succeeded')
     .maybeSingle()
@@ -86,6 +87,9 @@ export async function loadPrintOrder(
     subtotalCents: order.subtotal_cents as number,
     totalCents: order.total_cents as number,
     paymentMethod: (payment?.method as string | null) ?? null,
+    // The provenance marker the claim RPC writes: a diner saying "I've paid"
+    // is not a cashier confirming the money, and the receipt has to say so.
+    paymentClaimedByDiner: isClaimedByDiner(payment?.raw),
     fulfillmentLabel: order.delivery_type
       ? FULFILLMENT_LABELS[order.delivery_type as string]
       : undefined,

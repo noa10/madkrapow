@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServiceClient } from '@/lib/supabase/server'
 import { sanitizeForLog } from '@/lib/logging/safe-log'
+import { createSlidingWindowLimiter } from '@/lib/pos/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -28,6 +29,18 @@ const PaySchema = z.object({
   table_token: z.string().trim().min(16).max(128),
   idempotency_key: z.string().trim().min(16).max(128),
 })
+
+/**
+ * Claim attempts per table token per window.
+ *
+ * The create route caps a table at 4 orders per 5 minutes; a claim is one
+ * order's worth of taps plus the odd retry, so 30 leaves generous headroom
+ * while still capping a flood against the row lock the RPC takes.
+ */
+const CLAIM_LIMIT = 30
+const CLAIM_WINDOW_MS = 5 * 60 * 1000
+
+const claimLimiter = createSlidingWindowLimiter(CLAIM_LIMIT, CLAIM_WINDOW_MS)
 
 /** Shape returned by `claim_table_order_payment` (migration 065). */
 interface ClaimRpcResult {
@@ -65,6 +78,15 @@ export async function POST(
   }
 
   const input = parsed.data
+
+  // Keyed by the token, so a flood is rejected before it reaches the database.
+  if (!claimLimiter.allow(input.table_token)) {
+    return NextResponse.json(
+      { error: 'Too many payment attempts. Please wait a moment and try again.' },
+      { status: 429 }
+    )
+  }
+
   const supabase = getServiceClient()
 
   // Token → active table, exactly like the create route: the token is never

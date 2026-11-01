@@ -29,6 +29,13 @@ import {
   type TableOrderStep,
   type TablePaymentChoice,
 } from '@/lib/pos/table-orders'
+import {
+  INITIAL_TABLE_PAYMENT_STATE,
+  nextTablePaymentState,
+  type TablePaymentEvent,
+  type TablePaymentState,
+} from '@/lib/pos/table-payment-state'
+import { isPaidOrderStatus } from '@/lib/pos/receipt'
 import type {
   CategoryWithMenuItems,
   MenuItemWithModifiers,
@@ -107,15 +114,16 @@ function TableOrderInner({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<TableOrderSuccess | null>(null)
   /**
-   * True only when the SERVER has confirmed the order is still pending and
-   * unpaid. A stale snapshot must never put a live QR on an order that is
-   * already paid: the diner would scan it, transfer the money again, and be
-   * out of pocket.
+   * What the client believes about paying this order from the phone.
+   *
+   * The rules live in `@/lib/pos/table-payment-state` so they can be unit
+   * tested: `confirmed` is the live confirmation that gates the payment QR,
+   * and it is earned by a server read and lost by anything that is not one.
    */
-  const [payable, setPayable] = useState(false)
+  const [paymentState, setPaymentState] = useState<TablePaymentState>(
+    INITIAL_TABLE_PAYMENT_STATE
+  )
   const [checking, setChecking] = useState(false)
-  /** The order can never be paid from the phone (the claim said so). */
-  const [paymentBlocked, setPaymentBlocked] = useState(false)
   /** A standing message for the status screen (e.g. a duplicate order). */
   const [notice, setNotice] = useState<string | null>(null)
   const submitLock = useRef(false)
@@ -208,6 +216,17 @@ function TableOrderInner({
     }
   }, [table.token])
 
+  /**
+   * Record what the server (or the diner) told us about the payment.
+   *
+   * Every write to the payment state goes through the pure transition rules in
+   * `@/lib/pos/table-payment-state`, so the "the QR needs a live confirmation"
+   * rule is unit tested rather than buried in this component.
+   */
+  const applyPaymentEvent = useCallback((event: TablePaymentEvent) => {
+    setPaymentState((previous) => nextTablePaymentState(previous, event))
+  }, [])
+
   /** Adopt a server-confirmed status. */
   const applyLiveStatus = useCallback(
     (live: TableOrderStatus) => {
@@ -242,11 +261,14 @@ function TableOrderInner({
         })
       }
       // Only a pending, unpaid order can still be paid from the phone.
-      setPayable(
-        isPayableOrder({ status, paymentRecorded: live.payment_recorded })
-      )
+      const payableNow = isPayableOrder({
+        status,
+        paymentRecorded: live.payment_recorded,
+      })
+      // A successful read is the only thing that may show the payment QR.
+      applyPaymentEvent({ type: 'read', payable: payableNow })
     },
-    [commitSuccess]
+    [applyPaymentEvent, commitSuccess]
   )
 
   /** Re-read the order's status on demand (the "check status" button). */
@@ -255,8 +277,8 @@ function TableOrderInner({
     try {
       const live = await refreshStatus()
       if (live) {
+        // The read itself clears the block when the order is still payable.
         applyLiveStatus(live)
-        setPaymentBlocked(false)
       } else {
         setNotice(
           'We could not confirm your order status. Please ask a staff member before paying again.'
@@ -280,8 +302,7 @@ function TableOrderInner({
       if (!live) {
         // We cannot confirm the order is still payable, so stop showing a
         // scannable QR. The status screen's "check status" button can recover.
-        setPayable(false)
-        setPaymentBlocked(true)
+        applyPaymentEvent({ type: 'read_unconfirmed' })
         return 'unconfirmed'
       }
       applyLiveStatus(live)
@@ -291,13 +312,12 @@ function TableOrderInner({
           paymentRecorded: live.payment_recorded,
         })
       ) {
-        setPaymentBlocked(false)
         return 'payable'
       }
       setStep('success')
       return 'moved-on'
     },
-    [applyLiveStatus, refreshStatus]
+    [applyLiveStatus, applyPaymentEvent, refreshStatus]
   )
 
   // Resume the diner's own order after a reload (they left to pay in their
@@ -335,14 +355,36 @@ function TableOrderInner({
   // diner sits on the payment screen. Re-check while it is open so a live QR
   // is never left in front of an order that is already paid — and re-check
   // when the phone comes back from the banking app.
+  //
+  // The status screen polls too: it tells the diner to pay at the counter, and
+  // that instruction goes stale the moment the cashier settles the table in
+  // cash. A read every 15s flips the screen to "already paid" on its own.
   useEffect(() => {
-    if (step !== 'payment') return
+    if (step !== 'payment' && step !== 'success') return
+    // Nothing left to watch once the order is settled: the screen shows the
+    // receipt, and a diner who needs a change asks a staff member. Stopping
+    // here keeps the read rate proportional to the orders still in play.
+    if (
+      step === 'success' &&
+      success &&
+      (isPaidOrderStatus(success.status) || success.status === 'cancelled')
+    ) {
+      return
+    }
     let cancelled = false
     const check = async () => {
       // Never race the claim itself.
       if (claimLock.current) return
       const live = await refreshStatus()
-      if (cancelled || !live) return
+      if (cancelled) return
+      if (!live) {
+        // The read failed, so nothing is confirmed. Hide the QR: the cashier
+        // may have settled this order in cash while the diner sat here, and a
+        // scannable DuitNow code on a settled order is a second transfer out
+        // of the diner's pocket. The next successful read brings it back.
+        applyPaymentEvent({ type: 'read_failed' })
+        return
+      }
       applyLiveStatus(live)
       if (
         !isPayableOrder({
@@ -351,10 +393,6 @@ function TableOrderInner({
         })
       ) {
         setStep('success')
-      } else {
-        // The order is confirmed payable again (the network recovered after an
-        // "unconfirmed" failure): unblock the QR and the claim button.
-        setPaymentBlocked(false)
       }
     }
     void check()
@@ -372,7 +410,7 @@ function TableOrderInner({
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [applyLiveStatus, refreshStatus, step])
+  }, [applyLiveStatus, applyPaymentEvent, refreshStatus, step, success])
 
   const menuNameById = useMemo(() => {
     const names = new Map<string, string>()
@@ -542,7 +580,10 @@ function TableOrderInner({
         setNotice(
           'This order was already sent to the kitchen with your earlier items, so your latest changes were not applied. Add any extras as a new order.'
         )
-        setPayable(isPayableOrder({ status: created.status }))
+        applyPaymentEvent({
+          type: 'order_created',
+          payable: isPayableOrder({ status: created.status }),
+        })
         setStep('success')
         return
       }
@@ -552,7 +593,10 @@ function TableOrderInner({
       setCustomerName('')
       setNotes('')
       setNotice(null)
-      setPayable(isPayableOrder({ status: created.status }))
+      applyPaymentEvent({
+        type: 'order_created',
+        payable: isPayableOrder({ status: created.status }),
+      })
       // A duplicate response can already be paid (a retry after a claim):
       // never route a paid order through the payment step again.
       setStep(
@@ -603,7 +647,7 @@ function TableOrderInner({
               : null
           const outcome = resolveClaimOutcome(current.status, claimed)
           commitSuccess({ ...current, status: outcome.status })
-          setPayable(false)
+          applyPaymentEvent({ type: 'claim_conflict' })
           setError(null)
           setStep('success')
           return
@@ -613,8 +657,7 @@ function TableOrderInner({
           // not a table order). Hide the QR: a diner who already transferred
           // must not be handed a scannable code for an order that can never
           // take the money.
-          setPaymentBlocked(true)
-          setPayable(false)
+          applyPaymentEvent({ type: 'claim_not_found' })
           setError(
             'This order can no longer be paid online. If you have already made a transfer, please ask a staff member.'
           )
@@ -665,8 +708,7 @@ function TableOrderInner({
         payment_method: claim.payment_method ?? current.payment_method ?? null,
         already_paid: claim.already_paid,
       })
-      setPayable(false)
-      setPaymentBlocked(false)
+      applyPaymentEvent({ type: 'claim_succeeded' })
       setNotice(null)
       setError(null)
       setStep('success')
@@ -698,8 +740,7 @@ function TableOrderInner({
     applySuccess(null)
     setError(null)
     setNotice(null)
-    setPayable(false)
-    setPaymentBlocked(false)
+    applyPaymentEvent({ type: 'new_order' })
     setStep('menu')
   }
 
@@ -713,7 +754,10 @@ function TableOrderInner({
       return
     }
     setError(null)
-    setPaymentBlocked(false)
+    // Fail closed: the QR returns only after a fresh server read confirms the
+    // order is still pending and unpaid. The block is deliberately NOT cleared
+    // here — a server that said "this can never be paid" keeps its say.
+    applyPaymentEvent({ type: 'payment_step_entered' })
     setStep('payment')
   }
 
@@ -724,7 +768,7 @@ function TableOrderInner({
         success={success}
         onOrderMore={startNewOrder}
         onPayByQr={payByQr}
-        canPayByQr={payable}
+        canPayByQr={paymentState.payable}
         onCheckStatus={checkStatus}
         checking={checking}
         notice={notice}
@@ -739,12 +783,16 @@ function TableOrderInner({
         success={success}
         claiming={claiming}
         error={error}
-        blocked={paymentBlocked}
+        blocked={paymentState.blocked}
+        confirmed={paymentState.confirmed}
         onBack={() => {
           if (!claiming) {
             // The order already exists and the cart is cleared, so there is no
             // review to return to: back goes to the order's status screen.
             setError(null)
+            // The confirmation does not travel out of the payment step: any
+            // later visit has to earn it again with a fresh read.
+            applyPaymentEvent({ type: 'payment_step_left' })
             setStep('success')
           }
         }}
@@ -753,6 +801,7 @@ function TableOrderInner({
           // The order already reached the kitchen as `pending`; the cashier
           // collects at the counter as before.
           setError(null)
+          applyPaymentEvent({ type: 'payment_step_left' })
           setStep('success')
         }}
       />

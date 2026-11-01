@@ -149,6 +149,7 @@ describe('PaymentView', () => {
         success: { ...SUCCESS_PAID, status: 'pending' },
         claiming: false,
         error: null,
+        confirmed: true,
         onBack: () => {},
         onClaim: () => {},
         onPayAtCounter: () => {},
@@ -159,6 +160,53 @@ describe('PaymentView', () => {
     expect(html).toContain('I have paid')
   })
 
+  it('hides the QR until the server confirms the order is still unpaid', () => {
+    // The QR is a money instruction: it must not be on screen while that
+    // confirmation is missing (the check is in flight, or it failed).
+    const html = renderToStaticMarkup(
+      createElement(PaymentView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending' },
+        claiming: false,
+        error: null,
+        confirmed: false,
+        onBack: () => {},
+        onClaim: () => {},
+        onPayAtCounter: () => {},
+      })
+    )
+    expect(html).not.toContain('Scan with any Malaysian banking app')
+    expect(html).not.toContain('I have paid')
+    // The amount and the QR image only exist inside the QR panel, so this
+    // catches a copy change in the instruction above.
+    expect(html).not.toContain('RM 26.00')
+    expect(html).not.toContain('/company-qr.jpeg')
+    expect(html).toContain('Checking your order status')
+    // The counter fallback stays available: the diner must never be stranded.
+    expect(html).toContain('Pay at the counter instead')
+  })
+
+  it('hides the QR when the server says this order can never be paid', () => {
+    const html = renderToStaticMarkup(
+      createElement(PaymentView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending' },
+        claiming: false,
+        error: null,
+        blocked: true,
+        confirmed: false,
+        onBack: () => {},
+        onClaim: () => {},
+        onPayAtCounter: () => {},
+      })
+    )
+    expect(html).not.toContain('Scan with any Malaysian banking app')
+    expect(html).not.toContain('I have paid')
+    expect(html).not.toContain('RM 26.00')
+    expect(html).not.toContain('/company-qr.jpeg')
+    expect(html).toContain('This order cannot be paid from this phone')
+  })
+
   it('disables the claim CTA while the claim is in flight', () => {
     const html = renderToStaticMarkup(
       createElement(PaymentView, {
@@ -166,6 +214,7 @@ describe('PaymentView', () => {
         success: { ...SUCCESS_PAID, status: 'pending' },
         claiming: true,
         error: null,
+        confirmed: true,
         onBack: () => {},
         onClaim: () => {},
         onPayAtCounter: () => {},
@@ -181,6 +230,7 @@ describe('PaymentView', () => {
         success: { ...SUCCESS_PAID, status: 'pending' },
         claiming: false,
         error: 'This order can no longer be paid online.',
+        confirmed: true,
         onBack: () => {},
         onClaim: () => {},
         onPayAtCounter: () => {},
@@ -284,6 +334,24 @@ describe('TableOrderSuccessView', () => {
     expect(paid).not.toContain('Pay now by QR')
   })
 
+  it('keeps the status check available next to the QR payment', () => {
+    // The "pay at the counter" instruction goes stale the moment the cashier
+    // settles the table in cash. The screen re-reads the order on a timer, but
+    // the diner must also be able to refresh it themselves.
+    const html = renderToStaticMarkup(
+      createElement(TableOrderSuccessView, {
+        table: TABLE,
+        success: { ...SUCCESS_PAID, status: 'pending', paid_at: null },
+        onOrderMore: () => {},
+        onPayByQr: () => {},
+        canPayByQr: true,
+        onCheckStatus: () => {},
+      })
+    )
+    expect(html).toContain('Pay now by QR')
+    expect(html).toContain('Check order status')
+  })
+
   it('hides the QR payment until the server confirms the order is payable', () => {
     // A stale snapshot says "pending" for an order that may already be paid.
     // Showing the QR here is how a diner transfers the money twice.
@@ -350,6 +418,7 @@ describe('PaymentView claim states', () => {
         success: { ...SUCCESS_PAID, status: 'pending' },
         claiming: false,
         error: 'Network error — the payment may already be recorded.',
+        confirmed: true,
         onBack: () => {},
         onClaim: () => {},
         onPayAtCounter: () => {},
@@ -378,6 +447,8 @@ describe('PaymentView claim states', () => {
     )
     expect(html).not.toContain('Scan with any Malaysian banking app')
     expect(html).not.toContain('I have paid')
+    expect(html).not.toContain('RM 26.00')
+    expect(html).not.toContain('/company-qr.jpeg')
     expect(html).toContain('cannot be paid from this phone')
     expect(html).toContain('Pay at the counter instead')
   })

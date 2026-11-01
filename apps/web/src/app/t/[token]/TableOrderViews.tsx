@@ -22,7 +22,11 @@ import { Input } from '@/components/ui/input'
 import { CompanyQrPanel } from '@/app/pos/components/CompanyQrPanel'
 import { MAX_PAX, MIN_PAX } from '@/lib/pos/tables'
 import { receiptPaymentLabel } from '@/lib/pos/receipt'
-import { tablePaymentTone, type TablePaymentChoice } from '@/lib/pos/table-orders'
+import {
+  paymentQrVisibility,
+  tablePaymentTone,
+  type TablePaymentChoice,
+} from '@/lib/pos/table-orders'
 import type { PublicTable, TableOrderSuccess } from '@/lib/pos/types'
 
 export function formatPrice(cents: number): string {
@@ -355,6 +359,16 @@ interface PaymentViewProps {
    * scannable code for an order that can never take the money.
    */
   blocked?: boolean
+  /**
+   * True only when the server has confirmed, on this screen, that the order
+   * is still pending and unpaid.
+   *
+   * The QR is a money instruction, so it is shown only after that
+   * confirmation. While the check is in flight — or after it failed — the QR
+   * is hidden: an order that was already settled in cash must never be handed
+   * a scannable DuitNow code.
+   */
+  confirmed?: boolean
   onBack: () => void
   onClaim: () => void
   onPayAtCounter: () => void
@@ -375,10 +389,13 @@ export function PaymentView({
   claiming,
   error,
   blocked = false,
+  confirmed = false,
   onBack,
   onClaim,
   onPayAtCounter,
 }: PaymentViewProps) {
+  const qrVisibility = paymentQrVisibility({ blocked, confirmed })
+
   return (
     <main className="min-h-dvh bg-background pb-12">
       <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
@@ -407,14 +424,25 @@ export function PaymentView({
       </header>
 
       <div className="mx-auto max-w-md space-y-4 px-4 pt-5">
-        {!blocked && (
+        {qrVisibility === 'ready' && (
           <CompanyQrPanel
             amountCents={success.total_cents}
             instruction={DINER_QR_INSTRUCTION}
           />
         )}
 
-        {blocked && (
+        {qrVisibility === 'checking' && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            <p>Checking your order status…</p>
+            <p className="mt-1 text-xs">
+              The payment QR appears only once we confirm this order is still
+              unpaid. If you have already made a transfer, do not pay again —
+              ask a staff member.
+            </p>
+          </div>
+        )}
+
+        {qrVisibility === 'blocked' && (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             This order cannot be paid from this phone. Please ask a staff member
             to settle the bill.
@@ -430,7 +458,7 @@ export function PaymentView({
           </p>
         )}
 
-        {!blocked && (
+        {qrVisibility === 'ready' && (
           <Button
             onClick={onClaim}
             disabled={claiming}
@@ -584,7 +612,11 @@ export function TableOrderSuccessView({
           </Button>
         )}
 
-        {!paid && !cancelled && !showPay && onCheckStatus && (
+        {/* The status check is always offered while the order is unpaid: the
+            "pay at the counter" instruction above goes stale the moment the
+            cashier settles the table, and this is the diner's way to refresh
+            it. The screen also re-reads the order on a timer. */}
+        {!paid && !cancelled && onCheckStatus && (
           <Button
             onClick={onCheckStatus}
             disabled={checking}

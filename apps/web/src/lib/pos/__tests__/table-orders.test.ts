@@ -12,6 +12,7 @@ import {
   parseTableOrderStatus,
   parseTableOrderSuccess,
   parseTablePaymentClaim,
+  paymentQrVisibility,
   resolveClaimOutcome,
   resolveLiveStatus,
   serializeStoredTableOrder,
@@ -187,6 +188,25 @@ describe('isPayableOrder', () => {
     expect(isPayableOrder({ status: 'paid' })).toBe(false)
     expect(isPayableOrder({ status: 'cancelled' })).toBe(false)
     expect(isPayableOrder({ status: 'pending', paymentRecorded: true })).toBe(false)
+  })
+})
+
+describe('paymentQrVisibility', () => {
+  it('shows the QR only after a successful read confirmed the order', () => {
+    expect(paymentQrVisibility({ blocked: false, confirmed: true })).toBe('ready')
+  })
+
+  it('hides the QR while nothing is confirmed', () => {
+    // "Not confirmed" is not "confirmed payable": a failed read must not
+    // leave a scannable DuitNow code on an order that may already be paid.
+    expect(paymentQrVisibility({ blocked: false, confirmed: false })).toBe(
+      'checking'
+    )
+  })
+
+  it('hides the QR when the order can never be paid from the phone', () => {
+    expect(paymentQrVisibility({ blocked: true, confirmed: true })).toBe('blocked')
+    expect(paymentQrVisibility({ blocked: true, confirmed: false })).toBe('blocked')
   })
 })
 

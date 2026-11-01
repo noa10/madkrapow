@@ -205,6 +205,31 @@ export function isChangedDuplicate(
 }
 
 /**
+ * Whether the payment QR may be on the diner's screen.
+ *
+ * The QR is a money instruction: it tells the diner to transfer the exact
+ * amount to the merchant. It may only be shown while the SERVER has
+ * confirmed, on this screen, that the order is still pending and unpaid.
+ *
+ * "Not confirmed" is NOT "confirmed payable". A read that failed — offline,
+ * rate-limited, a 500 — proves nothing, and the order may already have been
+ * settled in cash by the cashier. A scannable QR on a settled order is a
+ * second transfer out of the diner's pocket, so an unconfirmed order shows no
+ * QR at all.
+ */
+export type PaymentQrVisibility = 'ready' | 'checking' | 'blocked'
+
+export function paymentQrVisibility(input: {
+  /** The server said this order can never be paid from the phone. */
+  blocked: boolean
+  /** A successful server read confirmed the order is still pending and unpaid. */
+  confirmed: boolean
+}): PaymentQrVisibility {
+  if (input.blocked) return 'blocked'
+  return input.confirmed ? 'ready' : 'checking'
+}
+
+/**
  * True when a server-confirmed state still allows a QR claim.
  *
  * A succeeded payment row means the money moved even if the status has not

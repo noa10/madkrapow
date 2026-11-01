@@ -1,11 +1,11 @@
 /**
  * Which orders belong on the kitchen board.
  *
- * Table-QR dine-in orders are created `pending` (the diner pays at the
- * counter) and POS pay-later orders are created `pending` (cash collected
- * later). The kitchen must start cooking both immediately, so pending
- * dine-in and pending POS counter tickets are active. Pending web
- * delivery/pickup orders are abandoned checkouts and must stay off the board.
+ * Table-QR dine-in orders can be created `pending` (the diner chose to pay at
+ * the counter) and are cooked immediately. POS Pay-later is no longer created
+ * — a counter sale is always paid — but pending counter tickets from before
+ * that change stay active until they are settled. Pending web delivery/pickup
+ * orders are abandoned checkouts and must stay off the board.
  *
  * Shared by the kitchen page, its data hook and the tests so the fetch filter
  * and the client filter cannot drift.

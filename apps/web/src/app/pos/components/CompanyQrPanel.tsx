@@ -5,7 +5,16 @@ import Image from 'next/image'
 interface CompanyQrPanelProps {
   amountCents: number
   note?: string
+  /**
+   * Who is looking at the QR. The POS copy addresses the cashier; the table-QR
+   * payment step passes copy addressed to the diner.
+   */
+  instruction?: string
 }
+
+const DEFAULT_INSTRUCTION =
+  'Ask the customer to scan with any Malaysian banking app or e-wallet, ' +
+  'then confirm once the payment is received.'
 
 function formatPrice(cents: number): string {
   return `RM ${(cents / 100).toFixed(2)}`
@@ -18,7 +27,11 @@ function formatPrice(cents: number): string {
  * Keep it as-is (the full poster includes the merchant name and accepted
  * banks); the white frame preserves the QR quiet zone.
  */
-export function CompanyQrPanel({ amountCents, note }: CompanyQrPanelProps) {
+export function CompanyQrPanel({
+  amountCents,
+  note,
+  instruction = DEFAULT_INSTRUCTION,
+}: CompanyQrPanelProps) {
   return (
     <div className="space-y-3 text-center">
       <div className="overflow-hidden rounded-xl border border-border bg-white p-2">
@@ -34,10 +47,7 @@ export function CompanyQrPanel({ amountCents, note }: CompanyQrPanelProps) {
       <p className="text-2xl font-extrabold tabular-nums text-foreground">
         {formatPrice(amountCents)}
       </p>
-      <p className="text-xs text-muted-foreground">
-        Ask the customer to scan with any Malaysian banking app or e-wallet,
-        then confirm once the payment is received.
-      </p>
+      <p className="text-xs text-muted-foreground">{instruction}</p>
       {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
     </div>
   )

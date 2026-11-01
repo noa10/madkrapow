@@ -32,6 +32,14 @@ export interface PrintOrder {
   subtotalCents: number
   totalCents: number
   paymentMethod?: string | null
+  /**
+   * True when the diner's own "I've paid" tap recorded this payment.
+   *
+   * The server cannot see the bank transfer, so the receipt has to tell the
+   * cashier to verify it — without this, a self-declared claim is printed
+   * like any other QR payment and the meal is served for free.
+   */
+  paymentClaimedByDiner?: boolean
   /** Dine-in/takeaway label for counter orders. */
   fulfillmentLabel?: string
   /** Dine-in table label snapshot (e.g. "T3"). */
@@ -186,6 +194,11 @@ export function buildReceipt(
   lines.push({ kind: 'columns', label: 'TOTAL', value: formatCents(order.totalCents), bold: true })
   if (order.paymentMethod) {
     lines.push({ kind: 'columns', label: 'Payment', value: order.paymentMethod.toUpperCase() })
+  }
+  if (order.paymentClaimedByDiner) {
+    // The claim is self-declared: the diner said they paid, the server never
+    // saw the transfer. Whoever hands the food over has to check the bank.
+    lines.push({ kind: 'text', text: '** CLAIMED BY CUSTOMER - VERIFY TRANSFER **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'blank' })
   lines.push({ kind: 'text', text: 'Powered by Mad Krapow', style: { align: 'center' } })

@@ -33,9 +33,12 @@ const PosOrderSchema = z
     order_type: z.enum(['dine_in', 'take_away']).default('take_away'),
     table_id: z.guid().optional(),
     pax: z.number().int().min(1).max(50).optional(),
-    /** Pay now (default) or send the ticket and collect later. */
-    payment_timing: z.enum(['pay_now', 'pay_later']).default('pay_now'),
-    payment_method: z.enum(['cash', 'qr_pay']).optional(),
+    /**
+     * How the customer paid. Required: a POS ticket is only created once the
+     * money is in, because the kitchen starts preparing as soon as the order
+     * lands.
+     */
+    payment_method: z.enum(['cash', 'qr_pay']),
     customer_name: z.string().trim().max(120).optional(),
     notes: z.string().trim().max(500).optional(),
   })
@@ -55,20 +58,6 @@ const PosOrderSchema = z
           message: 'Pax is required for dine-in orders',
         })
       }
-    }
-    if (data.payment_timing === 'pay_now' && !data.payment_method) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['payment_method'],
-        message: 'Choose a payment method or send the order as pay-later',
-      })
-    }
-    if (data.payment_timing === 'pay_later' && data.payment_method) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['payment_method'],
-        message: 'A payment method is only used when paying now',
-      })
     }
   })
   // Collapse duplicate lines with the same options and note so price
@@ -90,11 +79,13 @@ const PosOrderSchema = z
  *
  * Prices are NEVER taken from the client: the route re-reads menu_items from
  * the database and recomputes the total. Orders are created as source='counter'
- * and either:
+ * and always paid: status='paid', with a payments row recording cash/qr_pay.
  *
- * - paid now (default) — status='paid', a payments row records cash/qr_pay; or
- * - pay later — status='pending' with no payment row, settled from the POS
- *   table board / unpaid take-away list (`settle_dine_in_order`).
+ * Pay-later was removed: the kitchen starts preparing as soon as a ticket
+ * lands, so an unpaid POS order served food before anyone had paid for it.
+ * Pending counter orders can still exist from before this change, and table-QR
+ * "pay at counter" orders are pending by design; both settle from the POS
+ * table board / unpaid take-away list (`settle_dine_in_order`).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -111,8 +102,21 @@ export async function POST(req: NextRequest) {
 
     const parsed = PosOrderSchema.safeParse(body)
     if (!parsed.success) {
+      // A POS tab loaded before pay-later was removed still sends
+      // `payment_timing` and no `payment_method`. "Invalid request" would leave
+      // the cashier retrying; say what actually fixes it.
+      const stalePayLaterPage =
+        typeof body === 'object' &&
+        body !== null &&
+        'payment_timing' in body &&
+        !('payment_method' in body)
       return NextResponse.json(
-        { error: 'Invalid request', details: parsed.error.flatten() },
+        {
+          error: stalePayLaterPage
+            ? 'Reload the POS to update before charging — this page is running an older version.'
+            : 'Invalid request',
+          details: parsed.error.flatten(),
+        },
         { status: 400 }
       )
     }
@@ -121,13 +125,10 @@ export async function POST(req: NextRequest) {
       order_type,
       table_id,
       pax,
-      payment_timing,
       payment_method,
       customer_name,
       notes,
     } = parsed.data
-
-    const payLater = payment_timing === 'pay_later'
 
     // The transform above collapses duplicate rows; a crafted payload could
     // still push one dish past the per-line cap.
@@ -323,15 +324,13 @@ export async function POST(req: NextRequest) {
           order_type === 'dine_in'
             ? customer_name || null
             : customer_name || 'Walk-in',
-        status: payLater ? 'pending' : 'paid',
+        status: 'paid',
         source: 'counter',
         delivery_type: order_type === 'dine_in' ? 'dine_in' : 'self_pickup',
         table_id: order_type === 'dine_in' ? table_id : null,
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
-        // The method is only known when the customer pays now; a pay-later
-        // order is settled later through the POS (cash/company QR).
-        payment_method: payLater ? null : payment_method,
+        payment_method,
         fulfillment_type: 'asap',
         order_kind: 'standard',
         dispatch_status: 'not_ready',
@@ -412,44 +411,42 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!payLater) {
-      const { error: paymentError } = await supabase.from('payments').insert({
-        order_id: order.id,
-        method: payment_method,
-        amount_cents: totalCents,
-        status: 'succeeded',
-        paid_at: now,
-      })
-      if (paymentError) {
-        // A failed `payments` row cannot be kept: `payments.order_id` is
-        // ON DELETE CASCADE, so the compensating delete below would remove it
-        // with the order. Log the identifiers instead — for a cash sale the
-        // till has already taken money, so the order id and number are what a
-        // reconciliation needs.
-        console.error(
-          `[API/POS] Payment insert failed for order ${order.id} (${order.order_number}):`,
-          paymentError
-        )
-        // Do not leave a "paid" order without a ledger row: the cashier will
-        // retry, and a kept order would create a duplicate ticket (and a
-        // phantom sale in reports). Removing it keeps create + payment
-        // all-or-nothing, matching the item-failure path above.
-        const { error: cleanupError } = await supabase
-          .from('orders')
-          .delete()
-          .eq('id', order.id)
-        if (cleanupError) {
-          console.error('[API/POS] Payment cleanup failed:', cleanupError)
-        }
-        return NextResponse.json(
-          {
-            error:
-              'The payment could not be recorded, so the order was not created. Please retry.',
-            order_number: order.order_number,
-          },
-          { status: 500 }
-        )
+    const { error: paymentError } = await supabase.from('payments').insert({
+      order_id: order.id,
+      method: payment_method,
+      amount_cents: totalCents,
+      status: 'succeeded',
+      paid_at: now,
+    })
+    if (paymentError) {
+      // A failed `payments` row cannot be kept: `payments.order_id` is
+      // ON DELETE CASCADE, so the compensating delete below would remove it
+      // with the order. Log the identifiers instead — for a cash sale the
+      // till has already taken money, so the order id and number are what a
+      // reconciliation needs.
+      console.error(
+        `[API/POS] Payment insert failed for order ${order.id} (${order.order_number}):`,
+        paymentError
+      )
+      // Do not leave a "paid" order without a ledger row: the cashier will
+      // retry, and a kept order would create a duplicate ticket (and a
+      // phantom sale in reports). Removing it keeps create + payment
+      // all-or-nothing, matching the item-failure path above.
+      const { error: cleanupError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', order.id)
+      if (cleanupError) {
+        console.error('[API/POS] Payment cleanup failed:', cleanupError)
       }
+      return NextResponse.json(
+        {
+          error:
+            'The payment could not be recorded, so the order was not created. Please retry.',
+          order_number: order.order_number,
+        },
+        { status: 500 }
+      )
     }
 
     await supabase.from('order_events').insert({
@@ -462,8 +459,7 @@ export async function POST(req: NextRequest) {
         table_id: order_type === 'dine_in' ? table_id : null,
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
-        payment_method: payLater ? null : payment_method,
-        payment_timing,
+        payment_method,
         total_cents: totalCents,
       },
     })
@@ -475,8 +471,8 @@ export async function POST(req: NextRequest) {
         display_code: order.display_code,
         total_cents: totalCents,
         order_type,
-        payment_timing,
-        status: payLater ? 'pending' : 'paid',
+        payment_method,
+        status: 'paid',
         table_label: tableLabel,
         pax: order_type === 'dine_in' ? pax : null,
       },

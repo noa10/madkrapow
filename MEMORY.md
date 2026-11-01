@@ -381,6 +381,78 @@ This file contains curated memories, decisions, and learnings that persist acros
   component that imports `useCartStore` directly and render it inside the
   table page — it would read the wrong cart.
 
+### 2026-10-28: Table-QR review/pax, diner QR payment, Pay-later removed
+
+- **Pay-later is gone from the POS.** Every POS order is now `paid` at creation
+  with a required `payment_method` (`cash` | `qr_pay`), because the kitchen
+  starts preparing the moment a ticket lands — an unpaid ticket served food
+  before anyone paid. `POST /api/pos/orders` no longer accepts
+  `payment_timing`; a stale client still sending it is rejected with 400
+  ("Reload the POS to update before charging"), so any POS client must send
+  `payment_method` instead. The table board's Unpaid strip
+  and the settle routes/RPCs remain: they serve table-QR `pending` orders (the
+  diner chose "pay at counter") and legacy counter tickets created before this
+  change.
+- **The table-QR page is a four-step machine** (`menu` → `review` →
+  `payment` → `success`) in `TableOrderClient.tsx`, with the presentational
+  screens in `TableOrderViews.tsx`. The old `if (success) return …` early
+  return had to die: the payment step was unreachable behind it. Views take all
+  values as props so `react-dom/server` can assert them (the repo has no DOM
+  test stack).
+- **Pax has no default.** It starts `null` and the review CTA stays disabled
+  until the diner picks a number — the kitchen plans portions from it, so there
+  is no safe value to send on their behalf.
+- **Diner QR payment is a self-declared claim.** The payment step shows the
+  company DuitNow QR; "I have paid" calls `POST /api/public/table-orders/[id]/pay`,
+  which runs `claim_table_order_payment` (migration 065) → `pending → paid`,
+  a `payments` row with `method='qr_pay'` and `raw.claimed_via='table_qr'`,
+  plus `payment_claimed` and `status_changed` events. **The server cannot see
+  the bank transfer** — the receipt (`/t/<token>/receipt/<orderId>`) says so
+  and the cashier verifies. A false claim is recovered manually: a manager
+  cancels/refunds from the admin order page; there is no automated reversal.
+- **The payment QR is gated on a server confirmation, not on "not blocked".**
+  The QR is a money instruction, so it is painted only after a *successful*
+  status read confirmed the order is still `pending` with no succeeded
+  payment row (`paymentQrVisibility` → `ready`). A read that failed leaves it
+  hidden ("checking your order status…") and the pay-at-counter fallback stays
+  available; a claim that came back 409/404 hides it for good ("this order
+  cannot be paid from this phone"). This gate is client-side only — the RPC
+  is the authority. "Not blocked" is
+  not "confirmed payable": a cashier may have settled the order in cash while
+  the diner sat on the screen, and a scannable DuitNow code on a settled
+  order is a second transfer out of the diner's pocket.
+- **The rules live in `lib/pos/table-payment-state.ts`, not in the component.**
+  `{payable, confirmed, blocked}` moves through `nextTablePaymentState(state,
+  event)` — one event per thing the server (or the diner) said — so the
+  "the QR needs a live confirmation" rule is unit tested instead of buried in
+  `TableOrderClient.tsx` (the repo has no DOM test stack, so the component
+  itself cannot be tested). A confirmation is *earned* by a successful read
+  and lost by anything that is not one; entering the payment step drops it on
+  purpose, and the server's "can never be paid" block is never cleared by the
+  client.
+- **The status screen polls too.** "Pay at the counter" goes stale the moment
+  the cashier settles the table in cash, so the success screen re-reads the
+  order every 15s and flips itself to "already paid"; "Check order status"
+  stays available for the diner to refresh by hand.
+- **The claim's per-order secret is `orders.idempotency_key`** (migration 063).
+  The table token alone would let any diner at the table claim another party's
+  round; the key proves the caller created this order. The client therefore
+  keeps `idempotencyKeyRef` after a successful create and resets it only when
+  the diner starts a new order.
+- **`receiptStatus` maps every progressed status to PAID** (`paid`, `accepted`,
+  `preparing`, `ready`, `picked_up`, `delivered`). A `paid`-only check is the
+  double-charge bug: an order that advanced through the kitchen would render
+  "PAY AT COUNTER" and the diner would pay twice. Unknown statuses map to
+  `unpaid` — unknown is not proof of payment.
+- **Pending table-QR orders were already kitchen-active** and already printed a
+  kitchen docket; the claim does not "start the kitchen", it adds the receipt
+  print job (`jobTypesForOrder` returns `['kitchen_docket','receipt']` for a
+  paid dine-in order).
+- **Deploy order**: apply migration 065 to `oxtauhhixztusjlxcipo` BEFORE the web
+  build. If the build ships first, claims 500 and the diner falls back to "pay
+  at the counter". Rollback = revert the build, then
+  `DROP FUNCTION claim_table_order_payment(UUID, UUID, TEXT);`.
+
 ---
 
 ## Critical Patterns

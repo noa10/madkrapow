@@ -12,9 +12,9 @@ const ORDER_ID = z.string().uuid()
 /**
  * Collect payment for an unpaid POS order.
  *
- * Covers table-QR dine-in orders (pay at the counter) and POS pay-later
- * counter orders (dine-in or take-away). This route records the cash/QR Pay
- * payment and moves the order to `paid` in one transaction
+ * Covers table-QR dine-in orders (pay at the counter) and legacy pay-later
+ * counter tickets created before Pay-later was removed. This route records
+ * the cash/QR Pay payment and moves the order to `paid` in one transaction
  * (`settle_dine_in_order`), so a double-tap cannot record two payments. The
  * kitchen already sees the pending ticket.
  */

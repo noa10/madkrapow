@@ -386,8 +386,56 @@ describe('POST /api/public/table-orders', () => {
     ).toBe(false)
   })
 
-  it('rejects a key that was already used at another table', async () => {
+  it('returns the real status for a duplicate that was already paid', async () => {
     state.client = buildClient({
+      ...BASE_DATA,
+      existingOrder: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+        status: 'paid',
+      },
+    })
+
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(200)
+    // A retried create after the diner claimed the bill must not report
+    // `pending`: the success screen would ask them to pay again.
+    expect((await response.json()).status).toBe('paid')
+  })
+
+  it('carries the recorded method for a duplicate a cashier settled', async () => {
+    // Without the method the success screen would say "Payment received" for
+    // a QR transfer that never landed.
+    state.client = buildClient({
+      ...BASE_DATA,
+      existingOrder: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+        status: 'paid',
+        payment_method: 'cash',
+      },
+    })
+
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).payment_method).toBe('cash')
+  })
+
+  it('rejects a key that was already used at another table', async () => {    state.client = buildClient({
       ...BASE_DATA,
       existingOrder: {
         id: 'order-9',
@@ -406,8 +454,7 @@ describe('POST /api/public/table-orders', () => {
     expect((await response.json()).error).toMatch(/another table/i)
   })
 
-  it('returns the original order when a concurrent retry wins the insert race', async () => {
-    state.client = buildClient({
+  it('returns the original order when a concurrent retry wins the insert race', async () => {    state.client = buildClient({
       ...BASE_DATA,
       orderInsertError: {
         message: 'duplicate key value violates unique constraint',

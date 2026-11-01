@@ -136,5 +136,74 @@ export interface TableOrderSuccess {
   display_code: string | null
   total_cents: number
   table_label: string
-  pax: number
+  /**
+   * Nullable: a duplicate/idempotent create returns the stored row, and
+   * `orders.pax` is nullable.
+   */
+  pax: number | null
+  /**
+   * The order's real status at create time. `pending` for a new order, `paid`
+   * when a retried create returns an order the diner has already claimed, and
+   * `cancelled` if staff cancelled it in between. Typed as `string` because it
+   * is parsed from JSON: the success screen must treat an unrecognised value
+   * as not-paid rather than trust the shape.
+   */
+  status: string
+  paid_at?: string | null
+  /**
+   * The method the money actually moved with, when the server knows it.
+   *
+   * `qr_pay` is the diner's own claim; `cash` (or a gateway) means a staff
+   * member settled the bill. The success screen must show the recorded method
+   * instead of assuming a QR payment — see `tablePaymentTone`.
+   */
+  payment_method?: string | null
+  /**
+   * True when the server matched this order on an existing idempotency key
+   * instead of creating a new one: the order was already placed, so a cart
+   * that no longer matches it was never sent.
+   */
+  duplicate?: boolean
+  /**
+   * True when the order was already paid before this diner's claim — by a
+   * cashier, or by an earlier claim whose response was lost.
+   */
+  already_paid?: boolean
+}
+
+/**
+ * The live state of a table order (`POST /api/public/table-orders/[id]/status`).
+ *
+ * The diner's screen must never trust its own snapshot: a claim whose response
+ * was lost leaves the phone believing the order is still pending, and paying
+ * again costs the diner real money.
+ */
+export interface TableOrderStatus {
+  order_id: string
+  /** The order's real status, straight from the database. */
+  status: string
+  total_cents: number
+  /** The recorded payment method, or null when nothing has been paid. */
+  payment_method: string | null
+  paid_at: string | null
+  /** True when a succeeded payment row exists for this order. */
+  payment_recorded: boolean
+}
+
+/**
+ * Result of the diner's "I've paid" claim (`POST .../[id]/pay`).
+ *
+ * `status` is the order's real status: a retry can return an order that has
+ * already advanced through the kitchen. `payment_method` may be `cash` when a
+ * cashier settled the bill between the diner's scan and their tap, so the
+ * success screen must show the recorded method rather than assume `qr_pay`.
+ */
+export interface TablePaymentClaim {
+  ok: true
+  order_id: string
+  status: string
+  amount_cents: number
+  payment_method: string | null
+  paid_at: string | null
+  already_paid: boolean
 }

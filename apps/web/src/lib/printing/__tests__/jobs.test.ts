@@ -87,6 +87,33 @@ describe('buildReceipt', () => {
     expect(texts).toContain('TOTAL|RM 29.50')
     expect(texts).toContain('Payment|GRABFOOD')
   })
+
+  it('flags a diner-claimed QR payment for the cashier', () => {
+    // The claim is self-declared: the server never saw the transfer. The
+    // printed receipt is the cashier's only signal that it still needs
+    // verifying — without it the meal is handed over for free.
+    const job = buildReceipt(
+      { ...ORDER, paymentMethod: 'qr_pay', paymentClaimedByDiner: true },
+      STORE
+    )
+    const texts = job.lines.map((l) =>
+      l.kind === 'text'
+        ? l.text
+        : l.kind === 'columns'
+          ? `${l.label}|${l.value}`
+          : l.kind
+    )
+    expect(texts).toContain('Payment|QR_PAY')
+    expect(texts).toContain('** CLAIMED BY CUSTOMER - VERIFY TRANSFER **')
+  })
+
+  it('does not flag a cashier-confirmed QR payment', () => {
+    const job = buildReceipt(
+      { ...ORDER, paymentMethod: 'qr_pay', paymentClaimedByDiner: false },
+      STORE
+    )
+    expect(JSON.stringify(job.lines)).not.toContain('CLAIMED BY CUSTOMER')
+  })
 })
 
 describe('dine-in tickets', () => {

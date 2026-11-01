@@ -9,11 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { orderSubtotalCents, orderTotalCents } from "@/lib/orders/money";
+import { isClaimedByDiner } from "@/lib/pos/receipt";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
@@ -251,9 +252,26 @@ export default function AdminOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [orderEvents, setOrderEvents] = useState<OrderEvent[]>([]);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+  const [paymentClaimedByDiner, setPaymentClaimedByDiner] = useState(false);
 
   useEffect(() => {
     const supabase = getBrowserClient();
+
+    // A diner claiming "I've paid" from the table QR is self-declared: the
+    // server never saw the bank transfer. Without this, a claim is
+    // indistinguishable from a cashier-confirmed payment and the order is
+    // served for free. Re-read it on every order change, not just on mount:
+    // a claim can land while a cashier has the page open.
+    const loadPaymentClaim = async () => {
+      const { data: paymentRow } = await supabase
+        .from('payments')
+        .select('raw')
+        .eq('order_id', orderId)
+        .eq('status', 'succeeded')
+        .limit(1)
+        .maybeSingle();
+      setPaymentClaimedByDiner(isClaimedByDiner(paymentRow?.raw));
+    };
 
     const fetchOrder = async () => {
       const { data, error } = await supabase
@@ -312,6 +330,8 @@ export default function AdminOrderDetailPage() {
         setOrderEvents(eventsData as unknown as OrderEvent[]);
       }
 
+      await loadPaymentClaim();
+
       setLoading(false);
     };
 
@@ -324,6 +344,9 @@ export default function AdminOrderDetailPage() {
         { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` },
         (payload: RealtimePostgresChangesPayload<Order>) => {
           setOrder((prev) => prev ? { ...prev, ...payload.new } : null);
+          // A status change can be the diner's QR claim: refresh the
+          // provenance banner so the cashier sees it without reloading.
+          void loadPaymentClaim();
         }
       )
       .on(
@@ -602,6 +625,24 @@ export default function AdminOrderDetailPage() {
         </Card>
       )}
 
+      {paymentClaimedByDiner && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="pt-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-orange-800">
+                Payment claimed by the diner — verify the transfer
+              </p>
+              <p className="text-sm text-orange-700">
+                This order was marked paid from the diner&apos;s own phone (table
+                QR). The server never saw the bank transfer, so check the
+                account before handing the food over.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {order.status === 'pending' &&
         (order.delivery_type === 'dine_in' || order.source === 'counter') && (
         <Card className="border-yellow-200 bg-yellow-50">
@@ -611,7 +652,7 @@ export default function AdminOrderDetailPage() {
               <p className="font-medium text-yellow-800">Awaiting payment at the counter</p>
               <p className="text-sm text-yellow-700">
                 {order.source === 'counter'
-                  ? `This pay-later ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
+                  ? `This ${order.delivery_type === 'dine_in' ? 'dine-in' : 'take-away'} order is not paid yet and is already with the kitchen. Collect cash or Company QR in the POS ${order.delivery_type === 'dine_in' ? 'table board' : 'Unpaid take-away list'} to mark it paid.`
                   : 'This dine-in order came from the table QR. The kitchen already sees it; collect cash or Company QR in the POS table board to mark it paid.'}
               </p>
             </div>

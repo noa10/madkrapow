@@ -14,7 +14,9 @@ const handlerMock = vi.hoisted(() => ({
 vi.mock('../handlers', () => handlerMock)
 
 vi.mock('@/lib/supabase/server', () => ({
-  getServiceClient: () => ({}),
+  getServiceClient: () => ({
+    from: () => ({ select: () => ({ limit: async () => ({ data: [], error: null }) }) }),
+  }),
 }))
 
 import { POST } from '../submit-order/route'

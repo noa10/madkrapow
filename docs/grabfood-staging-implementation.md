@@ -61,7 +61,7 @@ All paths are under `/api/integrations/grabfood`:
 | `GET` | `/merchant/menu` | Return the full mapped POS menu. |
 | `POST` | `/menu-sync-state` | Persist menu sync outcome/errors/job ID. |
 | `POST` | `/menu-event` | Log the portal's Menu Event Webhook payload (shape not publicly documented). |
-| `POST` | `/webhooks/submit-order` | Submit Order (create or edit). |
+| `POST` | `/webhooks/submit-order` | Import initial orders; edits fail closed pending an authoritative ordering contract. |
 | `PUT` | `/webhooks/order-state` | Push Order State (uppercase `state`); `POST` remains as an alias. |
 | `POST` | `/activation` | Staff action: create the Grab self-serve activation journey and return its URL. |
 | `POST` | `/menu/notification` | Staff action: ask Grab to pull the full menu. |
@@ -102,11 +102,7 @@ Cron routes (Bearer `CRON_SECRET`):
 - `integration_events` now carries `attempts`, `locked_until` and
   `next_attempt_at`. Processing claims a 60-second lease; a crash leaves the
   event replayable.
-- Event keys are payload hashes, so exact redeliveries dedupe while edited
-  orders (new payload, same `orderID`) are applied.
-- `apply_channel_order` creates on first sight and updates the same order when
-  `featureFlags.isMexEditOrder` is true. A repeat without the edit flag is
-  skipped. Financial fields and items update; kitchen status is preserved.
+- Exact redeliveries use payload hashes. Edits return a retryable failure and remain in the event log for operator reconciliation: Grab has not yet supplied an authoritative edit revision, and hashes alone cannot order edits or distinguish A → B → A from a replay.
 - Submit Order ACKs 2xx only after the canonical write. Unmapped items and DB
   errors return 5xx. An in-flight duplicate returns 503.
 - Unknown order-state pushes return 503 so Grab retries; the replay cron is the
@@ -122,10 +118,7 @@ Cron routes (Bearer `CRON_SECRET`):
   `grabfood`; other sources keep the admin status route.
 - The admin status route also delegates `preparing → ready` for GrabFood orders
   to the same service.
-- Mark Ready is once-only: a `grabfood_ready_sent` event blocks a second call.
-  A timeout is recorded as `grabfood_ready_uncertain` and is not retried
-  automatically; an explicit `{ "retryUncertain": true }` is required after
-  checking the Grab merchant app.
+- Mark Ready uses a durable per-order claim before the outbound call. Interrupted or timed-out claims require an operator to check Grab before an explicit retry; a delayed original request cannot be fenced by the POS.
 - Cancellation goes through `cancelGrabOrder`: eligibility check, Grab call
   with merchant ID + cancel code, local mirror, audit event.
 
@@ -187,7 +180,7 @@ field; the activation URL is not an OAuth redirect URI.
 - `grabfood_integrations` (store mapping, activation URL, menu sync state);
 - `grabfood_menu_snapshots` (Push Grab Menu exports);
 - `channel_products.snooze_restore_required`;
-- `apply_channel_order(JSONB)` (create-or-edit RPC);
+- `apply_channel_order(JSONB)` (initial imports; edits are rejected pending an ordering contract);
 - service-role/admin RLS policies for the new tables.
 
 **Do not apply this to production.** Apply it to the dedicated staging
@@ -218,9 +211,7 @@ Supabase project only, after the staging project is provisioned.
 
 - Get Menu emits one all-day selling time. The local catalogue has no
   channel-specific selling-time model yet; Grab accepts 1–20 selling times.
-- Order item modifiers are recorded in `order_items.notes` as modifier IDs;
-  they are not expanded into `order_item_modifiers` (that table requires a
-  local modifier UUID FK and the order payload only carries Grab's ID).
+- Order item modifiers are resolved from local modifier IDs to readable names in `order_items.notes`; unknown IDs are rejected for mapping review.
 - The replay cron re-drives events; it does not auto-repair a failed order that
   was partially written outside the RPC. The RPC is atomic, so that case should
   not occur.

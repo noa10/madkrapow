@@ -2,9 +2,9 @@
  * GrabFood webhook handlers: Submit Order and Push Order State.
  *
  * Reliability model:
- *   - Every delivery is recorded in integration_events with a payload hash as
- *     the dedupe key. An exact redelivery dedupes; an edited order gets a new
- *     key and is applied to the same canonical order.
+ *   - Deliveries are recorded in integration_events using a payload hash.
+ *     Because Grab's edit revision is not established, edits are retained as
+ *     failures for reconciliation rather than applied or acknowledged.
  *   - Processing leases the event row. A crash leaves it `received` with a
  *     lease, and the replay cron re-drives it after the lease expires.
  *   - Submit ACKs 2xx only after the order is committed to the POS. Outbound
@@ -81,7 +81,7 @@ async function claimEvent(
   payload: unknown,
   externalOrderId: string,
   eventKey: string
-): Promise<{ id: string; attempts: number } | { duplicate: true } | { busy: true }> {
+): Promise<{ id: string; attempts: number } | { duplicate: true } | { busy: true } | { exhausted: true }> {
   const { data, error } = await supabase
     .from('integration_events')
     .insert({
@@ -111,9 +111,16 @@ async function claimEvent(
   if (readError) throw readError
   if (!existing) throw error
 
-  const row = existing as EventRow
+  return claimExistingEvent(supabase, existing as EventRow)
+}
+
+async function claimExistingEvent(
+  supabase: SupabaseClient,
+  row: EventRow
+): Promise<{ id: string; attempts: number } | { duplicate: true } | { busy: true } | { exhausted: true }> {
   if (row.status === 'processed' || row.status === 'skipped') return { duplicate: true }
-  if ((row.attempts ?? 0) >= MAX_EVENT_ATTEMPTS) return { duplicate: true }
+  if (!['received', 'failed'].includes(row.status)) return { busy: true }
+  if ((row.attempts ?? 0) >= MAX_EVENT_ATTEMPTS) return { exhausted: true }
 
   const now = Date.now()
   if (isLeaseActive(row, now)) return { busy: true }
@@ -122,7 +129,7 @@ async function claimEvent(
   }
 
   const attempts = (row.attempts ?? 0) + 1
-  const { error: updateError } = await supabase
+  let claim = supabase
     .from('integration_events')
     .update({
       status: 'received',
@@ -131,7 +138,13 @@ async function claimEvent(
       locked_until: new Date(now + LEASE_MS).toISOString(),
     })
     .eq('id', row.id)
+    .eq('status', row.status)
+  claim = row.attempts === null ? claim.is('attempts', null) : claim.eq('attempts', row.attempts)
+  claim = row.locked_until === null ? claim.is('locked_until', null) : claim.eq('locked_until', row.locked_until)
+  claim = row.next_attempt_at === null ? claim.is('next_attempt_at', null) : claim.eq('next_attempt_at', row.next_attempt_at)
+  const { data: claimed, error: updateError } = await claim.select('id').maybeSingle()
   if (updateError) throw updateError
+  if (!claimed) return { busy: true }
   return { id: row.id, attempts }
 }
 
@@ -139,6 +152,7 @@ async function markProcessed(
   supabase: SupabaseClient,
   eventId: string,
   status: 'processed' | 'skipped',
+  attempts: number,
   errorMessage?: string
 ): Promise<void> {
   await supabase
@@ -150,6 +164,7 @@ async function markProcessed(
       locked_until: null,
     })
     .eq('id', eventId)
+    .eq('attempts', attempts)
 }
 
 async function markFailed(
@@ -169,6 +184,7 @@ async function markFailed(
       processed_at: new Date().toISOString(),
     })
     .eq('id', eventId)
+    .eq('attempts', attempts)
 }
 
 /** Keep a retryable event `received` so the replay cron and Grab can retry it. */
@@ -188,6 +204,7 @@ async function markRetry(
       next_attempt_at: backoffIso(attempts),
     })
     .eq('id', eventId)
+    .eq('attempts', attempts)
 }
 
 function shouldAttemptAcceptance(payload: GrabSubmitOrderPayload): boolean {
@@ -231,6 +248,7 @@ async function acceptOnGrab(
 
 interface ApplyResult {
   status: string
+  reason?: string
   order_id?: string
   order_number?: string
 }
@@ -239,6 +257,7 @@ async function applyOrder(
   supabase: SupabaseClient,
   payload: GrabSubmitOrderPayload,
   eventId: string,
+  attempts: number,
   existingOrderNumber?: string
 ): Promise<HandlerResult> {
   const isEdit = payload.featureFlags?.isMexEditOrder === true
@@ -246,7 +265,7 @@ async function applyOrder(
   // Channel product mappings for the GrabFood channel.
   const { data: mappingRows, error: mappingError } = await supabase
     .from('channel_products')
-    .select('external_item_id, menu_item_id, external_name')
+    .select('external_item_id, menu_item_id, external_name, menu_items(name)')
     .eq('channel', 'grabfood')
     .not('external_item_id', 'is', null)
   if (mappingError) throw mappingError
@@ -256,7 +275,18 @@ async function applyOrder(
     mappings.set(row.external_item_id, row)
   }
 
-  const mapped = mapGrabSubmitOrder(payload, mappings, generateOrderNumber())
+  const modifierIds = [...new Set((payload.items ?? []).flatMap((item) =>
+    (item.modifiers ?? []).map((modifier) => modifier.id).filter((id): id is string =>
+      typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    )
+  ))]
+  const modifierNames = new Map<string, string>()
+  if (modifierIds.length) {
+    const { data, error } = await supabase.from('modifiers').select('id, name').in('id', modifierIds)
+    if (error) throw error
+    for (const row of data ?? []) modifierNames.set(row.id as string, row.name as string)
+  }
+  const mapped = mapGrabSubmitOrder(payload, mappings, generateOrderNumber(), modifierNames)
   if (!mapped.ok) {
     return { status: 'unmapped', detail: mapped.unmapped.join(', ') }
   }
@@ -279,6 +309,7 @@ async function applyOrder(
     isEdit,
     eventType: isEdit ? 'grabfood_order_updated' : 'grabfood_received',
     sourceEventId: eventId,
+    sourceEventAttempts: attempts,
   }
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc('apply_channel_order', {
@@ -297,7 +328,7 @@ async function applyOrder(
   if (result.status === 'skipped' || result.status === 'duplicate') {
     return { status: 'duplicate', order_id: result.order_id, order_number: result.order_number }
   }
-  return { status: 'error', detail: result.status }
+  return { status: 'error', detail: result.reason ?? result.status }
 }
 
 /**
@@ -308,12 +339,13 @@ export async function processSubmitOrder(
   supabase: SupabaseClient,
   payload: GrabSubmitOrderPayload,
   eventId: string,
+  attempts: number,
   grab?: GrabOrderActions | null
 ): Promise<HandlerResult> {
   const isEdit = payload.featureFlags?.isMexEditOrder === true
+  if (isEdit) return { status: 'error', detail: 'edit requires authoritative reconciliation' }
 
-  // Order-level idempotency anchor. A non-edit repeat is a replay; an edit is
-  // applied to the same order.
+  // Order-level idempotency anchor for initial submissions.
   const { data: existing } = await supabase
     .from('channel_orders')
     .select('id, order_id, orders(order_number)')
@@ -322,7 +354,7 @@ export async function processSubmitOrder(
     .maybeSingle()
 
   if (existing && !isEdit) {
-    await markProcessed(supabase, eventId, 'skipped', 'order already imported')
+    await markProcessed(supabase, eventId, 'skipped', attempts, 'order already imported')
     const order = existing.orders as { order_number?: string } | null
     return {
       status: 'duplicate',
@@ -335,6 +367,7 @@ export async function processSubmitOrder(
     supabase,
     payload,
     eventId,
+    attempts,
     existing ? (existing.orders as { order_number?: string } | null)?.order_number : undefined
   )
 
@@ -396,7 +429,7 @@ async function processOrderState(
     .update({ external_status: state })
     .eq('id', channelOrder.id)
 
-  await markProcessed(supabase, eventId, 'processed')
+  await markProcessed(supabase, eventId, 'processed', attempts)
   return {
     status: applied.length > 0 ? 'created' : 'noop',
     order_id: channelOrder.order_id,
@@ -416,15 +449,20 @@ export async function handleSubmitOrder(
     const key = eventKey ?? `${payload.orderID}:submit`
     const event = await claimEvent(supabase, 'submit_order', payload, payload.orderID, key)
     if ('duplicate' in event) {
+      // An old processed hash cannot prove this is the same edit occurrence.
+      if (payload.featureFlags?.isMexEditOrder) {
+        return { status: 'error', detail: 'edit requires authoritative reconciliation' }
+      }
       return { status: 'duplicate', detail: 'submit_order event already recorded' }
     }
+    if ('exhausted' in event) return { status: 'error', detail: 'retry budget exhausted; operator reconciliation required' }
     if ('busy' in event) {
       return { status: 'busy', detail: 'submit_order event is being processed' }
     }
     eventId = event.id
     attempts = event.attempts
 
-    const result = await processSubmitOrder(supabase, payload, eventId, grab)
+    const result = await processSubmitOrder(supabase, payload, eventId, attempts, grab)
     if (result.status === 'unmapped' || result.status === 'error') {
       await markFailed(supabase, eventId, attempts, result.detail ?? result.status)
     }
@@ -452,6 +490,7 @@ export async function handleOrderState(
     if ('duplicate' in event) {
       return { status: 'duplicate', detail: 'order_state event already recorded' }
     }
+    if ('exhausted' in event) return { status: 'error', detail: 'retry budget exhausted; operator reconciliation required' }
     if ('busy' in event) {
       return { status: 'busy', detail: 'order_state event is being processed' }
     }
@@ -481,27 +520,25 @@ export async function replayGrabEvent(
   event: { id: string; event_type: string; payload: Record<string, unknown>; attempts: number | null },
   grab?: GrabOrderActions | null
 ): Promise<HandlerResult> {
-  const attempts = (event.attempts ?? 0) + 1
-  if (attempts > MAX_EVENT_ATTEMPTS) {
-    await markFailed(supabase, event.id, attempts, 'retry budget exhausted')
-    return { status: 'error', detail: 'retry budget exhausted' }
-  }
-  const { error: leaseError } = await supabase
+  const { data: row, error: readError } = await supabase
     .from('integration_events')
-    .update({
-      status: 'received',
-      attempts,
-      locked_until: new Date(Date.now() + LEASE_MS).toISOString(),
-      error: null,
-    })
+    .select('id, status, attempts, locked_until, next_attempt_at')
     .eq('id', event.id)
-  if (leaseError) throw leaseError
+    .maybeSingle()
+  if (readError) throw readError
+  if (!row) return { status: 'error', detail: 'event no longer exists' }
+  const claim = await claimExistingEvent(supabase, row as EventRow)
+  if ('duplicate' in claim) return { status: 'duplicate' }
+  if ('exhausted' in claim) return { status: 'error', detail: 'retry budget exhausted; operator reconciliation required' }
+  if ('busy' in claim) return { status: 'busy' }
+  const attempts = claim.attempts
 
   if (event.event_type === 'submit_order') {
     const result = await processSubmitOrder(
       supabase,
       event.payload as unknown as GrabSubmitOrderPayload,
       event.id,
+      attempts,
       grab
     )
     if (result.status === 'unmapped' || result.status === 'error') {

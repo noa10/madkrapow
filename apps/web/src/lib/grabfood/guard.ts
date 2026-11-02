@@ -8,6 +8,7 @@
  */
 
 import { env } from '@/lib/validators/env'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface GuardFailure {
   ok: false
@@ -72,7 +73,6 @@ export function validateOutlet(
   if (
     expectedMerchant &&
     payload.merchantID &&
-    !options.allowUnknownMerchant &&
     payload.merchantID !== expectedMerchant
   ) {
     return {
@@ -90,6 +90,29 @@ export function validateOutlet(
     }
   }
 
+  return { ok: true }
+}
+
+/** Validate against the persisted single-outlet activation mapping as well. */
+export async function validatePersistedOutlet(
+  supabase: SupabaseClient,
+  payload: { merchantID?: string | null; partnerMerchantID?: string | null },
+  options: { requireMerchant?: boolean; allowUnknownMerchant?: boolean } = {}
+): Promise<GuardResult> {
+  const configured = validateOutlet(payload, options)
+  if (!configured.ok) return configured
+  const { data, error } = await supabase
+    .from('grabfood_integrations')
+    .select('partner_merchant_id, grab_merchant_id')
+    .limit(2)
+  if (error || (data?.length ?? 0) > 1) {
+    return { ok: false, status: 503, error: 'Unable to establish GrabFood outlet identity' }
+  }
+  const saved = data?.[0] as { partner_merchant_id: string; grab_merchant_id: string | null } | undefined
+  if (saved && ((payload.partnerMerchantID && payload.partnerMerchantID !== saved.partner_merchant_id) ||
+    (payload.merchantID && saved.grab_merchant_id && payload.merchantID !== saved.grab_merchant_id))) {
+    return { ok: false, status: 403, error: 'Callback does not match the established GrabFood outlet' }
+  }
   return { ok: true }
 }
 

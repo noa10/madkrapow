@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import type { GrabMenuSyncStatePayload } from '@/lib/grabfood/types'
 
 /**
@@ -36,7 +36,9 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const outlet = validateOutlet(
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(
+    supabase,
     { merchantID: payload.merchantID, partnerMerchantID: payload.partnerMerchantID },
     { requireMerchant: false, allowUnknownMerchant: true }
   )
@@ -44,10 +46,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   const errors = (payload.errors ?? []).join('; ').slice(0, 2000)
   const row: Record<string, unknown> = {
-    grab_merchant_id: payload.merchantID ?? null,
+    ...(payload.merchantID ? { grab_merchant_id: payload.merchantID } : {}),
     last_menu_sync_status: payload.status ?? 'UNKNOWN',
     last_menu_sync_at: payload.updatedAt ?? new Date().toISOString(),
     last_menu_sync_error: errors || null,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { handleOrderState, handleSubmitOrder } from '../handlers'
+import { handleOrderState, handleSubmitOrder, replayGrabEvent } from '../handlers'
 
 interface Call {
   table: string
@@ -21,6 +21,8 @@ class FakeDb {
   orderStatus = 'preparing'
   eventInsertError: { code?: string } | null = null
   existingEvent: Record<string, unknown> | null = null
+  claimWon = true
+  claimFilters: Array<[string, unknown]> = []
 
   from(table: string) {
     return new Builder(this, table)
@@ -60,8 +62,13 @@ class Builder {
     return this
   }
 
-  eq() {
+  eq(key: string, value: unknown) {
+    if (this.table === 'integration_events' && this.op === 'update') this.db.claimFilters.push([key, value])
     return this
+  }
+
+  is(key: string, value: unknown) {
+    return this.eq(key, value)
   }
 
   not() {
@@ -77,6 +84,7 @@ class Builder {
       return { data: this.db.channelOrder, error: null }
     }
     if (this.table === 'integration_events') {
+      if (this.op === 'update') return { data: this.db.claimWon ? { id: 'evt-old' } : null, error: null }
       return { data: this.db.existingEvent, error: null }
     }
     return { data: null, error: null }
@@ -141,23 +149,19 @@ describe('handleSubmitOrder', () => {
     expect(payload.payment).toMatchObject({ method: 'grabfood', status: 'succeeded' })
   })
 
-  it('applies an edited order to the same orderID', async () => {
+  it('retains an edit for reconciliation when no authoritative revision is available', async () => {
     const fake = db()
     fake.channelOrder = { id: 'co-1', order_id: 'order-1', orders: { order_number: 'MKOLD' } }
-    fake.rpcResult = { status: 'updated', order_id: 'order-1', order_number: 'MKOLD' }
-
     const result = await handleSubmitOrder(
       fake as unknown as SupabaseClient,
       { ...PAYLOAD, featureFlags: { ...PAYLOAD.featureFlags, isMexEditOrder: true } },
       null,
       'key-edit'
     )
-
-    expect(result.status).toBe('updated')
-    const rpc = fake.calls.find((call) => call.table === 'rpc')
-    const payload = (rpc?.row as { payload: Record<string, unknown> }).payload
-    expect(payload.isEdit).toBe(true)
-    expect((payload.order as { order_number: string }).order_number).toBe('MKOLD')
+    expect(result).toMatchObject({ status: 'error', detail: 'edit requires authoritative reconciliation' })
+    expect(fake.calls.some((call) => call.table === 'rpc')).toBe(false)
+    expect(fake.calls.find((call) => call.table === 'integration_events' && call.op === 'update')?.patch)
+      .toMatchObject({ status: 'failed' })
   })
 
   it('dedupes a non-edit repeat without calling the RPC', async () => {
@@ -184,6 +188,33 @@ describe('handleSubmitOrder', () => {
     expect(failed?.patch).toMatchObject({ status: 'failed' })
   })
 
+  it('does not acknowledge an exhausted unprocessed delivery', async () => {
+    const fake = db()
+    fake.eventInsertError = { code: '23505' }
+    fake.existingEvent = { id: 'evt-old', status: 'failed', attempts: 6, locked_until: null, next_attempt_at: null }
+    expect(await handleSubmitOrder(fake as unknown as SupabaseClient, PAYLOAD, null, 'key')).toMatchObject({ status: 'error' })
+  })
+
+  it('does not treat a previously processed edit hash as proof of a duplicate', async () => {
+    const fake = db()
+    fake.eventInsertError = { code: '23505' }
+    fake.existingEvent = { id: 'evt-old', status: 'processed', attempts: 1, locked_until: null, next_attempt_at: null }
+    const payload = { ...PAYLOAD, featureFlags: { ...PAYLOAD.featureFlags, isMexEditOrder: true } }
+    expect(await handleSubmitOrder(fake as unknown as SupabaseClient, payload, null, 'key')).toMatchObject({ status: 'error' })
+  })
+
+  it('does not process when the conditional lease claim loses a race', async () => {
+    const fake = db()
+    fake.eventInsertError = { code: '23505' }
+    fake.existingEvent = { id: 'evt-old', status: 'failed', attempts: 2, locked_until: null, next_attempt_at: '2020-01-01T00:00:00Z' }
+    fake.claimWon = false
+    expect(await handleSubmitOrder(fake as unknown as SupabaseClient, PAYLOAD, null, 'key')).toMatchObject({ status: 'busy' })
+    expect(fake.calls.some((call) => call.table === 'rpc')).toBe(false)
+    expect(fake.claimFilters).toEqual(expect.arrayContaining([
+      ['status', 'failed'], ['attempts', 2], ['locked_until', null], ['next_attempt_at', '2020-01-01T00:00:00Z'],
+    ]))
+  })
+
   it('returns busy when another worker holds the event lease', async () => {
     const fake = db()
     fake.eventInsertError = { code: '23505' }
@@ -197,6 +228,20 @@ describe('handleSubmitOrder', () => {
 
     const result = await handleSubmitOrder(fake as unknown as SupabaseClient, PAYLOAD, null, 'key-4')
     expect(result.status).toBe('busy')
+  })
+})
+
+describe('replayGrabEvent', () => {
+  it('does not replay after another worker wins the lease', async () => {
+    const fake = db()
+    fake.existingEvent = { id: 'evt-old', status: 'failed', attempts: 2, locked_until: null, next_attempt_at: '2020-01-01T00:00:00Z' }
+    fake.claimWon = false
+    const result = await replayGrabEvent(fake as unknown as SupabaseClient, {
+      id: 'evt-old', event_type: 'submit_order', payload: PAYLOAD, attempts: 2,
+    })
+    expect(result.status).toBe('busy')
+    expect(fake.calls.some((call) => call.table === 'rpc')).toBe(false)
+    expect(fake.claimFilters).toEqual(expect.arrayContaining([['status', 'failed'], ['attempts', 2]]))
   })
 })
 

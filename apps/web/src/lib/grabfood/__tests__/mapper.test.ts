@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { mapGrabSubmitOrder, planInternalTransitions } from '@/lib/grabfood/mapper'
+import { mapGrabSubmitOrder as mapWithModifierNames, planInternalTransitions } from '@/lib/grabfood/mapper'
 import type { ChannelProductMapping } from '@/lib/grabfood/mapper'
 import type { GrabSubmitOrderPayload } from '@/lib/grabfood/types'
+
+const mapGrabSubmitOrder = (payload: GrabSubmitOrderPayload, mappings: Map<string, ChannelProductMapping>, orderNumber: string) =>
+  mapWithModifierNames(payload, mappings, orderNumber, new Map([['mod-extra-sauce', 'Extra sauce']]))
 
 const MAPPINGS = new Map<string, ChannelProductMapping>([
   [
@@ -66,9 +69,9 @@ describe('mapGrabSubmitOrder', () => {
       quantity: 1,
       line_total_cents: 1300,
     })
-    // specifications + modifier ids land in notes
+    // Specifications and readable modifier names land in notes.
     expect(items[1].notes).toContain('extra spicy')
-    expect(items[1].notes).toContain('mod-extra-sauce')
+    expect(items[1].notes).toContain('Extra sauce')
 
     // subtotal from price, discount = MERCHANT-funded only. basketPromo is
     // grabFundPromo + merchantFundPromo in Grab's example and must not be
@@ -114,6 +117,7 @@ describe('mapGrabSubmitOrder', () => {
       submitPayload({
         paymentType: 'CASH',
         scheduledTime: '2026-09-28T12:30:00+08:00',
+        items: [{ id: 'GF-ITEM-SET-DAGING', quantity: 1, price: 1300 }],
         featureFlags: { orderAcceptedType: 'MANUAL', orderType: 'TakeAway' },
         price: { subtotal: 2980, merchantFundPromo: 0 },
       }),
@@ -124,6 +128,7 @@ describe('mapGrabSubmitOrder', () => {
     if (!mapped.ok) return
     expect(mapped.result.order.delivery_type).toBe('self_pickup')
     expect(mapped.result.order.fulfillment_type).toBe('scheduled')
+    expect(mapped.result.order.scheduled_for).toBe('2026-09-28T12:30:00+08:00')
     expect(mapped.result.payment.method).toBe('cash')
     expect(mapped.result.payment.status).toBe('pending')
     expect(mapped.result.channelOrder.external_status).toBe('PENDING')
@@ -165,6 +170,9 @@ describe('planInternalTransitions', () => {
     ['ready', 'COMPLETED', ['picked_up', 'delivered']],
     ['picked_up', 'COMPLETED', ['delivered']],
     ['delivered', 'COMPLETED', []],
+    ['cancelled', 'DELIVERED', []],
+    ['cancelled', 'COLLECTED', []],
+    ['unknown', 'DELIVERED', []],
     ['paid', 'COLLECTED', ['preparing', 'ready', 'picked_up']],
     // Cancellation only from a cancellable state.
     ['preparing', 'CANCELLED', ['cancelled']],

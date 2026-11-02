@@ -7,7 +7,8 @@
  * `modifiers[].id`) mapped to stable identifiers without a second mapping
  * table.
  *
- * Only categories and items with a GrabFood mapping are emitted. Selling
+ * Items require a GrabFood mapping. Categories use the mapped ID when present,
+ * otherwise their stable local category UUID. Selling
  * times use one all-day window because the local catalogue has no
  * channel-specific selling-time model yet; Grab accepts 1..20 sellingTimes.
  */
@@ -178,7 +179,6 @@ export function buildGrabMenu(
       const externalCategoryId = asArray(category.channel_categories).find(
         (row) => row.channel === 'grabfood'
       )?.external_category_id
-      if (!externalCategoryId) return null
 
       const items = asArray(category.menu_items)
         .filter((item) => Boolean(grabMapping(item)?.external_item_id))
@@ -192,7 +192,7 @@ export function buildGrabMenu(
       if (items.length === 0) return null
 
       const menuCategory: GrabMenuCategory = {
-        id: externalCategoryId,
+        id: externalCategoryId || category.id,
         name: category.name,
         availableStatus: items.some((item) => item.availableStatus === 'AVAILABLE')
           ? 'AVAILABLE'

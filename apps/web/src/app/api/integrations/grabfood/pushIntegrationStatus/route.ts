@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import type { GrabIntegrationStatusPayload } from '@/lib/grabfood/types'
 
 const STATUSES = new Set(['INACTIVE', 'ACTIVE', 'SYNCING', 'FAILED'])
@@ -42,7 +42,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid integrationStatus' }, { status: 400 })
   }
 
-  const outlet = validateOutlet(
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(
+    supabase,
     { merchantID: payload.grabMerchantID, partnerMerchantID: payload.partnerMerchantID },
     { requireMerchant: false, allowUnknownMerchant: true }
   )
@@ -50,7 +52,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   const { error } = await supabase.from('grabfood_integrations').upsert(
     {
       partner_merchant_id: payload.partnerMerchantID,

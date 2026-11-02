@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const KEYS = [
@@ -114,8 +115,17 @@ describe('authenticatePartnerRequest', () => {
     ).toMatchObject({ ok: false, status: 403 })
   })
 
+  it('distinguishes a signed empty body from an unknown GET input', async () => {
+    const auth = await loadAuth({ ...STAGING, GRABFOOD_WEBHOOK_HMAC_REQUIRED: 'true', GRABFOOD_WEBHOOK_SECRET: 'test-hmac' })
+    const token = auth.issuePartnerToken().access_token
+    const signature = createHmac('sha256', 'test-hmac').update('').digest('hex')
+    const req = { headers: headers({ authorization: `Bearer ${token}`, 'x-grab-signature': signature }) }
+    expect(auth.authenticatePartnerRequest(req)).toMatchObject({ ok: false, status: 503 })
+    expect(auth.authenticatePartnerRequest(req, { rawBody: '' })).toEqual({ ok: true })
+  })
+
   it('enforces HMAC only when explicitly required', async () => {
-    const auth = await loadAuth({ ...STAGING, GRABFOOD_WEBHOOK_HMAC_REQUIRED: 'true' })
+    const auth = await loadAuth({ ...STAGING, GRABFOOD_WEBHOOK_HMAC_REQUIRED: 'true', GRABFOOD_WEBHOOK_SECRET: 'test-hmac' })
     const token = auth.issuePartnerToken().access_token
     const req = { headers: headers({ authorization: `Bearer ${token}` }) }
     expect(auth.authenticatePartnerRequest(req, { rawBody: '{}' })).toMatchObject({

@@ -88,6 +88,12 @@ describe('buildGrabMenu', () => {
     })
   })
 
+  it('uses a stable local category id when no Grab category mapping exists', () => {
+    const rows = structuredClone(ROWS)
+    rows[0].channel_categories = []
+    expect(buildGrabMenu(rows).categories[0].id).toBe(rows[0].id)
+  })
+
   it('maps modifiers with local UUIDs and price deltas', () => {
     const menu = buildGrabMenu(ROWS)
     const groups = menu.categories[0].items[0].modifierGroups

@@ -141,7 +141,7 @@ export function authenticatePartnerRequest(
   req: RequestLike,
   options: { rawBody?: string; scope?: string } = {}
 ): { ok: true } | { ok: false; status: number; error: string } {
-  if (env.GRABFOOD_ENV === 'mock' && !isPartnerAuthConfigured()) {
+  if (env.GRABFOOD_ENV === 'mock' && !isPartnerAuthConfigured() && !env.GRABFOOD_WEBHOOK_HMAC_REQUIRED) {
     return { ok: true }
   }
   if (!isPartnerAuthConfigured()) {
@@ -163,8 +163,13 @@ export function authenticatePartnerRequest(
   }
 
   if (env.GRABFOOD_WEBHOOK_HMAC_REQUIRED) {
-    if (!options.rawBody) {
-      return { ok: false, status: 401, error: 'HMAC verification requires the raw request body' }
+    if (!env.GRABFOOD_WEBHOOK_SECRET) {
+      return { ok: false, status: 503, error: 'HMAC secret is not configured' }
+    }
+    if (options.rawBody === undefined) {
+      // The GET signing input has not been confirmed with Grab. Do not guess
+      // that an absent input means an empty signed body.
+      return { ok: false, status: 503, error: 'HMAC signature input is not established for this request' }
     }
     const signature = req.headers.get(getSignatureHeaderName())
     if (!verifyWebhookSignature(options.rawBody, signature)) {

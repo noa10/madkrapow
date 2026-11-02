@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import { eventKeyFor, redactGrabPayload } from '@/lib/grabfood/redact'
 
 /**
@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
   const merchantID = typeof payload.merchantID === 'string' ? payload.merchantID : undefined
   const partnerMerchantID =
     typeof payload.partnerMerchantID === 'string' ? payload.partnerMerchantID : undefined
-  const outlet = validateOutlet(
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(
+    supabase,
     { merchantID, partnerMerchantID },
     { requireMerchant: false, allowUnknownMerchant: true }
   )
@@ -46,7 +48,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   const { error } = await supabase.from('integration_events').insert({
     provider: 'grabfood',
     event_type: 'menu_event',

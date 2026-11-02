@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
 import { createGrabFoodClient } from '@/lib/grabfood/client'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import { eventKeyFor } from '@/lib/grabfood/redact'
 import { handleSubmitOrder } from '../handlers'
 import { sanitizeForLog } from '@/lib/logging/safe-log'
@@ -42,12 +42,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing orderID/merchantID' }, { status: 400 })
   }
 
-  const outlet = validateOutlet(payload)
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(supabase, payload)
   if (!outlet.ok) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   // Acceptance is only attempted for confirmed manual-acceptance stores; the
   // 3s timeout keeps the webhook inside Grab's 10s target. Automatic stores
   // make no outbound call on the critical path.

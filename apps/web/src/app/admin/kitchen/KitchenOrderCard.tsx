@@ -363,7 +363,9 @@ function KitchenStatusTransitionButtons({
 
   const currentStep = KITCHEN_STATUS_FLOW.find(
     (s) => s.status === currentStatus
-  );
+  ) ?? (source === 'grabfood' && currentStatus === 'ready'
+    ? { status: 'ready', label: 'Check / retry Grab notification', icon: Package, next: 'ready' }
+    : undefined);
   const canTransition =
     currentStep &&
     !['picked_up', 'delivered', 'cancelled'].includes(currentStatus);
@@ -376,7 +378,7 @@ function KitchenStatusTransitionButtons({
       // GrabFood orders must notify Grab; the dedicated route owns the
       // once-only Mark Ready rule and surfaces uncertain outcomes.
       const useGrabRoute = source === 'grabfood' && currentStep.next === 'ready';
-      const response = await fetch(
+      let response = await fetch(
         useGrabRoute
           ? `/api/integrations/grabfood/orders/${orderId}/ready`
           : `/api/admin/orders/${orderId}/status`,
@@ -387,7 +389,18 @@ function KitchenStatusTransitionButtons({
         }
       );
 
-      const data = await response.json().catch(() => ({}));
+      let data = await response.json().catch(() => ({}));
+      if (!response.ok && useGrabRoute && data?.uncertain) {
+        const confirmed = window.confirm(
+          'The Grab notification may already have succeeded. Check the Grab merchant app first. Only choose OK if Grab still shows the order is not ready and you want to retry.'
+        );
+        if (!confirmed) return;
+        response = await fetch(`/api/integrations/grabfood/orders/${orderId}/ready`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ retryUncertain: true }),
+        });
+        data = await response.json().catch(() => ({}));
+      }
       if (!response.ok) {
         addToast({
           type: 'error',
@@ -402,7 +415,12 @@ function KitchenStatusTransitionButtons({
           title: 'Ready locally — check Grab',
           description: data.warning,
         });
+      } else if (useGrabRoute) {
+        addToast({ type: 'success', title: 'Grab notified that the order is ready' });
       }
+    } catch {
+      addToast({ type: 'error', title: 'Status update failed',
+        description: 'Check the order and Grab notification before trying again.' });
     } finally {
       setLoading(false);
     }

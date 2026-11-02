@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import { eventKeyFor } from '@/lib/grabfood/redact'
 import { handleOrderState } from '../handlers'
 import { sanitizeForLog } from '@/lib/logging/safe-log'
@@ -41,7 +41,9 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: 'Missing orderID/state' }, { status: 400 })
   }
 
-  const outlet = validateOutlet(
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(
+    supabase,
     { merchantID: payload.merchantID, partnerMerchantID: payload.partnerMerchantID },
     { requireMerchant: false }
   )
@@ -49,7 +51,6 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   const result = await handleOrderState(
     supabase,
     { ...payload, state },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/admin/require-role';
 import { ADMIN_VALID_TRANSITIONS } from '@/lib/orders/status';
 import { markGrabOrderReady } from '@/lib/grabfood/order-actions';
+import { getServiceClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const requestSchema = z.object({
@@ -116,7 +117,7 @@ export async function POST(
     // GrabFood orders must notify Grab before the local status is considered
     // complete; the shared service owns the once-only rule and retry safety.
     if (newStatus === 'ready' && order.source === 'grabfood') {
-      const result = await markGrabOrderReady(db, id);
+      const result = await markGrabOrderReady(getServiceClient(), id);
       if (!result.ok) {
         return NextResponse.json(
           { error: result.error, uncertain: result.uncertain, detail: result.detail },

@@ -4,10 +4,9 @@
  * Both the kitchen "Mark Ready" button and the admin status route go through
  * this service so the Grab call and the local mirror cannot drift apart.
  *
- * Grab says Mark Ready may be called only once per order. A definite rejection
- * is recorded and shown to staff; an ambiguous timeout is recorded as
- * `grabfood_ready_uncertain` and is NOT retried automatically. An operator can
- * explicitly retry after checking the Grab merchant app.
+ * Grab says Mark Ready may be called only once per order. A durable claim is
+ * written before the call; ambiguous or interrupted attempts require an
+ * explicit operator decision after checking the Grab merchant app.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -34,21 +33,6 @@ interface ChannelOrderRow {
 function currentStatus(row: ChannelOrderRow): string {
   const order = Array.isArray(row.orders) ? row.orders[0] : row.orders
   return order?.status ?? 'pending'
-}
-
-async function hasOrderEvent(
-  supabase: SupabaseClient,
-  orderId: string,
-  eventType: string
-): Promise<boolean> {
-  const { data } = await supabase
-    .from('order_events')
-    .select('id')
-    .eq('order_id', orderId)
-    .eq('event_type', eventType)
-    .limit(1)
-    .maybeSingle()
-  return Boolean(data)
 }
 
 async function recordEvent(
@@ -82,30 +66,6 @@ export async function markGrabOrderReady(
   const row = channelOrder as unknown as ChannelOrderRow
   const status = currentStatus(row)
 
-  const alreadySent = await hasOrderEvent(supabase, internalOrderId, 'grabfood_ready_sent')
-  if (alreadySent) {
-    return {
-      ok: true,
-      status: 200,
-      warning: 'Grab was already told this order is ready (Mark Ready is once-only)',
-    }
-  }
-
-  const uncertain = await hasOrderEvent(
-    supabase,
-    internalOrderId,
-    'grabfood_ready_uncertain'
-  )
-  if (uncertain && !options.retryUncertain) {
-    return {
-      ok: false,
-      status: 409,
-      error:
-        'A previous Mark Ready attempt timed out and its outcome is unknown. Check the Grab merchant app, then retry explicitly.',
-      uncertain: true,
-    }
-  }
-
   // Local transition first (idempotent when already ready).
   if (status !== 'ready') {
     const { data: updated } = await supabase
@@ -123,31 +83,71 @@ export async function markGrabOrderReady(
     }
   }
 
-  const client = options.client ?? createGrabFoodClient({ timeoutMs: 5000 })
+  // The unique key and compare-and-swap below serialize all callers. A pending
+  // claim survives a crash and is never retried without operator confirmation.
+  const token = crypto.randomUUID()
+  const claims = () => supabase.from('grabfood_ready_claims')
+  const { error: insertError } = await claims().insert({
+    order_id: internalOrderId, state: 'pending', claim_token: token,
+  })
+  if (insertError) {
+    if (insertError.code !== '23505') {
+      return { ok: false, status: 503, error: 'Could not claim the Grab notification. Please retry.' }
+    }
+    const { data: claim, error } = await claims().select('state, claim_token, updated_at')
+      .eq('order_id', internalOrderId).maybeSingle()
+    if (error || !claim) return { ok: false, status: 503, error: 'Could not check Grab notification state.' }
+    if (claim.state === 'sent') {
+      return { ok: true, status: 200, warning: 'Grab was already told this order is ready.' }
+    }
+    // Allow the original request time to finish before offering recovery. An
+    // explicit retry after checking Grab accepts the remaining uncertainty.
+    if (claim.state === 'pending' && Date.now() - Date.parse(claim.updated_at) < 120_000) {
+      return { ok: false, status: 409, error: 'Grab notification is in progress. Check again shortly.' }
+    }
+    const uncertain = claim.state !== 'failed'
+    if (uncertain && !options.retryUncertain) {
+      return { ok: false, status: 409, uncertain: true,
+        error: 'Grab may have received Mark Ready. Check the Grab merchant app before explicitly retrying.' }
+    }
+    const { data: claimed, error: claimError } = await claims().update({
+      state: 'pending', claim_token: token, updated_at: new Date().toISOString(),
+    }).eq('order_id', internalOrderId).eq('state', claim.state)
+      .eq('claim_token', claim.claim_token).select('order_id')
+    if (claimError) return { ok: false, status: 503, error: 'Could not claim the Grab notification.' }
+    if (!claimed?.length) return { ok: false, status: 409, error: 'Grab notification state changed. Check again.' }
+  }
+
+  const finish = async (state: 'sent' | 'failed' | 'uncertain') => {
+    try {
+      const { data, error } = await claims().update({ state, updated_at: new Date().toISOString() })
+        .eq('order_id', internalOrderId).eq('state', 'pending').eq('claim_token', token).select('order_id')
+      return !error && Boolean(data?.length)
+    } catch {
+      return false
+    }
+  }
+
   try {
+    const client = options.client ?? createGrabFoodClient({ timeoutMs: 5000 })
     await client.markOrderReady(row.external_order_id, 1)
-    await recordEvent(supabase, internalOrderId, 'grabfood_ready_sent', {
-      external_order_id: row.external_order_id,
-    })
+    if (!await finish('sent')) {
+      return { ok: false, status: 503, uncertain: true,
+        error: 'Grab responded, but confirmation could not be saved. Check the Grab merchant app before retrying.' }
+    }
     return { ok: true, status: 200 }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const apiStatus = err instanceof GrabFoodApiError ? err.status : 0
-    const ambiguous = apiStatus === 0 || /abort|timeout|fetch failed/i.test(message)
-    const eventType = ambiguous ? 'grabfood_ready_uncertain' : 'grabfood_ready_failed'
-    await recordEvent(supabase, internalOrderId, eventType, {
-      external_order_id: row.external_order_id,
-      error: message,
-    })
+    // A server error can occur after Grab has accepted the action.
+    let ambiguous = apiStatus === 0 || apiStatus >= 500 || /abort|timeout|fetch failed/i.test(message)
+    if (!await finish(ambiguous ? 'uncertain' : 'failed')) ambiguous = true
     console.error('[GrabFood] mark-ready failed:', message)
     return {
-      ok: false,
-      status: 200,
-      warning: ambiguous
-        ? 'Order is ready locally, but Grab did not confirm. Check the merchant app before retrying.'
-        : 'Order is ready locally, but GrabFood rejected the notification.',
-      detail: message,
-      uncertain: ambiguous,
+      ok: false, status: 502, uncertain: ambiguous,
+      error: ambiguous
+        ? 'Order is ready locally, but Grab did not confirm. Check the Grab merchant app before retrying.'
+        : 'Order is ready locally, but Grab rejected the notification. Retry the Grab notification.',
     }
   }
 }

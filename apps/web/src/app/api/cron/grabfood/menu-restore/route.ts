@@ -4,6 +4,7 @@ import { createGrabFoodClient } from '@/lib/grabfood/client'
 import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 import { buildSingleItemUpdate, type GrabMenuMappingRow } from '@/lib/grabfood/menu'
 import { env } from '@/lib/validators/env'
+import { claimMenuUpdate, releaseMenuUpdate, hasFutureMasterSnooze } from '@/lib/grabfood/menu-lease'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,8 +85,8 @@ export async function POST(req: NextRequest) {
     )
     .eq('channel', 'grabfood')
     .eq('snooze_restore_required', true)
-    .not('snooze_till', 'is', null)
-    .lte('snooze_till', nowIso)
+    .or(`snooze_till.is.null,snooze_till.lte.${nowIso}`)
+    .or(`grab_menu_restore_after.is.null,grab_menu_restore_after.lte.${nowIso}`)
     .limit(100)
 
   if (error) {
@@ -96,34 +97,45 @@ export async function POST(req: NextRequest) {
   const restored: string[] = []
   const failed: Array<{ id: string; error: string }> = []
 
-  for (const row of (data ?? []) as unknown as SnoozeRow[]) {
-    const mapping = toMapping(row)
-    if (!mapping) {
-      failed.push({ id: row.id, error: 'menu item missing' })
-      continue
-    }
-    const record = buildSingleItemUpdate(
-      { ...mapping, channel_snooze_till: null },
-      env.GRABFOOD_MERCHANT_ID
-    )
-    if (!record) {
-      await supabase
-        .from('channel_products')
-        .update({ snooze_restore_required: false })
-        .eq('id', row.id)
-      continue
-    }
-
+  for (const candidate of (data ?? []) as unknown as SnoozeRow[]) {
+    let token: string | null = null
     try {
+      token = await claimMenuUpdate(supabase, candidate.id)
+      if (!token) continue
+      // The candidate may have changed while waiting for the lease.
+      const { data: fresh, error: readError } = await supabase.from('channel_products')
+        .select(`id, external_item_id, external_name, price_cents, is_available, snooze_till,
+          menu_items ( id, name, price_cents, is_available, snooze_till )`)
+        .eq('id', candidate.id).eq('snooze_restore_required', true).maybeSingle()
+      if (readError) throw readError
+      if (!fresh) continue
+      const row = fresh as unknown as SnoozeRow
+      if (row.snooze_till && Date.parse(row.snooze_till) > Date.now()) continue
+      const mapping = toMapping(row)
+      if (!mapping) throw new Error('menu item missing')
+      const record = buildSingleItemUpdate({ ...mapping, channel_snooze_till: null }, env.GRABFOOD_MERCHANT_ID)
+      if (!record) throw new Error('item is not mapped to GrabFood')
       await client.updateMenuRecord(record)
-      const { error: clearError } = await supabase
-        .from('channel_products')
+      // A master snooze still needs a later AVAILABLE push, even after this one succeeds.
+      if (hasFutureMasterSnooze(mapping.menu_item_snooze_till)) {
+        const { error: deferError } = await supabase.from('channel_products')
+          .update({ grab_menu_restore_after: mapping.menu_item_snooze_till })
+          .eq('id', row.id).eq('grab_menu_lease_token', token)
+        if (deferError) throw deferError
+        continue
+      }
+      const { error: clearError } = await supabase.from('channel_products')
         .update({ snooze_restore_required: false })
-        .eq('id', row.id)
+        .eq('id', row.id).eq('grab_menu_lease_token', token)
       if (clearError) throw clearError
       restored.push(record.id)
     } catch (err) {
-      failed.push({ id: row.id, error: err instanceof Error ? err.message : String(err) })
+      failed.push({ id: candidate.id, error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      if (token) {
+        try { await releaseMenuUpdate(supabase, candidate.id, token) }
+        catch (err) { failed.push({ id: candidate.id, error: `lease release failed: ${String(err)}` }) }
+      }
     }
   }
 

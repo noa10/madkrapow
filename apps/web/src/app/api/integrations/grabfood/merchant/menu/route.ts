@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { authenticatePartnerRequest } from '@/lib/grabfood/partner-auth'
-import { requireGrabFoodEnabled, validateOutlet } from '@/lib/grabfood/guard'
+import { requireGrabFoodEnabled, validatePersistedOutlet } from '@/lib/grabfood/guard'
 import { buildGrabMenu, type MenuCategoryRow, type MenuItemRow } from '@/lib/grabfood/menu-builder'
 import type { GrabMenuPayload } from '@/lib/grabfood/types'
 
@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
   const merchantID = searchParams.get('merchantID')
   const partnerMerchantID = searchParams.get('partnerMerchantID')
 
-  const outlet = validateOutlet(
+  const supabase = getServiceClient()
+  const outlet = await validatePersistedOutlet(
+    supabase,
     { merchantID, partnerMerchantID },
     { requireMerchant: false, allowUnknownMerchant: true }
   )
@@ -44,7 +46,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: outlet.error }, { status: outlet.status })
   }
 
-  const supabase = getServiceClient()
   const [{ data: categories, error: categoryError }, { data: items, error: itemError }] =
     await Promise.all([
       supabase

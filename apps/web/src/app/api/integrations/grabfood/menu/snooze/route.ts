@@ -10,6 +10,7 @@ import {
 } from '@/lib/grabfood/menu'
 import { env } from '@/lib/validators/env'
 import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
+import { claimMenuUpdate, releaseMenuUpdate, hasFutureMasterSnooze } from '@/lib/grabfood/menu-lease'
 
 /**
  * Time-based sold-out (Hubbo's snooze pattern).
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
-  const mapping = await fetchMapping(supabase, menuItemId)
+  let mapping = await fetchMapping(supabase, menuItemId)
   if (!mapping) {
     return NextResponse.json(
       { error: 'No GrabFood channel mapping for this menu item' },
@@ -118,10 +119,17 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const token = await claimMenuUpdate(supabase, mapping.channel_product_id)
+  if (!token) return NextResponse.json({ error: 'Menu item update in progress; retry' }, { status: 409 })
+  const mappingId = mapping.channel_product_id
+  try {
+  mapping = await fetchMapping(supabase, menuItemId)
+  if (!mapping || mapping.channel_product_id !== mappingId) return NextResponse.json({ error: 'Menu mapping changed; retry' }, { status: 409 })
+
   const snoozeTill = new Date(Date.now() + durationMinutes * 60_000).toISOString()
   const { error: updateError } = await supabase
     .from('channel_products')
-    .update({ snooze_till: snoozeTill, snooze_restore_required: true })
+    .update({ snooze_till: snoozeTill, snooze_restore_required: true, grab_menu_restore_after: null })
     .eq('id', mapping.channel_product_id)
   if (updateError) {
     return NextResponse.json({ error: `Failed to set snooze: ${updateError.message}` }, { status: 500 })
@@ -158,6 +166,9 @@ export async function POST(req: NextRequest) {
     ...(warning ? { warning } : {}),
     environment: env.GRABFOOD_ENV,
   })
+  } finally {
+    await releaseMenuUpdate(supabase, mappingId, token)
+  }
 }
 
 export async function DELETE(req: NextRequest) {
@@ -178,7 +189,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
-  const mapping = await fetchMapping(supabase, menuItemId)
+  let mapping = await fetchMapping(supabase, menuItemId)
   if (!mapping) {
     return NextResponse.json(
       { error: 'No GrabFood channel mapping for this menu item' },
@@ -186,9 +197,16 @@ export async function DELETE(req: NextRequest) {
     )
   }
 
+  const token = await claimMenuUpdate(supabase, mapping.channel_product_id)
+  if (!token) return NextResponse.json({ error: 'Menu item update in progress; retry' }, { status: 409 })
+  const mappingId = mapping.channel_product_id
+  try {
+  mapping = await fetchMapping(supabase, menuItemId)
+  if (!mapping || mapping.channel_product_id !== mappingId) return NextResponse.json({ error: 'Menu mapping changed; retry' }, { status: 409 })
+
   const { error: updateError } = await supabase
     .from('channel_products')
-    .update({ snooze_till: null, snooze_restore_required: false })
+    .update({ snooze_till: null, snooze_restore_required: true, grab_menu_restore_after: null })
     .eq('id', mapping.channel_product_id)
   if (updateError) {
     return NextResponse.json({ error: `Failed to clear snooze: ${updateError.message}` }, { status: 500 })
@@ -202,10 +220,21 @@ export async function DELETE(req: NextRequest) {
       const client = createGrabFoodClient()
       await client.updateMenuRecord(record)
       pushed = { id: record.id, availableStatus: record.availableStatus ?? 'AVAILABLE' }
+      if (hasFutureMasterSnooze(mapping.menu_item_snooze_till)) {
+        const { error } = await supabase.from('channel_products')
+          .update({ grab_menu_restore_after: mapping.menu_item_snooze_till }).eq('id', mappingId).eq('grab_menu_lease_token', token)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('channel_products')
+          .update({ snooze_restore_required: false }).eq('id', mappingId).eq('grab_menu_lease_token', token)
+        if (error) throw error
+      }
     } catch (err) {
       warning = err instanceof Error ? err.message : String(err)
       console.error('[GrabFood] snooze-restore push failed:', err)
     }
+  } else {
+    warning = 'Item is not mapped to GrabFood; restore remains pending'
   }
 
   return NextResponse.json({
@@ -214,8 +243,11 @@ export async function DELETE(req: NextRequest) {
     snooze_till: null,
     available_status: grabAvailableStatusFor({ ...mapping, channel_snooze_till: null }),
     pushed,
-    restore_required: false,
+    restore_required: !pushed || hasFutureMasterSnooze(mapping.menu_item_snooze_till) || Boolean(warning),
     ...(warning ? { warning } : {}),
     environment: env.GRABFOOD_ENV,
   })
+  } finally {
+    await releaseMenuUpdate(supabase, mappingId, token)
+  }
 }

@@ -21,6 +21,7 @@ export interface ChannelProductMapping {
   external_item_id: string
   menu_item_id: string
   external_name: string | null
+  menu_items?: { name: string } | { name: string }[] | null
 }
 
 export interface MappedGrabItem {
@@ -39,6 +40,7 @@ export interface MappedGrabOrder {
     source: 'grabfood'
     delivery_type: 'delivery' | 'self_pickup' | 'dine_in'
     fulfillment_type: 'asap' | 'scheduled'
+    scheduled_for: string | null
     subtotal_cents: number
     discount_cents: number
     delivery_fee_cents: number
@@ -79,7 +81,8 @@ export function grabItemExternalId(item: GrabOrderItem & { merchantItemID?: stri
 export function mapGrabSubmitOrder(
   payload: GrabSubmitOrderPayload,
   mappings: Map<string, ChannelProductMapping>,
-  orderNumber: string
+  orderNumber: string,
+  modifierNames: ReadonlyMap<string, string> = new Map()
 ): MapGrabOrderResult {
   const items = payload.items ?? []
   const unmapped: string[] = []
@@ -92,12 +95,23 @@ export function mapGrabSubmitOrder(
       unmapped.push(externalId || JSON.stringify(item))
       continue
     }
+    const localItem = Array.isArray(mapping.menu_items) ? mapping.menu_items[0] : mapping.menu_items
+    const name = mapping.external_name?.trim() || localItem?.name?.trim()
+    if (!name) {
+      unmapped.push(`item name: ${externalId}`)
+      continue
+    }
+    const unknownModifiers = (item.modifiers ?? []).filter((modifier) => !modifier.id || !modifierNames.get(modifier.id)?.trim())
+    if (unknownModifiers.length) {
+      unmapped.push(...unknownModifiers.map((modifier) => `modifier: ${modifier.id || '(missing ID)'}`))
+      continue
+    }
     const quantity = item.quantity ?? 1
     const unitPriceCents = item.price ?? 0
-    const notes = itemNotes(item)
+    const notes = itemNotes(item, modifierNames)
     mappedItems.push({
       menu_item_id: mapping.menu_item_id,
-      menu_item_name: mapping.external_name ?? mapping.external_item_id ?? 'GrabFood item',
+      menu_item_name: name,
       menu_item_price_cents: unitPriceCents,
       quantity,
       line_total_cents: unitPriceCents * quantity,
@@ -133,6 +147,7 @@ export function mapGrabSubmitOrder(
         source: 'grabfood',
         delivery_type: deliveryType,
         fulfillment_type: payload.scheduledTime ? 'scheduled' : 'asap',
+        scheduled_for: payload.scheduledTime ?? null,
         subtotal_cents: subtotalCents,
         discount_cents: discountCents,
         delivery_fee_cents: 0,
@@ -159,13 +174,13 @@ export function mapGrabSubmitOrder(
   }
 }
 
-function itemNotes(item: GrabOrderItem): string {
+function itemNotes(item: GrabOrderItem, modifierNames: ReadonlyMap<string, string>): string {
   const parts: string[] = []
   if (item.specifications) parts.push(item.specifications)
   for (const modifier of item.modifiers ?? []) {
     if (modifier.id) {
       const qty = modifier.quantity && modifier.quantity > 1 ? `${modifier.quantity}x ` : ''
-      parts.push(`${qty}${modifier.id}`)
+      parts.push(`${qty}${modifierNames.get(modifier.id)}`)
     }
   }
   return parts.join(' | ')
@@ -217,6 +232,7 @@ export function planInternalTransitions(
   if (targetIndex < 0) return []
   // pending/paid/accepted start before the chain; this catches the order up
   // through every required state rather than skipping the guard.
+  if (fromIndex === -1 && !['pending', 'paid', 'accepted'].includes(currentStatus)) return []
   const startIndex = fromIndex === -1 ? 0 : fromIndex + 1
   if (targetIndex < startIndex) return []
   return chain.slice(startIndex, targetIndex + 1)

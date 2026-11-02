@@ -133,6 +133,28 @@ BEGIN
     RETURN jsonb_build_object('status', 'error', 'reason', 'missing channel');
   END IF;
 
+  -- Fence an expired/reclaimed worker before any canonical order changes.
+  IF v_source_event_id IS NOT NULL THEN
+    PERFORM 1 FROM integration_events
+    WHERE id = v_source_event_id
+      AND status = 'received'
+      AND attempts = (payload ->> 'sourceEventAttempts')::integer
+      AND locked_until > clock_timestamp()
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('status', 'error', 'reason', 'event lease lost');
+    END IF;
+  END IF;
+
+  -- Grab's documented payload currently has no verified edit revision. Even an
+  -- edit arriving first cannot safely be treated as the initial snapshot.
+  IF v_is_edit THEN
+    RETURN jsonb_build_object('status', 'error', 'reason', 'edit requires authoritative reconciliation');
+  END IF;
+
+  -- Serialize concurrent initial deliveries, including the no-row case.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_channel_name || ':' || v_external_order_id, 0));
+
   SELECT co.id, co.order_id, o.order_number
     INTO v_channel_order_id, v_order_id, v_existing_order_number
   FROM channel_orders co
@@ -150,7 +172,7 @@ BEGIN
     BEGIN
       INSERT INTO orders (
         order_number, status, source,
-        delivery_type, fulfillment_type,
+        delivery_type, fulfillment_type, scheduled_for,
         subtotal_cents, discount_cents, delivery_fee_cents, total_cents,
         customer_id, customer_name, notes, include_cutlery
       ) VALUES (
@@ -159,6 +181,7 @@ BEGIN
         v_order ->> 'source',
         COALESCE(v_order ->> 'delivery_type', 'delivery'),
         COALESCE(v_order ->> 'fulfillment_type', 'asap'),
+        NULLIF(v_order ->> 'scheduled_for', '')::timestamptz,
         (v_order ->> 'subtotal_cents')::integer,
         COALESCE((v_order ->> 'discount_cents')::integer, 0),
         COALESCE((v_order ->> 'delivery_fee_cents')::integer, 0),

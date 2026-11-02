@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 import { createGrabFoodClient } from '@/lib/grabfood/client'
-import { replayGrabEvent } from '@/app/api/integrations/grabfood/webhooks/handlers'
+import { MAX_EVENT_ATTEMPTS, replayGrabEvent } from '@/app/api/integrations/grabfood/webhooks/handlers'
 import { env } from '@/lib/validators/env'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     .select('id, event_type, payload, attempts')
     .eq('provider', 'grabfood')
     .in('status', ['received', 'failed'])
+    .lt('attempts', MAX_EVENT_ATTEMPTS)
     .lt('next_attempt_at', nowIso)
     .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
     .order('received_at', { ascending: true })

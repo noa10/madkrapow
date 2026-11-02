@@ -141,6 +141,12 @@ header/algorithm is part of Grab's partner-gated onboarding; align
 `verify.ts`) when it is confirmed in staging — both webhook routes read that
 configured header (default `x-grab-signature`).
 
+The input for signed bodyless Get Menu requests has not been confirmed with
+Grab. With `GRABFOOD_WEBHOOK_HMAC_REQUIRED=true`, Get Menu returns 503 until
+Grab confirms the signing input and the route implements it; an absent input is
+never assumed to be an empty body. Confirm the POST algorithm too before
+turning HMAC on.
+
 Verification **fails closed**: if `GRABFOOD_WEBHOOK_SECRET` is missing in a
 production process, or `GRABFOOD_ENV` is `staging`/`production`, the routes
 reject every request. The unverified bypass exists only for an explicit

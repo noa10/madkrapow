@@ -23,6 +23,13 @@ describe('redactGrabPayload', () => {
     expect(redacted.receiver).not.toHaveProperty('address')
     expect(redacted.receiver).not.toHaveProperty('virtualContact')
   })
+
+  it('does not pollute Object.prototype through a hostile __proto__ key', () => {
+    const hostile = JSON.parse('{"__proto__":{"polluted":true},"safe":1}') as Record<string, unknown>
+    const redacted = redactGrabPayload(hostile) as Record<string, unknown>
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    expect(redacted.safe).toBe(1)
+  })
 })
 
 describe('eventKeyFor', () => {

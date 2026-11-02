@@ -22,17 +22,21 @@ const REDACTED_KEYS = new Set([
   'poiSource',
 ])
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 export function redactGrabPayload<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map((item) => redactGrabPayload(item)) as unknown as T
   }
   if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (REDACTED_KEYS.has(key)) continue
-      out[key] = redactGrabPayload(child)
-    }
-    return out as T
+    // Object.fromEntries uses CreateDataProperty, so a hostile "__proto__"
+    // key becomes an own property instead of mutating the prototype. Keys are
+    // also filtered before the write.
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !REDACTED_KEYS.has(key) && !DANGEROUS_KEYS.has(key))
+        .map(([key, child]) => [key, redactGrabPayload(child)])
+    ) as T
   }
   return value
 }

@@ -6,6 +6,7 @@ import {
   grabAvailableStatusFor,
   buildMenuRecordUpdates,
   buildSingleItemUpdate,
+  isSnoozeRestoreDue,
 } from '../menu'
 import type { GrabMenuMappingRow } from '../menu'
 
@@ -84,9 +85,9 @@ describe('grabAvailableStatusFor', () => {
     )
   })
 
-  it('maps a same-day snooze to UNAVAILABLETODAY (auto-restores on Grab)', () => {
+  it('maps every active snooze to UNAVAILABLE (durable restore, not Grab auto-restore)', () => {
     expect(grabAvailableStatusFor(mapping({ channel_snooze_till: TONIGHT_20MYT }), NOW)).toBe(
-      'UNAVAILABLETODAY'
+      'UNAVAILABLE'
     )
   })
 
@@ -133,16 +134,25 @@ describe('buildMenuRecordUpdates', () => {
       merchantID: 'mch',
       field: 'ITEM',
       id: 'grab-item-1',
+      name: 'Nasi Lemak',
       price: 1250,
       availableStatus: 'AVAILABLE',
     })
     expect(records[1]).toMatchObject({ id: 'grab-item-2', availableStatus: 'UNAVAILABLE', maxStock: 0 })
-    expect(records[2]).toMatchObject({ id: 'grab-item-3', availableStatus: 'UNAVAILABLETODAY' })
-    expect(records[2]).not.toHaveProperty('maxStock')
+    expect(records[2]).toMatchObject({ id: 'grab-item-3', availableStatus: 'UNAVAILABLE', maxStock: 0 })
   })
 
   it('buildSingleItemUpdate returns null for unmapped products', () => {
     expect(buildSingleItemUpdate(mapping({ external_item_id: null }), 'mch', NOW)).toBeNull()
+  })
+})
+
+describe('isSnoozeRestoreDue', () => {
+  it('is due only after the timestamp passes while restore is still required', () => {
+    expect(isSnoozeRestoreDue(YESTERDAY, true, NOW)).toBe(true)
+    expect(isSnoozeRestoreDue(TONIGHT_20MYT, true, NOW)).toBe(false)
+    expect(isSnoozeRestoreDue(YESTERDAY, false, NOW)).toBe(false)
+    expect(isSnoozeRestoreDue(null, true, NOW)).toBe(false)
   })
 })
 

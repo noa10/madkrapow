@@ -1,75 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
-import { createGrabFoodClient, GrabFoodApiError } from '@/lib/grabfood/client'
+import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
+import { markGrabOrderReady } from '@/lib/grabfood/order-actions'
 
 /**
- * Mark a GrabFood order ready (staff action, e.g. kitchen "Ready" button).
+ * Mark a GrabFood order ready (staff action).
  *
- * Local state first (atomic preparing->ready), then the Grab API
- * (POST /partner/v1/orders/mark). A Grab-side failure is recorded on the order
- * and surfaced in the response — the local status stays correct and the action
- * can be retried.
+ * Local state first, then Grab's documented Mark Ready call with markStatus.
+ * The service enforces Grab's once-only rule and refuses to blindly retry an
+ * ambiguous timeout; `retryUncertain: true` is an explicit operator decision.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ['admin', 'manager', 'cashier', 'kitchen'])
   if ('error' in auth) return auth.error
 
+  const disabled = requireGrabFoodEnabled()
+  if (disabled) {
+    return NextResponse.json({ error: disabled.error }, { status: disabled.status })
+  }
+
   const { id } = await params
-  const supabase = getServiceClient()
-
-  const { data: channelOrder } = await supabase
-    .from('channel_orders')
-    .select('id, external_order_id, external_order_number, channel')
-    .eq('order_id', id)
-    .eq('channel', 'grabfood')
-    .maybeSingle()
-
-  if (!channelOrder) {
-    return NextResponse.json({ error: 'Not a GrabFood channel order' }, { status: 404 })
-  }
-
-  // Atomic local transition (idempotent when already ready).
-  const { data: updated } = await supabase
-    .from('orders')
-    .update({ status: 'ready' })
-    .eq('id', id)
-    .eq('status', 'preparing')
-    .select('id')
-
-  if (!updated || updated.length === 0) {
-    const { data: current } = await supabase
-      .from('orders')
-      .select('status')
-      .eq('id', id)
-      .single()
-    if (current?.status !== 'ready') {
-      return NextResponse.json(
-        { error: `Cannot mark ready from status '${current?.status}'` },
-        { status: 409 }
-      )
-    }
-  }
-
-  const client = createGrabFoodClient()
+  let body: { retryUncertain?: boolean } = {}
   try {
-    await client.markOrderReady(channelOrder.external_order_id)
-  } catch (err) {
-    const message = err instanceof GrabFoodApiError ? err.message : String(err)
-    console.error('[GrabFood] mark-ready failed:', message)
-    await supabase.from('order_events').insert({
-      order_id: id,
-      event_type: 'grabfood_ready_failed',
-      new_value: { error: message },
-    })
+    body = (await req.json()) as { retryUncertain?: boolean }
+  } catch {
+    // Body is optional.
+  }
+
+  const result = await markGrabOrderReady(getServiceClient(), id, {
+    retryUncertain: body?.retryUncertain === true,
+  })
+
+  if (!result.ok) {
     return NextResponse.json(
-      {
-        warning: 'Order marked ready locally, but GrabFood could not be notified — retry',
-        detail: message,
-      },
-      { status: 200 }
+      { error: result.error, uncertain: result.uncertain, detail: result.detail },
+      { status: result.status }
     )
   }
 
-  return NextResponse.json({ ok: true, status: 'ready' })
+  return NextResponse.json({
+    ok: true,
+    status: 'ready',
+    ...(result.warning ? { warning: result.warning } : {}),
+  })
 }

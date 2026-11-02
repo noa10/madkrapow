@@ -278,6 +278,7 @@ export function KitchenOrderCard({
             <KitchenStatusTransitionButtons
               orderId={order.id}
               currentStatus={order.status}
+              source={order.source}
             />
           </div>
         </div>
@@ -344,6 +345,7 @@ function KitchenPrintButton({ orderId, source }: KitchenPrintButtonProps) {
 interface KitchenStatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
+  source?: string;
 }
 
 const KITCHEN_STATUS_FLOW = [
@@ -354,12 +356,16 @@ const KITCHEN_STATUS_FLOW = [
 function KitchenStatusTransitionButtons({
   orderId,
   currentStatus,
+  source,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
+  const { addToast } = useToastStore();
 
   const currentStep = KITCHEN_STATUS_FLOW.find(
     (s) => s.status === currentStatus
-  );
+  ) ?? (source === 'grabfood' && currentStatus === 'ready'
+    ? { status: 'ready', label: 'Check / retry Grab notification', icon: Package, next: 'ready' }
+    : undefined);
   const canTransition =
     currentStep &&
     !['picked_up', 'delivered', 'cancelled'].includes(currentStatus);
@@ -369,17 +375,52 @@ function KitchenStatusTransitionButtons({
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/admin/orders/${orderId}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: currentStep.next }),
-      });
+      // GrabFood orders must notify Grab; the dedicated route owns the
+      // once-only Mark Ready rule and surfaces uncertain outcomes.
+      const useGrabRoute = source === 'grabfood' && currentStep.next === 'ready';
+      let response = await fetch(
+        useGrabRoute
+          ? `/api/integrations/grabfood/orders/${orderId}/ready`
+          : `/api/admin/orders/${orderId}/status`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: useGrabRoute ? undefined : JSON.stringify({ status: currentStep.next }),
+        }
+      );
 
+      let data = await response.json().catch(() => ({}));
+      if (!response.ok && useGrabRoute && data?.uncertain) {
+        const confirmed = window.confirm(
+          'The Grab notification may already have succeeded. Check the Grab merchant app first. Only choose OK if Grab still shows the order is not ready and you want to retry.'
+        );
+        if (!confirmed) return;
+        response = await fetch(`/api/integrations/grabfood/orders/${orderId}/ready`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ retryUncertain: true }),
+        });
+        data = await response.json().catch(() => ({}));
+      }
       if (!response.ok) {
-        const error = await response.json();
-        console.error('Failed to update status:', error);
+        addToast({
+          type: 'error',
+          title: useGrabRoute ? 'GrabFood ready failed' : 'Status update failed',
+          description: data?.error ?? 'Please retry or check the order.',
+        });
         return;
       }
+      if (data?.warning) {
+        addToast({
+          type: 'info',
+          title: 'Ready locally — check Grab',
+          description: data.warning,
+        });
+      } else if (useGrabRoute) {
+        addToast({ type: 'success', title: 'Grab notified that the order is ready' });
+      }
+    } catch {
+      addToast({ type: 'error', title: 'Status update failed',
+        description: 'Check the order and Grab notification before trying again.' });
     } finally {
       setLoading(false);
     }

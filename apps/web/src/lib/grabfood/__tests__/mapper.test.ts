@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { mapGrabSubmitOrder, planInternalTransitions } from '@/lib/grabfood/mapper'
+import { mapGrabSubmitOrder as mapWithModifierNames, planInternalTransitions } from '@/lib/grabfood/mapper'
 import type { ChannelProductMapping } from '@/lib/grabfood/mapper'
 import type { GrabSubmitOrderPayload } from '@/lib/grabfood/types'
+
+const mapGrabSubmitOrder = (payload: GrabSubmitOrderPayload, mappings: Map<string, ChannelProductMapping>, orderNumber: string) =>
+  mapWithModifierNames(payload, mappings, orderNumber, new Map([['mod-extra-sauce', 'Extra sauce']]))
 
 const MAPPINGS = new Map<string, ChannelProductMapping>([
   [
@@ -18,35 +21,36 @@ function submitPayload(overrides: Partial<GrabSubmitOrderPayload> = {}): GrabSub
   return {
     orderID: '91646057-CYUWL64UGF5XVA',
     shortOrderNumber: 'GF-659',
-    merchantID: 'C36JLBD2PFD3LA',
+    merchantID: '1-C36JLBD2PFD3LA',
     paymentType: 'CASHLESS',
     cutlery: false,
     orderTime: '2026-09-28T08:19:00+00:00',
+    featureFlags: { orderAcceptedType: 'AUTO', orderType: 'DeliveredByGrab', isMexEditOrder: false },
+    currency: { code: 'MYR', symbol: 'RM', exponent: 2 },
     items: [
       {
-        itemID: 'grab-item-1',
-        merchantItemID: 'GF-ITEM-SET-DAGING',
-        name: 'Set Krapow Daging',
+        id: 'GF-ITEM-SET-DAGING',
+        grabItemID: 'grab-item-1',
         quantity: 1,
         price: 1300,
       },
       {
-        itemID: 'grab-item-2',
-        merchantItemID: 'GF-ITEM-POPIAH',
-        name: 'Popiah Krapow Daging',
+        id: 'GF-ITEM-POPIAH',
+        grabItemID: 'grab-item-2',
         quantity: 3,
         price: 560,
         specifications: 'extra spicy',
-        modifiers: [{ name: 'Extra Sauce', quantity: 1 }],
+        modifiers: [{ id: 'mod-extra-sauce', quantity: 1, price: 0 }],
       },
     ],
     price: {
       subtotal: 2980,
       merchantFundPromo: 700,
       grabFundPromo: 300,
+      basketPromo: 1000,
       total: 2580,
     },
-    receiver: { name: 'Ali', phone: '+60123456789' },
+    receiver: { name: 'Ali', phones: '+60123456789' },
     ...overrides,
   }
 }
@@ -65,11 +69,13 @@ describe('mapGrabSubmitOrder', () => {
       quantity: 1,
       line_total_cents: 1300,
     })
-    // specifications + modifier names land in notes
+    // Specifications and readable modifier names land in notes.
     expect(items[1].notes).toContain('extra spicy')
-    expect(items[1].notes).toContain('Extra Sauce')
+    expect(items[1].notes).toContain('Extra sauce')
 
-    // subtotal from price, discount = MERCHANT-funded only (grabFundPromo excluded)
+    // subtotal from price, discount = MERCHANT-funded only. basketPromo is
+    // grabFundPromo + merchantFundPromo in Grab's example and must not be
+    // subtracted again.
     expect(order.subtotal_cents).toBe(2980)
     expect(order.discount_cents).toBe(700)
     expect(order.total_cents).toBe(2280)
@@ -77,15 +83,22 @@ describe('mapGrabSubmitOrder', () => {
     expect(order.source).toBe('grabfood')
     expect(order.status).toBe('paid')
     expect(order.delivery_type).toBe('delivery')
+    expect(order.fulfillment_type).toBe('asap')
     expect(order.include_cutlery).toBe(false)
     expect(order.customer_name).toBe('Ali')
 
-    expect(payment).toMatchObject({ method: 'grabfood', amount_cents: 2280, external_ref: '91646057-CYUWL64UGF5XVA' })
+    expect(payment).toMatchObject({
+      method: 'grabfood',
+      amount_cents: 2280,
+      status: 'succeeded',
+      external_ref: '91646057-CYUWL64UGF5XVA',
+    })
     expect(channelOrder).toMatchObject({
       channel: 'grabfood',
       external_order_id: '91646057-CYUWL64UGF5XVA',
       external_order_number: 'GF-659',
-      external_store_id: 'C36JLBD2PFD3LA',
+      external_store_id: '1-C36JLBD2PFD3LA',
+      external_status: 'ACCEPTED',
     })
   })
 
@@ -99,40 +112,83 @@ describe('mapGrabSubmitOrder', () => {
     expect(mapped.result.order.total_cents).toBe(2980)
   })
 
+  it('maps CASH to a pending cash payment and scheduled takeaway correctly', () => {
+    const mapped = mapGrabSubmitOrder(
+      submitPayload({
+        paymentType: 'CASH',
+        scheduledTime: '2026-09-28T12:30:00+08:00',
+        items: [{ id: 'GF-ITEM-SET-DAGING', quantity: 1, price: 1300 }],
+        featureFlags: { orderAcceptedType: 'MANUAL', orderType: 'TakeAway' },
+        price: { subtotal: 2980, merchantFundPromo: 0 },
+      }),
+      MAPPINGS,
+      'MKTEST3'
+    )
+    expect(mapped.ok).toBe(true)
+    if (!mapped.ok) return
+    expect(mapped.result.order.delivery_type).toBe('self_pickup')
+    expect(mapped.result.order.fulfillment_type).toBe('scheduled')
+    expect(mapped.result.order.scheduled_for).toBe('2026-09-28T12:30:00+08:00')
+    expect(mapped.result.payment.method).toBe('cash')
+    expect(mapped.result.payment.status).toBe('pending')
+    expect(mapped.result.channelOrder.external_status).toBe('PENDING')
+  })
+
+  it('maps DineIn to the dine_in delivery type', () => {
+    const mapped = mapGrabSubmitOrder(
+      submitPayload({ featureFlags: { orderAcceptedType: 'AUTO', orderType: 'DineIn' } }),
+      MAPPINGS,
+      'MKTEST4'
+    )
+    expect(mapped.ok).toBe(true)
+    if (!mapped.ok) return
+    expect(mapped.result.order.delivery_type).toBe('dine_in')
+  })
+
   it('reports unmapped items instead of guessing', () => {
     const payload = submitPayload({
-      items: [{ itemID: 'x', merchantItemID: 'GF-ITEM-UNKNOWN', name: '??', quantity: 1, price: 100 }],
+      items: [{ id: 'GF-ITEM-UNKNOWN', quantity: 1, price: 100 }],
     })
-    const mapped = mapGrabSubmitOrder(payload, MAPPINGS, 'MKTEST3')
+    const mapped = mapGrabSubmitOrder(payload, MAPPINGS, 'MKTEST5')
     expect(mapped.ok).toBe(false)
     if (mapped.ok) return
     expect(mapped.unmapped).toEqual(['GF-ITEM-UNKNOWN'])
-  })
-
-  it('accepts merchantItemID as the mapping key', () => {
-    const payload = submitPayload({
-      items: [{ itemID: 'grab-1', quantity: 1, price: 1300 }],
-    })
-    // no merchantItemID: the mapper falls back to itemID, which is NOT our
-    // mapping key -> unmapped (channel_products are keyed by merchantItemID)
-    const mapped = mapGrabSubmitOrder(payload, MAPPINGS, 'MKTEST4')
-    expect(mapped.ok).toBe(false)
   })
 })
 
 describe('planInternalTransitions', () => {
   it.each([
-    ['preparing', 'DriverArrived', ['ready']],
-    ['preparing', 'Completed', ['ready', 'picked_up', 'delivered']],
-    ['ready', 'Completed', ['picked_up', 'delivered']],
-    ['picked_up', 'Completed', ['delivered']],
-    ['delivered', 'Completed', []],
-    ['preparing', 'DriverAssigned', []],
-    ['paid', 'Accepted', []],
-    ['preparing', 'Cancelled', ['cancelled']],
-    ['delivered', 'Cancelled', []],
+    // External-only states: never move the kitchen.
+    ['paid', 'ACCEPTED', []],
+    ['preparing', 'ACCEPTED', []],
+    ['paid', 'DRIVER_ALLOCATED', []],
+    ['preparing', 'DRIVER_ARRIVED', []],
+    ['preparing', 'BILL_PAID', []],
+    // Collected/delivered catch the order up through the guarded chain.
+    ['preparing', 'COLLECTED', ['ready', 'picked_up']],
+    ['preparing', 'DELIVERED', ['ready', 'picked_up', 'delivered']],
+    ['ready', 'COMPLETED', ['picked_up', 'delivered']],
+    ['picked_up', 'COMPLETED', ['delivered']],
+    ['delivered', 'COMPLETED', []],
+    ['cancelled', 'DELIVERED', []],
+    ['cancelled', 'COLLECTED', []],
+    ['unknown', 'DELIVERED', []],
+    ['paid', 'COLLECTED', ['preparing', 'ready', 'picked_up']],
+    // Cancellation only from a cancellable state.
+    ['preparing', 'CANCELLED', ['cancelled']],
+    ['paid', 'FAILED', ['cancelled']],
+    ['delivered', 'CANCELLED', []],
+    // Unknown state.
     ['preparing', 'UnknownState', []],
+    // Legacy TitleCase still parses but driver arrival stays external-only.
+    ['preparing', 'DriverArrived', []],
   ])('%s + %s -> %j', (current, grabState, expected) => {
-    expect(planInternalTransitions(current, { orderID: 'x', toState: grabState })).toEqual(expected)
+    expect(planInternalTransitions(current, { orderID: 'x', state: grabState })).toEqual(expected)
+  })
+
+  it('accepts the legacy toState field', () => {
+    expect(planInternalTransitions('preparing', { orderID: 'x', toState: 'CANCELLED' })).toEqual([
+      'cancelled',
+    ])
   })
 })

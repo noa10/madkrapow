@@ -63,6 +63,10 @@ function render(
 }
 
 describe('KitchenOrderCard', () => {
+  it('keeps a Grab notification recovery action on ready tickets', () => {
+    expect(render(makeOrder({ source: 'grabfood', status: 'ready' }))).toContain('Check / retry Grab notification')
+    expect(render(makeOrder({ source: 'web', status: 'ready' }))).not.toContain('Check / retry Grab notification')
+  })
   it('renders the stored display code, not the raw id', () => {
     const html = render(makeOrder())
     expect(html).toContain('MK-042')

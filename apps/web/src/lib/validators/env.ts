@@ -76,6 +76,25 @@ const envSchema = z.object({
   GRABFOOD_PARTNER_MERCHANT_ID: z.string().min(1).optional(),
   GRABFOOD_WEBHOOK_SECRET: z.string().min(1).optional(),
   GRABFOOD_WEBHOOK_SIGNATURE_HEADER: z.string().min(1).optional(),
+  // Partner-issued OAuth credentials: Grab calls our token endpoint with these.
+  GRABFOOD_PARTNER_CLIENT_ID: z.string().min(1).optional(),
+  GRABFOOD_PARTNER_CLIENT_SECRET: z.string().min(1).optional(),
+  // Optional separate signing key for partner bearer tokens (falls back to the
+  // partner client secret). Rotating this invalidates all issued tokens.
+  GRABFOOD_PARTNER_TOKEN_SECRET: z.string().min(16).optional(),
+  GRABFOOD_PARTNER_TOKEN_TTL_SECONDS: z.union([z.string(), z.number()]).transform(v =>
+    typeof v === 'string' ? parseInt(v) : v
+  ).default(604800),
+  // Grab's store acceptance mode. New partners should be AUTO; manual calls
+  // POST /partner/v1/order/prepare and must be explicitly enabled.
+  GRABFOOD_ACCEPTANCE_MODE: z.enum(['auto', 'manual']).default('auto'),
+  // HMAC is only enforced when Grab confirms a project-specific signature.
+  GRABFOOD_WEBHOOK_HMAC_REQUIRED: z.union([z.string(), z.boolean()]).transform(v =>
+    typeof v === 'string' ? v === 'true' : v
+  ).default(false),
+  GRABFOOD_REQUEST_TIMEOUT_MS: z.union([z.string(), z.number()]).transform(v =>
+    typeof v === 'string' ? parseInt(v) : v
+  ).default(8000),
   HUBBO_MERCHANT_ENABLED: z.union([z.string(), z.boolean()]).transform(v =>
     typeof v === 'string' ? v === 'true' : v
   ).default(false),
@@ -156,6 +175,13 @@ const envData = {
   GRABFOOD_PARTNER_MERCHANT_ID: process.env.GRABFOOD_PARTNER_MERCHANT_ID,
   GRABFOOD_WEBHOOK_SECRET: process.env.GRABFOOD_WEBHOOK_SECRET,
   GRABFOOD_WEBHOOK_SIGNATURE_HEADER: process.env.GRABFOOD_WEBHOOK_SIGNATURE_HEADER,
+  GRABFOOD_PARTNER_CLIENT_ID: process.env.GRABFOOD_PARTNER_CLIENT_ID,
+  GRABFOOD_PARTNER_CLIENT_SECRET: process.env.GRABFOOD_PARTNER_CLIENT_SECRET,
+  GRABFOOD_PARTNER_TOKEN_SECRET: process.env.GRABFOOD_PARTNER_TOKEN_SECRET,
+  GRABFOOD_PARTNER_TOKEN_TTL_SECONDS: process.env.GRABFOOD_PARTNER_TOKEN_TTL_SECONDS,
+  GRABFOOD_ACCEPTANCE_MODE: process.env.GRABFOOD_ACCEPTANCE_MODE,
+  GRABFOOD_WEBHOOK_HMAC_REQUIRED: process.env.GRABFOOD_WEBHOOK_HMAC_REQUIRED,
+  GRABFOOD_REQUEST_TIMEOUT_MS: process.env.GRABFOOD_REQUEST_TIMEOUT_MS,
   HUBBO_MERCHANT_ENABLED: process.env.HUBBO_MERCHANT_ENABLED,
   HUBBO_MERCHANT_BASE_URL: process.env.HUBBO_MERCHANT_BASE_URL,
   HUBBO_MERCHANT_ANDROID_ID: process.env.HUBBO_MERCHANT_ANDROID_ID,

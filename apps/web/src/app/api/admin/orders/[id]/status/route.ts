@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/admin/require-role';
 import { ADMIN_VALID_TRANSITIONS } from '@/lib/orders/status';
+import { markGrabOrderReady } from '@/lib/grabfood/order-actions';
+import { getServiceClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const requestSchema = z.object({
@@ -110,6 +112,23 @@ export async function POST(
         { error: `Invalid transition from '${order.status}' to '${newStatus}'. Expected one of: ${expectedNext?.join(', ') ?? 'none'}` },
         { status: 400 }
       );
+    }
+
+    // GrabFood orders must notify Grab before the local status is considered
+    // complete; the shared service owns the once-only rule and retry safety.
+    if (newStatus === 'ready' && order.source === 'grabfood') {
+      const result = await markGrabOrderReady(getServiceClient(), id);
+      if (!result.ok) {
+        return NextResponse.json(
+          { error: result.error, uncertain: result.uncertain, detail: result.detail },
+          { status: result.status }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        status: 'ready',
+        ...(result.warning ? { warning: result.warning } : {}),
+      });
     }
 
     const { data: updated, error: updateError } = await db

@@ -25,6 +25,9 @@ vi.mock('@/lib/admin/require-role', () => ({
   requireRole: (...args: unknown[]) => requireRoleMock(...args),
 }))
 
+const pushMock = vi.fn().mockResolvedValue(undefined)
+vi.mock('@/lib/grabfood/client', () => ({ createGrabFoodClient: () => ({ updateMenuRecord: pushMock }) }))
+
 // env mock configured above before importing the route.
 const { POST, DELETE } = await import('../snooze/route')
 
@@ -50,6 +53,7 @@ function buildMockClient(opts: { row?: unknown; updateError?: { message: string 
   const updates: Array<{ table: string; patch: unknown }> = []
   return {
     updates,
+    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
     from(table: string) {
       const builder = {
         select(_cols?: string) {
@@ -59,7 +63,7 @@ function buildMockClient(opts: { row?: unknown; updateError?: { message: string 
           return builder
         },
         update(patch: unknown) {
-          updates.push({ table, patch })
+          if (!('grab_menu_lease_token' in (patch as Record<string, unknown>))) updates.push({ table, patch })
           return builder
         },
         maybeSingle: async () => ({ data: opts.row ?? null, error: null }),
@@ -97,7 +101,7 @@ afterEach(() => {
 })
 
 describe('snooze route', () => {
-  it('sets snooze_till and pushes UNAVAILABLETODAY for a same-day snooze', async () => {
+  it('sets snooze_till, flags a durable restore and pushes UNAVAILABLE', async () => {
     const client = buildMockClient({ row: MAPPED_ROW })
     serviceClientMock.mockReturnValue(client)
 
@@ -108,13 +112,14 @@ describe('snooze route', () => {
     expect(client.updates).toEqual([
       {
         table: 'channel_products',
-        patch: { snooze_till: '2026-10-11T02:30:00.000Z' },
+        patch: { snooze_till: '2026-10-11T02:30:00.000Z', snooze_restore_required: true, grab_menu_restore_after: null },
       },
     ])
     expect(json).toMatchObject({
       ok: true,
-      available_status: 'UNAVAILABLETODAY',
-      pushed: { id: 'grab-item-1', availableStatus: 'UNAVAILABLETODAY' },
+      available_status: 'UNAVAILABLE',
+      pushed: { id: 'grab-item-1', availableStatus: 'UNAVAILABLE' },
+      restore_required: true,
     })
   })
 
@@ -164,7 +169,7 @@ describe('snooze route', () => {
 })
 
 describe('snooze restore (DELETE)', () => {
-  it('clears snooze_till and pushes AVAILABLE', async () => {
+  it('keeps restore pending until Grab confirms AVAILABLE', async () => {
     const client = buildMockClient({ row: { ...MAPPED_ROW, snooze_till: '2026-10-11T12:00:00Z' } })
     serviceClientMock.mockReturnValue(client)
 
@@ -175,13 +180,42 @@ describe('snooze restore (DELETE)', () => {
 
     expect(res.status).toBe(200)
     expect(client.updates).toEqual([
-      { table: 'channel_products', patch: { snooze_till: null } },
+      { table: 'channel_products', patch: { snooze_till: null, snooze_restore_required: true, grab_menu_restore_after: null } },
+      { table: 'channel_products', patch: { snooze_restore_required: false } },
     ])
     expect(json).toMatchObject({
       ok: true,
       available_status: 'AVAILABLE',
       pushed: { id: 'grab-item-1', availableStatus: 'AVAILABLE' },
     })
+  })
+
+  it('retains a failed manual restore for cron retry', async () => {
+    const client = buildMockClient({ row: MAPPED_ROW })
+    serviceClientMock.mockReturnValue(client)
+    pushMock.mockRejectedValueOnce(new Error('Grab unavailable'))
+    const res = await DELETE(makeDeleteRequest('?menuItemId=5b6c0a1e-9f0d-4a1b-8c2d-3e4f5a6b7c8d'))
+    expect((await res.json()).restore_required).toBe(true)
+    expect(client.updates).toEqual([{ table: 'channel_products', patch: { snooze_till: null, snooze_restore_required: true, grab_menu_restore_after: null } }])
+  })
+
+  it('keeps the restore pending while the master item is snoozed', async () => {
+    const client = buildMockClient({ row: { ...MAPPED_ROW, menu_items: [{ ...MAPPED_ROW.menu_items[0], snooze_till: '2026-10-11T04:00:00Z' }] } })
+    serviceClientMock.mockReturnValue(client)
+    const res = await DELETE(makeDeleteRequest('?menuItemId=5b6c0a1e-9f0d-4a1b-8c2d-3e4f5a6b7c8d'))
+    expect((await res.json()).restore_required).toBe(true)
+    expect(client.updates).toHaveLength(2)
+    expect(client.updates[1].patch).toEqual({ grab_menu_restore_after: '2026-10-11T04:00:00Z' })
+  })
+
+  it('refuses a competing update while a lease is held', async () => {
+    const client = buildMockClient({ row: MAPPED_ROW })
+    client.rpc.mockResolvedValueOnce({ data: false, error: null })
+    serviceClientMock.mockReturnValue(client)
+    const res = await DELETE(makeDeleteRequest('?menuItemId=5b6c0a1e-9f0d-4a1b-8c2d-3e4f5a6b7c8d'))
+    expect(res.status).toBe(409)
+    expect(client.updates).toHaveLength(0)
+    expect(pushMock).not.toHaveBeenCalled()
   })
 
   it('400s on a missing or non-UUID menuItemId', async () => {

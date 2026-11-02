@@ -1,16 +1,13 @@
 /**
- * Webhook signature verification for GrabFood callbacks.
+ * Optional HMAC request verification for GrabFood callbacks.
  *
- * IMPORTANT: the exact header/algorithm Grab uses for webhook request
- * authenticity is confirmed during partner onboarding (it is part of the
- * partner-gated configuration, not the public API reference). This module
- * implements the standard scheme — HMAC-SHA256 over the RAW request body with
- * the shared webhook secret, compared with timingSafeEqual — with the header
- * name configurable via GRABFOOD_WEBHOOK_SIGNATURE_HEADER so it can be aligned
- * with the onboarding confirmation without a code change.
+ * OAuth bearer validation is the primary authentication (partner-auth.ts).
+ * HMAC over the RAW body is an additional project-specific requirement: Grab
+ * has not confirmed a signature scheme for this project, so it is disabled by
+ * default and only enforced when GRABFOOD_WEBHOOK_HMAC_REQUIRED=true.
  *
- * When GRABFOOD_WEBHOOK_SECRET is unset (mock/local development) verification
- * is skipped; every production deployment MUST set it.
+ * The header name is configurable via GRABFOOD_WEBHOOK_SIGNATURE_HEADER so a
+ * confirmed scheme can be aligned without a code change.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'

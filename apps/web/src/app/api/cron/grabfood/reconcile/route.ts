@@ -1,28 +1,48 @@
 /**
  * Daily GrabFood reconciliation (cron, Bearer CRON_SECRET).
  *
- * Pulls Grab's List Orders for the requested day(s) (Grab caps the window at
- * 30 days) and compares against local channel_orders/payments. Mismatches are
- * reported, not auto-repaired — the admin decides.
+ * Uses Grab's documented List Orders contract: merchantID + date + page,
+ * paging until `more` is false. Grab caps the window at 30 days and may cache
+ * results for up to 30 minutes. The local day boundary is Malaysia time
+ * (UTC+8), not UTC.
  *
- * Revenue semantics: Grab's `price.total` includes delivery fees and
- * eater-side extras; our orders total the merchant food revenue
- * (subtotal - merchant-funded promos), so per-order comparisons compare
- * item sums, not customer-paid totals.
+ * List Orders is not available in Grab's staging environment; a staging run
+ * therefore returns 409 unless ?force=1 is passed.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
 import { createGrabFoodClient } from '@/lib/grabfood/client'
-import type { GrabListOrdersResponse } from '@/lib/grabfood/types'
 import { env } from '@/lib/validators/env'
 
 export const dynamic = 'force-dynamic'
 
+const MYT_OFFSET_MS = 8 * 60 * 60 * 1000
+const DAY_MS = 86_400_000
+
+function mytDate(offsetDays = 0): string {
+  return new Date(Date.now() + MYT_OFFSET_MS + offsetDays * DAY_MS).toISOString().slice(0, 10)
+}
+
+function mytDayBounds(date: string): { startUtc: string; endUtc: string } {
+  const start = new Date(`${date}T00:00:00+08:00`)
+  return {
+    startUtc: start.toISOString(),
+    endUtc: new Date(start.getTime() + DAY_MS).toISOString(),
+  }
+}
+
 interface ReconcileRow {
   external_order_id: string
   external_order_number: string | null
-  orders: { status: string; subtotal_cents: number; discount_cents: number; total_cents: number } | null
+  orders:
+    | { status: string; subtotal_cents: number; discount_cents: number; total_cents: number }
+    | Array<{ status: string; subtotal_cents: number; discount_cents: number; total_cents: number }>
+    | null
+}
+
+function localOrder(row: ReconcileRow) {
+  return Array.isArray(row.orders) ? row.orders[0] : row.orders
 }
 
 export async function POST(req: NextRequest) {
@@ -38,77 +58,104 @@ export async function POST(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url)
-  const dateFrom = searchParams.get('dateFrom') ?? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  const dateTo = searchParams.get('dateTo') ?? dateFrom
+  const date = searchParams.get('date') ?? mytDate(-1)
+  const force = searchParams.get('force') === '1'
 
-  // Window sanity: Grab caps date-based retrieval at 30 days.
-  const days =
-    (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000
-  if (Number.isNaN(days) || days < 0 || days > 30) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00+08:00`).getTime())) {
+    return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 })
+  }
+  // Grab only exposes the past 30 days (today inclusive).
+  if (date < mytDate(-30) || date > mytDate(0)) {
     return NextResponse.json(
-      { error: 'dateFrom/dateTo must span a window of 0-30 days' },
+      { error: 'date must be within the last 30 days (Malaysia time)' },
       { status: 400 }
     )
   }
+  if (env.GRABFOOD_ENV === 'staging' && !force) {
+    return NextResponse.json(
+      {
+        error:
+          'List Orders is unavailable in Grab staging. Validate pagination logic with fixtures and run the real check in the controlled production pilot (or pass ?force=1).',
+      },
+      { status: 409 }
+    )
+  }
+
+  const merchantId = env.GRABFOOD_MERCHANT_ID
+  if (!merchantId) {
+    return NextResponse.json({ error: 'GRABFOOD_MERCHANT_ID is not configured' }, { status: 400 })
+  }
+
+  const { startUtc, endUtc } = mytDayBounds(date)
 
   try {
-    const grab = (await client.listOrders(dateFrom, dateTo)) as GrabListOrdersResponse
-    const grabOrders = new Map(
-      (grab.orders ?? []).map((o) => [o.orderID, o])
-    )
+    const grab = await client.listAllOrders(merchantId, date)
+    const grabOrders = new Map((grab.orders ?? []).map((order) => [order.orderID, order]))
 
     const supabase = getServiceClient()
-    // Query the whole local window (not just Grab's ids) so orders we recorded
-    // but Grab did not return are reported as missingOnGrab. Grab's date window
-    // is treated as UTC day boundaries.
     const { data: localRows, error } = await supabase
       .from('channel_orders')
       .select(
         'external_order_id, external_order_number, orders(status, subtotal_cents, discount_cents, total_cents)'
       )
       .eq('channel', 'grabfood')
-      .gte('created_at', `${dateFrom}T00:00:00.000Z`)
-      .lte('created_at', `${dateTo}T23:59:59.999Z`)
+      .gte('created_at', startUtc)
+      .lt('created_at', endUtc)
 
     if (error) {
       return NextResponse.json({ error: `Local query failed: ${error.message}` }, { status: 500 })
     }
 
     const localById = new Map(
-      ((localRows ?? []) as unknown as ReconcileRow[]).map((r) => [r.external_order_id, r])
+      ((localRows ?? []) as unknown as ReconcileRow[]).map((row) => [row.external_order_id, row])
     )
 
-    const missingLocally = [...grabOrders.keys()].filter((id) => !localById.has(id))
-    const missingOnGrab = [...localById.keys()].filter((id) => !grabOrders.has(id))
-    const totalMismatches: Array<{ order: string; grab: number; local: number }> = []
+    const missingLocally: string[] = []
+    const missingOnGrab: string[] = []
+    const mismatches: Array<{
+      order: string
+      field: 'subtotal' | 'discount' | 'total'
+      grab: number
+      local: number
+    }> = []
 
     for (const [orderId, grabOrder] of grabOrders) {
       const local = localById.get(orderId)
-      if (!local) continue
-      const o = local.orders
-      if (!o) continue
-      // Compare the pre-promo food value on both sides: Grab reports it as
-      // price.subtotal, we store it as orders.subtotal_cents. Promo-funded
-      // differences live in orders.discount_cents and net out of total_cents.
-      const grabItemValue = grabOrder.price?.subtotal ?? 0
-      const localGrossValue = o.subtotal_cents
-      if (Math.abs(grabItemValue - localGrossValue) > 0) {
-        totalMismatches.push({
-          order: local.external_order_number ?? orderId,
-          grab: grabItemValue,
-          local: localGrossValue,
-        })
+      if (!local) {
+        missingLocally.push(orderId)
+        continue
+      }
+      const order = localOrder(local)
+      if (!order) continue
+      const grabSubtotal = grabOrder.price?.subtotal ?? 0
+      const grabDiscount = grabOrder.price?.merchantFundPromo ?? 0
+      const grabTotal = Math.max(grabSubtotal - grabDiscount, 0)
+      const label = local.external_order_number ?? orderId
+
+      if (Math.abs(grabSubtotal - order.subtotal_cents) > 0) {
+        mismatches.push({ order: label, field: 'subtotal', grab: grabSubtotal, local: order.subtotal_cents })
+      }
+      if (Math.abs(grabDiscount - order.discount_cents) > 0) {
+        mismatches.push({ order: label, field: 'discount', grab: grabDiscount, local: order.discount_cents })
+      }
+      if (Math.abs(grabTotal - order.total_cents) > 0) {
+        mismatches.push({ order: label, field: 'total', grab: grabTotal, local: order.total_cents })
       }
     }
 
+    for (const orderId of localById.keys()) {
+      if (!grabOrders.has(orderId)) missingOnGrab.push(orderId)
+    }
+
     return NextResponse.json({
-      ok: true,
-      window: { dateFrom, dateTo },
-      grabOrders: grabOrders.size,
-      localOrders: localById.size,
-      missingLocally,
-      missingOnGrab,
-      totalMismatches,
+      ok: missingLocally.length === 0 && missingOnGrab.length === 0 && mismatches.length === 0,
+      date,
+      window_utc: { start: startUtc, end: endUtc },
+      grab_orders: grabOrders.size,
+      local_orders: localById.size,
+      missing_locally: missingLocally,
+      missing_on_grab: missingOnGrab,
+      mismatches,
     })
   } catch (err) {
     console.error('[GrabFood Reconcile] failed:', err)

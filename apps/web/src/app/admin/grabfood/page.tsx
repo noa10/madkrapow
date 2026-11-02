@@ -11,6 +11,8 @@ import {
   Loader2,
   PauseCircle,
   PlayCircle,
+  RefreshCw,
+  Rocket,
   ScanSearch,
   Timer,
   TimerOff,
@@ -59,6 +61,8 @@ export default function GrabFoodAdminPage() {
   const [togglingPause, setTogglingPause] = useState(false)
   const [mappingDraft, setMappingDraft] = useState<Record<string, string>>({})
   const [busyItemId, setBusyItemId] = useState<string | null>(null)
+  const [activating, setActivating] = useState(false)
+  const [syncingMenu, setSyncingMenu] = useState(false)
 
   const getToken = useCallback(async () => {
     const supabase = getBrowserClient()
@@ -178,6 +182,63 @@ export default function GrabFoodAdminPage() {
       title: 'Last menu update seen on Grab',
       description: `${data.trace?.status ?? 'unknown'}${data.trace?.lastSyncTime ? ` at ${data.trace.lastSyncTime}` : ''}`,
     })
+  }, [getToken, addToast])
+
+  const startActivation = useCallback(async () => {
+    setActivating(true)
+    try {
+      const res = await fetch('/api/integrations/grabfood/activation', {
+        method: 'POST',
+        headers: await (async () => ({
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${await getToken()}`,
+        }))(),
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        addToast({ type: 'error', title: 'Activation failed', description: data?.error })
+        return
+      }
+      if (data.activation_url) {
+        window.open(data.activation_url, '_blank', 'noopener,noreferrer')
+        addToast({
+          type: 'info',
+          title: 'Activation journey opened',
+          description: 'Sign in with a Grab Merchant Owner or Store Manager account.',
+        })
+      } else {
+        addToast({
+          type: 'info',
+          title: 'Mock mode',
+          description: data.message ?? 'No activation URL is generated in mock mode.',
+        })
+      }
+    } finally {
+      setActivating(false)
+    }
+  }, [getToken, addToast])
+
+  const syncMenu = useCallback(async () => {
+    setSyncingMenu(true)
+    try {
+      const res = await fetch('/api/integrations/grabfood/menu/notification', {
+        method: 'POST',
+        headers: await (async () => ({ authorization: `Bearer ${await getToken()}` }))(),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        addToast({ type: 'error', title: 'Menu sync failed', description: data?.error })
+        return
+      }
+      addToast({
+        type: 'success',
+        title: 'Grab asked to pull the menu',
+        description: 'Watch the menu trace for the sync outcome.',
+      })
+    } finally {
+      setSyncingMenu(false)
+    }
   }, [getToken, addToast])
 
   const snooze = useCallback(
@@ -303,14 +364,30 @@ export default function GrabFoodAdminPage() {
       <div>
         <h1 className="text-2xl font-bold">GrabFood Channel</h1>
         <p className="text-sm text-muted-foreground">
-          Mapping, sold-out (snooze), menu trace and store controls. Only
-          sold-out/restored writes reach Grab — the catalogue (items, prices) is
-          maintained on Grab&apos;s side. Environment:{' '}
+          Mapping, sold-out (snooze), menu sync, activation and store controls.
+          The POS owns the integrated catalogue: item mapping changes trigger a
+          Grab menu pull. Environment:{' '}
           <Badge variant="outline">mock or live per GRABFOOD_ENV</Badge>
         </p>
       </div>
 
       <section className="flex flex-wrap items-center gap-3">
+        <Button onClick={startActivation} disabled={activating}>
+          {activating ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Rocket className="h-4 w-4 mr-2" />
+          )}
+          Activate store
+        </Button>
+        <Button variant="outline" onClick={syncMenu} disabled={syncingMenu}>
+          {syncingMenu ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Push full menu
+        </Button>
         <Button variant="outline" onClick={showTrace}>
           <ScanSearch className="h-4 w-4 mr-2" />
           Check menu trace

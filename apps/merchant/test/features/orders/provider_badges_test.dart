@@ -38,6 +38,45 @@ void main() {
         PaymentProvider.cash,
       );
     });
+
+    test('recognises a counter QR payment', () {
+      final data = ProviderBadgeData(
+        status: 'paid',
+        paymentMethod: 'qr_pay',
+      );
+
+      expect(paymentProviderFor(data), PaymentProvider.qrPay);
+      expect(paymentLabel(PaymentProvider.qrPay), 'Company QR');
+    });
+
+    test('keeps a pending counter order as Awaiting', () {
+      final data = ProviderBadgeData(status: 'pending', paymentMethod: 'cash');
+
+      expect(paymentProviderFor(data), PaymentProvider.pending);
+    });
+  });
+
+  group('deliveryProviderFor', () {
+    test('recognises a dine-in ticket', () {
+      final data = ProviderBadgeData(
+        status: 'pending',
+        deliveryType: 'dine_in',
+      );
+
+      expect(deliveryProviderFor(data), DeliveryProvider.dineIn);
+      expect(deliveryLabel(DeliveryProvider.dineIn), 'Dine-in');
+    });
+
+    test('keeps self pickup and delivery distinct', () {
+      expect(
+        deliveryProviderFor(ProviderBadgeData(deliveryType: 'self_pickup')),
+        DeliveryProvider.selfPickup,
+      );
+      expect(
+        deliveryProviderFor(ProviderBadgeData(deliveryType: 'delivery')),
+        DeliveryProvider.pending,
+      );
+    });
   });
 
   group('OrdersRowBillplz', () {

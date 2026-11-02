@@ -18,6 +18,7 @@ import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
 import '../widgets/provider_badges.dart';
 import '../../../../core/utils/order_code.dart';
+import '../../../../core/utils/order_fields.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 
 class AdminOrderDetailScreen extends ConsumerStatefulWidget {
@@ -120,6 +121,7 @@ class _OrderDetailContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final order = detail.order;
+    final pendingNotice = pendingPaymentNoticeFor(order);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -182,8 +184,17 @@ class _OrderDetailContent extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Type: ${order.deliveryType == 'pickup' ? 'Pickup' : 'Delivery'}',
+                  'Type: ${orderTypeLabel(order.deliveryType)}',
                 ),
+                if (order.isDineIn)
+                  Text(
+                    'Table: ${order.tableLabel ?? '—'} · '
+                    '${order.pax ?? '—'} pax',
+                  ),
+                if (order.paymentMethod != null)
+                  Text(
+                    'Payment: ${orderPaymentMethodLabel(order.paymentMethod)}',
+                  ),
                 if (order.notes != null) Text('Notes: ${order.notes}'),
                 const SizedBox(height: 8),
                 ProviderBadges(
@@ -193,6 +204,7 @@ class _OrderDetailContent extends StatelessWidget {
                     stripePaymentIntentId: order.stripePaymentIntentId,
                     stripeSessionId: order.stripeSessionId,
                     billplzBillId: order.billplzBillId,
+                    paymentMethod: order.paymentMethod,
                     lalamoveOrderId: order.lalamoveOrderId,
                     lalamoveQuoteId: order.lalamoveQuoteId,
                     driverName: order.driverName,
@@ -228,6 +240,15 @@ class _OrderDetailContent extends StatelessWidget {
         ),
 
         const SizedBox(height: 16),
+
+        // A table-QR payment claim is self-declared; warn before hand-over.
+        if (detail.paymentClaimedByDiner) const _DinerClaimBanner(),
+
+        // Pending-payment banner — parity with the web order detail. An
+        // unpaid counter/table-QR ticket is already with the kitchen, so the
+        // copy names where to collect; any other pending order is waiting on
+        // the Stripe webhook.
+        if (pendingNotice != null) _PendingPaymentBanner(notice: pendingNotice),
 
         // Dispatch trouble banner — visible to staff with admin-side copy and
         // a hint to retry / contact the customer / cancel via existing
@@ -340,6 +361,107 @@ class _OrderDetailContent extends StatelessWidget {
 
         CancelOrderButton(orderId: order.id, currentStatus: order.status),
       ],
+    );
+  }
+}
+
+/// Warning for a table-QR "I have paid" claim.
+///
+/// Mirrors the web admin order page: the diner marked the order paid from their
+/// own phone, so the server never saw the bank transfer and staff must verify
+/// the account before handing the food over.
+class _DinerClaimBanner extends StatelessWidget {
+  const _DinerClaimBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: AppColors.warningSoft,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.mdRadius,
+          side: BorderSide(color: AppColors.warning.withValues(alpha: 0.35)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.warning,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Payment claimed by the diner — verify the transfer',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'This order was marked paid from the diner’s own phone '
+                      '(table QR). The server never saw the bank transfer, so '
+                      'check the account before handing the food over.',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingPaymentBanner extends StatelessWidget {
+  const _PendingPaymentBanner({required this.notice});
+
+  final PendingPaymentNotice notice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        color: AppColors.warningSoft,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.mdRadius,
+          side: BorderSide(color: AppColors.warning.withValues(alpha: 0.35)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.schedule, color: AppColors.warning, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      notice.title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(notice.body),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

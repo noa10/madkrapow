@@ -5,6 +5,7 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../config/routes.dart';
+import '../../../../core/constants/roles.dart';
 import '../../../auth/providers/admin_auth_providers.dart';
 
 /// Screen for the More tab.
@@ -42,6 +43,8 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
   Widget build(BuildContext context) {
     final canManageStaff = ref.watch(canManageStaffProvider);
     final isAdmin = ref.watch(isAdminProvider);
+    final canAccessKitchen =
+        ref.watch(staffRoleProvider)?.canAccessKitchen ?? false;
 
     return ListView(
       children: [
@@ -60,14 +63,16 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
         ),
         const SizedBox(height: 32),
         // Kitchen Display
-        ListTile(
-          leading: const Icon(Icons.kitchen, color: AppColors.herbText),
-          title: const Text('Kitchen Display'),
-          subtitle: const Text('View and manage kitchen orders'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push(AppRoutes.kitchen),
-        ),
-        const Divider(),
+        if (canAccessKitchen) ...[
+          ListTile(
+            leading: const Icon(Icons.kitchen, color: AppColors.herbText),
+            title: const Text('Kitchen Display'),
+            subtitle: const Text('View and manage kitchen orders'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push(AppRoutes.kitchen),
+          ),
+          const Divider(),
+        ],
         // Promotions
         ListTile(
           leading: const Icon(

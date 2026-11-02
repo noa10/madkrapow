@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 /// Payment-provider classification for an order.
-enum PaymentProvider { stripe, billplz, cash, pending }
+enum PaymentProvider { stripe, billplz, cash, qrPay, pending }
 
 /// Delivery-provider classification for an order.
-enum DeliveryProvider { lalamove, selfPickup, inHouse, pending }
+enum DeliveryProvider { lalamove, selfPickup, inHouse, dineIn, pending }
 
 /// Source fields used to derive the badges. Reuses the snake_case wire keys
 /// from the orders table so a `Map<String, dynamic>` row or a typed model
@@ -17,6 +17,7 @@ class ProviderBadgeData {
     this.stripePaymentIntentId,
     this.stripeSessionId,
     this.billplzBillId,
+    this.paymentMethod,
     this.lalamoveOrderId,
     this.lalamoveQuoteId,
     this.driverName,
@@ -28,6 +29,9 @@ class ProviderBadgeData {
   final String? stripePaymentIntentId;
   final String? stripeSessionId;
   final String? billplzBillId;
+
+  /// POS counter payment method (`cash` / `qr_pay`), when recorded.
+  final String? paymentMethod;
   final String? lalamoveOrderId;
   final String? lalamoveQuoteId;
   final String? driverName;
@@ -43,11 +47,15 @@ PaymentProvider paymentProviderFor(ProviderBadgeData data) {
   if (data.billplzBillId != null && data.billplzBillId!.isNotEmpty) {
     return PaymentProvider.billplz;
   }
+  if (data.paymentMethod == 'qr_pay') return PaymentProvider.qrPay;
   if (data.status == 'pending') return PaymentProvider.pending;
   return PaymentProvider.cash;
 }
 
 DeliveryProvider deliveryProviderFor(ProviderBadgeData data) {
+  if (data.deliveryType == 'dine_in') {
+    return DeliveryProvider.dineIn;
+  }
   if (data.deliveryType == 'self_pickup' || data.deliveryType == 'pickup') {
     return DeliveryProvider.selfPickup;
   }
@@ -70,6 +78,8 @@ String paymentLabel(PaymentProvider p) {
       return 'Billplz';
     case PaymentProvider.cash:
       return 'Cash';
+    case PaymentProvider.qrPay:
+      return 'Company QR';
     case PaymentProvider.pending:
       return 'Awaiting';
   }
@@ -83,6 +93,8 @@ String deliveryLabel(DeliveryProvider p) {
       return 'Self Pickup';
     case DeliveryProvider.inHouse:
       return 'In-house';
+    case DeliveryProvider.dineIn:
+      return 'Dine-in';
     case DeliveryProvider.pending:
       return 'Pending Dispatch';
   }
@@ -96,6 +108,8 @@ IconData paymentIcon(PaymentProvider p) {
       return Icons.account_balance;
     case PaymentProvider.cash:
       return Icons.payments_outlined;
+    case PaymentProvider.qrPay:
+      return Icons.qr_code;
     case PaymentProvider.pending:
       return Icons.hourglass_top_rounded;
   }
@@ -109,6 +123,8 @@ IconData deliveryIcon(DeliveryProvider p) {
       return Icons.storefront_outlined;
     case DeliveryProvider.inHouse:
       return Icons.delivery_dining_outlined;
+    case DeliveryProvider.dineIn:
+      return Icons.table_restaurant_outlined;
     case DeliveryProvider.pending:
       return Icons.hourglass_empty;
   }
@@ -122,6 +138,8 @@ Color paymentColor(PaymentProvider p) {
       return AppColors.info;
     case PaymentProvider.cash:
       return AppColors.herbText;
+    case PaymentProvider.qrPay:
+      return AppColors.info;
     case PaymentProvider.pending:
       return AppColors.sesame;
   }
@@ -135,6 +153,8 @@ Color deliveryColor(DeliveryProvider p) {
       return AppColors.info;
     case DeliveryProvider.inHouse:
       return AppColors.success;
+    case DeliveryProvider.dineIn:
+      return AppColors.sesame;
     case DeliveryProvider.pending:
       return AppColors.muted;
   }

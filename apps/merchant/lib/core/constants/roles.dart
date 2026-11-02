@@ -29,6 +29,25 @@ extension StaffRoleExtension on StaffRole {
   /// Whether this role can access the analytics tab.
   bool get canAccessAnalytics => this == StaffRole.admin;
 
+  /// Whether this role can use the counter POS (sale + table board).
+  /// Mirrors the web `/api/pos/*` role gate.
+  bool get canAccessPos =>
+      this == StaffRole.admin ||
+      this == StaffRole.manager ||
+      this == StaffRole.cashier;
+
+  /// Whether this role can open the kitchen display.
+  /// Mirrors the web `/admin/kitchen` guard.
+  bool get canAccessKitchen =>
+      this == StaffRole.admin ||
+      this == StaffRole.manager ||
+      this == StaffRole.kitchen;
+
+  /// Whether this role can manage the floor plan (tables + QR codes).
+  /// Mirrors the web `/api/admin/tables*` role gate.
+  bool get canManageTables =>
+      this == StaffRole.admin || this == StaffRole.manager;
+
   /// Whether this role can access the orders tab.
   bool get canAccessOrders => true;
 
@@ -46,26 +65,6 @@ extension StaffRoleExtension on StaffRole {
   /// Whether this role can access the staff management screen.
   bool get canAccessStaff =>
       this == StaffRole.admin || this == StaffRole.manager;
-
-  /// Available bottom navigation tab indices for this role.
-  List<int> get availableTabIndices {
-    return switch (this) {
-      StaffRole.admin => [0, 1, 2, 3], // Orders, Menu, Analytics, More
-      StaffRole.manager => [0, 1, 2, 3], // Orders, Menu, Staff, More
-      StaffRole.cashier => [0, 1], // Orders, More
-      StaffRole.kitchen => [0, 1], // Orders, More
-    };
-  }
-
-  /// Available bottom navigation tab labels for this role.
-  List<String> get availableTabLabels {
-    return switch (this) {
-      StaffRole.admin => ['Orders', 'Menu', 'Analytics', 'More'],
-      StaffRole.manager => ['Orders', 'Menu', 'Staff', 'More'],
-      StaffRole.cashier => ['Orders', 'More'],
-      StaffRole.kitchen => ['Orders', 'More'],
-    };
-  }
 
   /// Parse a role string into a [StaffRole].
   static StaffRole? fromString(String? value) {

@@ -14,6 +14,10 @@ class AppRoutes {
   static const orderDetail = '/orders/:id';
   static const kitchen = '/kitchen';
 
+  // Counter POS
+  static const pos = '/pos';
+  static const posTables = '/pos/tables';
+
   // Menu sub-routes
   static const menuItemNew = '/menu/items/new';
   static const menuItemDetail = '/menu/items/:id';

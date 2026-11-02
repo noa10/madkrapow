@@ -28,6 +28,8 @@ import 'features/orders/presentation/screens/admin_order_detail_screen.dart';
 import 'features/orders/presentation/screens/kitchen_display_screen.dart';
 import 'features/orders/providers/admin_order_providers.dart';
 import 'features/analytics/presentation/screens/sales_reports_screen.dart';
+import 'features/pos/presentation/screens/pos_screen.dart';
+import 'features/pos/presentation/screens/tables_management_screen.dart';
 import 'features/promos/presentation/screens/placeholder_more_screen.dart';
 import 'features/promos/presentation/screens/promo_list_screen.dart';
 import 'features/promos/presentation/screens/promo_form_screen.dart';
@@ -43,6 +45,7 @@ final _analyticsNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'analytics',
 );
 final _moreNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'more');
+final _posNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'pos');
 
 GoRouter _createRouter(Ref ref) {
   return GoRouter(
@@ -81,6 +84,18 @@ GoRouter _createRouter(Ref ref) {
         return AppRoutes.orders;
       }
       if (location == AppRoutes.settings && role != StaffRole.admin) {
+        return AppRoutes.orders;
+      }
+      // POS is the cashier's surface; kitchen staff must not reach it.
+      if (location.startsWith(AppRoutes.pos) && !role.canAccessPos) {
+        return AppRoutes.orders;
+      }
+      // Floor-plan management is admin/manager only (API enforces the same).
+      if (location.startsWith(AppRoutes.posTables) && !role.canManageTables) {
+        return AppRoutes.orders;
+      }
+      // The kitchen display is not a cashier surface.
+      if (location == AppRoutes.kitchen && !role.canAccessKitchen) {
         return AppRoutes.orders;
       }
 
@@ -219,6 +234,22 @@ GoRouter _createRouter(Ref ref) {
                         ),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 4: Counter POS (admin/manager/cashier)
+          StatefulShellBranch(
+            navigatorKey: _posNavigatorKey,
+            routes: [
+              GoRoute(
+                path: AppRoutes.pos,
+                builder: (context, state) => const PosScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'tables',
+                    builder: (context, state) => const TablesManagementScreen(),
                   ),
                 ],
               ),

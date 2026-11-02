@@ -47,6 +47,11 @@ class MerchantNavBar extends ConsumerWidget {
             label: 'Orders',
           ),
           NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'POS',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.restaurant_menu_outlined),
             selectedIcon: Icon(Icons.restaurant_menu),
             label: 'Menu',
@@ -70,6 +75,11 @@ class MerchantNavBar extends ConsumerWidget {
             label: 'Orders',
           ),
           NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'POS',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.restaurant_menu_outlined),
             selectedIcon: Icon(Icons.restaurant_menu),
             label: 'Menu',
@@ -81,6 +91,23 @@ class MerchantNavBar extends ConsumerWidget {
           ),
         ];
       case StaffRole.cashier:
+        return const [
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Orders',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'POS',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.more_horiz_outlined),
+            selectedIcon: Icon(Icons.more_horiz),
+            label: 'More',
+          ),
+        ];
       case StaffRole.kitchen:
         return const [
           NavigationDestination(

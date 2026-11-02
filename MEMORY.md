@@ -452,6 +452,57 @@ This file contains curated memories, decisions, and learnings that persist acros
   build. If the build ships first, claims 500 and the diner falls back to "pay
   at the counter". Rollback = revert the build, then
   `DROP FUNCTION claim_table_order_payment(UUID, UUID, TEXT);`.
+### 2026-10-28: Flutter merchant POS port (counter sale, table board, QR management)
+- **Scope**: ported every merchant-facing web POS function to `apps/merchant`:
+  counter sale (menu/search/categories/photo cards/modifiers/notes), dine-in
+  vs take-away, pax 1..50, pay-now only (cash / company QR; card disabled),
+  grouped table settle / per-order settle / void unpaid / close
+  with snapshot order ids, table CRUD + active toggle + rotate QR + QR
+  display/copy/share/print, and kitchen parity (pending dine-in and pending
+  counter tickets, table/pax, Unpaid badge, paid→preparing→ready). The
+  diner-facing `/t/<token>` page stayed out of scope.
+- **Architecture**: reads go through Supabase with the staff JWT (RLS);
+  writes go through `/api/pos/*` and `/api/admin/tables/*`, which re-price and
+  own the settle/close RPCs. Counter-order creation is still not idempotent
+  server-side, so the app keeps a submit lock and an inline submit error and
+  never clears the cart on failure.
+- **The POS create body is built in a pure module**,
+  `features/pos/models/pos_order_payload.dart`, so the wire contract is unit
+  tested without an HTTP stack. `POST /api/pos/orders` requires
+  `payment_method` (`cash` | `qr_pay`) and no longer accepts `payment_timing`
+  — a client still sending it gets 400 "Reload the POS to update before
+  charging". Pay-later was removed server-side (the kitchen starts preparing
+  as soon as a ticket lands), so the counter sale always charges.
+- **Stale generated rows**: `lib/generated` predates migrations 057–064. POS
+  columns are read with `getField<T>()` via `core/utils/order_fields.dart`;
+  do not add a generated-class field for them until codegen is refreshed.
+  `orders.payment_timing` does not exist — an unpaid ticket is inferred from
+  `status='pending' && (dine_in || source='counter')`, never by reading a
+  column. That inference now matches only legacy counter tickets and table-QR
+  "pay at counter" orders; the counter sale itself always charges.
+- **UI decisions**: wide layout docks the sale panel; narrow layout opens it
+  as a bottom sheet. Submit failures render inside the panel
+  (`PosSaleState.submitError`) because a snackbar would sit under the sheet
+  and look like nothing happened. Android has no file browser, so "print QR"
+  is a composed PNG shared through the platform share sheet.
+- **Intentional deviations**: the client line total floors at zero before
+  multiplying (matches the server; the web client does not); post-mutation
+  refresh reloads the board only (web shape); the POS Realtime channel and
+  minute ticker are gated on `TickerMode` because the indexed tab shell keeps
+  hidden branches mounted.
+- **Deployment note**: printed QR URLs come from `WEB_API_URL` (currently
+  `https://www.madkrapow.com`), while web prints `NEXT_PUBLIC_URL`
+  (`https://madkrapow.com`). Point the app at the canonical public origin, or
+  add a dedicated public-URL env, before printing production codes.
+- **Security follow-ups found during review (backend, not changed by this
+  port)**: (1) `staff_all_orders` / items / modifiers / events are `FOR ALL`
+  for every staff role, so a cashier JWT can write order rows directly via
+  PostgREST — narrow them to SELECT and keep writes server-side; (2)
+  `restaurant_tables` SELECT exposes `qr_token` to cashier/kitchen despite the
+  admin-only UI gate — column grants or an API-only token read are needed;
+  (3) deactivated employees keep their `app_metadata.role` until the auth
+  user is banned or the role is removed; (4) POS create has no idempotency
+  key (the table-QR route does).
 
 ---
 

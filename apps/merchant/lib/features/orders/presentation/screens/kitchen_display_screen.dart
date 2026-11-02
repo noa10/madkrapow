@@ -8,9 +8,13 @@ import '../../providers/kitchen_providers.dart';
 import '../../../../generated/tables/orders.dart';
 import '../widgets/kitchen_order_card.dart';
 
-/// The only status the kitchen itself drives: once cooking is done, the order
-/// is ready to leave the pass.
-const _kitchenTransitions = {'preparing': 'ready'};
+/// The statuses the kitchen itself drives: start cooking a paid ticket, then
+/// mark it ready to leave the pass. Matches the web kitchen's two actions.
+const _kitchenTransitions = {'paid': 'preparing', 'preparing': 'ready'};
+const _kitchenActionLabels = {
+  'paid': 'Start Preparing',
+  'preparing': 'Mark Ready',
+};
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -159,6 +163,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     child: KitchenOrderCard(
                       order: ticket.order,
                       items: ticket.items,
+                      actionLabel:
+                          _kitchenActionLabels[ticket.order.status] ??
+                          'Mark Ready',
                       onMarkReady:
                           _kitchenTransitions.containsKey(ticket.order.status)
                           ? () => _advanceStatus(ticket.order)

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
+import '../../../../core/utils/order_fields.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/orders_row_billplz.dart';
 import '../../providers/admin_order_providers.dart';
@@ -91,6 +92,7 @@ class OrderListTile extends ConsumerWidget {
                         stripePaymentIntentId: order.stripePaymentIntentId,
                         stripeSessionId: order.stripeSessionId,
                         billplzBillId: order.billplzBillId,
+                        paymentMethod: order.paymentMethod,
                         lalamoveOrderId: order.lalamoveOrderId,
                         lalamoveQuoteId: order.lalamoveQuoteId,
                         driverName: order.driverName,
@@ -98,6 +100,15 @@ class OrderListTile extends ConsumerWidget {
                       ),
                       dense: true,
                     ),
+                    if (order.isDineIn)
+                      _MetaPill(
+                        icon: Icons.table_restaurant_outlined,
+                        // Mirrors the web `getFulfillmentDetail`: name the table
+                        // when known, otherwise read as a plain dine-in party,
+                        // and omit the party size only when it is unknown.
+                        label: _dineInDetail(order),
+                        color: AppColors.sesame,
+                      ),
                     if (order.orderKind == 'bulk')
                       const _MetaPill(
                         icon: Icons.groups_outlined,
@@ -184,6 +195,14 @@ class OrderListTile extends ConsumerWidget {
         : h;
     return '${dt.day}/${dt.month} $h12:$m $ampm';
   }
+}
+
+/// Dine-in context for the meta pill, mirroring web `getFulfillmentDetail`.
+String _dineInDetail(OrdersRow order) {
+  final table = order.tableLabel != null
+      ? 'Table ${order.tableLabel}'
+      : 'Dine in';
+  return order.pax != null ? '$table · ${order.pax} pax' : table;
 }
 
 class _MetaPill extends StatelessWidget {

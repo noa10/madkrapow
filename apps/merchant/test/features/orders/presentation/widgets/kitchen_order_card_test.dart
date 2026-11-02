@@ -241,6 +241,47 @@ void main() {
       expect(find.text('Mark Ready'), findsNothing);
     });
 
+    testWidgets('uses the action label for the ticket status', (tester) async {
+      await _pump(tester, actionLabel: 'Start Preparing');
+
+      expect(find.text('Start Preparing'), findsOneWidget);
+      expect(find.text('Mark Ready'), findsNothing);
+    });
+
+    testWidgets('shows the table and pax for a dine-in ticket', (tester) async {
+      await _pump(
+        tester,
+        order: _order(
+          deliveryType: 'dine_in',
+          source: 'counter',
+          tableLabel: 'T4',
+          pax: 3,
+        ),
+      );
+
+      expect(find.text('Table T4'), findsOneWidget);
+      expect(find.text('3 pax'), findsOneWidget);
+      expect(find.text('Counter'), findsOneWidget);
+      // A dine-in ticket has no delivery address to render.
+      expect(find.text('Delivery Address'), findsNothing);
+    });
+
+    testWidgets('marks a pending ticket as Unpaid', (tester) async {
+      await _pump(
+        tester,
+        order: _order(
+          status: 'pending',
+          deliveryType: 'dine_in',
+          source: 'counter',
+          tableLabel: 'T4',
+          pax: 2,
+        ),
+      );
+
+      expect(find.text('Unpaid'), findsOneWidget);
+      expect(find.text('Pending'), findsOneWidget);
+    });
+
     testWidgets(
       'shows every item and addon at the narrowest column width',
       (tester) async {
@@ -322,6 +363,7 @@ Future<void> _pump(
   List<OrderItemWithModifiers>? items,
   VoidCallback? onMarkReady,
   bool allowAction = true,
+  String actionLabel = 'Mark Ready',
   DateTime? now,
 }) async {
   await tester.pumpWidget(
@@ -331,6 +373,7 @@ Future<void> _pump(
           child: KitchenOrderCard(
             order: order ?? _order(),
             items: items ?? [_item(name: 'Nasi Goreng')],
+            actionLabel: actionLabel,
             onMarkReady: allowAction ? (onMarkReady ?? () {}) : null,
             now: now ?? _now,
           ),
@@ -359,6 +402,9 @@ OrdersRow _order({
   String? displayCode = 'MK-042',
   String status = 'preparing',
   String deliveryType = 'delivery',
+  String? source = 'web',
+  String? tableLabel,
+  int? pax,
   bool includeCutlery = true,
   String? notes,
   int subtotalCents = 12600,
@@ -378,6 +424,9 @@ OrdersRow _order({
     'customer_name': 'Ahmad',
     'customer_phone': '012-3456789',
     'delivery_type': deliveryType,
+    'source': ?source,
+    'table_label': ?tableLabel,
+    'pax': ?pax,
     'fulfillment_type': 'asap',
     'order_kind': 'standard',
     'dispatch_status': 'not_ready',

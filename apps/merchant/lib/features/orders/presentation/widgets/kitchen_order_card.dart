@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/utils/order_code.dart';
+import '../../../../core/utils/order_fields.dart';
 import '../../../../core/utils/time_formatter.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/merchant_order_repository.dart';
@@ -42,14 +43,18 @@ class KitchenOrderCard extends StatelessWidget {
     required this.order,
     required this.items,
     this.onMarkReady,
+    this.actionLabel = 'Mark Ready',
     this.now,
   });
 
   final OrdersRow order;
   final List<OrderItemWithModifiers> items;
 
-  /// Renders a "Mark Ready" action when non-null.
+  /// Renders an advance-status action when non-null.
   final VoidCallback? onMarkReady;
+
+  /// Label for the advance action (`Start Preparing` / `Mark Ready`).
+  final String actionLabel;
 
   /// Clock used for the elapsed-time label and its tint. Defaults to now.
   final DateTime? now;
@@ -75,6 +80,10 @@ class KitchenOrderCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (order.isDineIn) ...[
+                  _dineIn(context),
+                  const SizedBox(height: 12),
+                ],
                 _customer(context),
                 if (order.deliveryType == 'delivery') ...[
                   const SizedBox(height: 12),
@@ -106,9 +115,12 @@ class KitchenOrderCard extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: onMarkReady,
                   icon: const Icon(Icons.inventory_2_outlined, size: 24),
-                  label: const Text(
-                    'Mark Ready',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  label: Text(
+                    actionLabel,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(shape: AppRadii.pillBorder),
                 ),
@@ -133,6 +145,7 @@ class KitchenOrderCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Text(
@@ -142,7 +155,20 @@ class KitchenOrderCard extends StatelessWidget {
                   ),
                 ),
               ),
-              StatusPill(status: order.status),
+              const SizedBox(width: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (order.source != null &&
+                      _sourceIcons.containsKey(order.source))
+                    _SourceBadge(source: order.source!),
+                  StatusPill(status: order.status),
+                  if (order.isUnpaid)
+                    const StatusPill(status: 'pending', label: 'Unpaid'),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -210,6 +236,41 @@ class KitchenOrderCard extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dineIn(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.table_restaurant_outlined,
+          size: 18,
+          color: theme.colorScheme.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Table ${order.tableLabel ?? '—'}',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${order.pax ?? '—'} pax',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -488,4 +549,60 @@ String _addressLine(Map<String, dynamic>? json) {
   ].where((part) => part != null && part.toString().isNotEmpty).toList();
 
   return parts.isEmpty ? 'No address' : parts.join(', ');
+}
+
+/// Where the ticket came from, matching the web kitchen's source badge.
+const _sourceIcons = <String, IconData>{
+  'web': Icons.language,
+  'telegram': Icons.send_outlined,
+  'whatsapp': Icons.chat_bubble_outline,
+  'mobile': Icons.smartphone,
+  'counter': Icons.storefront_outlined,
+  'grabfood': Icons.delivery_dining_outlined,
+  'foodpanda': Icons.restaurant_outlined,
+};
+
+const _sourceLabels = <String, String>{
+  'web': 'Web',
+  'telegram': 'Telegram',
+  'whatsapp': 'WhatsApp',
+  'mobile': 'Mobile',
+  'counter': 'Counter',
+  'grabfood': 'GrabFood',
+  'foodpanda': 'Foodpanda',
+};
+
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = _sourceIcons[source];
+    if (icon == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        borderRadius: AppRadii.pillRadius,
+        border: Border.all(color: AppColors.borderStrong),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.muted),
+          const SizedBox(width: 4),
+          Text(
+            _sourceLabels[source] ?? source,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: AppColors.muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

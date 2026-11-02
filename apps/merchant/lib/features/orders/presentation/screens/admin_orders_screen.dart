@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../config/routes.dart';
+import '../../../../core/constants/roles.dart';
+import '../../../auth/providers/admin_auth_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/flat_order_list.dart';
@@ -70,15 +72,19 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen>
 
   @override
   Widget build(BuildContext context) {
+    final canAccessKitchen =
+        ref.watch(staffRoleProvider)?.canAccessKitchen ?? false;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Orders'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.kitchen),
-            tooltip: 'Kitchen Display',
-            onPressed: () => context.push(AppRoutes.kitchen),
-          ),
+          if (canAccessKitchen)
+            IconButton(
+              icon: const Icon(Icons.kitchen),
+              tooltip: 'Kitchen Display',
+              onPressed: () => context.push(AppRoutes.kitchen),
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(54),

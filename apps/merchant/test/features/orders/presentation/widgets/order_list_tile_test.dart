@@ -42,6 +42,38 @@ void main() {
       expect(find.text('Mark as Ready'), findsNothing);
       expect(find.text('Cutlery'), findsNothing);
     });
+
+    testWidgets('shows the table, pax and dine-in badge for a POS ticket', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _order(
+          status: 'pending',
+          deliveryType: 'dine_in',
+          tableLabel: 'T4',
+          pax: 3,
+          paymentMethod: 'qr_pay',
+          stripePaymentIntentId: null,
+        ),
+      );
+
+      expect(find.text('Table T4 · 3 pax'), findsOneWidget);
+      expect(find.text('Dine-in'), findsOneWidget);
+      expect(find.text('Company QR'), findsOneWidget);
+      expect(find.text('Awaiting'), findsNothing);
+    });
+
+    testWidgets('falls back to a plain dine-in label when details are absent', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _order(status: 'pending', deliveryType: 'dine_in', paymentMethod: 'cash'),
+      );
+
+      expect(find.text('Dine in'), findsOneWidget);
+    });
   });
 }
 
@@ -58,7 +90,15 @@ Future<void> _pump(WidgetTester tester, OrdersRow order) async {
   );
 }
 
-OrdersRow _order({String status = 'preparing', bool includeCutlery = true}) {
+OrdersRow _order({
+  String status = 'preparing',
+  bool includeCutlery = true,
+  String deliveryType = 'delivery',
+  String? tableLabel,
+  int? pax,
+  String? paymentMethod,
+  String? stripePaymentIntentId = 'pi_123',
+}) {
   return OrdersRow.fromJson({
     'id': 'o1',
     'order_number': 'TEST001',
@@ -72,7 +112,10 @@ OrdersRow _order({String status = 'preparing', bool includeCutlery = true}) {
     'updated_at': _createdAt,
     'customer_name': 'Ahmad',
     'customer_phone': '012-3456789',
-    'delivery_type': 'delivery',
+    'delivery_type': deliveryType,
+    'table_label': ?tableLabel,
+    'pax': ?pax,
+    'payment_method': ?paymentMethod,
     'fulfillment_type': 'asap',
     'order_kind': 'standard',
     'dispatch_status': 'not_ready',
@@ -80,6 +123,6 @@ OrdersRow _order({String status = 'preparing', bool includeCutlery = true}) {
     'hubbo_pos_sync_status': 'pending',
     'requires_manual_review': false,
     'include_cutlery': includeCutlery,
-    'stripe_payment_intent_id': 'pi_123',
+    'stripe_payment_intent_id': ?stripePaymentIntentId,
   });
 }

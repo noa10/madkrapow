@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/utils/order_fields.dart';
 import '../../../generated/database.dart';
 import 'merchant_api_client.dart';
 
@@ -111,6 +112,26 @@ class MerchantOrderRepository {
     return response.map(OrdersRow.fromJson).toList();
   }
 
+  /// PostgREST `or=` expression mirroring the web kitchen's `isKitchenActive`:
+  /// paid/accepted/preparing/ready, plus pending dine-in and pending counter
+  /// tickets (the kitchen starts those before payment is collected).
+  static const kitchenQueueOrFilter =
+      'status.in.(paid,accepted,preparing,ready),'
+      'and(status.eq.pending,delivery_type.eq.dine_in),'
+      'and(status.eq.pending,source.eq.counter)';
+
+  /// Active kitchen tickets, filtered at the database so abandoned checkouts
+  /// and completed orders cannot crowd out the board.
+  Future<List<OrdersRow>> fetchKitchenOrders() async {
+    final response = await _supabase
+        .from('orders')
+        .select()
+        .or(kitchenQueueOrFilter)
+        .order('created_at', ascending: false)
+        .limit(200);
+    return response.map(OrdersRow.fromJson).toList();
+  }
+
   /// Fetch a single order with items, modifiers, and events.
   Future<OrderDetail> fetchOrderDetail(String orderId) async {
     final orderRes = await _supabase
@@ -169,11 +190,24 @@ class MerchantOrderRepository {
             ? LalamoveShipmentsRow.fromJson(shipmentRes.first)
             : null;
 
+    // A diner can claim "I have paid" from the table QR (migration 065). That
+    // claim is self-declared — the server never saw the transfer — so the
+    // detail screen must be able to warn staff before hand-over.
+    final paymentRes = await _supabase
+        .from('payments')
+        .select('raw')
+        .eq('order_id', orderId)
+        .eq('status', 'succeeded')
+        .limit(1)
+        .maybeSingle();
+    final claimedByDiner = isClaimedByDiner(paymentRes?['raw']);
+
     return OrderDetail(
         order: order,
         items: itemsWithModifiers,
         events: events,
-        shipment: shipment);
+        shipment: shipment,
+        paymentClaimedByDiner: claimedByDiner);
   }
 
   /// Fetch items (with their modifiers) for many orders at once.
@@ -319,10 +353,15 @@ class OrderDetail {
   final List<OrderEventsRow> events;
   final LalamoveShipmentsRow? shipment;
 
+  /// True when the successful payment was self-declared by the diner on the
+  /// table QR, so the transfer still needs manual verification.
+  final bool paymentClaimedByDiner;
+
   OrderDetail({
     required this.order,
     required this.items,
     required this.events,
     this.shipment,
+    this.paymentClaimedByDiner = false,
   });
 }

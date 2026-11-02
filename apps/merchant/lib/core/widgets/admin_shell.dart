@@ -35,18 +35,22 @@ class MerchantAppShell extends ConsumerWidget {
   }
 
   /// Maps a bottom-nav tap index to the corresponding branch index.
+  ///
+  /// Branch order: 0 Orders, 1 Menu, 2 Analytics, 3 More, 4 POS.
   int _navIndexToBranchIndex(StaffRole? role, int navIndex) {
     switch (role) {
       case StaffRole.admin:
-        // 4 tabs: Orders(0), Menu(1), Analytics(2), More(3)
-        return navIndex;
+        // 5 tabs: Orders, POS, Menu, Analytics, More
+        return [0, 4, 1, 2, 3][navIndex];
       case StaffRole.manager:
-        // 3 tabs: Orders(0), Menu(1), More(2) -> branch 0, 1, 3
-        return [0, 1, 3][navIndex];
+        // 4 tabs: Orders, POS, Menu, More
+        return [0, 4, 1, 3][navIndex];
       case StaffRole.cashier:
+        // 3 tabs: Orders, POS, More
+        return [0, 4, 3][navIndex];
       case StaffRole.kitchen:
       case null:
-        // 2 tabs: Orders(0), More(1) -> branch 0 and branch 3
+        // 2 tabs: Orders, More -> branch 0 and branch 3
         return [0, 3][navIndex];
     }
   }
@@ -55,19 +59,14 @@ class MerchantAppShell extends ConsumerWidget {
   int _branchIndexToNavIndex(StaffRole? role, int branchIndex) {
     switch (role) {
       case StaffRole.admin:
-        return branchIndex;
+        return const {0: 0, 4: 1, 1: 2, 2: 3, 3: 4}[branchIndex] ?? 0;
       case StaffRole.manager:
-        // 3 tabs: Orders(0→0), Menu(1→1), More(2→3)
-        if (branchIndex == 0) return 0;
-        if (branchIndex == 1) return 1;
-        if (branchIndex == 3) return 2;
-        return 0;
+        return const {0: 0, 4: 1, 1: 2, 3: 3}[branchIndex] ?? 0;
       case StaffRole.cashier:
+        return const {0: 0, 4: 1, 3: 2}[branchIndex] ?? 0;
       case StaffRole.kitchen:
       case null:
-        if (branchIndex == 0) return 0;
-        if (branchIndex == 3) return 1;
-        return 0;
+        return const {0: 0, 3: 1}[branchIndex] ?? 0;
     }
   }
 }

@@ -27,6 +27,7 @@ All paths are under `/api/integrations/grabfood`:
 | `POST` | `/pushIntegrationStatus` | Persist `INACTIVE` / `SYNCING` / `ACTIVE` / `FAILED` and the Grab/POS store mapping. |
 | `GET` | `/merchant/menu` | Return the full mapped POS menu. |
 | `POST` | `/menu-sync-state` | Persist menu sync outcome/errors/job ID. |
+| `POST` | `/menu-event` | Log the portal's Menu Event Webhook payload (shape not publicly documented). |
 | `POST` | `/webhooks/submit-order` | Submit Order (create or edit). |
 | `PUT` | `/webhooks/order-state` | Push Order State (uppercase `state`); `POST` remains as an alias. |
 | `POST` | `/activation` | Staff action: create the Grab self-serve activation journey and return its URL. |

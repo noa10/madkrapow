@@ -11,10 +11,11 @@
  *   - UNAVAILABLE must be accompanied by maxStock = 0; maxStock > 0 implies
  *     AVAILABLE. UNAVAILABLETODAY auto-restores at Grab's next business day.
  *
- * Snooze (time-based sold-out) maps onto those states: a snooze ending within
- * the merchant's calendar day (Asia/Kuala_Lumpur, UTC+8 fixed) becomes
- * UNAVAILABLETODAY so Grab restores it without another push; longer snoozes
- * and hard unavailable flags become UNAVAILABLE + maxStock 0.
+ * Snooze (time-based sold-out) always maps to UNAVAILABLE + maxStock 0. It is
+ * deliberately NOT mapped to UNAVAILABLETODAY: that state auto-restores at
+ * Grab's next business day, while a 30-minute snooze must come back after 30
+ * minutes. A durable restore job scans snooze_restore_required and pushes
+ * AVAILABLE at expiry (see the menu-restore cron).
  */
 
 import type { GrabAvailableStatus, GrabMenuRecordUpdate } from './types'
@@ -45,8 +46,9 @@ export function isSnoozed(snoozeTill: string | null | undefined, now: Date = new
 
 /**
  * True when the snooze ends within the merchant's current calendar day in
- * Malaysia (UTC+8). Such snoozes can ride Grab's UNAVAILABLETODAY, which
- * auto-restores at Grab's side when the day rolls over.
+ * Malaysia (UTC+8). Kept for diagnostics; availability no longer maps this to
+ * UNAVAILABLETODAY because a 30-minute snooze must restore after 30 minutes,
+ * not at Grab's next business day.
  */
 export function isSnoozeSameDay(snoozeTill: string, now: Date = new Date()): boolean {
   const t = new Date(snoozeTill).getTime()
@@ -89,11 +91,6 @@ export function grabAvailableStatusFor(
   now: Date = new Date()
 ): GrabAvailableStatus {
   if (isEffectivelyAvailable(mapping, now)) return 'AVAILABLE'
-  // Prefer the auto-restoring state when the snooze ends today.
-  const snoozeTill = [mapping.channel_snooze_till, mapping.menu_item_snooze_till]
-    .filter((s): s is string => Boolean(s) && isSnoozed(s, now))
-    .sort()[0]
-  if (snoozeTill && isSnoozeSameDay(snoozeTill, now)) return 'UNAVAILABLETODAY'
   return 'UNAVAILABLE'
 }
 
@@ -116,6 +113,7 @@ export function buildMenuRecordUpdates(
         merchantID: merchantId,
         field: 'ITEM' as const,
         id: m.external_item_id as string,
+        name: m.external_name ?? m.menu_item_name,
         price: m.channel_price_cents ?? m.menu_item_price_cents,
         availableStatus,
         ...(availableStatus === 'UNAVAILABLE' ? { maxStock: 0 } : {}),
@@ -135,5 +133,20 @@ export function buildSingleItemUpdate(
 ): GrabMenuRecordUpdate | null {
   if (!mapping.external_item_id) return null
   return buildMenuRecordUpdates([mapping], merchantId, now)[0] ?? null
+}
+
+/**
+ * A snooze is due for restoration when its timestamp has passed and the
+ * channel row still marks a restore as required. The restore cron uses this
+ * against the database; keeping it pure makes the boundary testable.
+ */
+export function isSnoozeRestoreDue(
+  snoozeTill: string | null | undefined,
+  restoreRequired: boolean,
+  now: Date = new Date()
+): boolean {
+  if (!restoreRequired || !snoozeTill) return false
+  const t = new Date(snoozeTill).getTime()
+  return !Number.isNaN(t) && t <= now.getTime()
 }
 

@@ -1,19 +1,25 @@
 /**
  * GrabFood OAuth 2.0 (client_credentials) with in-process token cache.
  *
- * Grab's docs: reuse the token until it expires (default ~7 days) and request
- * a new one only on expiry or a 401. The cache is module-scoped and refreshed
- * 5 minutes before expiry; a 401 from the API clears it (see client.ts).
+ * Grab documents a JSON token request:
+ *   POST https://api.grab.com/grabid/v1/oauth2/token
+ *   Content-Type: application/json
+ *   { client_id, client_secret, grant_type: "client_credentials",
+ *     scope: "food.partner_api" }
+ *
+ * Reuse the token until it expires (sample response ~7 days) and request a new
+ * one on expiry or a 401. Concurrent callers share one in-flight request so a
+ * cold cache cannot stampede Grab's token endpoint.
  */
 
 import { env } from '@/lib/validators/env'
 
-const TOKEN_URL = 'https://api.grab.com/grabid/v1/oauth2/token'
-const GRABFOOD_SCOPE = 'food.partner_api'
+export const GRAB_TOKEN_URL = 'https://api.grab.com/grabid/v1/oauth2/token'
+export const GRABFOOD_SCOPE = 'food.partner_api'
 
 interface CachedToken {
   token: string
-  /** ISO instant after which the token is considered expired */
+  /** Epoch ms after which the token is considered expired. */
   expiresAt: number
 }
 
@@ -21,9 +27,11 @@ interface CachedToken {
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000
 
 let cached: CachedToken | null = null
+let inflight: Promise<string> | null = null
 
 export function clearGrabFoodTokenCache(): void {
   cached = null
+  inflight = null
 }
 
 export function isGrabFoodConfigured(): boolean {
@@ -34,25 +42,43 @@ export async function getAccessToken(fetchImpl: typeof fetch = fetch): Promise<s
   if (cached && Date.now() < cached.expiresAt) {
     return cached.token
   }
+  if (inflight) return inflight
   if (!env.GRABFOOD_CLIENT_ID || !env.GRABFOOD_CLIENT_SECRET) {
     throw new Error('GrabFood OAuth is not configured (GRABFOOD_CLIENT_ID / GRABFOOD_CLIENT_SECRET)')
   }
 
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    scope: GRABFOOD_SCOPE,
+  inflight = requestToken(fetchImpl).finally(() => {
+    inflight = null
+  })
+  return inflight
+}
+
+async function requestToken(fetchImpl: typeof fetch): Promise<string> {
+  const body = JSON.stringify({
     client_id: env.GRABFOOD_CLIENT_ID,
     client_secret: env.GRABFOOD_CLIENT_SECRET,
+    grant_type: 'client_credentials',
+    scope: GRABFOOD_SCOPE,
   })
 
-  const res = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Cache-Control': 'no-cache',
-    },
-    body,
-  })
+  const timeoutMs = env.GRABFOOD_REQUEST_TIMEOUT_MS ?? 8000
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let res: Response
+  try {
+    res = await fetchImpl(GRAB_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+      body,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -67,7 +93,7 @@ export async function getAccessToken(fetchImpl: typeof fetch = fetch): Promise<s
   const expiresInMs = (data.expires_in ?? 7 * 24 * 60 * 60) * 1000
   cached = {
     token: data.access_token,
-    expiresAt: Date.now() + expiresInMs - EXPIRY_MARGIN_MS,
+    expiresAt: Date.now() + Math.max(expiresInMs - EXPIRY_MARGIN_MS, 30_000),
   }
   return cached.token
 }

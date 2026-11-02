@@ -2,23 +2,33 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
+import { createGrabFoodClient } from '@/lib/grabfood/client'
+import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
+import { env } from '@/lib/validators/env'
 
 /**
  * channel_products mapping management (admin/manager).
  *
  * PATCH  — update an existing mapping: external id, channel price override
- *          (null clears the override), availability. Saved LOCALLY only:
- *          catalogue sync to Grab is descoped (the menu is maintained on
- *          Grab's side during onboarding), so nothing here pushes to Grab.
- *          The only per-item writes that reach Grab are snooze/restore
- *          (`PUT /partner/v1/menu`), which carry the stored price and
- *          effective availability when they fire.
+ *          (null clears the override), availability.
  * POST   — map an unmapped local item (creates the channel_products row).
  * DELETE — unmap (row id in ?channel_product_id=).
  *
- * Service client: RLS admin/manager policy also covers this, but the route is
- * the audited boundary (idempotent partial updates, zod-validated).
+ * Because the POS owns the integrated catalogue, every successful change
+ * notifies Grab to pull the full menu. A notification failure is returned as a
+ * warning: the local change is saved and can be retried.
  */
+
+async function notifyMenuChange(): Promise<string | null> {
+  const merchantId = env.GRABFOOD_MERCHANT_ID
+  if (!merchantId) return 'GRABFOOD_MERCHANT_ID is not configured'
+  try {
+    await createGrabFoodClient().notifyMenuUpdate(merchantId)
+    return null
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+}
 const patchSchema = z.object({
   channel_product_id: z.string().uuid(),
   external_item_id: z.string().min(1).max(200).optional(),
@@ -36,6 +46,8 @@ const createSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireRole(req, ['admin', 'manager'])
   if ('error' in auth) return auth.error
+  const disabled = requireGrabFoodEnabled()
+  if (disabled) return NextResponse.json({ error: disabled.error }, { status: disabled.status })
 
   let body: unknown
   try {
@@ -63,12 +75,15 @@ export async function PATCH(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: `Update failed: ${error.message}` }, { status: 500 })
   }
-  return NextResponse.json({ ok: true })
+  const notificationWarning = await notifyMenuChange()
+  return NextResponse.json({ ok: true, ...(notificationWarning ? { warning: notificationWarning } : {}) })
 }
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['admin', 'manager'])
   if ('error' in auth) return auth.error
+  const disabled = requireGrabFoodEnabled()
+  if (disabled) return NextResponse.json({ error: disabled.error }, { status: disabled.status })
 
   let body: unknown
   try {
@@ -103,12 +118,22 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: `Mapping failed: ${error.message}` }, { status: 500 })
   }
-  return NextResponse.json({ ok: true, channel_product_id: (data as { id: string }).id }, { status: 201 })
+  const notificationWarning = await notifyMenuChange()
+  return NextResponse.json(
+    {
+      ok: true,
+      channel_product_id: (data as { id: string }).id,
+      ...(notificationWarning ? { warning: notificationWarning } : {}),
+    },
+    { status: 201 }
+  )
 }
 
 export async function DELETE(req: NextRequest) {
   const auth = await requireRole(req, ['admin', 'manager'])
   if ('error' in auth) return auth.error
+  const disabled = requireGrabFoodEnabled()
+  if (disabled) return NextResponse.json({ error: disabled.error }, { status: disabled.status })
 
   const channelProductId = new URL(req.url).searchParams.get('channel_product_id')
   if (!channelProductId || !z.string().uuid().safeParse(channelProductId).success) {
@@ -123,5 +148,6 @@ export async function DELETE(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: `Unmap failed: ${error.message}` }, { status: 500 })
   }
-  return NextResponse.json({ ok: true })
+  const notificationWarning = await notifyMenuChange()
+  return NextResponse.json({ ok: true, ...(notificationWarning ? { warning: notificationWarning } : {}) })
 }

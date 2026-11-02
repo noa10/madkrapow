@@ -97,7 +97,7 @@ afterEach(() => {
 })
 
 describe('snooze route', () => {
-  it('sets snooze_till and pushes UNAVAILABLETODAY for a same-day snooze', async () => {
+  it('sets snooze_till, flags a durable restore and pushes UNAVAILABLE', async () => {
     const client = buildMockClient({ row: MAPPED_ROW })
     serviceClientMock.mockReturnValue(client)
 
@@ -108,13 +108,14 @@ describe('snooze route', () => {
     expect(client.updates).toEqual([
       {
         table: 'channel_products',
-        patch: { snooze_till: '2026-10-11T02:30:00.000Z' },
+        patch: { snooze_till: '2026-10-11T02:30:00.000Z', snooze_restore_required: true },
       },
     ])
     expect(json).toMatchObject({
       ok: true,
-      available_status: 'UNAVAILABLETODAY',
-      pushed: { id: 'grab-item-1', availableStatus: 'UNAVAILABLETODAY' },
+      available_status: 'UNAVAILABLE',
+      pushed: { id: 'grab-item-1', availableStatus: 'UNAVAILABLE' },
+      restore_required: true,
     })
   })
 
@@ -164,7 +165,7 @@ describe('snooze route', () => {
 })
 
 describe('snooze restore (DELETE)', () => {
-  it('clears snooze_till and pushes AVAILABLE', async () => {
+  it('clears snooze_till and the restore flag, then pushes AVAILABLE', async () => {
     const client = buildMockClient({ row: { ...MAPPED_ROW, snooze_till: '2026-10-11T12:00:00Z' } })
     serviceClientMock.mockReturnValue(client)
 
@@ -175,7 +176,7 @@ describe('snooze restore (DELETE)', () => {
 
     expect(res.status).toBe(200)
     expect(client.updates).toEqual([
-      { table: 'channel_products', patch: { snooze_till: null } },
+      { table: 'channel_products', patch: { snooze_till: null, snooze_restore_required: false } },
     ])
     expect(json).toMatchObject({
       ok: true,

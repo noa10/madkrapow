@@ -2,22 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 import { createGrabFoodClient } from '@/lib/grabfood/client'
+import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 import { env } from '@/lib/validators/env'
 
 /**
  * GrabFood store pause/unpause (admin/manager): one toggle from the admin UI
  * when the kitchen is overwhelmed. Mock mode answers with synthetic state.
  */
-const pauseSchema = z.object({ paused: z.boolean() })
+const pauseSchema = z.object({
+  paused: z.boolean(),
+  duration: z.enum(['30m', '1h', '24h']).optional(),
+})
 
 function checkIntegrationEnabled(): NextResponse | null {
-  if (!env.GRABFOOD_ENABLED && env.GRABFOOD_ENV !== 'mock') {
-    return NextResponse.json(
-      { error: 'GrabFood integration is disabled (GRABFOOD_ENABLED=false)' },
-      { status: 409 }
-    )
-  }
-  return null
+  const disabled = requireGrabFoodEnabled()
+  return disabled ? NextResponse.json({ error: disabled.error }, { status: disabled.status }) : null
 }
 
 export async function GET(req: NextRequest) {
@@ -73,7 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await createGrabFoodClient().pauseStore(merchantId, parsed.data.paused)
+    await createGrabFoodClient().pauseStore(merchantId, parsed.data.paused, parsed.data.duration)
     return NextResponse.json({
       ok: true,
       paused: parsed.data.paused,

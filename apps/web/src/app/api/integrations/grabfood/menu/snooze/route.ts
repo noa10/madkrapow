@@ -9,6 +9,7 @@ import {
   type GrabMenuMappingRow,
 } from '@/lib/grabfood/menu'
 import { env } from '@/lib/validators/env'
+import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 
 /**
  * Time-based sold-out (Hubbo's snooze pattern).
@@ -16,10 +17,10 @@ import { env } from '@/lib/validators/env'
  * POST   /api/integrations/grabfood/menu/snooze   { menuItemId, durationMinutes }
  * DELETE /api/integrations/grabfood/menu/snooze?menuItemId=...          (restore)
  *
- * Snooze is channel-level: it sets channel_products.snooze_till and pushes the
- * resulting availability to Grab (UNAVAILABLETODAY for same-day snoozes so Grab
- * auto-restores them, UNAVAILABLE + maxStock 0 otherwise). Availability itself
- * is computed at read time — an expired snooze never needs a restore write.
+ * Snooze is channel-level: it sets channel_products.snooze_till and pushes
+ * UNAVAILABLE + maxStock 0 to Grab. A durable restore job pushes the recomputed
+ * state at expiry (see /api/cron/grabfood/menu-restore). Availability itself is
+ * computed at read time.
  */
 
 const snoozeSchema = z.object({
@@ -28,13 +29,8 @@ const snoozeSchema = z.object({
 })
 
 function checkIntegrationEnabled(): NextResponse | null {
-  if (!env.GRABFOOD_ENABLED && env.GRABFOOD_ENV !== 'mock') {
-    return NextResponse.json(
-      { error: 'GrabFood integration is disabled (GRABFOOD_ENABLED=false)' },
-      { status: 409 }
-    )
-  }
-  return null
+  const disabled = requireGrabFoodEnabled()
+  return disabled ? NextResponse.json({ error: disabled.error }, { status: disabled.status }) : null
 }
 
 async function fetchMapping(
@@ -125,7 +121,7 @@ export async function POST(req: NextRequest) {
   const snoozeTill = new Date(Date.now() + durationMinutes * 60_000).toISOString()
   const { error: updateError } = await supabase
     .from('channel_products')
-    .update({ snooze_till: snoozeTill })
+    .update({ snooze_till: snoozeTill, snooze_restore_required: true })
     .eq('id', mapping.channel_product_id)
   if (updateError) {
     return NextResponse.json({ error: `Failed to set snooze: ${updateError.message}` }, { status: 500 })
@@ -158,6 +154,7 @@ export async function POST(req: NextRequest) {
     snooze_till: snoozeTill,
     available_status: grabAvailableStatusFor({ ...mapping, channel_snooze_till: snoozeTill }),
     pushed,
+    restore_required: true,
     ...(warning ? { warning } : {}),
     environment: env.GRABFOOD_ENV,
   })
@@ -191,7 +188,7 @@ export async function DELETE(req: NextRequest) {
 
   const { error: updateError } = await supabase
     .from('channel_products')
-    .update({ snooze_till: null })
+    .update({ snooze_till: null, snooze_restore_required: false })
     .eq('id', mapping.channel_product_id)
   if (updateError) {
     return NextResponse.json({ error: `Failed to clear snooze: ${updateError.message}` }, { status: 500 })
@@ -217,6 +214,7 @@ export async function DELETE(req: NextRequest) {
     snooze_till: null,
     available_status: grabAvailableStatusFor({ ...mapping, channel_snooze_till: null }),
     pushed,
+    restore_required: false,
     ...(warning ? { warning } : {}),
     environment: env.GRABFOOD_ENV,
   })

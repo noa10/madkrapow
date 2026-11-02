@@ -1,31 +1,27 @@
 /**
- * GrabFood Partner API client.
+ * GrabFood Partner API client (v1.1.3).
  *
- * Base URLs (per Grab docs):
+ * Base URLs (Grab's official Node SDK config):
  *   staging:     https://partner-api.grab.com/grabfood-sandbox
  *   production:  https://partner-api.grab.com/grabfood
  *   mock:        no network — methods return synthetic responses so the
  *                full order-ingestion flow can be exercised locally.
  *
- * Endpoints used (v1.1.3):
- *   POST /partner/v1/order/prepare       accept/reject order
- *   POST /partner/v1/orders/mark         mark order ready
- *   PUT  /partner/v1/order/cancel        cancel order
- *   GET  /partner/v1/order/cancelable    check order cancelable
- *   PUT  /partner/v1/order/readytime     update promised ready time
- *   GET  /partner/v1/orders              list orders (<= 30 days)
- *   PUT  /partner/v1/menu                update menu record
- *   GET  /partner/v1/merchant/menu/trace last menu sync on Grab's side
- *   PUT  /partner/v1/merchant/pause      pause/unpause the store
- *   GET  /partner/v1/merchants/{id}/store/status  store open state
+ * Every request uses the documented JSON contract. Request bodies here are
+ * verified against the public guide and Grab's SDK models, not inferred.
  */
 
 import { env } from '@/lib/validators/env'
 import { getAccessToken, clearGrabFoodTokenCache, isGrabFoodConfigured } from './auth'
 import type {
+  GrabBatchMenuRecordUpdate,
+  GrabCancelCode,
+  GrabCancelableResponse,
+  GrabListOrdersQuery,
   GrabListOrdersResponse,
   GrabMenuRecordUpdate,
   GrabMenuSyncTrace,
+  GrabSelfServeJourneyResponse,
   GrabStoreStatus,
 } from './types'
 
@@ -42,7 +38,7 @@ export interface GrabRequestOptions {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   path: string
   body?: unknown
-  query?: Record<string, string>
+  query?: Record<string, string | number | string[] | undefined>
 }
 
 export class GrabFoodApiError extends Error {
@@ -61,10 +57,18 @@ export class GrabFoodClient {
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
 
-  constructor(options?: { environment?: GrabFoodEnvironment; fetchImpl?: typeof fetch; timeoutMs?: number }) {
+  constructor(options?: {
+    environment?: GrabFoodEnvironment
+    fetchImpl?: typeof fetch
+    timeoutMs?: number
+  }) {
     this.environment = options?.environment ?? (env.GRABFOOD_ENV as GrabFoodEnvironment) ?? 'mock'
+    if (this.environment === 'mock' && process.env.NODE_ENV === 'production') {
+      // Fail closed rather than returning synthetic success in production.
+      throw new Error('GrabFood mock mode is not allowed in a production process')
+    }
     this.fetchImpl = options?.fetchImpl ?? fetch
-    this.timeoutMs = options?.timeoutMs ?? 15000
+    this.timeoutMs = options?.timeoutMs ?? env.GRABFOOD_REQUEST_TIMEOUT_MS ?? 8000
   }
 
   get isMock(): boolean {
@@ -82,7 +86,11 @@ export class GrabFoodClient {
 
     const url = new URL(baseUrlFor(this.environment) + opts.path)
     for (const [k, v] of Object.entries(opts.query ?? {})) {
-      url.searchParams.set(k, v)
+      if (Array.isArray(v)) {
+        for (const item of v) url.searchParams.append(k, item)
+      } else if (v !== undefined) {
+        url.searchParams.set(k, String(v))
+      }
     }
 
     const token = await getAccessToken(this.fetchImpl)
@@ -94,7 +102,7 @@ export class GrabFoodClient {
       res = await this.fetchImpl(url.toString(), {
         method: opts.method,
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: 'Bearer ' + token,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
@@ -124,45 +132,85 @@ export class GrabFoodClient {
     return (await res.json().catch(() => ({}))) as T
   }
 
-  /** POST /partner/v1/order/prepare — accept the submitted order. */
-  async acceptOrder(orderId: string): Promise<void> {
+  /** POST /partner/v1/order/prepare — manual acceptance only. */
+  async acceptOrder(orderId: string, toState: 'Accepted' | 'Rejected' = 'Accepted'): Promise<void> {
     await this.request({
       method: 'POST',
       path: '/partner/v1/order/prepare',
-      body: { orderID: orderId },
+      body: { orderID: orderId, toState },
     })
   }
 
-  /** POST /partner/v1/orders/mark — notify Grab the order is ready. */
-  async markOrderReady(orderId: string): Promise<void> {
+  /** POST /partner/v1/orders/mark — markStatus 1 = ready, 2 = dine-in completed. */
+  async markOrderReady(orderId: string, markStatus: 1 | 2 = 1): Promise<void> {
     await this.request({
       method: 'POST',
       path: '/partner/v1/orders/mark',
-      body: { orderID: orderId },
+      body: { orderID: orderId, markStatus },
     })
   }
 
-  /** PUT /partner/v1/order/cancel — cancel on Grab's side. */
-  async cancelOrder(orderId: string, reason: string): Promise<void> {
+  /** PUT /partner/v1/order/cancel — Grab requires merchantID + cancelCode. */
+  async cancelOrder(orderId: string, merchantId: string, cancelCode: GrabCancelCode): Promise<void> {
     await this.request({
       method: 'PUT',
       path: '/partner/v1/order/cancel',
-      body: { orderID: orderId, reason },
+      body: { orderID: orderId, merchantID: merchantId, cancelCode },
     })
   }
 
-  /** GET /partner/v1/orders — window limited to 30 days by Grab. */
-  async listOrders(dateFrom: string, dateTo?: string): Promise<GrabListOrdersResponse> {
+  /** GET /partner/v1/orders — date+page or explicit orderIDs (max 10). */
+  async listOrders(params: GrabListOrdersQuery): Promise<GrabListOrdersResponse> {
+    const query: GrabRequestOptions['query'] = { merchantID: params.merchantID }
+    if (params.orderIDs?.length) {
+      query.orderIDs = params.orderIDs.slice(0, 10)
+    } else {
+      if (params.date) query.date = params.date
+      if (params.page !== undefined) query.page = params.page
+    }
     return this.request<GrabListOrdersResponse>({
       method: 'GET',
       path: '/partner/v1/orders',
-      query: { dateFrom, ...(dateTo ? { dateTo } : {}) },
+      query,
     })
+  }
+
+  /** Fetch every page for a date. Grab caps the window at 30 days. */
+  async listAllOrders(
+    merchantId: string,
+    date: string,
+    maxPages = 100
+  ): Promise<GrabListOrdersResponse> {
+    const orders: NonNullable<GrabListOrdersResponse['orders']> = []
+    for (let page = 0; page < maxPages; page += 1) {
+      const res = await this.listOrders({ merchantID: merchantId, date, page })
+      orders.push(...(res.orders ?? []))
+      if (!res.more) return { more: false, orders }
+    }
+    throw new GrabFoodApiError(
+      `List Orders did not finish within ${maxPages} pages`,
+      0,
+      '/partner/v1/orders'
+    )
   }
 
   /** PUT /partner/v1/menu — price/availability of a single item or modifier. */
   async updateMenuRecord(record: GrabMenuRecordUpdate): Promise<void> {
     await this.request({ method: 'PUT', path: '/partner/v1/menu', body: record })
+  }
+
+  /** PUT /partner/v1/batch/menu — up to 100 entities per request. */
+  async batchUpdateMenuRecords(update: GrabBatchMenuRecordUpdate): Promise<void> {
+    await this.request({ method: 'PUT', path: '/partner/v1/batch/menu', body: update })
+  }
+
+  /** POST /partner/v1/merchant/menu/notification — trigger a full menu pull. */
+  async notifyMenuUpdate(merchantId: string): Promise<void> {
+    await this.request({
+      method: 'POST',
+      path: '/partner/v1/merchant/menu/notification',
+      body: { merchantID: merchantId },
+    })
   }
 
   /** GET /partner/v1/merchant/menu/trace — inspect the last menu sync on Grab's side. */
@@ -174,31 +222,34 @@ export class GrabFoodClient {
     })
   }
 
-  /** GET /partner/v1/order/cancelable — whether the order can still be cancelled. */
-  async isOrderCancelable(orderId: string): Promise<boolean> {
-    const res = await this.request<{ data?: { isCancelable?: boolean } }>({
+  /** GET /partner/v1/order/cancelable — eligibility + Grab's cancel reasons. */
+  async getOrderCancelable(orderId: string, merchantId: string): Promise<GrabCancelableResponse> {
+    return this.request<GrabCancelableResponse>({
       method: 'GET',
       path: '/partner/v1/order/cancelable',
-      query: { orderID: orderId },
+      query: { orderID: orderId, merchantID: merchantId },
     })
-    return res?.data?.isCancelable === true
   }
 
-  /** PUT /partner/v1/order/readytime — set/adjust the promised ready time. */
-  async updateReadyTime(orderId: string, readyTime: string): Promise<void> {
+  /** PUT /partner/v1/order/readytime — documented field is newOrderReadyTime. */
+  async updateReadyTime(orderId: string, newOrderReadyTime: string): Promise<void> {
     await this.request({
       method: 'PUT',
       path: '/partner/v1/order/readytime',
-      body: { orderID: orderId, readyTime },
+      body: { orderID: orderId, newOrderReadyTime },
     })
   }
 
-  /** PUT /partner/v1/merchant/pause — pause/unpause the store on Grab's side. */
-  async pauseStore(merchantId: string, isPaused: boolean): Promise<void> {
+  /** PUT /partner/v1/merchant/pause — documented field is isPause (+ duration). */
+  async pauseStore(
+    merchantId: string,
+    isPaused: boolean,
+    duration?: '30m' | '1h' | '24h'
+  ): Promise<void> {
     await this.request({
       method: 'PUT',
       path: '/partner/v1/merchant/pause',
-      body: { merchantID: merchantId, isPaused },
+      body: { merchantID: merchantId, isPause: isPaused, ...(duration ? { duration } : {}) },
     })
   }
 
@@ -209,8 +260,19 @@ export class GrabFoodClient {
       path: `/partner/v1/merchants/${encodeURIComponent(merchantId)}/store/status`,
     })
   }
+
+  /** POST /partner/v1/self-serve/activation — returns the merchant activation URL. */
+  async createSelfServeJourney(partnerMerchantId: string): Promise<GrabSelfServeJourneyResponse> {
+    return this.request<GrabSelfServeJourneyResponse>({
+      method: 'POST',
+      path: '/partner/v1/self-serve/activation',
+      body: { partner: { merchantID: partnerMerchantId } },
+    })
+  }
 }
 
-export function createGrabFoodClient(options?: ConstructorParameters<typeof GrabFoodClient>[0]): GrabFoodClient {
+export function createGrabFoodClient(
+  options?: ConstructorParameters<typeof GrabFoodClient>[0]
+): GrabFoodClient {
   return new GrabFoodClient(options)
 }

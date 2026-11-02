@@ -21,6 +21,9 @@ Future<bool> showPosSettleSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    // PopScope does not block drag-to-dismiss; a collection request must only
+    // be dismissed through its buttons.
+    enableDrag: false,
     backgroundColor: AppColors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),

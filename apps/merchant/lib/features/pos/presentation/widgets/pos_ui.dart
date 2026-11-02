@@ -121,6 +121,35 @@ class PosErrorBanner extends StatelessWidget {
   }
 }
 
+/// Inline warning block for a sale or table that needs the cashier's
+/// attention but has not failed.
+class PosWarningBanner extends StatelessWidget {
+  const PosWarningBanner(this.message, {super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: AppRadii.smRadius,
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: AppColors.sesame,
+        ),
+      ),
+    );
+  }
+}
+
 /// Pill used by the table board for Free / Occupied / Unpaid.
 class PosStatePill extends StatelessWidget {
   const PosStatePill({

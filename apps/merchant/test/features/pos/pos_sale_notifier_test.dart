@@ -96,7 +96,7 @@ void main() {
     });
   });
 
-  test('an uncertain order remains flagged until the sale is cleared', () {
+  test('clearing the sale keeps the duplicate-order guard', () {
     final container = _container();
     final notifier = container.read(posSaleProvider.notifier)
       ..setOrderType(PosOrderType.takeAway)
@@ -106,8 +106,38 @@ void main() {
     expect(container.read(posSaleProvider).outcomeUncertain, isTrue);
     notifier.setCustomerName('Aina');
     expect(container.read(posSaleProvider).outcomeUncertain, isTrue);
+
+    // The Clear button must not erase an order the server may still have
+    // recorded — the next Charge has to ask the cashier to check Orders first.
     notifier.resetSale();
+    expect(container.read(posSaleProvider).outcomeUncertain, isTrue);
+
+    // Only a confirmed create releases the guard.
+    notifier.resetSale(orderConfirmed: true);
     expect(container.read(posSaleProvider).outcomeUncertain, isFalse);
+  });
+
+  test('a reconciled cart requires review until the cashier confirms', () {
+    final container = _container();
+    final notifier = container.read(posSaleProvider.notifier);
+    final result = PosCartReconciliation(
+      cart: addPosCartLine(const [], item: _item('m1')),
+      removed: const [],
+      repriced: true,
+    );
+
+    notifier.applyCartReconciliation(result);
+    expect(container.read(posSaleProvider).reviewRequired, isTrue);
+    expect(container.read(posSaleProvider).reviewMessage, isNotNull);
+
+    notifier.clearReviewRequired();
+    expect(container.read(posSaleProvider).reviewRequired, isFalse);
+    expect(container.read(posSaleProvider).reviewMessage, isNull);
+
+    notifier
+      ..applyCartReconciliation(result)
+      ..resetSale();
+    expect(container.read(posSaleProvider).reviewRequired, isFalse);
   });
 
   group('clearForNewSession', () {

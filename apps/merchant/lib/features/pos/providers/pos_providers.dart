@@ -53,6 +53,8 @@ class PosSaleState {
     this.submitting = false,
     this.submitError,
     this.outcomeUncertain = false,
+    this.reviewRequired = false,
+    this.reviewMessage,
   });
 
   final PosOrderType orderType;
@@ -70,6 +72,13 @@ class PosSaleState {
 
   /// A previous create may have completed despite an interrupted response.
   final bool outcomeUncertain;
+
+  /// The live menu changed while the sale was open. The cart has already been
+  /// reconciled; the cashier must confirm the new total before charging.
+  final bool reviewRequired;
+
+  /// What changed, shown with the submit button.
+  final String? reviewMessage;
 
   int get totalCents => posCartTotalCents(cart);
   int get itemCount => cart.fold<int>(0, (sum, line) => sum + line.quantity);
@@ -91,6 +100,8 @@ class PosSaleState {
     bool? submitting,
     Object? submitError = _unset,
     bool? outcomeUncertain,
+    bool? reviewRequired,
+    Object? reviewMessage = _unset,
   }) {
     return PosSaleState(
       orderType: orderType ?? this.orderType,
@@ -106,6 +117,10 @@ class PosSaleState {
           ? this.submitError
           : submitError as String?,
       outcomeUncertain: outcomeUncertain ?? this.outcomeUncertain,
+      reviewRequired: reviewRequired ?? this.reviewRequired,
+      reviewMessage: identical(reviewMessage, _unset)
+          ? this.reviewMessage
+          : reviewMessage as String?,
     );
   }
 }
@@ -177,18 +192,38 @@ class PosSaleNotifier extends Notifier<PosSaleState> {
   /// Clear the sale after a submit: cart, take-away name and payment choice.
   /// Order type, table and pax persist so a cashier can key another round for
   /// the same table.
-  void resetSale() {
+  ///
+  /// The duplicate-order guard survives a manual clear: [orderConfirmed] is
+  /// only true after the server confirmed a create, so tapping Clear (or
+  /// reopening the screen) cannot silently forget an order that may exist.
+  void resetSale({bool orderConfirmed = false}) {
     state = state.copyWith(
       cart: const [],
       customerName: '',
       paymentMethod: PosPaymentMethod.cash,
       submitError: null,
-      outcomeUncertain: false,
+      reviewRequired: false,
+      reviewMessage: null,
+      outcomeUncertain: orderConfirmed ? false : state.outcomeUncertain,
     );
   }
 
   void setOutcomeUncertain() {
     state = state.copyWith(outcomeUncertain: true);
+  }
+
+  /// Adopt a cart matched against the live menu. The cashier must confirm the
+  /// updated total before the next Charge.
+  void applyCartReconciliation(PosCartReconciliation result) {
+    state = state.copyWith(
+      cart: result.cart,
+      reviewRequired: result.reviewRequired,
+      reviewMessage: result.reviewRequired ? result.message : null,
+    );
+  }
+
+  void clearReviewRequired() {
+    state = state.copyWith(reviewRequired: false, reviewMessage: null);
   }
 
   /// Wipe everything, including order type, table and pax.
@@ -215,6 +250,8 @@ class PosSaleNotifier extends Notifier<PosSaleState> {
       customerName: '',
       paymentMethod: PosPaymentMethod.cash,
       submitError: null,
+      reviewRequired: false,
+      reviewMessage: null,
     );
   }
 

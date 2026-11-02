@@ -21,6 +21,7 @@ PosOpenOrder _order({
   int totalCents = 2500,
   int? pax = 2,
   List<PosOrderItem> items = const [],
+  bool paymentClaimedByDiner = false,
 }) {
   return PosOpenOrder(
     id: id,
@@ -35,6 +36,7 @@ PosOpenOrder _order({
     deliveryType: 'dine_in',
     source: 'counter',
     items: items,
+    paymentClaimedByDiner: paymentClaimedByDiner,
   );
 }
 
@@ -128,6 +130,22 @@ void main() {
 
     await tester.tap(close);
     expect(closed, 1);
+  });
+
+  testWidgets('a diner-claimed payment is flagged for verification', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      summarizeTable(_table, [
+        _order(status: 'paid', paymentClaimedByDiner: true),
+      ]),
+    );
+
+    expect(
+      find.textContaining('verify the bank transfer', findRichText: true),
+      findsOneWidget,
+    );
   });
 
   testWidgets('expanding a ticket reveals its dishes', (tester) async {

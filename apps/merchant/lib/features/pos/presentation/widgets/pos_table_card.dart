@@ -145,6 +145,16 @@ class _PosTableCardState extends State<PosTableCard> {
                 ),
               ],
             ),
+            if (summary.hasUnverifiedDinerPayment) ...[
+              const SizedBox(height: 8),
+              PosWarningBanner(
+                summary.dinerClaimedOrderCount == 1
+                    ? 'Diner claimed payment — verify the bank transfer '
+                          'before closing.'
+                    : '${summary.dinerClaimedOrderCount} diner-claimed '
+                          'payments — verify the bank transfers before closing.',
+              ),
+            ],
             if (collectTarget != null) ...[
               const SizedBox(height: 8),
               FilledButton.icon(
@@ -367,10 +377,9 @@ class _OrderItems extends StatelessWidget {
         padding: const EdgeInsets.only(top: 6),
         child: Text(
           'No item detail recorded.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            fontSize: 10,
-            color: AppColors.muted,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(fontSize: 10, color: AppColors.muted),
         ),
       );
     }

@@ -66,6 +66,45 @@ void main() {
     expect(find.text('Collect payment'), findsNothing);
   });
 
+  testWidgets('cannot be dragged away while the settle is in flight', (
+    tester,
+  ) async {
+    final pending = Completer<String?>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showPosSettleSheet(
+                context,
+                target: _target,
+                onConfirm: (_) => pending.future,
+              ),
+              child: const Text('Open settle'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open settle'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cash'));
+    await tester.pump();
+    await tester.drag(find.byType(BottomSheet), const Offset(0, 800));
+    // The busy spinner animates forever, so pumpAndSettle cannot be used.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Dismissing the sheet mid-request would hide a collection that may already
+    // have been recorded.
+    expect(find.text('Collect payment'), findsOneWidget);
+
+    pending.complete(null);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a failed confirm keeps the sheet open with the message', (
     tester,
   ) async {

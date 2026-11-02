@@ -6,6 +6,8 @@
 /// cents.
 library;
 
+import '../../../core/utils/order_fields.dart';
+
 /// How a POS sale is fulfilled. Take-away reuses the existing pickup path.
 enum PosOrderType {
   dineIn('dine_in', 'Dine-in'),
@@ -277,10 +279,17 @@ class PosOpenOrder {
     required this.source,
     required this.items,
     this.orderNumber,
+    this.paymentClaimedByDiner = false,
   });
 
   factory PosOpenOrder.fromJson(Map<String, dynamic> json) {
     final rawItems = json['order_items'];
+    final rawPayments = json['payments'];
+    final claimedByDiner =
+        rawPayments is List &&
+        rawPayments.whereType<Map<String, dynamic>>().any(
+          (payment) => isClaimedByDiner(payment['raw']),
+        );
     return PosOpenOrder(
       id: json['id'] as String,
       orderNumber: json['order_number'] as String?,
@@ -302,6 +311,7 @@ class PosOpenOrder {
                 .map(PosOrderItem.fromJson)
                 .toList(growable: false)
           : const [],
+      paymentClaimedByDiner: claimedByDiner,
     );
   }
 
@@ -318,6 +328,10 @@ class PosOpenOrder {
   final String? deliveryType;
   final String? source;
   final List<PosOrderItem> items;
+
+  /// True when `payments.raw.claimed_via == 'table_qr'` — a diner declared the
+  /// transfer themselves, so staff must verify it before releasing the table.
+  final bool paymentClaimedByDiner;
 
   bool get isPending => status == 'pending';
   bool get isDineIn => deliveryType == 'dine_in';

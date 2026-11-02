@@ -771,6 +771,10 @@ class _PaymentSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          if (sale.reviewMessage != null) ...[
+            PosWarningBanner(sale.reviewMessage!),
+            const SizedBox(height: 8),
+          ],
           if (sale.submitError != null) ...[
             PosErrorBanner(sale.submitError!),
             const SizedBox(height: 8),

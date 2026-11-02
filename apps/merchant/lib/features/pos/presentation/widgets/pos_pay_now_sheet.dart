@@ -23,6 +23,10 @@ Future<bool> showPosPayNowSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    // PopScope does not block Flutter's drag-to-dismiss, which pops the route
+    // directly. This sheet guards a money request, so it only closes through
+    // its explicit buttons.
+    enableDrag: false,
     backgroundColor: AppColors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),

@@ -132,6 +132,38 @@ void main() {
       expect(order.items.single.modifiers.single.priceDeltaCents, 200);
     });
 
+    test('flags a payment self-declared from a table QR', () {
+      final order = PosOpenOrder.fromJson({
+        'id': 'o1',
+        'status': 'paid',
+        'total_cents': 2500,
+        'created_at': '2026-10-28T12:00:00Z',
+        'payments': [
+          {
+            'raw': {'claimed_via': 'table_qr'},
+          },
+        ],
+      });
+
+      expect(order.paymentClaimedByDiner, isTrue);
+    });
+
+    test('does not flag a payment taken by the cashier', () {
+      final order = PosOpenOrder.fromJson({
+        'id': 'o1',
+        'status': 'paid',
+        'total_cents': 2500,
+        'created_at': '2026-10-28T12:00:00Z',
+        'payments': [
+          {
+            'raw': {'claimed_via': 'cashier'},
+          },
+        ],
+      });
+
+      expect(order.paymentClaimedByDiner, isFalse);
+    });
+
     test('defaults missing optional columns safely', () {
       final order = PosOpenOrder.fromJson({
         'id': 'o1',

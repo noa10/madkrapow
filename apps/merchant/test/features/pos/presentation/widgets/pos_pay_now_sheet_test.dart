@@ -194,6 +194,31 @@ void main() {
     expect(find.text('Check orders first'), findsOneWidget);
   });
 
+  testWidgets('cannot be dragged away while the create is in flight', (
+    tester,
+  ) async {
+    final pending = Completer<String?>();
+    await _pump(
+      tester,
+      method: PosPaymentMethod.cash,
+      onConfirm: () => pending.future,
+    );
+
+    await tester.tap(find.text('Cash received'));
+    await tester.pump();
+    await tester.drag(find.byType(BottomSheet), const Offset(0, 800));
+    // The busy spinner animates forever, so pumpAndSettle cannot be used.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // A dragged-away sheet would let the cashier clear and re-ring while the
+    // first order may still be created.
+    expect(find.text('Collect cash'), findsOneWidget);
+
+    pending.complete(null);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('keeps the sheet open and shows the error when confirm fails', (
     tester,
   ) async {

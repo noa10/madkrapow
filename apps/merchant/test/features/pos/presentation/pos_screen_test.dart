@@ -32,6 +32,17 @@ const _item = PosMenuItem(
   sortOrder: 0,
 );
 
+const _itemRaised = PosMenuItem(
+  id: 'm1',
+  name: 'Dish',
+  description: null,
+  imageUrl: null,
+  priceCents: 1500,
+  isAvailable: true,
+  categoryId: 'c1',
+  sortOrder: 0,
+);
+
 class _PendingOrderRepository extends Fake implements PosRepository {
   final pending = Completer<PosCreateOrderResult>();
 
@@ -61,6 +72,32 @@ class _FailingOrderRepository extends Fake implements PosRepository {
     calls++;
     throw const PosApiException(message: 'Server error', statusCode: 500);
   }
+}
+
+class _ClosingRepository extends Fake implements PosRepository {
+  @override
+  Future<PosCloseResult> closeTable(
+    String tableId,
+    List<String> orderIds,
+  ) async => const PosCloseResult(success: true, closed: 1);
+}
+
+PosOpenOrder _paidDineIn({bool claimedByDiner = false}) {
+  return PosOpenOrder(
+    id: 'o1',
+    displayCode: 'MK-1',
+    status: 'paid',
+    totalCents: 1250,
+    createdAt: DateTime(2026, 10, 28, 12),
+    customerName: null,
+    pax: 2,
+    tableId: 't1',
+    tableLabel: 'T1',
+    deliveryType: 'dine_in',
+    source: 'counter',
+    items: const [],
+    paymentClaimedByDiner: claimedByDiner,
+  );
 }
 
 void main() {
@@ -349,5 +386,232 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Check orders first'), findsOneWidget);
     expect(repository.calls, 1);
+  });
+
+  testWidgets('clearing the sale keeps the duplicate-order guard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repository = _FailingOrderRepository();
+    final container = ProviderContainer(
+      overrides: [
+        staffRoleProvider.overrideWith((ref) => StaffRole.cashier),
+        posRepositoryProvider.overrideWith((ref) => repository),
+        posRealtimeWatcherProvider.overrideWith((ref) {}),
+        posBoardProvider.overrideWith(
+          (ref) async => const PosBoardData(tables: [_table], openOrders: []),
+        ),
+        posMenuProvider.overrideWith(
+          (ref) async => const PosMenuData(
+            categories: [],
+            menuItems: [],
+            modifierGroupsByItem: {},
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: PosScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    container.read(posSaleProvider.notifier)
+      ..selectTable('t1')
+      ..addItem(_item);
+    await tester.pump();
+
+    await tester.tap(find.text('Charge RM 12.50'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cash received'));
+    await tester.pumpAndSettle();
+    expect(container.read(posSaleProvider).outcomeUncertain, isTrue);
+
+    // Close the pay sheet, Clear the sale, and ring the same cart again.
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear'));
+    await tester.pump();
+    container.read(posSaleProvider.notifier).addItem(_item);
+    await tester.pump();
+
+    await tester.tap(find.text('Charge RM 12.50'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cash received'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Check orders first'), findsOneWidget);
+    expect(repository.calls, 1);
+  });
+
+  testWidgets('a menu price change updates the sale and requires review', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var menuCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        staffRoleProvider.overrideWith((ref) => StaffRole.cashier),
+        posRealtimeWatcherProvider.overrideWith((ref) {}),
+        posBoardProvider.overrideWith(
+          (ref) async => const PosBoardData(tables: [_table], openOrders: []),
+        ),
+        posMenuProvider.overrideWith((ref) {
+          menuCalls++;
+          return PosMenuData(
+            categories: const [],
+            menuItems: [menuCalls == 1 ? _item : _itemRaised],
+            modifierGroupsByItem: const {},
+          );
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: PosScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    container.read(posSaleProvider.notifier)
+      ..selectTable('t1')
+      ..addItem(_item);
+    await tester.pump();
+    expect(find.text('Charge RM 12.50'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Refresh'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Charge RM 15.00'), findsOneWidget);
+    expect(find.textContaining('Review the updated total'), findsOneWidget);
+
+    await tester.tap(find.text('Charge RM 15.00'));
+    await tester.pumpAndSettle();
+    expect(find.text('Review the updated sale'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Charge RM 15.00'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Collect cash'), findsOneWidget);
+  });
+
+  testWidgets('a deactivated table is cleared from the sale on refresh', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var boardCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        staffRoleProvider.overrideWith((ref) => StaffRole.cashier),
+        posRealtimeWatcherProvider.overrideWith((ref) {}),
+        posBoardProvider.overrideWith((ref) {
+          boardCalls++;
+          return Future.value(
+            boardCalls == 1
+                ? const PosBoardData(tables: [_table], openOrders: [])
+                : const PosBoardData(tables: [], openOrders: []),
+          );
+        }),
+        posMenuProvider.overrideWith(
+          (ref) async => const PosMenuData(
+            categories: [],
+            menuItems: [_item],
+            modifierGroupsByItem: {},
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: PosScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    container.read(posSaleProvider.notifier)
+      ..selectTable('t1')
+      ..addItem(_item);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Refresh'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(posSaleProvider).selectedTableId, isNull);
+    expect(find.textContaining('no longer active'), findsOneWidget);
+  });
+
+  testWidgets('closing the selected table clears its unsent sale', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repository = _ClosingRepository();
+    final container = ProviderContainer(
+      overrides: [
+        staffRoleProvider.overrideWith((ref) => StaffRole.cashier),
+        posRepositoryProvider.overrideWith((ref) => repository),
+        posRealtimeWatcherProvider.overrideWith((ref) {}),
+        posBoardProvider.overrideWith(
+          (ref) async => PosBoardData(
+            tables: const [_table],
+            openOrders: [_paidDineIn(claimedByDiner: true)],
+          ),
+        ),
+        posMenuProvider.overrideWith(
+          (ref) async => const PosMenuData(
+            categories: [],
+            menuItems: [_item],
+            modifierGroupsByItem: {},
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: PosScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    container.read(posSaleProvider.notifier)
+      ..selectTable('t1')
+      ..addItem(_item);
+    await tester.pump();
+
+    await tester.tap(find.text('Tables'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Close table'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('unsent sale'), findsOneWidget);
+    expect(find.textContaining('Verify the bank transfer'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Close table'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(posSaleProvider).cart, isEmpty);
+    expect(container.read(posSaleProvider).selectedTableId, isNull);
   });
 }

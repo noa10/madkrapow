@@ -33,9 +33,7 @@ class PosBoardData {
   ];
 
   List<PosOpenOrder> get unpaidTakeaway => openOrders
-      .where(
-        (order) => order.isPending && order.deliveryType == 'self_pickup',
-      )
+      .where((order) => order.isPending && order.deliveryType == 'self_pickup')
       .toList(growable: false);
 }
 
@@ -60,9 +58,9 @@ class PosRepository {
   /// Dine-in cards expand to show dishes; take-away rows do not, so the embed
   /// is only requested where it is rendered.
   static const _orderColumnsWithItems =
-      '$_orderColumns, order_items(id, menu_item_name, quantity, '
-      'line_total_cents, notes, order_item_modifiers(modifier_name, '
-      'modifier_price_delta_cents))';
+      '$_orderColumns, payments(raw), order_items(id, menu_item_name, '
+      'quantity, line_total_cents, notes, '
+      'order_item_modifiers(modifier_name, modifier_price_delta_cents))';
 
   Future<PosMenuData> fetchMenu() async {
     _noModifierItems.clear();
@@ -128,9 +126,9 @@ class PosRepository {
     final modifiersByGroup = <String, List<PosModifier>>{};
     for (final row in modifiers) {
       final modifier = PosModifier.fromJson(row);
-      modifiersByGroup.putIfAbsent(modifier.modifierGroupId, () => []).add(
-        modifier,
-      );
+      modifiersByGroup
+          .putIfAbsent(modifier.modifierGroupId, () => [])
+          .add(modifier);
     }
 
     final byItem = <String, List<PosModifierGroup>>{};
@@ -138,16 +136,18 @@ class PosRepository {
       final group = groupsById[junction['modifier_group_id']];
       if (group == null) continue;
       final groupId = group['id'] as String;
-      byItem.putIfAbsent(junction['menu_item_id'] as String, () => []).add(
-        PosModifierGroup(
-          id: groupId,
-          name: group['name'] as String? ?? '',
-          minSelections: (group['min_selections'] as num?)?.toInt() ?? 0,
-          maxSelections: (group['max_selections'] as num?)?.toInt() ?? 1,
-          isRequired: junction['is_required'] as bool? ?? false,
-          modifiers: modifiersByGroup[groupId] ?? const [],
-        ),
-      );
+      byItem
+          .putIfAbsent(junction['menu_item_id'] as String, () => [])
+          .add(
+            PosModifierGroup(
+              id: groupId,
+              name: group['name'] as String? ?? '',
+              minSelections: (group['min_selections'] as num?)?.toInt() ?? 0,
+              maxSelections: (group['max_selections'] as num?)?.toInt() ?? 1,
+              isRequired: junction['is_required'] as bool? ?? false,
+              modifiers: modifiersByGroup[groupId] ?? const [],
+            ),
+          );
     }
 
     return PosMenuData(
@@ -203,9 +203,9 @@ class PosRepository {
       final modifiersByGroup = <String, List<PosModifier>>{};
       for (final row in modifiers) {
         final modifier = PosModifier.fromJson(row);
-        modifiersByGroup.putIfAbsent(modifier.modifierGroupId, () => []).add(
-          modifier,
-        );
+        modifiersByGroup
+            .putIfAbsent(modifier.modifierGroupId, () => [])
+            .add(modifier);
       }
 
       final groupsById = {

@@ -26,6 +26,7 @@ PosOpenOrder _order({
   String deliveryType = 'dine_in',
   int? pax,
   DateTime? createdAt,
+  bool paymentClaimedByDiner = false,
 }) {
   return PosOpenOrder(
     id: id,
@@ -40,6 +41,7 @@ PosOpenOrder _order({
     deliveryType: deliveryType,
     source: 'counter',
     items: const [],
+    paymentClaimedByDiner: paymentClaimedByDiner,
   );
 }
 
@@ -79,7 +81,10 @@ void main() {
     test('counts whole minutes', () {
       final created = DateTime(2026, 10, 28, 12);
       expect(
-        posAgeMinutes(created, created.add(const Duration(minutes: 12, seconds: 40))),
+        posAgeMinutes(
+          created,
+          created.add(const Duration(minutes: 12, seconds: 40)),
+        ),
         12,
       );
     });
@@ -130,7 +135,13 @@ void main() {
     test('sums tickets, keeps the largest pax and the oldest ticket', () {
       final oldest = DateTime(2026, 10, 28, 12);
       final summary = summarizeTable(_table(), [
-        _order(id: 'o1', status: 'paid', totalCents: 1000, pax: 2, createdAt: oldest),
+        _order(
+          id: 'o1',
+          status: 'paid',
+          totalCents: 1000,
+          pax: 2,
+          createdAt: oldest,
+        ),
         _order(
           id: 'o2',
           status: 'preparing',
@@ -155,6 +166,18 @@ void main() {
       expect(summary.isOccupied, isFalse);
       expect(summary.orders, isEmpty);
     });
+
+    test('counts a self-declared diner payment without blocking close', () {
+      final summary = summarizeTable(_table(), [
+        _order(status: 'paid', paymentClaimedByDiner: true),
+        _order(id: 'o2', status: 'paid'),
+      ]);
+
+      expect(summary.dinerClaimedOrderCount, 1);
+      expect(summary.hasUnverifiedDinerPayment, isTrue);
+      expect(summary.hasUnpaid, isFalse);
+      expect(summary.canClose, isTrue);
+    });
   });
 
   group('unpaidOrdersForTable', () {
@@ -169,10 +192,7 @@ void main() {
     });
 
     test('de-duplicates by id', () {
-      final unpaid = unpaidOrdersForTable([
-        _order(id: 'o1'),
-        _order(id: 'o1'),
-      ]);
+      final unpaid = unpaidOrdersForTable([_order(id: 'o1'), _order(id: 'o1')]);
 
       expect(unpaid, hasLength(1));
     });
@@ -245,6 +265,20 @@ void main() {
 
     test('is plural for several tickets', () {
       expect(closeTableWarning(3), contains('3 orders are'));
+    });
+
+    test('warns that a table-QR payment needs a bank-transfer check', () {
+      final warning = closeTableWarning(0, 1)!;
+
+      expect(warning, contains('self-declared'));
+      expect(warning, contains('Verify the bank transfer'));
+    });
+
+    test('combines the kitchen and payment warnings', () {
+      final warning = closeTableWarning(2, 1)!;
+
+      expect(warning, contains('2 orders are'));
+      expect(warning, contains('self-declared'));
     });
   });
 }

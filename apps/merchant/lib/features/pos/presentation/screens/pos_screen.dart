@@ -106,20 +106,64 @@ class _PosScreenState extends ConsumerState<PosScreen>
       return;
     }
     setState(() => _refreshing = true);
+    // Read both concurrently but tolerate one failing: a menu edit is still
+    // relevant when the board request fails, and vice versa. The failed
+    // provider renders its own error state.
+    final boardFuture = ref.refresh(posBoardProvider.future);
+    final menuFuture = ref.refresh(posMenuProvider.future);
+    PosBoardData? board;
+    PosMenuData? menu;
     try {
-      await Future.wait([
-        ref.refresh(posBoardProvider.future),
-        ref.refresh(posMenuProvider.future),
-      ]);
+      board = await boardFuture;
     } catch (_) {
-      // The error state is rendered from the providers themselves.
-    } finally {
-      if (mounted) {
-        setState(() => _refreshing = false);
-        if (_refreshQueued) {
-          _refreshQueued = false;
-          _refresh();
-        }
+      // The provider renders its own error state.
+    }
+    try {
+      menu = await menuFuture;
+    } catch (_) {
+      // The provider renders its own error state.
+    }
+    if (mounted) {
+      // A menu edit or a deactivated table can invalidate the open sale.
+      _reconcileSale(menu: menu, board: board);
+      setState(() => _refreshing = false);
+      if (_refreshQueued) {
+        _refreshQueued = false;
+        _refresh();
+      }
+    }
+  }
+
+  /// Match the open sale against freshly fetched data.
+  ///
+  /// The server re-prices and re-validates a create, but cash is taken in the
+  /// sale sheet before that call. Adopting the live price keeps the shown total
+  /// honest; dropping vanished dishes avoids charging for something the server
+  /// will reject. Either change forces an explicit review before Charge.
+  void _reconcileSale({PosMenuData? menu, PosBoardData? board}) {
+    if (!mounted) return;
+    final notifier = ref.read(posSaleProvider.notifier);
+
+    if (menu != null) {
+      final sale = ref.read(posSaleProvider);
+      if (sale.cart.isNotEmpty) {
+        final result = reconcilePosCart(
+          sale.cart,
+          menuItemsById: {for (final item in menu.menuItems) item.id: item},
+          modifierGroupsByItem: menu.modifierGroupsByItem,
+        );
+        if (result.reviewRequired) notifier.applyCartReconciliation(result);
+      }
+    }
+
+    if (board != null) {
+      final tableId = ref.read(posSaleProvider).selectedTableId;
+      if (tableId != null &&
+          !board.tables.any((table) => table.id == tableId)) {
+        notifier.selectTable(null);
+        notifier.setSubmitError(
+          'The selected table is no longer active. Pick another table.',
+        );
       }
     }
   }
@@ -129,7 +173,8 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Future<void> _refreshBoard() async {
     try {
       ref.invalidate(posBoardProvider);
-      await ref.read(posBoardProvider.future);
+      final board = await ref.read(posBoardProvider.future);
+      if (mounted) _reconcileSale(board: board);
     } catch (_) {
       // The board renders its own error state.
     }
@@ -222,6 +267,20 @@ class _PosScreenState extends ConsumerState<PosScreen>
     if (_sheetOpen) return false;
     final sale = ref.read(posSaleProvider);
     if (!sale.canSubmit) return false;
+    if (sale.reviewRequired) {
+      final confirmed = await showPosConfirmDialog(
+        context,
+        title: 'Review the updated sale',
+        message:
+            sale.reviewMessage ??
+            'The menu changed while you were selling. Check the dishes and '
+                'total before charging.',
+        confirmLabel: 'Charge ${formatPrice(sale.totalCents)}',
+        warning: true,
+      );
+      if (!mounted || !confirmed) return false;
+      ref.read(posSaleProvider.notifier).clearReviewRequired();
+    }
 
     final board = ref.read(posBoardProvider).valueOrNull;
     _sheetOpen = true;
@@ -300,7 +359,8 @@ class _PosScreenState extends ConsumerState<PosScreen>
       // app-scoped sale, even when the old screen was disposed during the call.
       if (!isCurrentSession()) return null;
       _lastOrderCode = result.code;
-      notifier.resetSale();
+      // Only a confirmed create releases the duplicate-order guard.
+      notifier.resetSale(orderConfirmed: true);
 
       if (!mounted) return null;
 
@@ -505,13 +565,28 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Future<void> _closeTable(TableSummary summary) async {
     if (_busyId != null) return;
     final table = summary.table;
+    final saleBeforeClose = ref.read(posSaleProvider);
+    final clearsSale =
+        saleBeforeClose.orderType == PosOrderType.dineIn &&
+        saleBeforeClose.selectedTableId == table.id &&
+        saleBeforeClose.cart.isNotEmpty;
+    final baseWarning = closeTableWarning(
+      summary.kitchenActiveOrderCount,
+      summary.dinerClaimedOrderCount,
+    );
+    final itemCount = saleBeforeClose.itemCount;
+    final message = [
+      baseWarning ??
+          'Closing marks every order served and frees the table for the next '
+              'guests.',
+      if (clearsSale)
+        'The unsent sale for this table ($itemCount item'
+            '${itemCount == 1 ? '' : 's'}) will also be cleared.',
+    ].join('\n\n');
     final confirmed = await showPosConfirmDialog(
       context,
       title: 'Close table ${table.label}?',
-      message:
-          closeTableWarning(summary.kitchenActiveOrderCount) ??
-          'Closing marks every order served and frees the table for the next '
-              'guests.',
+      message: message,
       confirmLabel: 'Close table',
       warning: true,
     );
@@ -538,7 +613,14 @@ class _PosScreenState extends ConsumerState<PosScreen>
         'Table ${table.label} closed · ${result.closed} order'
         '${result.closed == 1 ? '' : 's'} marked served.',
       );
-      if (ref.read(posSaleProvider).selectedTableId == table.id) {
+      final sale = ref.read(posSaleProvider);
+      if (sale.selectedTableId == table.id) {
+        // The guests have left; their unsent dishes must not leak into the
+        // next table's sale.
+        if (sale.orderType == PosOrderType.dineIn && sale.cart.isNotEmpty) {
+          ref.read(posSaleProvider.notifier).resetSale();
+          _customerNameController.clear();
+        }
         ref.read(posSaleProvider.notifier).selectTable(null);
       }
       await _refreshBoard();

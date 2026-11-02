@@ -96,7 +96,11 @@ bool posCartCanAddLine(
 int posCartTotalCents(Iterable<PosCartLine> cart) {
   var total = 0;
   for (final line in cart) {
-    total += posLineTotalCents(line.item.priceCents, line.modifiers, line.quantity);
+    total += posLineTotalCents(
+      line.item.priceCents,
+      line.modifiers,
+      line.quantity,
+    );
   }
   return total;
 }
@@ -122,11 +126,7 @@ List<PosCartLine> addPosCartLine(
       continue;
     }
     found = true;
-    merged.add(
-      line.copyWith(
-        quantity: _cap(line.quantity + quantity),
-      ),
-    );
+    merged.add(line.copyWith(quantity: _cap(line.quantity + quantity)));
   }
 
   if (!found) {
@@ -170,3 +170,138 @@ List<PosCartLine> removePosCartLine(List<PosCartLine> cart, String lineKey) {
 
 int _cap(int quantity) =>
     quantity > maxPosLineQuantity ? maxPosLineQuantity : quantity;
+
+/// Result of matching a sale against a freshly fetched menu.
+class PosCartReconciliation {
+  const PosCartReconciliation({
+    required this.cart,
+    required this.removed,
+    required this.repriced,
+  });
+
+  final List<PosCartLine> cart;
+
+  /// Dish names dropped because the dish or one of its add-ons can no longer
+  /// be sold.
+  final List<String> removed;
+
+  /// True when a surviving line has a new dish or add-on price.
+  final bool repriced;
+
+  bool get reviewRequired => removed.isNotEmpty || repriced;
+
+  String? get message {
+    if (!reviewRequired) return null;
+    final parts = <String>[];
+    if (removed.isNotEmpty) {
+      final names = removed.toSet().join(', ');
+      final isOne = removed.toSet().length == 1;
+      parts.add(
+        isOne
+            ? '$names is no longer available and was removed from the sale.'
+            : '$names are no longer available and were removed from the sale.',
+      );
+    }
+    if (repriced) parts.add('Menu prices or options changed.');
+    parts.add('Review the updated total before charging.');
+    return parts.join(' ');
+  }
+}
+
+/// Match a sale against the live menu before charging.
+///
+/// The server re-prices every create, but cash changes hands in the POS before
+/// that call. Lines whose dish or add-on disappeared are dropped; surviving
+/// lines adopt the current price and add-ons so the total shown is the one the
+/// server will charge. Either way [PosCartReconciliation.reviewRequired] makes
+/// the cashier confirm the new total first.
+PosCartReconciliation reconcilePosCart(
+  List<PosCartLine> cart, {
+  required Map<String, PosMenuItem> menuItemsById,
+  required Map<String, List<PosModifierGroup>> modifierGroupsByItem,
+}) {
+  final updated = <PosCartLine>[];
+  final removed = <String>[];
+  var repriced = false;
+
+  for (final line in cart) {
+    final item = menuItemsById[line.item.id];
+    if (item == null || !item.isAvailable) {
+      removed.add(line.item.name);
+      continue;
+    }
+
+    final groups = modifierGroupsByItem[item.id] ?? const <PosModifierGroup>[];
+    final modifiersById = <String, PosModifier>{
+      for (final group in groups)
+        for (final modifier in group.modifiers) modifier.id: modifier,
+    };
+
+    final latestModifiers = <PosCartModifier>[];
+    var invalid = false;
+    for (final selected in line.modifiers) {
+      final latest = modifiersById[selected.id];
+      if (latest == null) {
+        invalid = true;
+        break;
+      }
+      latestModifiers.add(
+        PosCartModifier(
+          id: latest.id,
+          name: latest.name,
+          priceDeltaCents: latest.priceDeltaCents,
+        ),
+      );
+    }
+    if (!invalid) {
+      for (final group in groups) {
+        final selectedInGroup = line.modifiers
+            .where(
+              (selected) =>
+                  group.modifiers.any((modifier) => modifier.id == selected.id),
+            )
+            .length;
+        if ((group.required && selectedInGroup < group.requiredCount) ||
+            selectedInGroup > group.maxSelections) {
+          invalid = true;
+          break;
+        }
+      }
+    }
+    if (invalid) {
+      removed.add(line.item.name);
+      continue;
+    }
+
+    final changed =
+        item.priceCents != line.item.priceCents ||
+        item.name != line.item.name ||
+        latestModifiers.length != line.modifiers.length ||
+        [
+          for (var i = 0; i < latestModifiers.length; i++)
+            latestModifiers[i].id != line.modifiers[i].id ||
+                latestModifiers[i].name != line.modifiers[i].name ||
+                latestModifiers[i].priceDeltaCents !=
+                    line.modifiers[i].priceDeltaCents,
+        ].any((different) => different);
+
+    if (changed) repriced = true;
+    updated.add(
+      changed
+          ? PosCartLine(
+              key: line.key,
+              item: item,
+              quantity: line.quantity,
+              modifiers: List.unmodifiable(latestModifiers),
+              notes: line.notes,
+            )
+          : line,
+    );
+  }
+
+  return PosCartReconciliation(
+    cart: List.unmodifiable(updated),
+    removed: List.unmodifiable(removed),
+    repriced: repriced,
+  );
+}

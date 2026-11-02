@@ -18,8 +18,7 @@ const openDineInStatuses = <String>[
 const minPax = 1;
 const maxPax = 50;
 
-bool isOpenDineInStatus(String status) =>
-    openDineInStatuses.contains(status);
+bool isOpenDineInStatus(String status) => openDineInStatuses.contains(status);
 
 /// Validate a pax value from an untrusted source. Returns null when invalid.
 int? parsePax(Object? value) {
@@ -64,6 +63,7 @@ class TableSummary {
     required this.closeBlockReason,
     required this.oldestCreatedAt,
     required this.kitchenActiveOrderCount,
+    required this.dinerClaimedOrderCount,
   });
 
   final RestaurantTable table;
@@ -80,6 +80,12 @@ class TableSummary {
   /// Paid tickets the kitchen has not marked `ready`. Closing completes them,
   /// so the confirm dialog warns about them.
   final int kitchenActiveOrderCount;
+
+  /// Paid tickets whose payment was self-declared by a diner at the table QR.
+  /// The server cannot see the bank transfer, so staff must verify it.
+  final int dinerClaimedOrderCount;
+
+  bool get hasUnverifiedDinerPayment => dinerClaimedOrderCount > 0;
 }
 
 /// Derive the table board state from a table and its open orders.
@@ -94,6 +100,7 @@ TableSummary summarizeTable(
   var totalCents = 0;
   var hasUnpaid = false;
   var kitchenActive = 0;
+  var dinerClaimed = 0;
   int? pax;
   DateTime? oldest;
 
@@ -101,6 +108,7 @@ TableSummary summarizeTable(
     totalCents += order.totalCents;
     if (order.isPending) hasUnpaid = true;
     if (!order.isPending && order.status != 'ready') kitchenActive++;
+    if (!order.isPending && order.paymentClaimedByDiner) dinerClaimed++;
     final orderPax = order.pax;
     if (orderPax != null && (pax == null || orderPax > pax)) {
       pax = orderPax;
@@ -129,6 +137,7 @@ TableSummary summarizeTable(
     closeBlockReason: blockReason,
     oldestCreatedAt: oldest,
     kitchenActiveOrderCount: kitchenActive,
+    dinerClaimedOrderCount: dinerClaimed,
   );
 }
 
@@ -144,12 +153,33 @@ String? closeBlockedMessage(TableCloseBlockReason? reason) {
   }
 }
 
-/// Warning for the close confirmation when the kitchen has not finished.
-String? closeTableWarning(int kitchenActiveOrderCount) {
-  if (kitchenActiveOrderCount <= 0) return null;
-  final isOne = kitchenActiveOrderCount == 1;
-  return '$kitchenActiveOrderCount order${isOne ? ' is' : 's are'} still in the '
-      'kitchen. Closing marks ${isOne ? 'it' : 'them'} served and frees the table.';
+/// Warning for the close confirmation.
+///
+/// Covers tickets still in the kitchen and table-QR payments the diner declared
+/// themselves — the server cannot see that bank transfer, so staff verify it
+/// before the table is released.
+String? closeTableWarning(
+  int kitchenActiveOrderCount, [
+  int dinerClaimedOrderCount = 0,
+]) {
+  final parts = <String>[];
+  if (kitchenActiveOrderCount > 0) {
+    final isOne = kitchenActiveOrderCount == 1;
+    parts.add(
+      '$kitchenActiveOrderCount order${isOne ? ' is' : 's are'} still in the '
+      'kitchen. Closing marks ${isOne ? 'it' : 'them'} served and frees the '
+      'table.',
+    );
+  }
+  if (dinerClaimedOrderCount > 0) {
+    final isOne = dinerClaimedOrderCount == 1;
+    parts.add(
+      '$dinerClaimedOrderCount payment${isOne ? ' was' : 's were'} '
+      'self-declared by ${isOne ? 'a diner' : 'diners'} via table QR. Verify '
+      'the bank transfer before closing.',
+    );
+  }
+  return parts.isEmpty ? null : parts.join('\n\n');
 }
 
 /// Pending dine-in orders for a table, de-duplicated by id (realtime can race).
@@ -231,9 +261,7 @@ PosSettleTarget buildOrderSettleTarget(PosOpenOrder order) {
     kind: PosSettleKind.order,
     id: order.id,
     label: order.code,
-    context: name == null || name.isEmpty
-        ? 'Take-away'
-        : 'Take-away · $name',
+    context: name == null || name.isEmpty ? 'Take-away' : 'Take-away · $name',
     amountCents: order.totalCents,
     orderCount: 1,
     orderIds: List.unmodifiable([order.id]),

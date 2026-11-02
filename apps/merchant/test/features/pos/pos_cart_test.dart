@@ -6,6 +6,7 @@ PosMenuItem _item({
   String id = 'm1',
   String name = 'Nasi Goreng',
   int priceCents = 1250,
+  bool isAvailable = true,
 }) {
   return PosMenuItem(
     id: id,
@@ -13,9 +14,37 @@ PosMenuItem _item({
     description: null,
     imageUrl: null,
     priceCents: priceCents,
-    isAvailable: true,
+    isAvailable: isAvailable,
     categoryId: 'c1',
     sortOrder: 0,
+  );
+}
+
+PosModifierGroup _group({
+  String id = 'g1',
+  String name = 'Spice level',
+  bool required = true,
+  int minSelections = 1,
+  int maxSelections = 1,
+  List<PosModifier>? modifiers,
+}) {
+  return PosModifierGroup(
+    id: id,
+    name: name,
+    minSelections: minSelections,
+    maxSelections: maxSelections,
+    isRequired: required,
+    modifiers:
+        modifiers ??
+        const [
+          PosModifier(
+            id: 'mod1',
+            name: 'Extra egg',
+            priceDeltaCents: 200,
+            modifierGroupId: 'g1',
+            sortOrder: 0,
+          ),
+        ],
   );
 }
 
@@ -24,11 +53,7 @@ PosCartModifier _modifier({
   String name = 'Extra egg',
   int priceDeltaCents = 200,
 }) {
-  return PosCartModifier(
-    id: id,
-    name: name,
-    priceDeltaCents: priceDeltaCents,
-  );
+  return PosCartModifier(id: id, name: name, priceDeltaCents: priceDeltaCents);
 }
 
 void main() {
@@ -71,10 +96,7 @@ void main() {
     });
 
     test('floors a negative unit at zero', () {
-      expect(
-        posLineTotalCents(100, [_modifier(priceDeltaCents: -500)], 2),
-        0,
-      );
+      expect(posLineTotalCents(100, [_modifier(priceDeltaCents: -500)], 2), 0);
     });
   });
 
@@ -171,5 +193,112 @@ void main() {
     );
 
     expect(posCartTotalCents(cart), 1250 + 1000);
+  });
+
+  group('reconcilePosCart', () {
+    test('leaves an unchanged sale alone', () {
+      final cart = addPosCartLine(const [], item: _item());
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item()},
+        modifierGroupsByItem: const {},
+      );
+
+      expect(result.reviewRequired, isFalse);
+      expect(result.removed, isEmpty);
+      expect(result.cart.single, same(cart.single));
+    });
+
+    test('adopts a new price and asks the cashier to review it', () {
+      final cart = addPosCartLine(const [], item: _item());
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item(priceCents: 1500)},
+        modifierGroupsByItem: const {},
+      );
+
+      expect(result.reviewRequired, isTrue);
+      expect(result.removed, isEmpty);
+      expect(result.cart.single.item.priceCents, 1500);
+      expect(posCartTotalCents(result.cart), 1500);
+      expect(result.message, contains('Review the updated total'));
+    });
+
+    test('drops a dish that is no longer available', () {
+      final cart = addPosCartLine(const [], item: _item());
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item(isAvailable: false)},
+        modifierGroupsByItem: const {},
+      );
+
+      expect(result.reviewRequired, isTrue);
+      expect(result.cart, isEmpty);
+      expect(result.removed, ['Nasi Goreng']);
+      expect(result.message, contains('Nasi Goreng'));
+    });
+
+    test('drops a dish whose add-on disappeared', () {
+      final cart = addPosCartLine(
+        const [],
+        item: _item(),
+        modifiers: [_modifier()],
+      );
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item()},
+        modifierGroupsByItem: const {},
+      );
+
+      expect(result.reviewRequired, isTrue);
+      expect(result.cart, isEmpty);
+      expect(result.removed, ['Nasi Goreng']);
+    });
+
+    test('drops a dish when a newly required option was not chosen', () {
+      final cart = addPosCartLine(const [], item: _item());
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item()},
+        modifierGroupsByItem: {
+          'm1': [_group()],
+        },
+      );
+
+      expect(result.reviewRequired, isTrue);
+      expect(result.cart, isEmpty);
+      expect(result.removed, ['Nasi Goreng']);
+    });
+
+    test('adopts a changed add-on price', () {
+      final cart = addPosCartLine(
+        const [],
+        item: _item(),
+        modifiers: [_modifier()],
+      );
+      final result = reconcilePosCart(
+        cart,
+        menuItemsById: {'m1': _item()},
+        modifierGroupsByItem: {
+          'm1': [
+            _group(
+              modifiers: const [
+                PosModifier(
+                  id: 'mod1',
+                  name: 'Extra egg',
+                  priceDeltaCents: 300,
+                  modifierGroupId: 'g1',
+                  sortOrder: 0,
+                ),
+              ],
+            ),
+          ],
+        },
+      );
+
+      expect(result.reviewRequired, isTrue);
+      expect(result.cart.single.modifiers.single.priceDeltaCents, 300);
+      expect(posCartTotalCents(result.cart), 1550);
+    });
   });
 }

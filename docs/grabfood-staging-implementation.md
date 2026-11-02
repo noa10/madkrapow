@@ -16,6 +16,39 @@ production service was touched.
 | Grab → POS token | `POST /api/integrations/grabfood/oauth/token` validates the POS-issued client ID/secret (constant-time) and returns an HMAC-signed bearer token (`v1.<payload>.<sig>`) with `expires_in`. `lib/grabfood/partner-auth.ts` verifies signature, issuer, audience, expiry and scope. |
 | Callback authentication | Every partner callback requires `Authorization: Bearer …`. HMAC over the raw body is enforced **only** when `GRABFOOD_WEBHOOK_HMAC_REQUIRED=true`; it never substitutes for OAuth. |
 
+### Portal field mapping (Configurations → Partner configuration)
+
+| Portal field | Value |
+|---|---|
+| Get menu endpoint | `https://<staging-host>/api/integrations/grabfood/merchant/menu` |
+| Submit order endpoint | `https://<staging-host>/api/integrations/grabfood/webhooks/submit-order` |
+| Push order state endpoint | `https://<staging-host>/api/integrations/grabfood/webhooks/order-state` |
+| OAuth token endpoint | `https://<staging-host>/api/integrations/grabfood/oauth/token` |
+| Menu Sync Webhook | `https://<staging-host>/api/integrations/grabfood/menu-sync-state` |
+| Menu Event Webhook | `https://<staging-host>/api/integrations/grabfood/menu-event` |
+| Push Grab menu endpoint | `https://<staging-host>/api/integrations/grabfood/pushGrabMenu` |
+| Integration status endpoint | `https://<staging-host>/api/integrations/grabfood/pushIntegrationStatus` |
+| OAuth scopes | `food.partner_api` |
+| Partner client ID | POS-issued client ID (`GRABFOOD_PARTNER_CLIENT_ID`) |
+| Partner client secret | POS-issued secret (`GRABFOOD_PARTNER_CLIENT_SECRET`) |
+| Menu Structure | Selling-time based / new structure — not “Old Structure (Section Based Menu)” |
+| Max Submit Order Retry Count | 3 retries (4 total attempts) unless the tooltip defines it as total attempts |
+
+The **GrabFood Endpoints** card on the same page is read-only reference data. Its
+`api.grab.com` and `partner-api.grab.com` URLs are Grab's endpoints; they do not
+belong in the Partner configuration fields.
+
+The **Partner client ID/secret** are not the Grab-issued pair used for outbound
+calls. Generate a separate POS pair:
+
+```bash
+openssl rand -hex 16
+openssl rand -base64 32 | tr -d '/+=' | cut -c1-32
+```
+
+Put the same pair in the portal and in the staging environment as
+`GRABFOOD_PARTNER_CLIENT_ID` / `GRABFOOD_PARTNER_CLIENT_SECRET`.
+
 ### 2. Required partner endpoints
 
 All paths are under `/api/integrations/grabfood`:

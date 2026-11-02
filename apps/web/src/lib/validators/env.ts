@@ -230,4 +230,16 @@ if (process.env.SKIP_ENV_VALIDATION === 'true') {
   env = (parsed.data || envData) as unknown as Env
 }
 
+// GrabFood runtime guards require typed flags and expiry values even when the
+// deployment bypasses general validation or another integration fails parsing.
+const grabFoodRuntimeSchema = envSchema.pick({
+  GRABFOOD_ENABLED: true,
+  GRABFOOD_ENV: true,
+  GRABFOOD_WEBHOOK_HMAC_REQUIRED: true,
+  GRABFOOD_PARTNER_TOKEN_TTL_SECONDS: true,
+  GRABFOOD_REQUEST_TIMEOUT_MS: true,
+  GRABFOOD_ACCEPTANCE_MODE: true,
+})
+env = { ...env, ...grabFoodRuntimeSchema.parse(envData) }
+
 export { env }

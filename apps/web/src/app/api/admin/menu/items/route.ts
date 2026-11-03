@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { revalidatePath, revalidateTag } from 'next/cache';
 import { requireAdmin } from '@/lib/admin/require-admin';
-import { MENU_CACHE_TAG } from '@/lib/queries/menu';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const createItemSchema = z.object({
@@ -89,9 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     // New items must appear on the cached storefront immediately.
-    revalidateTag(MENU_CACHE_TAG, { expire: 0 });
-    revalidatePath('/');
-    if (data.slug) revalidatePath(`/item/${data.slug}`);
+    revalidateMenuContent();
 
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {

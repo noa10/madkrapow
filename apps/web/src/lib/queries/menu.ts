@@ -2,6 +2,9 @@ import { getServerClient } from '../supabase/server'
 import { createClient } from '../supabase/client'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { unstable_cache } from 'next/cache'
+import { MENU_CACHE_TAG } from '@/lib/menu/cache-tag'
+
+export { MENU_CACHE_TAG }
 
 export async function getClient(supabase?: SupabaseClient<any, any, any>): Promise<SupabaseClient<any, any, any>> {
   if (supabase) return supabase
@@ -132,12 +135,10 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
 }
 
 /**
- * Cache tag shared by every menu read. Admin item writes call
- * `revalidateTag(MENU_CACHE_TAG)` so edits show immediately instead of after
- * the revalidate window.
+ * Cache tag shared by every menu read. Admin writes call
+ * `revalidateTag(MENU_CACHE_TAG)` (via `revalidateMenuContent`) so edits show
+ * immediately instead of after the revalidate window.
  */
-export const MENU_CACHE_TAG = 'menu'
-
 export const getCategories = unstable_cache(
   fetchCategories,
   ['categories'],
@@ -416,7 +417,11 @@ async function fetchItemById(id: string): Promise<FullMenuItem | null> {
     .eq('id', id)
     .maybeSingle()
 
-  if (error || !data) return null
+  // Throw on a query error so `unstable_cache` does not memoise a 404: only a
+  // genuinely missing row may return null. A cached null would hide a
+  // transient Supabase failure for the whole revalidate window.
+  if (error) throw error
+  if (!data) return null
 
   return toFullMenuItem(data as ItemDetailRow)
 }
@@ -430,7 +435,8 @@ async function fetchItemBySlug(slug: string): Promise<FullMenuItem | null> {
     .eq('slug', slug)
     .maybeSingle()
 
-  if (error || !data) return null
+  if (error) throw error
+  if (!data) return null
 
   return toFullMenuItem(data as ItemDetailRow)
 }

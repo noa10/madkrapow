@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { revalidatePath, revalidateTag } from 'next/cache';
 import { requireAdmin } from '@/lib/admin/require-admin';
-import { MENU_CACHE_TAG } from '@/lib/queries/menu';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const updateItemSchema = z.object({
@@ -109,11 +108,9 @@ export async function PATCH(
       );
     }
 
-    // The item page and storefront are cached (ISR + data cache); drop both
-    // so an edit is visible immediately instead of after the 60s window.
-    revalidateTag(MENU_CACHE_TAG, { expire: 0 });
-    revalidatePath('/');
-    revalidatePath(`/item/${data.slug}`);
+    // The storefront, /order and the prerendered item pages are all cached;
+    // drop them so an edit is visible immediately.
+    revalidateMenuContent();
 
     return NextResponse.json({ data });
   } catch (error) {
@@ -133,11 +130,10 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const { data: deleted, error } = await supabase
+    const { error } = await supabase
       .from('menu_items')
       .delete()
-      .eq('id', id)
-      .select('slug');
+      .eq('id', id);
 
     if (error) {
       return NextResponse.json(
@@ -146,11 +142,7 @@ export async function DELETE(
       );
     }
 
-    revalidateTag(MENU_CACHE_TAG, { expire: 0 });
-    revalidatePath('/');
-    for (const row of deleted ?? []) {
-      revalidatePath(`/item/${row.slug}`);
-    }
+    revalidateMenuContent();
 
     return NextResponse.json({ success: true });
   } catch (error) {

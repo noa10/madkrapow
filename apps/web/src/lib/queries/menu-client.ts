@@ -6,7 +6,6 @@ const MENU_ITEMS_CACHE_TTL_MS = 5 * 60 * 1000
 
 const MENU_ITEM_COLUMNS =
   'id, category_id, name, slug, description, price_cents, image_url, is_available, sort_order, created_at, updated_at'
-const MENU_ITEM_MODIFIER_GROUP_COLUMNS = 'menu_item_id, modifier_group_id, is_required'
 const MODIFIER_GROUP_COLUMNS =
   'id, name, description, min_selections, max_selections, sort_order, created_at, updated_at'
 const MODIFIER_COLUMNS =
@@ -76,70 +75,52 @@ interface MenuItemsCacheEntry {
 let menuItemsCache: MenuItemsCacheEntry | null = null
 let menuItemsInFlight: Promise<MenuItemWithModifierGroups[]> | null = null
 
+type HydratedModifierGroup = ModifierGroup & { is_required: boolean; modifiers: Modifier[] }
+
+type MenuItemRow = MenuItem & {
+  menu_item_modifier_groups:
+    | {
+        is_required: boolean
+        group: (ModifierGroup & { modifiers: Modifier[] | null }) | null
+      }[]
+    | null
+}
+
+/**
+ * One round trip instead of three (two parallel, then groups, then modifiers).
+ * Checkout calls this with `maxAgeMs: 0`, so its cost is paid on every
+ * checkout mount while the skeleton is on screen: ~1.1s from Malaysia as three
+ * serial queries, ~0.3s as one nested select.
+ */
 async function fetchMenuItems(): Promise<MenuItemWithModifierGroups[]> {
-  const [
-    { data: menuItems, error },
-    { data: menuItemModifierGroups, error: migError },
-  ] = await Promise.all([
-    supabase
-      .from('menu_items')
-      .select(MENU_ITEM_COLUMNS)
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('menu_item_modifier_groups')
-      .select(MENU_ITEM_MODIFIER_GROUP_COLUMNS),
-  ])
+  const { data, error } = await supabase
+    .from('menu_items')
+    .select(
+      `${MENU_ITEM_COLUMNS},menu_item_modifier_groups(is_required,group:modifier_groups(${MODIFIER_GROUP_COLUMNS},modifiers(${MODIFIER_COLUMNS})))`
+    )
+    .order('sort_order', { ascending: true })
 
   if (error) throw error
-  if (migError) throw migError
 
-  const modifierGroupIds = [...new Set(menuItemModifierGroups.map((m: { modifier_group_id: string }) => m.modifier_group_id))]
+  const rows = (data ?? []) as MenuItemRow[]
 
-  if (modifierGroupIds.length === 0) {
-    return menuItems.map((item: MenuItem) => ({ ...item, modifier_groups: [] }))
-  }
-
-  const { data: modifierGroups, error: mgError } = await supabase
-    .from('modifier_groups')
-    .select(MODIFIER_GROUP_COLUMNS)
-    .in('id', modifierGroupIds)
-    .order('sort_order', { ascending: true })
-
-  if (mgError) throw mgError
-
-  const modifierGroupIdList = modifierGroups.map((g: ModifierGroup) => g.id)
-
-  const { data: modifiers, error: modError } = await supabase
-    .from('modifiers')
-    .select(MODIFIER_COLUMNS)
-    .in('modifier_group_id', modifierGroupIdList)
-    .eq('is_available', true)
-    .order('sort_order', { ascending: true })
-
-  if (modError) throw modError
-
-  const modifiersByGroup = modifiers.reduce((acc: Record<string, Modifier[]>, mod: Modifier) => {
-    if (!acc[mod.modifier_group_id]) acc[mod.modifier_group_id] = []
-    acc[mod.modifier_group_id].push(mod)
-    return acc
-  }, {} as Record<string, Modifier[]>)
-
-  const modifierGroupsByMenuItem = menuItemModifierGroups.reduce((acc: Record<string, (ModifierGroup & { is_required: boolean; modifiers: Modifier[] })[]>, mig: { menu_item_id: string; modifier_group_id: string; is_required: boolean }) => {
-    if (!acc[mig.menu_item_id]) acc[mig.menu_item_id] = []
-    const group = modifierGroups.find((g: ModifierGroup) => g.id === mig.modifier_group_id)
-    if (group) {
-      acc[mig.menu_item_id].push({
-        ...group,
-        is_required: mig.is_required,
-        modifiers: modifiersByGroup[mig.modifier_group_id] || [],
-      })
-    }
-    return acc
-  }, {} as Record<string, (ModifierGroup & { is_required: boolean; modifiers: Modifier[] })[]>)
-
-  return menuItems.map((item: MenuItem) => ({
+  return rows.map(({ menu_item_modifier_groups, ...item }) => ({
     ...item,
-    modifier_groups: modifierGroupsByMenuItem[item.id] || [],
+    modifier_groups: (menu_item_modifier_groups ?? [])
+      .map((link) => {
+        const group = link.group
+        if (!group) return null
+        const { modifiers, ...groupFields } = group
+        return {
+          ...groupFields,
+          is_required: link.is_required,
+          modifiers: [...(modifiers ?? [])]
+            .filter((modifier) => modifier.is_available)
+            .sort((a, b) => a.sort_order - b.sort_order),
+        }
+      })
+      .filter((group): group is HydratedModifierGroup => group !== null)
+      .sort((a, b) => a.sort_order - b.sort_order),
   }))
 }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const updateItemSchema = z.object({
@@ -107,6 +108,10 @@ export async function PATCH(
       );
     }
 
+    // The storefront, /order and the prerendered item pages are all cached;
+    // drop them so an edit is visible immediately.
+    revalidateMenuContent();
+
     return NextResponse.json({ data });
   } catch (error) {
     const message = getNextErrorMessage(error);
@@ -136,6 +141,8 @@ export async function DELETE(
         { status: 500 }
       );
     }
+
+    revalidateMenuContent();
 
     return NextResponse.json({ success: true });
   } catch (error) {

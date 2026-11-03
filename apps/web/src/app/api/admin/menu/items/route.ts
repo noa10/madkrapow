@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const createItemSchema = z.object({
@@ -85,6 +86,9 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // New items must appear on the cached storefront immediately.
+    revalidateMenuContent();
 
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {

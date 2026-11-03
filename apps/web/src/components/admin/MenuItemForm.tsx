@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { getBrowserClient } from '@/lib/supabase/client'
 import { notifyGrabMenuAfterChange } from '@/lib/grabfood/notify-client'
+import { notifyMenuChanged } from '@/lib/admin/menu-cache'
 import { useToastStore } from '@/stores/toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -178,6 +179,10 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         
         if (updateError) throw updateError
       }
+
+      // Direct browser write: the route handlers are not involved, so ask the
+      // server to drop the public menu caches (storefront, /order, /item/*).
+      notifyMenuChanged()
 
       if (!isNew) {
         const warning = await notifyGrabMenuAfterChange()

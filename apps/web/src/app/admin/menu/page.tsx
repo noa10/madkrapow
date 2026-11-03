@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getBrowserClient } from "@/lib/supabase/client";
+import { notifyMenuChanged } from "@/lib/admin/menu-cache";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -571,6 +572,8 @@ export default function AdminMenuPage() {
         if (error) throw error;
       }
 
+      notifyMenuChanged();
+
       const categoriesRes = await supabase
         .from("categories")
         .select(CATEGORY_SELECT)
@@ -598,6 +601,8 @@ export default function AdminMenuPage() {
         .eq("id", deletingCategory.id);
 
       if (error) throw error;
+
+      notifyMenuChanged();
 
       const [menuItemsRes, categoriesRes] = await Promise.all([
         supabase.from("menu_items").select(MENU_ITEM_SELECT).order("sort_order", { ascending: true }),
@@ -627,6 +632,8 @@ export default function AdminMenuPage() {
         .eq("id", deletingMenuItem.id);
 
       if (error) throw error;
+
+      notifyMenuChanged();
 
       const menuItemsRes = await supabase
         .from("menu_items")
@@ -747,6 +754,8 @@ export default function AdminMenuPage() {
           .eq("id", reordered[i].id);
       }
 
+      notifyMenuChanged();
+
       const res = await supabase
         .from("menu_items")
         .select(MENU_ITEM_SELECT)
@@ -771,6 +780,8 @@ export default function AdminMenuPage() {
     try {
       await supabase.from("categories").update({ sort_order: otherCategory.sort_order }).eq("id", category.id);
       await supabase.from("categories").update({ sort_order: category.sort_order }).eq("id", otherCategory.id);
+
+      notifyMenuChanged();
 
       const categoriesRes = await supabase
         .from("categories")
@@ -801,6 +812,8 @@ export default function AdminMenuPage() {
     try {
       await supabase.from("menu_items").update({ sort_order: otherItem.sort_order }).eq("id", item.id);
       await supabase.from("menu_items").update({ sort_order: item.sort_order }).eq("id", otherItem.id);
+
+      notifyMenuChanged();
 
       const res = await supabase
         .from("menu_items")
@@ -839,6 +852,7 @@ export default function AdminMenuPage() {
     try {
       await supabase.from("modifiers").update({ sort_order: otherModifier.sort_order }).eq("id", modifier.id);
       await supabase.from("modifiers").update({ sort_order: modifier.sort_order }).eq("id", otherModifier.id);
+      notifyMenuChanged();
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);
@@ -949,6 +963,7 @@ export default function AdminMenuPage() {
         if (insertError) throw insertError;
       }
 
+      notifyMenuChanged();
       await fetchModifierGroups();
       setEditingGroup(null);
     } catch (err: any) {
@@ -976,6 +991,7 @@ export default function AdminMenuPage() {
 
       if (deleteGroupError) throw deleteGroupError;
 
+      notifyMenuChanged();
       await fetchModifierGroups();
       setDeletingGroup(null);
     } catch (err: any) {
@@ -1055,6 +1071,7 @@ export default function AdminMenuPage() {
         if (insertError) throw insertError;
       }
 
+      notifyMenuChanged();
       await fetchModifierGroups();
       setEditingModifier(null);
     } catch (err: any) {
@@ -1075,6 +1092,7 @@ export default function AdminMenuPage() {
 
       if (deleteError) throw deleteError;
 
+      notifyMenuChanged();
       await fetchModifierGroups();
       setDeletingModifier(null);
     } catch (err: any) {
@@ -1176,6 +1194,8 @@ export default function AdminMenuPage() {
         if (insertError) throw insertError;
       }
 
+      notifyMenuChanged();
+
       setBindingsSaved(true);
       setTimeout(() => setBindingsSaved(false), 3000);
     } catch (err: any) {
@@ -1216,6 +1236,7 @@ export default function AdminMenuPage() {
           .update({ sort_order: i + 1 })
           .eq("id", reordered[i].id);
       }
+      notifyMenuChanged();
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);

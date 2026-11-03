@@ -12,14 +12,18 @@
  * are ignored and never throw.
  */
 
-import { getOrderDisplayCode } from "@/lib/utils/order-code"
+import { getGrabShortNumber, getOrderDisplayCode } from "@/lib/utils/order-code"
 import type { Order } from "@/types/orders"
 
 /** The minimal order shape the search needs; `id` enables the code fallback. */
 export type SearchableOrder = Pick<
   Order,
   "display_code" | "customer_name" | "customer_phone"
-> & { id?: string }
+> & {
+  id?: string
+  source?: string | null
+  channel_orders?: Order["channel_orders"]
+}
 
 /** Strip everything but digits so differently punctuation'd phones compare equal. */
 function normalisePhone(value: string): string {
@@ -34,6 +38,8 @@ function contains(field: string | null | undefined, needle: string): boolean {
 export function matchesOrderQuery(order: SearchableOrder, query: string): boolean {
   const needle = query.trim().toLowerCase()
   if (needle === "") return true
+
+  if (contains(getGrabShortNumber(order), needle)) return true
 
   let code: string | null = order.display_code ?? null
   if (!code && order.id) {

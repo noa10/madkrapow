@@ -6,8 +6,9 @@
  *    base), expanded automatically to `MK-NNNN`, `MK-NNNNN`, etc. when the per-day pool
  *    fills. Unique per KL calendar day (not globally).
  *
- *  - `getOrderDisplayCode(order)` returns the stored code when present and falls back to
- *    the legacy FNV-1a daily hash for any row that predates the migration.
+ *  - `getOrderDisplayCode(order)` shows the Grab short number for GrabFood orders and
+ *    falls back to the stored code (then the legacy FNV-1a daily hash for rows that
+ *    predate the migration). Internal ids are never replaced.
  *
  *  - `generateOrderDisplayCode(id, date?)` is kept for the fallback only. New code should
  *    prefer `getOrderDisplayCode`.
@@ -44,12 +45,29 @@ export function generateOrderDisplayCode(orderId: string, date?: Date): string {
   return `MK-${num.toString().padStart(3, '0')}`
 }
 
-export interface OrderDisplayInput {
+export interface ChannelDisplayInput {
+  source?: string | null
+  channel_orders?: { channel: string; external_order_number: string | null }[] | null
+}
+
+export interface OrderDisplayInput extends ChannelDisplayInput {
   id: string
   display_code?: string | null
 }
 
+/** The Grab short number for a GrabFood order, trimmed; null when unavailable. */
+export function getGrabShortNumber(order: ChannelDisplayInput): string | null {
+  if (order.source !== 'grabfood') return null
+  const shortNumber = order.channel_orders?.find(
+    (channel) => channel.channel === 'grabfood'
+  )?.external_order_number
+  const trimmed = shortNumber?.trim()
+  return trimmed || null
+}
+
 export function getOrderDisplayCode(order: OrderDisplayInput, date?: Date): string {
+  const shortNumber = getGrabShortNumber(order)
+  if (shortNumber) return shortNumber
   if (order.display_code) return order.display_code
   return generateOrderDisplayCode(order.id, date)
 }

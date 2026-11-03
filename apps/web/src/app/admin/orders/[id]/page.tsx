@@ -13,6 +13,7 @@ import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circl
 import Link from "next/link";
 import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
+import { ADMIN_ORDER_DETAIL_SELECT } from "@/lib/admin/order-select";
 import { orderSubtotalCents, orderTotalCents } from "@/lib/orders/money";
 import { isClaimedByDiner } from "@/lib/pos/receipt";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
@@ -53,6 +54,7 @@ interface OrderItem {
 interface Order {
   id: string;
   display_code?: string | null;
+  channel_orders?: { channel: string; external_order_number: string | null }[] | null;
   status: string;
   total_cents: number;
   delivery_fee_cents: number;
@@ -276,13 +278,7 @@ export default function AdminOrderDetailPage() {
     const fetchOrder = async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select(`
-          *,
-          order_items (
-            *,
-            order_item_modifiers (*)
-          )
-        `)
+        .select(ADMIN_ORDER_DETAIL_SELECT)
         .eq("id", orderId)
         .single();
 
@@ -291,6 +287,9 @@ export default function AdminOrderDetailPage() {
         return;
       }
 
+      // A realtime refetch can fail transiently after the order has loaded.
+      // Clear the sticky error so a later success restores the page.
+      setError(null);
       setOrder(data as unknown as Order);
 
       const orderData = data as unknown as Order;
@@ -343,10 +342,14 @@ export default function AdminOrderDetailPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` },
         (payload: RealtimePostgresChangesPayload<Order>) => {
-          setOrder((prev) => prev ? { ...prev, ...payload.new } : null);
+          const updated = payload.new as Order;
+          setOrder((prev) => prev ? { ...prev, ...updated } : null);
           // A status change can be the diner's QR claim: refresh the
           // provenance banner so the cashier sees it without reloading.
           void loadPaymentClaim();
+          // Channel edits can change the Grab short number after the order row
+          // event; refetch so the header never falls back to the local code.
+          if (updated.source === "grabfood") void fetchOrder();
         }
       )
       .on(

@@ -10,6 +10,10 @@ import 'merchant_api_client.dart';
 /// for a given item still land in the same batch, so per-item ordering holds.
 const _idBatchSize = 150;
 
+/// Order columns plus the channel identity shown as the merchant-facing
+/// reference for GrabFood orders.
+const _orderSelect = '*, channel_orders(channel, external_order_number)';
+
 /// Splits [ids] into consecutive batches of at most [size] entries.
 ///
 /// Order and contents are preserved, so concatenating the results of a batched
@@ -80,7 +84,7 @@ class MerchantOrderRepository {
     String? orderKind,
     String? fulfillmentType,
   }) async {
-    var query = _supabase.from('orders').select();
+    var query = _supabase.from('orders').select(_orderSelect);
 
     if (statuses != null && statuses.isNotEmpty) {
       if (statuses.length == 1) {
@@ -125,7 +129,7 @@ class MerchantOrderRepository {
   Future<List<OrdersRow>> fetchKitchenOrders() async {
     final response = await _supabase
         .from('orders')
-        .select()
+        .select(_orderSelect)
         .or(kitchenQueueOrFilter)
         .order('created_at', ascending: false)
         .limit(200);
@@ -136,7 +140,7 @@ class MerchantOrderRepository {
   Future<OrderDetail> fetchOrderDetail(String orderId) async {
     final orderRes = await _supabase
         .from('orders')
-        .select()
+        .select(_orderSelect)
         .eq('id', orderId)
         .single();
 

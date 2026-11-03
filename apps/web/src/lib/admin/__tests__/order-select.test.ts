@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { withOrderItemCount, type AdminOrderListRow } from "../order-select"
+import { ADMIN_ORDER_DETAIL_SELECT, ADMIN_ORDER_LIST_SELECT, withOrderItemCount, type AdminOrderListRow } from "../order-select"
 
 function row(overrides: Partial<AdminOrderListRow> = {}): AdminOrderListRow {
   return {
@@ -24,7 +24,38 @@ function row(overrides: Partial<AdminOrderListRow> = {}): AdminOrderListRow {
   } as AdminOrderListRow
 }
 
+describe("ADMIN_ORDER_LIST_SELECT", () => {
+  it("embeds the channel short number needed by the merchant list", () => {
+    expect(ADMIN_ORDER_LIST_SELECT).toContain(
+      "channel_orders(channel, external_order_number)"
+    )
+  })
+})
+
+describe("ADMIN_ORDER_DETAIL_SELECT", () => {
+  it("embeds the channel short number for the detail header", () => {
+    expect(ADMIN_ORDER_DETAIL_SELECT).toContain(
+      "channel_orders(channel, external_order_number)"
+    )
+    expect(ADMIN_ORDER_DETAIL_SELECT).toContain("order_item_modifiers (*)")
+  })
+})
+
 describe("withOrderItemCount", () => {
+  it("preserves the embedded channel identity", () => {
+    const mapped = withOrderItemCount(
+      row({
+        channel_orders: [
+          { channel: "grabfood", external_order_number: "GF-659" },
+        ],
+      })
+    )
+
+    expect(mapped.channel_orders).toEqual([
+      { channel: "grabfood", external_order_number: "GF-659" },
+    ])
+  })
+
   it("sums the embedded order item quantities into item_count", () => {
     const mapped = withOrderItemCount(
       row({ order_items: [{ quantity: 2 }, { quantity: 1 }] })

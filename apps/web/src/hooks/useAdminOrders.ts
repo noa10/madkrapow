@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { isKitchenActive, KITCHEN_QUEUE_OR_FILTER } from "@/lib/orders/kitchen";
+import { mergeRealtimeOrder } from "@/lib/orders/realtime";
 
 export interface AdminOrder {
   id: string;
   display_code?: string | null;
+  channel_orders?: { channel: string; external_order_number: string | null }[] | null;
   status: string;
   total_cents: number;
   delivery_fee_cents: number;
@@ -40,7 +42,7 @@ export function useAdminOrders() {
     const fetchOrders = async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select("*, channel_orders(channel, external_order_number)")
         // Only tickets the kitchen board can show. This keeps completed
         // orders and abandoned web checkouts from crowding out active
         // tickets under the row cap.
@@ -70,11 +72,12 @@ export function useAdminOrders() {
           setOrders((prev) =>
             prev.some((order) => order.id === nextOrder.id)
               ? prev.map((order) =>
-                  order.id === nextOrder.id ? nextOrder : order
+                  order.id === nextOrder.id ? mergeRealtimeOrder(order, nextOrder) : order
                 )
               : [nextOrder, ...prev]
           );
           window.dispatchEvent(new Event("new-order-alert"));
+          void fetchOrders();
         }
       )
       .on(
@@ -90,10 +93,13 @@ export function useAdminOrders() {
             }
             return prev.some((order) => order.id === nextOrder.id)
               ? prev.map((order) =>
-                  order.id === nextOrder.id ? nextOrder : order
+                  order.id === nextOrder.id ? mergeRealtimeOrder(order, nextOrder) : order
                 )
               : [nextOrder, ...prev];
           });
+          // Only the Grab channel embed can change without an `orders`
+          // column change; other updates are fully described by the payload.
+          if (nextOrder.source === "grabfood") void fetchOrders();
         }
       )
       .subscribe();

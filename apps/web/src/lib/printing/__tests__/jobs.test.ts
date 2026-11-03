@@ -50,9 +50,19 @@ describe('buildKitchenDocket', () => {
 
   it('leads with source, big order number and item quantities', () => {
     expect(job.lines[0]).toEqual({ kind: 'text', text: 'GRABFOOD', style: { align: 'center' } })
-    expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234', style: { align: 'center', bold: true, double: true } })
+    expect(job.lines[1]).toMatchObject({ text: 'GF-659', style: { align: 'center', bold: true, double: true } })
     const itemLine = job.lines.find((l) => l.kind === 'text' && l.text === '2x Set Krapow Daging')
     expect(itemLine).toBeTruthy()
+  })
+
+  it('falls back to the internal number when the short number is missing', () => {
+    const job = buildKitchenDocket({ ...ORDER, externalOrderNumber: undefined })
+    expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
+  })
+
+  it('falls back to the internal number when the short number is blank', () => {
+    const job = buildKitchenDocket({ ...ORDER, externalOrderNumber: '   ' })
+    expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
   })
 
   it('indents modifiers and flags item notes', () => {
@@ -74,6 +84,11 @@ describe('buildGrabfoodTicket', () => {
     expect(job.lines[0]).toMatchObject({ text: 'GRABFOOD ORDER' })
     expect(job.lines[1]).toMatchObject({ text: 'GF-659' })
   })
+
+  it('falls back to the internal number when the short number is blank', () => {
+    const job = buildGrabfoodTicket({ ...ORDER, externalOrderNumber: '  ' })
+    expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
+  })
 })
 
 describe('buildReceipt', () => {
@@ -86,6 +101,18 @@ describe('buildReceipt', () => {
     expect(texts).toContain('Subtotal|RM 29.50')
     expect(texts).toContain('TOTAL|RM 29.50')
     expect(texts).toContain('Payment|GRABFOOD')
+  })
+
+  it('prints the Grab short number as the Grab ref', () => {
+    const job = buildReceipt(ORDER, STORE)
+    const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
+    expect(texts).toContain('Grab ref|GF-659')
+  })
+
+  it('skips a whitespace-only Grab ref', () => {
+    const job = buildReceipt({ ...ORDER, externalOrderNumber: '   ' }, STORE)
+    const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
+    expect(texts.some((text) => String(text).startsWith('Grab ref|'))).toBe(false)
   })
 
   it('flags a diner-claimed QR payment for the cashier', () => {

@@ -108,7 +108,9 @@ Never mix sandbox and production credentials — the API will reject them.
   read first, and `payments.external_ref` is unique, so callback retries and
   the webhook/verify race cannot double-dispatch a delivery.
 - **Fail closed** — a missing X Signature key makes every callback fail
-  verification; a partially configured account is not offered at checkout.
+  verification; a partially configured account is not offered at checkout. The
+  checkout also hides Billplz when `BILLPLZ_ENV` and the resolved API base URL
+  disagree (for example, `BILLPLZ_ENV=production` with a sandbox URL).
 
 ## Files
 

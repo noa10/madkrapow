@@ -5,9 +5,10 @@ import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
 import {
   createBill,
-  isBillplzConfigured,
+  getBillplzConfigIssue,
   normalizeBillplzMobile,
 } from '@/lib/billplz/client'
+import { getStripeConfigIssue } from '@/lib/stripe/config'
 import { moneyStringToCents } from '@/lib/lalamove/quote'
 import { validateModifierSelections } from '@/lib/menu/checkout-modifiers'
 import { MAX_ITEM_QUANTITY } from '@/lib/menu/quantity'
@@ -163,17 +164,36 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     const { items, deliveryAddress, deliveryFee, deliveryType, fulfillmentType, scheduledFor, quotationId, serviceType, stopIds, priceBreakdown, promoCodes, paymentMethod } = parsed.data
 
     // Fail before creating an order when the selected gateway cannot be used.
-    // The methods endpoint hides a disabled method, but the API is the trust
-    // boundary and must enforce the flag too.
-    if (paymentMethod === 'billplz' && (!env.BILLPLZ_ENABLED || !isBillplzConfigured())) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Online banking is not available right now. Please choose card payment.',
-          code: 'BILLPLZ_NOT_CONFIGURED',
-        },
-        { status: 503 }
-      )
+    // The methods endpoint hides an unavailable method, but the API is the trust
+    // boundary and must enforce the same availability rules too.
+    if (paymentMethod === 'billplz') {
+      const billplzIssue = getBillplzConfigIssue()
+      if (billplzIssue) {
+        console.warn('[API] Billplz unavailable:', billplzIssue)
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Online banking is not available right now. Please choose another payment method.',
+            code: 'BILLPLZ_NOT_CONFIGURED',
+          },
+          { status: 503 }
+        )
+      }
+    }
+
+    if (paymentMethod === 'stripe') {
+      const stripeIssue = getStripeConfigIssue()
+      if (stripeIssue) {
+        console.warn('[API] Stripe unavailable:', stripeIssue)
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Card payment is not available right now. Please choose another payment method.',
+            code: 'STRIPE_NOT_CONFIGURED',
+          },
+          { status: 503 }
+        )
+      }
     }
 
     // Billplz requires an email or a mobile number on the bill. The web app

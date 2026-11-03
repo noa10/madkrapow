@@ -400,8 +400,9 @@ The following environment variables are required or optional for the bot system.
 |----------|-------------|---------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. | `https://xyz.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (for server-side DB access). | `eyJ...` |
-| `NEXT_PUBLIC_URL` | Public base URL of the deployed app. Used for Stripe success/cancel URLs and checkout API calls. | `https://madkrapow.com` |
+| `NEXT_PUBLIC_URL` | Public base URL of the deployed app. Used for Stripe success/cancel URLs and checkout API calls. | `https://www.madkrapow.com` |
 | `STRIPE_SECRET_KEY` | Stripe secret key (starts with `sk_`). Used to create Checkout Sessions. | `sk_test_...` |
+| `STRIPE_ENABLED` | Set to `false` to hide card payments without removing credentials. | `true` |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (starts with `pk_`). | `pk_test_...` |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | Google Maps API key (starts with `AIza`). Used for address geocoding. | `AIza...` |
 | `STORE_LATITUDE` | Store latitude for delivery zone checks. | `3.0738` |

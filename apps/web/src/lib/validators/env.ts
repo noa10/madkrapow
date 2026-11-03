@@ -5,6 +5,11 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith('pk_'),
+  // Card payments can be hidden without removing credentials. This is useful
+  // while Stripe onboarding is pending or when Billplz is the only live rail.
+  STRIPE_ENABLED: z.union([z.string(), z.boolean()]).transform(v =>
+    typeof v === 'string' ? v === 'true' : v
+  ).default(true),
   STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
   // Billplz (Malaysian FPX gateway). Sandbox and production use separate
@@ -133,6 +138,7 @@ const envData = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+  STRIPE_ENABLED: process.env.STRIPE_ENABLED,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   BILLPLZ_ENABLED: process.env.BILLPLZ_ENABLED,
@@ -229,6 +235,15 @@ if (process.env.SKIP_ENV_VALIDATION === 'true') {
 
   env = (parsed.data || envData) as unknown as Env
 }
+
+// Payment runtime flags must be typed even when the deployment bypasses general
+// validation. Raw process.env values are strings, so `"false"` would otherwise
+// be truthy and a disabled gateway would stay visible.
+const paymentRuntimeSchema = envSchema.pick({
+  STRIPE_ENABLED: true,
+  BILLPLZ_ENABLED: true,
+})
+env = { ...env, ...paymentRuntimeSchema.parse(envData) }
 
 // GrabFood runtime guards require typed flags and expiry values even when the
 // deployment bypasses general validation or another integration fails parsing.

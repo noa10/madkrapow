@@ -5,6 +5,9 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
 
 const mockStripeCheckoutCreate = vi.fn()
+const { mockStripeIssue } = vi.hoisted(() => ({
+  mockStripeIssue: vi.fn(),
+}))
 
 vi.mock('stripe', () => ({
   default: vi.fn().mockImplementation(function () {
@@ -16,6 +19,10 @@ vi.mock('stripe', () => ({
       },
     }
   }),
+}))
+
+vi.mock('@/lib/stripe/config', () => ({
+  getStripeConfigIssue: () => mockStripeIssue(),
 }))
 
 vi.mock('@/lib/validators/env', () => ({
@@ -132,7 +139,19 @@ function createRequest(body: unknown): Request {
 describe('POST /api/bots/checkout', () => {
   beforeEach(() => {
     mockStripeCheckoutCreate.mockReset()
+    mockStripeIssue.mockReturnValue(null)
     mockSupabase = buildMockSupabaseClient({})
+  })
+
+  it('returns 503 when Stripe is not available', async () => {
+    mockStripeIssue.mockReturnValue('Stripe is in test mode in production')
+
+    const res = await POST(createRequest({}) as never)
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.code).toBe('STRIPE_NOT_CONFIGURED')
+    expect(mockStripeCheckoutCreate).not.toHaveBeenCalled()
   })
 
   it('returns success with checkout URL for valid request', async () => {

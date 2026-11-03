@@ -10,6 +10,8 @@ import {
   createBill,
   getBill,
   getBillplzBaseUrl,
+  getBillplzConfigIssue,
+  isBillplzAvailable,
   isBillplzConfigured,
   normalizeBillplzMobile,
   verifyBillplzSignature,
@@ -17,6 +19,7 @@ import {
 
 const { mockEnv } = vi.hoisted(() => ({
   mockEnv: {
+    BILLPLZ_ENABLED: true as boolean,
     BILLPLZ_ENV: 'sandbox' as 'sandbox' | 'production',
     BILLPLZ_API_KEY: 'billplz-secret' as string | undefined,
     BILLPLZ_COLLECTION_ID: 'collection-1' as string | undefined,
@@ -40,6 +43,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockEnv.BILLPLZ_ENABLED = true
   mockEnv.BILLPLZ_ENV = 'sandbox'
   mockEnv.BILLPLZ_API_KEY = 'billplz-secret'
   mockEnv.BILLPLZ_COLLECTION_ID = 'collection-1'
@@ -73,6 +77,45 @@ describe('isBillplzConfigured', () => {
     expect(isBillplzConfigured()).toBe(true)
     mockEnv.BILLPLZ_X_SIGNATURE_KEY = undefined
     expect(isBillplzConfigured()).toBe(false)
+  })
+})
+
+describe('Billplz availability', () => {
+  it('is available when enabled, configured, and pointed at sandbox', () => {
+    expect(getBillplzConfigIssue()).toBeNull()
+    expect(isBillplzAvailable()).toBe(true)
+  })
+
+  it('is unavailable while disabled', () => {
+    mockEnv.BILLPLZ_ENABLED = false
+
+    expect(getBillplzConfigIssue()).toBe('Billplz is disabled')
+    expect(isBillplzAvailable()).toBe(false)
+  })
+
+  it('is unavailable when credentials are incomplete', () => {
+    mockEnv.BILLPLZ_COLLECTION_ID = undefined
+
+    expect(getBillplzConfigIssue()).toBe('Billplz credentials are incomplete')
+  })
+
+  it('accepts the production API when BILLPLZ_ENV=production', () => {
+    mockEnv.BILLPLZ_ENV = 'production'
+
+    expect(getBillplzConfigIssue()).toBeNull()
+  })
+
+  it('rejects a sandbox base URL in production', () => {
+    mockEnv.BILLPLZ_ENV = 'production'
+    mockEnv.BILLPLZ_BASE_URL = BILLPLZ_SANDBOX_BASE_URL
+
+    expect(getBillplzConfigIssue()).toBe('Billplz production requires the production API URL')
+  })
+
+  it('rejects the production base URL in sandbox', () => {
+    mockEnv.BILLPLZ_BASE_URL = BILLPLZ_PRODUCTION_BASE_URL
+
+    expect(getBillplzConfigIssue()).toBe('Billplz sandbox cannot use the production API URL')
   })
 })
 

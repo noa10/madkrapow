@@ -16,7 +16,6 @@ import { PageContainer } from '@/components/layout/PageContainer'
 import { PromoCodeInput } from '@/components/checkout/PromoCodeInput'
 import { PaymentMethodSelector } from '@/components/checkout/PaymentMethodSelector'
 import {
-  PAYMENT_METHOD_OPTIONS,
   type PaymentMethod,
   type PaymentMethodOption,
 } from '@/lib/payments/methods'
@@ -208,11 +207,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const [isLoadingMenu, setIsLoadingMenu] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBulkMode, setIsBulkMode] = useState(false)
-  // Stripe is always available; Billplz appears only when the server reports
-  // it as configured (see /api/payments/methods).
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>(() =>
-    PAYMENT_METHOD_OPTIONS.filter((option) => option.id === 'stripe')
-  )
+  // Populated from the server; no payment method is assumed to be available.
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
+  const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stripe')
   const [showAddressInput, setShowAddressInput] = useState(false)
   const [showContactInput, setShowContactInput] = useState(false)
@@ -433,14 +430,18 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
             )
           : []
 
-        if (cancelled || !data.success || methods.length === 0) return
+        if (cancelled || !data.success) return
 
         setPaymentMethods(methods)
-        setPaymentMethod((current) =>
-          methods.some((method) => method.id === current) ? current : methods[0].id
-        )
+        if (methods.length > 0) {
+          setPaymentMethod((current) =>
+            methods.some((method) => method.id === current) ? current : methods[0].id
+          )
+        }
       } catch (err) {
         console.error('Failed to fetch payment methods:', err)
+      } finally {
+        if (!cancelled) setPaymentMethodsLoaded(true)
       }
     }
 
@@ -792,6 +793,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   const canCheckout =
     !isCartEmpty &&
+    paymentMethodsLoaded &&
+    paymentMethods.length > 0 &&
+    paymentMethods.some((method) => method.id === paymentMethod) &&
     (!needsDeliveryAddress || hasDeliveryAddress) &&
     !needsScheduleSelection &&
     !quoteExpired &&
@@ -1357,16 +1361,26 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
                   <section className="rounded-xl border bg-card p-5 shadow-sm">
                     <h2 className="text-lg font-semibold mb-4 font-display">Payment Method</h2>
-                    <PaymentMethodSelector
-                      options={paymentMethods}
-                      value={paymentMethod}
-                      onChange={setPaymentMethod}
-                      disabled={isProcessing}
-                    />
-                    {paymentMethod === 'billplz' && (
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        You&apos;ll be redirected to Billplz to complete payment with FPX online banking.
+                    {!paymentMethodsLoaded ? (
+                      <p className="text-sm text-muted-foreground">Loading payment methods…</p>
+                    ) : paymentMethods.length === 0 ? (
+                      <p className="text-sm text-destructive">
+                        No payment methods are available right now. Please try again later.
                       </p>
+                    ) : (
+                      <>
+                        <PaymentMethodSelector
+                          options={paymentMethods}
+                          value={paymentMethod}
+                          onChange={setPaymentMethod}
+                          disabled={isProcessing}
+                        />
+                        {paymentMethod === 'billplz' && (
+                          <p className="mt-3 text-xs text-muted-foreground">
+                            You&apos;ll be redirected to Billplz to complete payment with FPX online banking.
+                          </p>
+                        )}
+                      </>
                     )}
                   </section>
                 </>

@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
+import { getStripeConfigIssue } from '@/lib/stripe/config'
 import { createServerClient } from '@supabase/ssr'
 import { findOrCreateBotCustomer } from '@/lib/bots/customer'
 import { clearSession } from '@/lib/bots/conversation'
@@ -81,6 +82,19 @@ function generateOrderNumber(): string {
 
 export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutResult>> {
   try {
+    const stripeIssue = getStripeConfigIssue()
+    if (stripeIssue) {
+      console.warn('[BotCheckout] Stripe unavailable:', stripeIssue)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Card payment is not available right now.',
+          code: 'STRIPE_NOT_CONFIGURED',
+        },
+        { status: 503 }
+      )
+    }
+
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
       apiVersion: STRIPE_API_VERSION,
     })

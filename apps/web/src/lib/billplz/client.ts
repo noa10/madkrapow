@@ -81,6 +81,31 @@ export function isBillplzConfigured(): boolean {
   )
 }
 
+/**
+ * Availability is stricter than "credentials exist": the method must be
+ * enabled, fully configured, and pointed at the API that matches BILLPLZ_ENV.
+ * A sandbox URL in production (or the reverse) would take the customer to the
+ * wrong payment environment, so it fails closed instead of rendering FPX.
+ */
+export function getBillplzConfigIssue(): string | null {
+  if (!env.BILLPLZ_ENABLED) return 'Billplz is disabled'
+  if (!isBillplzConfigured()) return 'Billplz credentials are incomplete'
+
+  const baseUrl = getBillplzBaseUrl()
+  if (env.BILLPLZ_ENV === 'production' && baseUrl !== BILLPLZ_PRODUCTION_BASE_URL) {
+    return 'Billplz production requires the production API URL'
+  }
+  if (env.BILLPLZ_ENV === 'sandbox' && baseUrl === BILLPLZ_PRODUCTION_BASE_URL) {
+    return 'Billplz sandbox cannot use the production API URL'
+  }
+
+  return null
+}
+
+export function isBillplzAvailable(): boolean {
+  return getBillplzConfigIssue() === null
+}
+
 /** The configured collection, used to reject a bill from another collection. */
 export function getBillplzCollectionId(): string | undefined {
   return env.BILLPLZ_COLLECTION_ID

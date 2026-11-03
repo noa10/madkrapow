@@ -83,9 +83,9 @@ describe('buildGrabMenu', () => {
       name: 'Set Krapow Daging (Grab)',
       price: 1500,
       availableStatus: 'AVAILABLE',
-      taxable: true,
       photos: ['https://cdn.example/item-1.png'],
     })
+    expect(menu.categories[0].items[0]).not.toHaveProperty('taxable')
   })
 
   it('uses a stable local category id when no Grab category mapping exists', () => {

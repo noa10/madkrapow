@@ -153,7 +153,7 @@ function buildItem(item: MenuItemRow, mapping: MenuChannelProductRow): GrabMenuI
     name: mapping.external_name ?? item.name,
     availableStatus,
     price: mapping.price_cents ?? item.price_cents,
-    taxable: true,
+    // `taxable` is Indonesia-only. Malaysia rejects it with INVALID_TAXABLE_COUNTRY.
     sequence: item.sort_order,
   }
   if (item.description) menuItem.description = item.description

@@ -18,6 +18,20 @@ export interface GuardFailure {
 
 export type GuardResult = { ok: true } | GuardFailure
 
+function warnOutletMismatch(
+  source: 'configured' | 'persisted',
+  received: { merchantID?: string | null; partnerMerchantID?: string | null },
+  expected: { merchantID: string | null; partnerMerchantID: string | null }
+): void {
+  console.warn('[GrabFood] outlet mismatch', {
+    source,
+    receivedMerchantID: received.merchantID ?? null,
+    receivedPartnerMerchantID: received.partnerMerchantID ?? null,
+    expectedMerchantID: expected.merchantID,
+    expectedPartnerMerchantID: expected.partnerMerchantID,
+  })
+}
+
 export function isMock(): boolean {
   return env.GRABFOOD_ENV === 'mock'
 }
@@ -75,6 +89,10 @@ export function validateOutlet(
     payload.merchantID &&
     payload.merchantID !== expectedMerchant
   ) {
+    warnOutletMismatch('configured', payload, {
+      merchantID: expectedMerchant,
+      partnerMerchantID: expectedPartner,
+    })
     return {
       ok: false,
       status: 403,
@@ -83,6 +101,10 @@ export function validateOutlet(
   }
 
   if (expectedPartner && payload.partnerMerchantID && payload.partnerMerchantID !== expectedPartner) {
+    warnOutletMismatch('configured', payload, {
+      merchantID: expectedMerchant,
+      partnerMerchantID: expectedPartner,
+    })
     return {
       ok: false,
       status: 403,
@@ -111,6 +133,10 @@ export async function validatePersistedOutlet(
   const saved = data?.[0] as { partner_merchant_id: string; grab_merchant_id: string | null } | undefined
   if (saved && ((payload.partnerMerchantID && payload.partnerMerchantID !== saved.partner_merchant_id) ||
     (payload.merchantID && saved.grab_merchant_id && payload.merchantID !== saved.grab_merchant_id))) {
+    warnOutletMismatch('persisted', payload, {
+      merchantID: saved.grab_merchant_id,
+      partnerMerchantID: saved.partner_merchant_id,
+    })
     return { ok: false, status: 403, error: 'Callback does not match the established GrabFood outlet' }
   }
   return { ok: true }

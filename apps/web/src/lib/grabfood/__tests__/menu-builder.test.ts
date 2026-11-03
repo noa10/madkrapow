@@ -88,6 +88,55 @@ describe('buildGrabMenu', () => {
     expect(menu.categories[0].items[0]).not.toHaveProperty('taxable')
   })
 
+  it('sorts categories and items by sequence, not input order', () => {
+    const rows = structuredClone(ROWS)
+    const secondCategory = structuredClone(ROWS[0])
+    secondCategory.id = 'cat-2'
+    secondCategory.name = 'Drinks'
+    secondCategory.sort_order = 2
+    secondCategory.channel_categories = [
+      { channel: 'grabfood', external_category_id: 'GRAB-CAT-2' },
+    ]
+    secondCategory.menu_items = [
+      {
+        ...structuredClone(ROWS[0].menu_items![0]),
+        id: 'item-2',
+        name: 'Iced Tea',
+        sort_order: 1,
+        channel_products: [
+          {
+            channel: 'grabfood',
+            external_item_id: 'GRAB-ITEM-2',
+            external_name: null,
+            price_cents: null,
+            is_available: true,
+            snooze_till: null,
+          },
+        ],
+      },
+    ]
+    rows[0].sort_order = 1
+
+    const menu = buildGrabMenu([secondCategory, ...rows])
+
+    expect(menu.categories.map((category) => category.sequence)).toEqual([1, 2])
+    expect(menu.categories.map((category) => category.id)).toEqual([
+      'GRAB-CAT-1',
+      'GRAB-CAT-2',
+    ])
+    expect(menu.categories[1].items[0]).toMatchObject({
+      id: 'GRAB-ITEM-2',
+      name: 'Iced Tea',
+      sequence: 1,
+    })
+  })
+
+  it('never emits the Indonesia-only taxable field', () => {
+    const menu = buildGrabMenu(ROWS, { merchantId: '1-TEST' })
+
+    expect(JSON.stringify(menu)).not.toContain('"taxable"')
+  })
+
   it('uses a stable local category id when no Grab category mapping exists', () => {
     const rows = structuredClone(ROWS)
     rows[0].channel_categories = []

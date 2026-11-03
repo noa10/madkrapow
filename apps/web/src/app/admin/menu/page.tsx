@@ -369,6 +369,22 @@ function SortableModifierRow({
 export default function AdminMenuPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin", "manager"]);
   const { addToast } = useToastStore();
+
+  const notifyGrabAfterMenuChange = async (label: string) => {
+    const warning = await notifyGrabMenuAfterChange();
+    if (warning) {
+      addToast({
+        type: "error",
+        title: `${label} saved, but Grab menu was not refreshed`,
+        description: warning,
+      });
+    } else {
+      addToast({
+        type: "success",
+        title: `${label} saved; Grab menu refresh requested`,
+      });
+    }
+  };
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -573,6 +589,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu section");
 
       const categoriesRes = await supabase
         .from("categories")
@@ -603,6 +620,7 @@ export default function AdminMenuPage() {
       if (error) throw error;
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu section");
 
       const [menuItemsRes, categoriesRes] = await Promise.all([
         supabase.from("menu_items").select(MENU_ITEM_SELECT).order("sort_order", { ascending: true }),
@@ -634,6 +652,7 @@ export default function AdminMenuPage() {
       if (error) throw error;
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu item");
 
       const menuItemsRes = await supabase
         .from("menu_items")
@@ -755,6 +774,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu order");
 
       const res = await supabase
         .from("menu_items")
@@ -782,6 +802,7 @@ export default function AdminMenuPage() {
       await supabase.from("categories").update({ sort_order: category.sort_order }).eq("id", otherCategory.id);
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu section order");
 
       const categoriesRes = await supabase
         .from("categories")
@@ -814,6 +835,7 @@ export default function AdminMenuPage() {
       await supabase.from("menu_items").update({ sort_order: item.sort_order }).eq("id", otherItem.id);
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Menu order");
 
       const res = await supabase
         .from("menu_items")
@@ -853,6 +875,7 @@ export default function AdminMenuPage() {
       await supabase.from("modifiers").update({ sort_order: otherModifier.sort_order }).eq("id", modifier.id);
       await supabase.from("modifiers").update({ sort_order: modifier.sort_order }).eq("id", otherModifier.id);
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier order");
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);
@@ -964,6 +987,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier group");
       await fetchModifierGroups();
       setEditingGroup(null);
     } catch (err: any) {
@@ -992,6 +1016,7 @@ export default function AdminMenuPage() {
       if (deleteGroupError) throw deleteGroupError;
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier group");
       await fetchModifierGroups();
       setDeletingGroup(null);
     } catch (err: any) {
@@ -1072,6 +1097,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier");
       await fetchModifierGroups();
       setEditingModifier(null);
     } catch (err: any) {
@@ -1093,6 +1119,7 @@ export default function AdminMenuPage() {
       if (deleteError) throw deleteError;
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier");
       await fetchModifierGroups();
       setDeletingModifier(null);
     } catch (err: any) {
@@ -1195,6 +1222,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Item options");
 
       setBindingsSaved(true);
       setTimeout(() => setBindingsSaved(false), 3000);
@@ -1237,6 +1265,7 @@ export default function AdminMenuPage() {
           .eq("id", reordered[i].id);
       }
       notifyMenuChanged();
+      await notifyGrabAfterMenuChange("Modifier order");
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);

@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { z } from 'zod'
 import { env } from '@/lib/validators/env'
 import { STRIPE_API_VERSION } from '@/lib/stripe/api-version'
+import { getStripeConfigIssue } from '@/lib/stripe/config'
 import { requireAdmin } from '@/lib/admin/require-admin'
 
 const ApproveRequestSchema = z.discriminatedUnion('action', [
@@ -35,6 +36,15 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApproveResult>> {
   try {
+    const stripeIssue = getStripeConfigIssue()
+    if (stripeIssue) {
+      console.warn('[API] Bulk approval blocked; Stripe unavailable:', stripeIssue)
+      return NextResponse.json(
+        { success: false, error: 'Card payment is not available right now.' },
+        { status: 503 }
+      )
+    }
+
     const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
       apiVersion: STRIPE_API_VERSION,
     })

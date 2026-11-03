@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockConfigured, mockEnv } = vi.hoisted(() => ({
-  mockConfigured: vi.fn(),
-  mockEnv: { BILLPLZ_ENABLED: true },
+const { mockBillplzAvailable, mockStripeAvailable } = vi.hoisted(() => ({
+  mockBillplzAvailable: vi.fn(),
+  mockStripeAvailable: vi.fn(),
 }))
 
 vi.mock('@/lib/billplz/client', () => ({
-  isBillplzConfigured: () => mockConfigured(),
+  isBillplzAvailable: () => mockBillplzAvailable(),
 }))
 
-vi.mock('@/lib/validators/env', () => ({
-  env: mockEnv,
+vi.mock('@/lib/stripe/config', () => ({
+  isStripeAvailable: () => mockStripeAvailable(),
 }))
 
 import { GET } from '../route'
@@ -23,26 +23,31 @@ async function methods() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockEnv.BILLPLZ_ENABLED = true
+  mockBillplzAvailable.mockReturnValue(true)
+  mockStripeAvailable.mockReturnValue(true)
 })
 
 describe('GET /api/payments/methods', () => {
-  it('offers Stripe and Billplz when Billplz is enabled and configured', async () => {
-    mockConfigured.mockReturnValue(true)
-
+  it('offers Stripe and Billplz when both are available', async () => {
     expect(await methods()).toEqual(['stripe', 'billplz'])
   })
 
-  it('hides Billplz while it is disabled', async () => {
-    mockEnv.BILLPLZ_ENABLED = false
-    mockConfigured.mockReturnValue(true)
+  it('hides Billplz while it is disabled or incomplete', async () => {
+    mockBillplzAvailable.mockReturnValue(false)
 
     expect(await methods()).toEqual(['stripe'])
   })
 
-  it('hides Billplz when its credentials are incomplete', async () => {
-    mockConfigured.mockReturnValue(false)
+  it('hides Stripe while its keys are test-mode or mismatched', async () => {
+    mockStripeAvailable.mockReturnValue(false)
 
-    expect(await methods()).toEqual(['stripe'])
+    expect(await methods()).toEqual(['billplz'])
+  })
+
+  it('returns no methods when neither gateway is available', async () => {
+    mockBillplzAvailable.mockReturnValue(false)
+    mockStripeAvailable.mockReturnValue(false)
+
+    expect(await methods()).toEqual([])
   })
 })

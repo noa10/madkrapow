@@ -48,3 +48,25 @@ describe('GrabFood environment normalization', () => {
     }
   })
 })
+
+describe('Payment environment normalization', () => {
+  it('parses disabled payment flags when general validation is skipped', async () => {
+    vi.stubEnv('SKIP_ENV_VALIDATION', 'true')
+    vi.stubEnv('STRIPE_ENABLED', 'false')
+    vi.stubEnv('BILLPLZ_ENABLED', 'false')
+    const { env } = await import('./env')
+
+    expect(env.STRIPE_ENABLED).toBe(false)
+    expect(env.BILLPLZ_ENABLED).toBe(false)
+  })
+
+  it('defaults both payment methods to enabled', async () => {
+    vi.stubEnv('SKIP_ENV_VALIDATION', 'true')
+    vi.stubEnv('STRIPE_ENABLED', undefined)
+    vi.stubEnv('BILLPLZ_ENABLED', undefined)
+    const { env } = await import('./env')
+
+    expect(env.STRIPE_ENABLED).toBe(true)
+    expect(env.BILLPLZ_ENABLED).toBe(true)
+  })
+})

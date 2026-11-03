@@ -184,6 +184,7 @@ See `docs/architecture.md` for the complete, detailed codemap.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | JWT | Supabase anonymous key (safe for client) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | JWT | Supabase service role key (SERVER ONLY) |
 | `STRIPE_SECRET_KEY` | ✅ | `sk_*` | Stripe secret key (SERVER ONLY) |
+| `STRIPE_ENABLED` | ⬜ | boolean | Set `false` to hide card payments without removing credentials |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ✅ | `pk_*` | Stripe publishable key (safe for client) |
 | `STRIPE_WEBHOOK_SECRET` | ✅ | `whsec_*` | Stripe webhook signing secret |
 | `LALAMOVE_API_KEY` | ✅ | string | Lalamove Partner Portal API key |

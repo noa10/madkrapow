@@ -33,6 +33,22 @@ void main() {
       expect(card.shape, isA<RoundedRectangleBorder>());
     });
 
+    testWidgets('shows the GrabFood short number on the order card', (
+      tester,
+    ) async {
+      final order = _order();
+      order.setField('source', 'grabfood');
+      order.setField('channel_orders', [
+        {'channel': 'grabfood', 'external_order_number': 'GF-123'},
+      ]);
+      await _pump(tester, order);
+
+      expect(find.text('GF-123'), findsOneWidget);
+      expect(find.text('MK-042'), findsNothing);
+      expect(order.id, 'o1');
+      expect(order.orderNumber, 'TEST001');
+    });
+
     testWidgets('hides the action when the order is already ready', (
       tester,
     ) async {

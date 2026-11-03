@@ -27,6 +27,8 @@
  *
  * `order_items(quantity)` stays embedded because the list derives
  * `item_count` from it; `order_items` itself is removed during that mapping.
+ * `channel_orders(channel, external_order_number)` stays embedded because
+ * GrabFood cards show the Grab short number instead of `display_code`.
  */
 
 import type { Order } from "@/types/orders";
@@ -55,7 +57,10 @@ export const ADMIN_ORDER_LIST_COLUMNS = [
 /** Select string shared by the tab hook and the admin orders API route. */
 export const ADMIN_ORDER_LIST_SELECT = `${ADMIN_ORDER_LIST_COLUMNS.join(
   ", "
-)}, order_items(quantity)`;
+)}, order_items(quantity), channel_orders(channel, external_order_number)`;
+
+/** Select string for the admin order detail view (full row + items). */
+export const ADMIN_ORDER_DETAIL_SELECT = `*, order_items (*, order_item_modifiers (*)), channel_orders(channel, external_order_number)`;
 
 /** Shape returned by {@link ADMIN_ORDER_LIST_SELECT} before `item_count` is derived. */
 export type AdminOrderListRow = Pick<
@@ -63,6 +68,7 @@ export type AdminOrderListRow = Pick<
   (typeof ADMIN_ORDER_LIST_COLUMNS)[number]
 > & {
   order_items: { quantity: number }[] | null;
+  channel_orders?: Order["channel_orders"];
 };
 
 /** Map an embedded-items row to the `Order` shape the tab cache stores. */

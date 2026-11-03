@@ -110,9 +110,10 @@ export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boole
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'text', text: SOURCE_LABELS[order.source] ?? order.source.toUpperCase(), style: { align: 'center' } })
-  lines.push({ kind: 'text', text: order.orderNumber, style: { align: 'center', bold: true, double: true } })
-  if (order.externalOrderNumber) {
-    lines.push({ kind: 'text', text: `Grab: ${order.externalOrderNumber}`, style: { align: 'center' } })
+  const shortNumber = order.externalOrderNumber?.trim()
+  lines.push({ kind: 'text', text: shortNumber || order.orderNumber, style: { align: 'center', bold: true, double: true } })
+  if (shortNumber && shortNumber !== order.orderNumber) {
+    lines.push({ kind: 'text', text: `MK ref: ${order.orderNumber}`, style: { align: 'center' } })
   }
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
   if (order.tableLabel) {
@@ -140,7 +141,7 @@ export function buildGrabfoodTicket(order: PrintOrder, options: { reprint?: bool
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'text', text: 'GRABFOOD ORDER', style: { align: 'center', bold: true, double: true } })
-  lines.push({ kind: 'text', text: order.externalOrderNumber ?? order.orderNumber, style: { align: 'center', bold: true } })
+  lines.push({ kind: 'text', text: order.externalOrderNumber?.trim() || order.orderNumber, style: { align: 'center', bold: true } })
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
   if (order.customerName) {
     lines.push({ kind: 'text', text: `Eater: ${order.customerName}` })
@@ -170,8 +171,9 @@ export function buildReceipt(
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'columns', label: 'Order', value: order.orderNumber })
-  if (order.externalOrderNumber) {
-    lines.push({ kind: 'columns', label: 'Grab ref', value: order.externalOrderNumber })
+  const grabRef = order.externalOrderNumber?.trim()
+  if (grabRef) {
+    lines.push({ kind: 'columns', label: 'Grab ref', value: grabRef })
   }
   lines.push({ kind: 'columns', label: 'Date', value: timestamp(order.createdAt).trim() })
   lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })

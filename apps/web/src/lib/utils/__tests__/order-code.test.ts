@@ -1,5 +1,73 @@
 import { describe, it, expect } from 'vitest'
-import { generateOrderDisplayCode } from '../order-code'
+import { generateOrderDisplayCode, getOrderDisplayCode } from '../order-code'
+
+describe('getOrderDisplayCode', () => {
+  it('prefers the Grab short number for Grabfood orders', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'grabfood',
+        channel_orders: [{ channel: 'grabfood', external_order_number: 'GF-659' }],
+      }),
+    ).toBe('GF-659')
+  })
+
+  it('falls back to the local display code when the short number is missing', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'grabfood',
+        channel_orders: [{ channel: 'grabfood', external_order_number: null }],
+      }),
+    ).toBe('MK-042')
+  })
+
+  it('falls back to the local display code when the channel row is absent', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'grabfood',
+        channel_orders: [],
+      }),
+    ).toBe('MK-042')
+  })
+
+  it('ignores blank short numbers', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'grabfood',
+        channel_orders: [{ channel: 'grabfood', external_order_number: '   ' }],
+      }),
+    ).toBe('MK-042')
+  })
+
+  it('does not use another channel short number for Grabfood orders', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'grabfood',
+        channel_orders: [{ channel: 'foodpanda', external_order_number: 'FP-900' }],
+      }),
+    ).toBe('MK-042')
+  })
+
+  it('keeps local display codes for non-channel orders', () => {
+    expect(
+      getOrderDisplayCode({
+        id: 'order-1',
+        display_code: 'MK-042',
+        source: 'web',
+        channel_orders: [{ channel: 'grabfood', external_order_number: 'GF-659' }],
+      }),
+    ).toBe('MK-042')
+  })
+})
 
 describe('generateOrderDisplayCode', () => {
   it('returns MK- format with 3 digits', () => {

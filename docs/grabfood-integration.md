@@ -63,6 +63,14 @@ Order acceptance (closes the auto-cancel gap):
 Money is integer sen everywhere (Grab MYR exponent = 2 — compatible with the
 house convention).
 
+Merchant screens (web and Flutter lists, kitchen board, order detail, printed
+dockets) display `shortOrderNumber` as the order reference for GrabFood
+orders, because that is the number Grab support and riders quote. The local
+`orders.display_code` / `order_number` remain the internal identity and the
+fallback when Grab omits the short number; `orderID` stays the idempotency and
+API key. Never key order matching on `shortOrderNumber` (unique per merchant
+per day only).
+
 ### Status mapping
 
 Grab states map onto the existing 8-status machine (no new statuses; parity

@@ -67,6 +67,12 @@ describe('KitchenOrderCard', () => {
     expect(render(makeOrder({ source: 'grabfood', status: 'ready' }))).toContain('Check / retry Grab notification')
     expect(render(makeOrder({ source: 'web', status: 'ready' }))).not.toContain('Check / retry Grab notification')
   })
+  it('renders the Grab short number on kitchen tickets', () => {
+    const order = { ...makeOrder({ source: 'grabfood' }), channel_orders: [{ channel: 'grabfood', external_order_number: 'GF-659' }] }
+    expect(render(order)).toContain('GF-659')
+    expect(render(order)).not.toContain('MK-042')
+  })
+
   it('renders the stored display code, not the raw id', () => {
     const html = render(makeOrder())
     expect(html).toContain('MK-042')

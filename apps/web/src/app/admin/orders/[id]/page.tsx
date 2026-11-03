@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
@@ -13,6 +13,7 @@ import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circl
 import Link from "next/link";
 import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
+import { ADMIN_ORDER_DETAIL_SELECT } from "@/lib/admin/order-select";
 import { orderSubtotalCents, orderTotalCents } from "@/lib/orders/money";
 import { isClaimedByDiner } from "@/lib/pos/receipt";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
@@ -53,6 +54,7 @@ interface OrderItem {
 interface Order {
   id: string;
   display_code?: string | null;
+  channel_orders?: { channel: string; external_order_number: string | null }[] | null;
   status: string;
   total_cents: number;
   delivery_fee_cents: number;
@@ -225,7 +227,10 @@ function ReleaseNowButton({
 export default function AdminOrderDetailPage() {
   const params = useParams();
   const orderId = params.id as string;
-  
+  return <AdminOrderDetail key={orderId} orderId={orderId} />;
+}
+
+function AdminOrderDetail({ orderId }: { orderId: string }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [shipment, setShipment] = useState<{
     id: string
@@ -252,10 +257,18 @@ export default function AdminOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [orderEvents, setOrderEvents] = useState<OrderEvent[]>([]);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
-  const [paymentClaimedByDiner, setPaymentClaimedByDiner] = useState(false);
+  const [paymentClaimedByDiner, setPaymentClaimedByDiner] = useState<boolean | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const retryPaymentClaim = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const supabase = getBrowserClient();
+    let active = true;
+    let latestRequest = 0;
+    let latestSuccess = 0;
+    let latestFailure = 0;
+    let latestClaim = 0;
+    const pending = new Set<Order[]>();
 
     // A diner claiming "I've paid" from the table QR is self-declared: the
     // server never saw the bank transfer. Without this, a claim is
@@ -263,43 +276,63 @@ export default function AdminOrderDetailPage() {
     // served for free. Re-read it on every order change, not just on mount:
     // a claim can land while a cashier has the page open.
     const loadPaymentClaim = async () => {
-      const { data: paymentRow } = await supabase
-        .from('payments')
-        .select('raw')
-        .eq('order_id', orderId)
-        .eq('status', 'succeeded')
-        .limit(1)
-        .maybeSingle();
-      setPaymentClaimedByDiner(isClaimedByDiner(paymentRow?.raw));
+      const request = ++latestClaim;
+      setPaymentClaimedByDiner(null);
+      setClaimError(null);
+      try {
+        const { data: paymentRow, error: paymentError } = await supabase
+          .from('payments')
+          .select('raw')
+          .eq('order_id', orderId)
+          .eq('status', 'succeeded')
+          .limit(1)
+          .maybeSingle();
+        if (!active || request !== latestClaim) return;
+        if (paymentError) {
+          setClaimError('Unable to verify payment status. Actions are unavailable until verification succeeds.');
+          return;
+        }
+        setPaymentClaimedByDiner(isClaimedByDiner(paymentRow?.raw));
+      } catch {
+        if (active && request === latestClaim) setClaimError('Unable to verify payment status. Actions are unavailable until verification succeeds.');
+      }
     };
 
+    retryPaymentClaim.current = () => void loadPaymentClaim();
+
     const fetchOrder = async () => {
+      const request = ++latestRequest;
+      const changes: Order[] = [];
+      pending.add(changes);
+      const isCurrent = () => active && request === latestSuccess;
       const { data, error } = await supabase
         .from("orders")
-        .select(`
-          *,
-          order_items (
-            *,
-            order_item_modifiers (*)
-          )
-        `)
+        .select(ADMIN_ORDER_DETAIL_SELECT)
         .eq("id", orderId)
         .single();
 
+      pending.delete(changes);
+      if (!active || request < latestSuccess) return;
       if (error) {
-        setError(error.message);
+        if (request >= latestFailure) {
+          latestFailure = request;
+          setError(error.message);
+        }
+        setLoading(false);
         return;
       }
 
-      setOrder(data as unknown as Order);
-
-      const orderData = data as unknown as Order;
+      latestSuccess = request;
+      if (request > latestFailure) setError(null);
+      const orderData = changes.reduce((current, updated) => ({ ...current, ...updated }), data as unknown as Order);
+      setOrder(orderData);
       if (orderData.customer_id) {
         const { data: customerData } = await supabase
           .from('customers')
           .select('id, telegram_id, whatsapp_id, auth_user_id')
           .eq('id', orderData.customer_id)
           .single();
+        if (!isCurrent()) return;
         if (customerData) {
           setCustomerInfo(customerData as CustomerInfo);
         }
@@ -314,6 +347,7 @@ export default function AdminOrderDetailPage() {
         .limit(1)
         .maybeSingle();
 
+      if (!isCurrent()) return;
       if (shipmentData) {
         setShipment(shipmentData);
       }
@@ -326,13 +360,14 @@ export default function AdminOrderDetailPage() {
         .eq('event_type', 'status_changed')
         .order('created_at', { ascending: true });
 
+      if (!isCurrent()) return;
       if (eventsData) {
         setOrderEvents(eventsData as unknown as OrderEvent[]);
       }
 
       await loadPaymentClaim();
 
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     };
 
     fetchOrder();
@@ -343,10 +378,15 @@ export default function AdminOrderDetailPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` },
         (payload: RealtimePostgresChangesPayload<Order>) => {
-          setOrder((prev) => prev ? { ...prev, ...payload.new } : null);
+          const updated = payload.new as Order;
+          for (const changes of pending) changes.push(updated);
+          setOrder((prev) => prev?.id === orderId ? { ...prev, ...updated } : prev);
           // A status change can be the diner's QR claim: refresh the
           // provenance banner so the cashier sees it without reloading.
           void loadPaymentClaim();
+          // Channel edits can change the Grab short number after the order row
+          // event; refetch so the header never falls back to the local code.
+          if (updated.source === "grabfood") void fetchOrder();
         }
       )
       .on(
@@ -361,12 +401,14 @@ export default function AdminOrderDetailPage() {
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
-            .then(({ data }: { data: typeof shipment }) => { if (data) setShipment(data) })
+            .then(({ data }: { data: typeof shipment }) => { if (active && data) setShipment(data) })
         }
       )
       .subscribe();
 
     return () => {
+      active = false;
+      retryPaymentClaim.current = null;
       supabase.removeChannel(channel);
     };
   }, [orderId]);
@@ -382,6 +424,7 @@ export default function AdminOrderDetailPage() {
     if (!ACTIVE_DISPATCH.includes(shipment.dispatch_status)) return;
 
     const supabase = getBrowserClient();
+    let active = true;
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('lalamove_shipments')
@@ -390,10 +433,10 @@ export default function AdminOrderDetailPage() {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) setShipment(data);
+      if (active && data) setShipment(data);
     }, 5000);
 
-    return () => clearInterval(interval);
+    return () => { active = false; clearInterval(interval); };
     // Scalar deps only: including the full `order`/`shipment` objects would
     // re-create the interval on every poll write and reset the 5s cadence.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,7 +450,7 @@ export default function AdminOrderDetailPage() {
     );
   }
 
-  if (error || !order) {
+  if (!order || order.id !== orderId) {
     return (
       <Card className="border-red-200 bg-red-50">
         <CardContent className="pt-6">
@@ -428,6 +471,14 @@ export default function AdminOrderDetailPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="text-red-600">Could not refresh order: {error}</p>}
+      {paymentClaimedByDiner === null && (
+        <div role="alert" className="text-red-600">
+          <span>{claimError || 'Checking payment status. Actions are unavailable until verification completes.'}</span>
+          {claimError && <Button type="button" variant="outline" onClick={() => retryPaymentClaim.current?.()}>Retry payment check</Button>}
+        </div>
+      )}
+      <fieldset disabled={paymentClaimedByDiner === null} className="space-y-6 min-w-0">
       <div className="flex items-center gap-4">
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/orders">
@@ -945,6 +996,7 @@ export default function AdminOrderDetailPage() {
           )}
         </div>
       </div>
+      </fieldset>
     </div>
   );
 }

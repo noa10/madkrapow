@@ -12,6 +12,7 @@ export type OrderSource =
 export interface Order {
   id: string
   display_code?: string | null
+  channel_orders?: { channel: string; external_order_number: string | null }[] | null
   status: string
   total_cents: number
   delivery_fee_cents: number

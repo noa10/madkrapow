@@ -15,7 +15,7 @@ export default function KitchenDisplayPage() {
     'manager',
     'kitchen',
   ]);
-  const { orders, loading, error } = useAdminOrders();
+  const { orders, loading, error, hasLoaded } = useAdminOrders();
 
   // Filter orders to show only active ones for the kitchen. Pending dine-in
   // tickets are included: the diner orders from the table QR and pays at the
@@ -67,7 +67,7 @@ export default function KitchenDisplayPage() {
     );
   }
 
-  if (error) {
+  if (error && !hasLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background p-4">
         <Card className="max-w-md bg-card border-destructive/50 shadow-sm rounded-xl">
@@ -84,6 +84,7 @@ export default function KitchenDisplayPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto">
+        {error && <p role="alert" className="mb-4 text-destructive">Could not refresh orders. Retrying automatically: {error}</p>}
         <header className="mb-6 md:mb-8">
           <h1 className="text-3xl md:text-5xl font-bold text-foreground font-display">
             Kitchen Display

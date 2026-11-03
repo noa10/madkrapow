@@ -7,6 +7,7 @@ import { useAdminOrdersStore } from "@/stores/adminOrdersStore"
 import { triggerNewOrderAlert } from "@/components/admin/NewOrderAlert"
 import type { Order, OrderTab } from "@/types/orders"
 import { determineAffectedTabs } from "../utils/determineAffectedTabs"
+import { mergeRealtimeOrder } from "@/lib/orders/realtime"
 
 const ALL_TABS: readonly OrderTab[] = ["preparing", "ready", "upcoming", "history"]
 
@@ -95,7 +96,7 @@ export function useRealtimeOrderUpdates() {
             const idx = cache.orders.findIndex((o) => o.id === newRecord.id)
             if (idx !== -1) {
               const updated = [...cache.orders]
-              updated[idx] = newRecord
+              updated[idx] = mergeRealtimeOrder(updated[idx], newRecord)
               store.setTabOrders(tab, updated)
             }
           })

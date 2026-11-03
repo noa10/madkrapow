@@ -69,6 +69,45 @@ describe("matchesOrderQuery", () => {
     ).toBe(true)
   })
 
+  it("matches the Grab short number on Grabfood orders", () => {
+    const subject = order({
+      source: "grabfood",
+      channel_orders: [
+        { channel: "grabfood", external_order_number: "GF-659" },
+      ],
+    })
+    expect(matchesOrderQuery(subject, "GF-659")).toBe(true)
+    expect(matchesOrderQuery(subject, "gf-65")).toBe(true)
+  })
+
+  it("still matches the local display code on Grabfood orders", () => {
+    const subject = order({
+      source: "grabfood",
+      channel_orders: [
+        { channel: "grabfood", external_order_number: "GF-659" },
+      ],
+    })
+    expect(matchesOrderQuery(subject, "MK-001")).toBe(true)
+  })
+
+  it("falls back to the local display code when the short number is missing", () => {
+    expect(
+      matchesOrderQuery(
+        order({ source: "grabfood", channel_orders: [] }),
+        "MK-001",
+      ),
+    ).toBe(true)
+  })
+
+  it("never throws on missing channel data", () => {
+    expect(() =>
+      matchesOrderQuery(
+        { display_code: null, customer_name: null, customer_phone: null },
+        "GF-659",
+      ),
+    ).not.toThrow()
+  })
+
   it("returns false for a non-matching query", () => {
     expect(matchesOrderQuery(order(), "zzz")).toBe(false)
     expect(matchesOrderQuery(order(), "999")).toBe(false)

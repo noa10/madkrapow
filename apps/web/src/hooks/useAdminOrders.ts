@@ -35,11 +35,21 @@ export function useAdminOrders() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     const supabase = getBrowserClient();
+    let active = true;
+    let latestRequest = 0;
+    let latestSuccess = 0;
+    let latestFailure = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const pending = new Set<AdminOrder[]>();
 
     const fetchOrders = async () => {
+      const request = ++latestRequest;
+      const changes: AdminOrder[] = [];
+      pending.add(changes);
       const { data, error } = await supabase
         .from("orders")
         .select("*, channel_orders(channel, external_order_number)")
@@ -50,12 +60,32 @@ export function useAdminOrders() {
         .order("created_at", { ascending: false })
         .limit(200);
 
+      pending.delete(changes);
+      if (!active || request < latestSuccess) return;
       if (error) {
-        setError(error.message);
+        if (request >= latestFailure) {
+          latestFailure = request;
+          setError(error.message);
+          clearTimeout(retry);
+          retry = setTimeout(() => void fetchOrders(), 5000);
+        }
+        setLoading(false);
         return;
       }
+      latestSuccess = request;
 
-      setOrders(data || []);
+      const snapshot = changes.reduce<AdminOrder[]>((current, next) => {
+        if (!isKitchenActive(next)) return current.filter((order) => order.id !== next.id);
+        return current.some((order) => order.id === next.id)
+          ? current.map((order) => order.id === next.id ? mergeRealtimeOrder(order, next) : order)
+          : [next, ...current];
+      }, data || []);
+      setHasLoaded(true);
+      if (request > latestFailure) {
+        clearTimeout(retry);
+        setError(null);
+      }
+      setOrders(snapshot);
       setLoading(false);
     };
 
@@ -69,6 +99,7 @@ export function useAdminOrders() {
         (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
           const nextOrder = payload.new as AdminOrder;
           if (!isKitchenActive(nextOrder)) return;
+          for (const changes of pending) changes.push(nextOrder);
           setOrders((prev) =>
             prev.some((order) => order.id === nextOrder.id)
               ? prev.map((order) =>
@@ -85,6 +116,7 @@ export function useAdminOrders() {
         { event: "UPDATE", schema: "public", table: "orders" },
         (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
           const nextOrder = payload.new as AdminOrder;
+          for (const changes of pending) changes.push(nextOrder);
           setOrders((prev) => {
             // A ticket that left the active set (ready → picked_up, or a
             // cancellation) disappears from the board immediately.
@@ -105,9 +137,11 @@ export function useAdminOrders() {
       .subscribe();
 
     return () => {
+      active = false;
+      clearTimeout(retry);
       supabase.removeChannel(channel);
     };
   }, []);
 
-  return { orders, loading, error };
+  return { orders, loading, error, hasLoaded };
 }

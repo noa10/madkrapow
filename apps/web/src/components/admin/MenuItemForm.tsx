@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { getBrowserClient } from '@/lib/supabase/client'
+import { notifyGrabMenuAfterChange } from '@/lib/grabfood/notify-client'
+import { useToastStore } from '@/stores/toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Category, MenuItem } from '@/lib/queries/menu'
@@ -17,6 +19,7 @@ interface MenuItemFormProps {
 export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
   const router = useRouter()
   const supabase = getBrowserClient()
+  const { addToast } = useToastStore()
   
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -175,7 +178,20 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         
         if (updateError) throw updateError
       }
-      
+
+      if (!isNew) {
+        const warning = await notifyGrabMenuAfterChange()
+        if (warning) {
+          addToast({
+            type: 'error',
+            title: 'Item saved, but Grab menu was not refreshed',
+            description: warning,
+          })
+        } else {
+          addToast({ type: 'success', title: 'Item saved; Grab menu refresh requested' })
+        }
+      }
+
       router.push('/admin/menu')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save menu item')

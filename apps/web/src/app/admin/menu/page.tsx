@@ -31,6 +31,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+import { useToastStore } from "@/stores/toast";
+import { notifyGrabMenuAfterChange } from "@/lib/grabfood/notify-client";
 
 const MENU_ITEM_SELECT =
   "id, category_id, name, description, price_cents, image_url, is_available, sort_order, spice_level, ingredients, is_signature";
@@ -365,6 +367,7 @@ function SortableModifierRow({
 
 export default function AdminMenuPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin", "manager"]);
+  const { addToast } = useToastStore();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -684,6 +687,22 @@ export default function AdminMenuPage() {
           .select(MENU_ITEM_SELECT)
           .order("sort_order", { ascending: true });
         setMenuItems(menuItemsRes.data || []);
+      }
+
+      const warning = await notifyGrabMenuAfterChange();
+      if (warning) {
+        addToast({
+          type: "error",
+          title: "Availability saved, but Grab menu was not refreshed",
+          description: warning,
+        });
+      } else {
+        addToast({
+          type: "success",
+          title: newValue
+            ? "Item available; Grab menu refresh requested"
+            : "Item unavailable; Grab menu refresh requested",
+        });
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to update availability";

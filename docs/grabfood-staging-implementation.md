@@ -131,6 +131,10 @@ Cron routes (Bearer `CRON_SECRET`):
 - Mapping changes (create/update/delete) call
   `POST /partner/v1/merchant/menu/notification`; failure is returned as a
   warning because the local change is already saved.
+- Admin catalogue changes that affect Get Menu — availability, item details,
+  image, category/item ordering, sections, modifiers and item-option bindings —
+  also call the notification endpoint. A failed notification shows a warning;
+  the local save is never rolled back.
 - Snoozes are always pushed as `UNAVAILABLE` + `maxStock: 0` and flagged with
   `channel_products.snooze_restore_required`. The restore cron pushes the
   recomputed state at expiry and only then clears the flag. This fixes the

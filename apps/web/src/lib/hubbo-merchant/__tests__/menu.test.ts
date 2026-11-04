@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+vi.mock('../client', () => ({ createHubboMerchantClient: vi.fn() }))
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { mapHubboMenuToLocal, pullHubboMenu, HUBBO_MERCHANT_SOURCE } from '../menu'
 import type { HubboMerchantMenuResponse } from '../types'
@@ -90,7 +91,7 @@ describe('pullHubboMenu', () => {
 
   const fakeClient = { getMenu: async () => MENU }
 
-  function supabaseMock() {
+  function supabaseMock(existingMapping: { id: string; external_item_id: string | null } | null = null) {
     const calls: Array<{ table: string; op: string; payload?: unknown }> = []
     const client = {
       from(table: string) {
@@ -119,7 +120,8 @@ describe('pullHubboMenu', () => {
               },
             }
           },
-          maybeSingle: async () => ({ data: null, error: null }),
+          is(_col: string, _val: unknown) { return builder },
+          maybeSingle: async () => ({ data: table === 'channel_products' ? existingMapping : null, error: null }),
           then(resolve: (v: { data: unknown[]; error: null }) => void) {
             resolve({ data: [], error: null })
           },
@@ -140,6 +142,14 @@ describe('pullHubboMenu', () => {
     expect(result.categoriesUpserted).toBe(0)
     expect(result.itemsUpserted).toBe(0)
     expect(calls).toHaveLength(0)
+  })
+
+  it('attaches an external ID to a price-only mapping without replacing its price or snooze', async () => {
+    const { client, calls } = supabaseMock({ id: 'price-only', external_item_id: null })
+    await pullHubboMenu(client as unknown as SupabaseClient, { client: fakeClient })
+    expect(calls.filter(c => c.table === 'channel_products')).toEqual([
+      { table: 'channel_products', op: 'update', payload: { external_item_id: 'GF-NL-1', external_name: 'Nasi Lemak' } },
+    ])
   })
 
   it('upserts categories/items and seeds the GrabFood channel mapping', async () => {

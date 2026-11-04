@@ -104,9 +104,10 @@ export default function GrabFoodAdminPage() {
           channel_snooze_till: row.snooze_till ?? null,
         }
       })
-      setMappings(rows)
+      const mappedRows = rows.filter((row) => row.external_item_id !== null)
+      setMappings(mappedRows)
 
-      const mappedItemIds = new Set(rows.map((r) => r.menu_item_id))
+      const mappedItemIds = new Set(mappedRows.map((r) => r.menu_item_id))
       setUnmapped(
         ((allItems ?? []) as UnmappedItem[])
           .filter((item) => !mappedItemIds.has(item.id))
@@ -311,7 +312,9 @@ export default function GrabFoodAdminPage() {
           addToast({ type: 'error', title: 'Mapping failed', description: data?.error })
           return
         }
-        addToast({ type: 'success', title: `${menuItem.name} mapped to GrabFood` })
+        addToast(data.warning
+          ? { type: 'error', title: `${menuItem.name} mapped locally`, description: `GrabFood was not notified: ${data.warning}` }
+          : { type: 'success', title: `${menuItem.name} mapped to GrabFood` })
         setMappingDraft((prev) => {
           const next = { ...prev }
           delete next[menuItem.id]
@@ -333,12 +336,14 @@ export default function GrabFoodAdminPage() {
           `/api/integrations/grabfood/menu/mapping?channel_product_id=${row.channel_product_id}`,
           { method: 'DELETE', headers: await (async () => ({ authorization: `Bearer ${await getToken()}` }))() }
         )
+        const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
           addToast({ type: 'error', title: 'Unmap failed', description: data?.error })
           return
         }
-        addToast({ type: 'success', title: `${row.menu_item_name} unmapped` })
+        addToast(data.warning
+          ? { type: 'error', title: `${row.menu_item_name} unmapped locally`, description: `GrabFood was not notified: ${data.warning}` }
+          : { type: 'success', title: `${row.menu_item_name} unmapped` })
         await loadMappings()
       } finally {
         setBusyItemId(null)

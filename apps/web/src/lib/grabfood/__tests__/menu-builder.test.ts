@@ -137,6 +137,17 @@ describe('buildGrabMenu', () => {
     expect(JSON.stringify(menu)).not.toContain('"taxable"')
   })
 
+  it('uses the regular price for null, retains zero, and excludes price-only rows', () => {
+    const rows = structuredClone(ROWS)
+    const mappings = rows[0].menu_items![0].channel_products as Array<{ price_cents: number | null; external_item_id: string | null }>
+    mappings[0].price_cents = null
+    expect(buildGrabMenu(rows).categories[0].items[0].price).toBe(1300)
+    mappings[0].price_cents = 0
+    expect(buildGrabMenu(rows).categories[0].items[0].price).toBe(0)
+    mappings[0].external_item_id = null
+    expect(buildGrabMenu(rows).categories[0]?.items ?? []).toHaveLength(0)
+  })
+
   it('uses a stable local category id when no Grab category mapping exists', () => {
     const rows = structuredClone(ROWS)
     rows[0].channel_categories = []

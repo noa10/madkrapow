@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import {
   Plus,
   Search,
-  Edit,
   Package,
   Tag,
   Pencil,
@@ -34,6 +33,8 @@ import { cn } from "@/lib/utils";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { useToastStore } from "@/stores/toast";
 import { notifyGrabMenuAfterChange } from "@/lib/grabfood/notify-client";
+import { visibleMenuCategories, visibleMenuItems } from "./menu-visibility";
+import { MenuItemActions } from "./menu-item-actions";
 
 const MENU_ITEM_SELECT =
   "id, category_id, name, description, price_cents, image_url, is_available, sort_order, spice_level, ingredients, is_signature";
@@ -132,12 +133,13 @@ function SortableMenuItemRow({
   };
 
   return (
-    <tr
+    <li
+      role="listitem"
       ref={setNodeRef}
       style={style}
-      className="border-b last:border-0 hover:bg-muted/50"
+      className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 border-b py-3 last:border-0 hover:bg-muted/50 sm:grid-cols-[auto_auto_3rem_minmax(0,1fr)_auto_auto] sm:items-center"
     >
-      <td className="py-3 w-8 hidden sm:table-cell">
+      <div className="hidden sm:block">
         <button
           className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           {...attributes}
@@ -145,14 +147,15 @@ function SortableMenuItemRow({
         >
           <GripVertical className="h-4 w-4" />
         </button>
-      </td>
-      <td className="py-3 w-10">
+      </div>
+      <div className="row-span-2 w-10 sm:row-span-1">
         <div className="flex flex-col items-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
             className="h-6 w-6"
             onClick={onMoveUp}
+            aria-label={`Move ${item.name} up`}
             disabled={!canMoveUp || isSaving}
           >
             <ArrowUp className="h-3 w-3" />
@@ -162,17 +165,18 @@ function SortableMenuItemRow({
             size="icon"
             className="h-6 w-6"
             onClick={onMoveDown}
+            aria-label={`Move ${item.name} down`}
             disabled={!canMoveDown || isSaving}
           >
             <ArrowDown className="h-3 w-3" />
           </Button>
         </div>
-      </td>
-      <td className="py-3 hidden sm:table-cell">
+      </div>
+      <div className="hidden sm:block">
         {item.image_url ? (
           <Image
             src={item.image_url}
-            alt={item.name}
+            alt=""
             width={48}
             height={48}
             className="rounded object-cover"
@@ -183,35 +187,33 @@ function SortableMenuItemRow({
             <Package className="h-4 w-4 text-muted-foreground" />
           </div>
         )}
-      </td>
-      <td className="py-3">
+      </div>
+      <div className="min-w-0">
         <div className="font-medium">{item.name}</div>
         {item.description && (
-          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
+          <div className="text-sm text-muted-foreground truncate">
             {item.description}
           </div>
         )}
-      </td>
-      <td className="py-3">
-        <Badge variant="outline">
-          <Tag className="h-3 w-3 mr-1" />
-          {categoryName}
-        </Badge>
-      </td>
-      <td className="py-3">RM {(item.price_cents / 100).toFixed(2)}</td>
-      <td className="py-3">
+        <p className="text-sm text-muted-foreground">
+          <span className="sr-only">Category: </span>{categoryName}
+          <span aria-hidden="true"> · </span>
+          <span className="sr-only">, Price: </span>RM {(item.price_cents / 100).toFixed(2)}
+        </p>
+      </div>
+      <div className="col-start-2 sm:col-auto">
         <button
           type="button"
           onClick={onToggleAvailability}
           disabled={isSnoozing || isSaving}
           className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors min-h-[36px]",
+            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors min-h-[40px]",
             item.is_available
-              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400",
+              ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
+              : "bg-slate-500/10 text-slate-400 hover:bg-slate-500/15",
             (isSnoozing || isSaving) && "opacity-60 cursor-not-allowed"
           )}
-          aria-label={item.is_available ? `Snooze ${item.name}` : `Un-snooze ${item.name}`}
+          aria-label={`${item.name}, ${item.is_available ? "available; make unavailable" : "unavailable; make available"}`}
           title={item.is_available ? "Snooze (make unavailable)" : "Un-snooze (make available)"}
         >
           {isSnoozing ? (
@@ -223,31 +225,19 @@ function SortableMenuItemRow({
           )}
           {item.is_available ? "Available" : "Unavailable"}
         </button>
-      </td>
-      <td className="py-3 text-right">
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={`/admin/menu/items/${item.id}`}>
-              <Edit className="h-4 w-4" />
-            </Link>
-          </Button>
-          {isDeleting ? (
-            <div className="flex items-center gap-1">
-              <Button variant="destructive" size="sm" onClick={onDelete} disabled={isSaving}>
-                Confirm
-              </Button>
-              <Button variant="outline" size="sm" onClick={onDeleteCancel} disabled={isSaving}>
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={onDeleteStart}>
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          )}
-        </div>
-      </td>
-    </tr>
+      </div>
+      <div className="col-span-2 sm:col-span-1">
+        <MenuItemActions
+          id={item.id}
+          name={item.name}
+          isDeleting={isDeleting}
+          isSaving={isSaving}
+          onDeleteStart={onDeleteStart}
+          onDelete={onDelete}
+          onDeleteCancel={onDeleteCancel}
+        />
+      </div>
+    </li>
   );
 }
 
@@ -295,7 +285,7 @@ function SortableModifierRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center justify-between p-2 rounded border",
+        "flex flex-wrap items-center justify-between gap-2 rounded border p-2",
         !modifier.is_available && "bg-muted/50 opacity-60",
         isActive && "ring-2 ring-primary"
       )}
@@ -314,6 +304,7 @@ function SortableModifierRow({
             size="icon"
             className="h-5 w-5"
             onClick={onMoveUp}
+            aria-label={`Move ${modifier.name} up`}
             disabled={!canMoveUp || isSaving}
           >
             <ArrowUp className="h-3 w-3" />
@@ -323,6 +314,7 @@ function SortableModifierRow({
             size="icon"
             className="h-5 w-5"
             onClick={onMoveDown}
+            aria-label={`Move ${modifier.name} down`}
             disabled={!canMoveDown || isSaving}
           >
             <ArrowDown className="h-3 w-3" />
@@ -344,7 +336,7 @@ function SortableModifierRow({
             Unavailable
           </Badge>
         )}
-        <Button variant="ghost" size="icon" onClick={onEdit}>
+        <Button variant="ghost" size="icon" onClick={onEdit} aria-label={`Edit ${modifier.name}`}>
           <Pencil className="h-4 w-4" />
         </Button>
         {isDeleting ? (
@@ -357,7 +349,7 @@ function SortableModifierRow({
             </Button>
           </div>
         ) : (
-          <Button variant="ghost" size="icon" onClick={onDeleteStart}>
+          <Button variant="ghost" size="icon" onClick={onDeleteStart} aria-label={`Delete ${modifier.name}`}>
             <Trash2 className="h-4 w-4 text-red-500" />
           </Button>
         )}
@@ -385,8 +377,11 @@ export default function AdminMenuPage() {
       });
     }
   };
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [allMenuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [allCategories, setCategories] = useState<Category[]>([]);
+  const menuItems = useMemo(() => visibleMenuItems(allMenuItems), [allMenuItems]);
+  const categories = useMemo(() => visibleMenuCategories(allCategories), [allCategories]);
+  const [section, setSection] = useState<"items" | "categories" | "modifiers">("items");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1309,22 +1304,51 @@ export default function AdminMenuPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold font-display">Menu Management</h1>
-        <Button asChild className="shadow-gold">
-          <Link href="/admin/menu/items/new">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Item
-          </Link>
-        </Button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Catalog</p>
+          <h1 className="mt-1 text-2xl font-bold font-display">Menu management</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage your items, categories and customer options.</p>
+        </div>
+        {section === "items" && (
+          <Button asChild>
+            <Link href="/admin/menu/items/new">
+              <Plus className="h-4 w-4 mr-2" />
+              Add item
+            </Link>
+          </Button>
+        )}
       </div>
 
+      <nav aria-label="Menu management sections" className="flex gap-1 overflow-x-auto border-b border-border">
+        {([
+          ["items", "Items"],
+          ["categories", "Categories"],
+          ["modifiers", "Modifiers"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setSection(value)}
+            aria-current={section === value ? "page" : undefined}
+            className={cn(
+              "whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary",
+              section === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {section === "items" && <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search menu items..."
+            aria-label="Search menu items"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -1332,6 +1356,7 @@ export default function AdminMenuPage() {
         </div>
         <select
           value={categoryFilter}
+          aria-label="Filter by category"
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="flex h-10 w-full sm:w-[200px] items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -1372,8 +1397,8 @@ export default function AdminMenuPage() {
                 if (catItems.length === 0) return null;
 
                 return (
-                    <div key={cat.id}>
-                      <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+                    <div key={cat.id} role="group" aria-labelledby={`menu-category-${cat.id}`}>
+                      <h3 id={`menu-category-${cat.id}`} className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
                         <Tag className="h-3 w-3" />
                         {cat.name}
                       </h3>
@@ -1386,21 +1411,7 @@ export default function AdminMenuPage() {
                           items={catItems.map((i) => i.id)}
                           strategy={verticalListSortingStrategy}
                         >
-                          <div className="overflow-x-auto">
-                            <table className="w-full">
-                              <thead>
-                                <tr className="border-b text-left text-xs text-muted-foreground">
-                                  <th className="pb-2 w-8 hidden sm:table-cell"></th>
-                                  <th className="pb-2 w-10"></th>
-                                  <th className="pb-2 font-medium hidden sm:table-cell">Photo</th>
-                                  <th className="pb-2 font-medium">Name</th>
-                                  <th className="pb-2 font-medium hidden sm:table-cell">Category</th>
-                                  <th className="pb-2 font-medium">Price</th>
-                                  <th className="pb-2 font-medium">Status</th>
-                                  <th className="pb-2 font-medium text-right">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
+                          <ul role="list" aria-label={`${cat.name} items`}>
                                 {catItems.map((item, index) => (
                                   <SortableMenuItemRow
                                     key={item.id}
@@ -1421,9 +1432,7 @@ export default function AdminMenuPage() {
                                     onMoveDown={() => moveMenuItem(item, "down")}
                                   />
                                 ))}
-                              </tbody>
-                            </table>
-                          </div>
+                          </ul>
                         </SortableContext>
                       </DndContext>
                     </div>
@@ -1433,9 +1442,10 @@ export default function AdminMenuPage() {
           )}
         </CardContent>
       </Card>
+      </div>}
 
       {/* Categories Section */}
-      <Card className="bg-card border-border shadow-sm rounded-xl">
+      {section === "categories" && <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-display">Categories</CardTitle>
@@ -1462,7 +1472,7 @@ export default function AdminMenuPage() {
                 return (
                   <div
                     key={category.id}
-                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/50"
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex flex-col gap-1">
@@ -1471,6 +1481,7 @@ export default function AdminMenuPage() {
                           size="icon"
                           className="h-6 w-6"
                           onClick={() => moveCategory(category, "up")}
+                          aria-label={`Move ${category.name} up`}
                           disabled={index === 0}
                         >
                           <ArrowUp className="h-3 w-3" />
@@ -1480,13 +1491,17 @@ export default function AdminMenuPage() {
                           size="icon"
                           className="h-6 w-6"
                           onClick={() => moveCategory(category, "down")}
+                          aria-label={`Move ${category.name} down`}
                           disabled={index === categories.length - 1}
                         >
                           <ArrowDown className="h-3 w-3" />
                         </Button>
                       </div>
                       <div>
-                        <div className="font-medium">{category.name}</div>
+                        <div className="flex flex-wrap items-center gap-2 font-medium">
+                          {category.name}
+                          {!category.is_active && <Badge variant="secondary">Inactive</Badge>}
+                        </div>
                         {category.description && (
                           <div className="text-sm text-muted-foreground">
                             {category.description}
@@ -1500,6 +1515,7 @@ export default function AdminMenuPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => openEditForm(category)}
+                        aria-label={`Edit ${category.name}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -1527,6 +1543,7 @@ export default function AdminMenuPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setDeletingCategory(category)}
+                          aria-label={`Delete ${category.name}`}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -1538,7 +1555,7 @@ export default function AdminMenuPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Category Form Modal */}
       {isFormOpen && (
@@ -1602,6 +1619,7 @@ export default function AdminMenuPage() {
       )}
 
       {/* Modifier Groups Section */}
+      {section === "modifiers" && <div className="space-y-6">
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -1702,9 +1720,10 @@ export default function AdminMenuPage() {
             <div className="space-y-3">
               {modifierGroups.map((group) => (
                 <div key={group.id} className="border rounded-lg overflow-hidden">
-                  <div className="flex items-center justify-between p-3 bg-muted/30">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/30 p-3">
                     <button
                       onClick={() => toggleGroupExpanded(group.id)}
+                      aria-expanded={expandedGroups.has(group.id)}
                       className="flex items-center gap-2 text-left"
                     >
                       {expandedGroups.has(group.id) ? (
@@ -1734,6 +1753,7 @@ export default function AdminMenuPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleEditGroup(group)}
+                        aria-label={`Edit ${group.name}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -1761,6 +1781,7 @@ export default function AdminMenuPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setDeletingGroup(group.id)}
+                          aria-label={`Delete ${group.name}`}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -1928,6 +1949,7 @@ export default function AdminMenuPage() {
             <label className="text-xs font-medium mb-1 block">Select Menu Item</label>
             <select
               value={selectedMenuItemId}
+              aria-label="Select menu item"
               onChange={(e) => handleMenuItemSelect(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             >
@@ -1966,6 +1988,7 @@ export default function AdminMenuPage() {
                           <input
                             type="checkbox"
                             checked={binding.bound}
+                            aria-label={`Assign ${group.name}`}
                             onChange={() => handleBindingToggle(group.id)}
                             className="h-4 w-4 rounded border-gray-300"
                           />
@@ -2023,6 +2046,7 @@ export default function AdminMenuPage() {
           )}
         </CardContent>
       </Card>
+      </div>}
     </div>
   );
 }

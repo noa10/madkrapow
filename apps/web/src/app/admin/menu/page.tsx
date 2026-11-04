@@ -43,7 +43,7 @@ const CATEGORY_SELECT =
 const MODIFIER_GROUP_SELECT =
   "id, name, description, min_selections, max_selections, sort_order, created_at, updated_at";
 const MODIFIER_SELECT =
-  "id, modifier_group_id, name, price_delta_cents, is_default, is_available, sort_order, created_at, updated_at";
+  "id, modifier_group_id, name, price_delta_cents, is_default, is_available, sort_order, created_at, updated_at, channel_modifiers(channel, price_cents)";
 
 interface Category {
   id: string;
@@ -91,6 +91,11 @@ interface Modifier {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  channel_modifiers?: Array<{ channel: string; price_cents: number | null }>;
+}
+
+function grabModifierPrice(modifier: Modifier): number | null {
+  return modifier.channel_modifiers?.find((row) => row.channel === "grabfood")?.price_cents ?? null;
 }
 
 function SortableMenuItemRow({
@@ -272,6 +277,7 @@ function SortableModifierRow({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: modifier.id });
+  const grabPrice = grabModifierPrice(modifier);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -331,6 +337,11 @@ function SortableModifierRow({
         <span className="text-sm font-medium">
           {formatPrice(modifier.price_delta_cents)}
         </span>
+        {grabPrice !== null && (
+          <Badge variant="outline" className="text-xs">
+            Grab {formatPrice(grabPrice)}
+          </Badge>
+        )}
         {!modifier.is_available && (
           <Badge variant="outline" className="text-xs">
             Unavailable
@@ -413,6 +424,9 @@ export default function AdminMenuPage() {
       id?: string;
       name: string;
       price: string;
+      grabPrice: string;
+      originalGrabPrice: number | null;
+      grabRowExists: boolean;
       is_default: boolean;
       is_available: boolean;
     };
@@ -870,7 +884,7 @@ export default function AdminMenuPage() {
       await supabase.from("modifiers").update({ sort_order: otherModifier.sort_order }).eq("id", modifier.id);
       await supabase.from("modifiers").update({ sort_order: modifier.sort_order }).eq("id", otherModifier.id);
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier order");
+      await notifyGrabAfterMenuChange("Option order");
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);
@@ -982,7 +996,7 @@ export default function AdminMenuPage() {
       }
 
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier group");
+      await notifyGrabAfterMenuChange("Option group");
       await fetchModifierGroups();
       setEditingGroup(null);
     } catch (err: any) {
@@ -1011,7 +1025,7 @@ export default function AdminMenuPage() {
       if (deleteGroupError) throw deleteGroupError;
 
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier group");
+      await notifyGrabAfterMenuChange("Option group");
       await fetchModifierGroups();
       setDeletingGroup(null);
     } catch (err: any) {
@@ -1027,6 +1041,9 @@ export default function AdminMenuPage() {
       modifier: {
         name: "",
         price: "0",
+        grabPrice: "",
+        originalGrabPrice: null,
+        grabRowExists: false,
         is_default: false,
         is_available: true,
       },
@@ -1034,12 +1051,17 @@ export default function AdminMenuPage() {
   };
 
   const handleEditModifier = (modifier: Modifier) => {
+    const grabRow = modifier.channel_modifiers?.find((row) => row.channel === "grabfood");
+    const originalGrabPrice = grabRow?.price_cents ?? null;
     setEditingModifier({
       groupId: modifier.modifier_group_id,
       modifier: {
         id: modifier.id,
         name: modifier.name,
         price: (modifier.price_delta_cents / 100).toFixed(2),
+        grabPrice: originalGrabPrice === null ? "" : (originalGrabPrice / 100).toFixed(2),
+        originalGrabPrice,
+        grabRowExists: Boolean(grabRow),
         is_default: modifier.is_default,
         is_available: modifier.is_available,
       },
@@ -1049,12 +1071,20 @@ export default function AdminMenuPage() {
   const handleSaveModifier = async () => {
     if (!editingModifier || !editingModifier.modifier.name.trim()) return;
 
+    const grabPriceInput = editingModifier.modifier.grabPrice.trim();
+    const grabPriceCents = grabPriceInput === "" ? null : Math.round(Number(grabPriceInput) * 100);
+    if (grabPriceCents !== null && (!/^\d+(\.\d{1,2})?$/.test(grabPriceInput) || !Number.isSafeInteger(grabPriceCents) || grabPriceCents > 9999999)) {
+      setError("Enter a valid GrabFood price with at most two decimal places");
+      return;
+    }
+
     const supabase = getBrowserClient();
     setSaving(true);
     const priceCents = Math.round(parseFloat(editingModifier.modifier.price || "0") * 100);
 
     try {
-      if (editingModifier.modifier.id) {
+      let modifierId = editingModifier.modifier.id;
+      if (modifierId) {
         const { error: updateError } = await supabase
           .from("modifiers")
           .update({
@@ -1063,7 +1093,7 @@ export default function AdminMenuPage() {
             is_default: editingModifier.modifier.is_default,
             is_available: editingModifier.modifier.is_available,
           })
-          .eq("id", editingModifier.modifier.id);
+          .eq("id", modifierId);
 
         if (updateError) throw updateError;
       } else {
@@ -1077,7 +1107,7 @@ export default function AdminMenuPage() {
 
         const newSortOrder = (existingModifiers?.sort_order ?? -1) + 1;
 
-        const { error: insertError } = await supabase
+        const { data: insertedModifier, error: insertError } = await supabase
           .from("modifiers")
           .insert({
             modifier_group_id: editingModifier.groupId,
@@ -1086,13 +1116,41 @@ export default function AdminMenuPage() {
             is_default: editingModifier.modifier.is_default,
             is_available: editingModifier.modifier.is_available,
             sort_order: newSortOrder,
-          });
+          })
+          .select("id")
+          .single();
 
         if (insertError) throw insertError;
+        if (!insertedModifier) throw new Error("Option creation returned no ID. Check the options list before retrying.");
+        modifierId = insertedModifier.id;
+        // Keep the id so a retry after a failed price save updates this row
+        // instead of inserting a duplicate option.
+        setEditingModifier((prev) =>
+          prev ? { ...prev, modifier: { ...prev.modifier, id: modifierId } } : prev
+        );
       }
 
+      const { data: session } = await supabase.auth.getSession();
+      let response: Response;
+      try {
+        response = await fetch("/api/integrations/grabfood/menu/modifier-price", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${session.session?.access_token ?? ""}` },
+          body: JSON.stringify({
+            modifier_id: modifierId,
+            price_cents: grabPriceCents,
+            expected_price_cents: editingModifier.modifier.originalGrabPrice,
+            expected_exists: editingModifier.modifier.grabRowExists,
+          }),
+        });
+      } catch {
+        throw new Error("Option saved, but the GrabFood price save could not be confirmed. Check your connection and save again.");
+      }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(`Option saved, but GrabFood price could not be saved: ${result.error || "Please save again."}`);
+
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier");
+      await notifyGrabAfterMenuChange("Option");
       await fetchModifierGroups();
       setEditingModifier(null);
     } catch (err: any) {
@@ -1114,7 +1172,7 @@ export default function AdminMenuPage() {
       if (deleteError) throw deleteError;
 
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier");
+      await notifyGrabAfterMenuChange("Option");
       await fetchModifierGroups();
       setDeletingModifier(null);
     } catch (err: any) {
@@ -1260,7 +1318,7 @@ export default function AdminMenuPage() {
           .eq("id", reordered[i].id);
       }
       notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Modifier order");
+      await notifyGrabAfterMenuChange("Option order");
       await fetchModifierGroups();
     } catch (err: any) {
       setError(err.message);
@@ -1324,7 +1382,7 @@ export default function AdminMenuPage() {
         {([
           ["items", "Items"],
           ["categories", "Categories"],
-          ["modifiers", "Modifiers"],
+          ["modifiers", "Options"],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -1618,12 +1676,12 @@ export default function AdminMenuPage() {
         </div>
       )}
 
-      {/* Modifier Groups Section */}
+      {/* Option Groups Section */}
       {section === "modifiers" && <div className="space-y-6">
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-display">Modifier Groups</CardTitle>
+            <CardTitle className="text-lg font-display">Option groups</CardTitle>
             <Button size="sm" onClick={handleCreateGroup}>
               <Plus className="h-4 w-4 mr-1" />
               New Group
@@ -1793,7 +1851,7 @@ export default function AdminMenuPage() {
                     <div className="p-3 border-t">
                       {editingModifier?.groupId === group.id ? (
                         <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="grid gap-2 sm:grid-cols-3">
                             <Input
                               value={editingModifier.modifier.name}
                               onChange={(e) =>
@@ -1805,7 +1863,8 @@ export default function AdminMenuPage() {
                                   },
                                 })
                               }
-                              placeholder="Modifier name"
+                              placeholder="Option name"
+                              aria-label="Option name"
                             />
                             <Input
                               type="number"
@@ -1822,8 +1881,29 @@ export default function AdminMenuPage() {
                                 })
                               }
                               placeholder="Price (RM)"
+                              aria-label="Option price (RM)"
+                            />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={editingModifier.modifier.grabPrice}
+                              onChange={(e) =>
+                                setEditingModifier({
+                                  ...editingModifier,
+                                  modifier: {
+                                    ...editingModifier.modifier,
+                                    grabPrice: e.target.value,
+                                  },
+                                })
+                              }
+                              placeholder="GrabFood price (RM)"
+                              aria-label="GrabFood price (RM)"
                             />
                           </div>
+                          <p className="text-xs text-muted-foreground">
+                            GrabFood price blank = same as the regular option price.
+                          </p>
                           <div className="flex items-center gap-4 text-sm">
                             <label className="flex items-center gap-2">
                               <input
@@ -1886,7 +1966,7 @@ export default function AdminMenuPage() {
                           className="mb-3"
                         >
                           <Plus className="h-4 w-4 mr-1" />
-                          Add Modifier
+                          Add option
                         </Button>
                       )}
 
@@ -1927,7 +2007,7 @@ export default function AdminMenuPage() {
                         </DndContext>
                       ) : (
                         <p className="text-sm text-muted-foreground text-center py-4">
-                          No modifiers. Add options like Small, Medium, Large.
+                          No options yet. Add choices like Small, Medium, Large.
                         </p>
                       )}
                     </div>
@@ -1939,10 +2019,10 @@ export default function AdminMenuPage() {
         </CardContent>
       </Card>
 
-      {/* Item-Modifier Bindings Section */}
+      {/* Assign Options Section */}
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-display">Item-Modifier Bindings</CardTitle>
+          <CardTitle className="text-lg font-display">Assign options to items</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>

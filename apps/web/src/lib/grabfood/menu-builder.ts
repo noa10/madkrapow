@@ -32,6 +32,7 @@ export interface MenuModifierRow {
   price_delta_cents: number
   is_available: boolean
   sort_order: number
+  channel_modifiers?: Array<{ channel: string; price_cents: number | null }> | null
 }
 
 export interface MenuModifierGroupRow {
@@ -105,6 +106,18 @@ function isPublicImage(url: string | null | undefined): url is string {
   return Boolean(url && /^https?:\/\//i.test(url))
 }
 
+/**
+ * Grab charges add-ons individually, so the modifier price comes from the
+ * GrabFood override when one exists. A NULL override means the local add-on
+ * price applies; zero is a real price and must survive.
+ */
+function grabModifierPrice(modifier: MenuModifierRow): number {
+  const override = asArray(modifier.channel_modifiers).find(
+    (row) => row.channel === 'grabfood'
+  )
+  return override?.price_cents ?? modifier.price_delta_cents
+}
+
 function buildModifierGroups(item: MenuItemRow): GrabModifierGroup[] {
   return asArray(item.menu_item_modifier_groups)
     .flatMap((link) => asArray(link.modifier_groups))
@@ -116,7 +129,7 @@ function buildModifierGroups(item: MenuItemRow): GrabModifierGroup[] {
           id: modifier.id,
           name: modifier.name,
           availableStatus: modifier.is_available ? 'AVAILABLE' : 'UNAVAILABLE',
-          price: modifier.price_delta_cents,
+          price: grabModifierPrice(modifier),
           sequence: modifier.sort_order,
         }))
       return {

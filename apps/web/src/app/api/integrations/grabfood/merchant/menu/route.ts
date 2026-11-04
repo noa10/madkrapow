@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
           menu_item_modifier_groups(
             modifier_groups(
               id, name, min_selections, max_selections, sort_order,
-              modifiers(id, name, price_delta_cents, is_available, sort_order)
+              modifiers(id, name, price_delta_cents, is_available, sort_order, channel_modifiers(channel, price_cents))
             )
           )
         `),

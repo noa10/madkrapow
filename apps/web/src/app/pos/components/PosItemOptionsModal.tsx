@@ -8,6 +8,7 @@ import { ModifierGroup } from '@/components/menu/ModifierGroup'
 import { SpecialInstructions } from '@/components/menu/SpecialInstructions'
 import { MAX_QUANTITY, MIN_QUANTITY } from '@/components/menu/useItemOrder'
 import { getUnsatisfiedRequiredGroupNames } from '@/lib/menu/required-options'
+import { defaultModifierSelections } from '@/lib/menu/defaults'
 import type { PosCartModifier } from '@/lib/pos/cart'
 import type { PosMenuItem, PosModifierGroup } from '../hooks/usePosData'
 
@@ -36,7 +37,9 @@ export function PosItemOptionsModal({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
-  const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string[]>>({})
+  const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string[]>>(
+    () => defaultModifierSelections(groups)
+  )
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {

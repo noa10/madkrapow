@@ -128,6 +128,10 @@ Cron routes (Bearer `CRON_SECRET`):
   `menu_items`, `channel_categories`, `channel_products` and modifier groups.
   Only mapped, active categories/items are emitted. Modifier IDs are the local
   modifier UUIDs, giving stable IDs for order callbacks.
+- Modifier prices use the channel-specific override in `channel_modifiers`
+  when present (migration 071) and fall back to `modifiers.price_delta_cents`
+  otherwise. A NULL override means "same as the regular add-on price"; zero is
+  a real price.
 - Mapping changes (create/update/delete) call
   `POST /partner/v1/merchant/menu/notification`; failure is returned as a
   warning because the local change is already saved.

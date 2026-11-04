@@ -22,11 +22,11 @@ export function AdminBottomNav({ navItems }: AdminBottomNavProps) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/8 bg-black/80 backdrop-blur-xl lg:hidden"
+      className="fixed bottom-0 left-0 right-0 z-40 overflow-x-auto border-t border-white/8 bg-black/80 backdrop-blur-xl lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Mobile navigation"
     >
-      <div className="flex items-center justify-around px-2 py-1">
+      <div className="flex w-max min-w-full items-center justify-around px-2 py-1">
         {navItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
           return (

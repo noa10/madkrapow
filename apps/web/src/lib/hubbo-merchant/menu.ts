@@ -296,13 +296,23 @@ export async function pullHubboMenu(
     if (!upsertedExternalIds.has(item.externalId)) continue
     const localItemId = itemByExternalId.get(item.externalId)
     if (!localItemId) continue
-    const { data: existingMapping } = await supabase
+    const attach = async () => {
+      const { error } = await supabase.from('channel_products')
+        .update({ external_item_id: item.sku ?? item.externalId, external_name: item.name })
+        .eq('channel', 'grabfood').eq('menu_item_id', localItemId).is('external_item_id', null)
+      if (error) throw new Error(`channel_products mapping update failed: ${error.message}`)
+    }
+    const { data: existingMapping, error: lookupError } = await supabase
       .from('channel_products')
-      .select('id')
+      .select('id, external_item_id')
       .eq('channel', 'grabfood')
       .eq('menu_item_id', localItemId)
       .maybeSingle()
-    if (existingMapping) continue
+    if (lookupError) throw new Error(`channel_products lookup failed: ${lookupError.message}`)
+    if (existingMapping) {
+      if (existingMapping.external_item_id === null) await attach()
+      continue
+    }
     const { error } = await supabase.from('channel_products').insert({
       channel: 'grabfood',
       menu_item_id: localItemId,
@@ -315,6 +325,7 @@ export async function pullHubboMenu(
       if ((error as { code?: string }).code !== '23505') {
         throw new Error(`channel_products insert failed: ${error.message}`)
       }
+      await attach()
       continue
     }
     result.grabfoodMappingsCreated += 1

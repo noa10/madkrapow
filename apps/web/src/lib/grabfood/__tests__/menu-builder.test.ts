@@ -154,6 +154,22 @@ describe('buildGrabMenu', () => {
     expect(buildGrabMenu(rows).categories[0].id).toBe(rows[0].id)
   })
 
+  it('uses the GrabFood modifier override, falling back to the local delta', () => {
+    const rows = structuredClone(ROWS)
+    const links = rows[0].menu_items![0].menu_item_modifier_groups!
+    const group = Array.isArray(links[0].modifier_groups) ? links[0].modifier_groups[0] : links[0].modifier_groups!
+    const extraSpicy = group.modifiers![1]
+
+    extraSpicy.channel_modifiers = [{ channel: 'grabfood', price_cents: 250 }]
+    expect(buildGrabMenu(rows).categories[0].items[0].modifierGroups?.[0].modifiers?.[1].price).toBe(250)
+
+    extraSpicy.channel_modifiers = [{ channel: 'grabfood', price_cents: null }]
+    expect(buildGrabMenu(rows).categories[0].items[0].modifierGroups?.[0].modifiers?.[1].price).toBe(100)
+
+    extraSpicy.channel_modifiers = [{ channel: 'foodpanda', price_cents: 999 }]
+    expect(buildGrabMenu(rows).categories[0].items[0].modifierGroups?.[0].modifiers?.[1].price).toBe(100)
+  })
+
   it('maps modifiers with local UUIDs and price deltas', () => {
     const menu = buildGrabMenu(ROWS)
     const groups = menu.categories[0].items[0].modifierGroups

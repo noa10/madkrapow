@@ -8,6 +8,7 @@ import { useToastStore } from '@/stores/toast'
 import type { FullMenuItem, Modifier } from '@/lib/queries/menu'
 import { MAX_ITEM_QUANTITY, MIN_ITEM_QUANTITY } from '@/lib/menu/quantity'
 import { getUnsatisfiedRequiredGroupNames } from '@/lib/menu/required-options'
+import { defaultModifierSelections } from '@/lib/menu/defaults'
 
 function formatPrice(priceCents: number): string {
   return (priceCents / 100).toFixed(2)
@@ -29,7 +30,9 @@ export function useItemOrder(item: FullMenuItem) {
 
   const [quantity, setQuantity] = useState(1)
   const [specialInstructions, setSpecialInstructions] = useState('')
-  const [selectedModifierIds, setSelectedModifierIds] = useState<Record<string, string[]>>({})
+  const [selectedModifierIds, setSelectedModifierIds] = useState<Record<string, string[]>>(
+    () => defaultModifierSelections(item.modifier_groups)
+  )
 
   const allModifiers = useMemo(() => {
     const modifiers: Modifier[] = []

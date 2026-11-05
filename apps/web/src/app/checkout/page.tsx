@@ -351,8 +351,8 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         )
         if (data.profileUnavailable) {
           // The bootstrap route already logged the cause; retry the standalone
-          // read once so a transient profile failure does not empty the form.
-          await loadProfileFallback()
+          // read in the background so it does not delay promo application.
+          void loadProfileFallback()
         } else {
           applyProfile(data)
           setIsLoadingProfile(false)

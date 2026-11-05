@@ -158,7 +158,7 @@ beforeAll(async () => {
   `)
   await db.exec(
     await readFile(
-      new URL('../supabase/migrations/071_pos_create_order.sql', import.meta.url),
+      new URL('../supabase/migrations/072_pos_create_order.sql', import.meta.url),
       'utf8',
     ),
   )
@@ -269,6 +269,39 @@ describe('create_pos_order', () => {
       pax: 2,
       payment_method: 'cash',
       total_cents: 2900,
+    })
+  })
+
+  it('creates a take-away order with no add-ons', async () => {
+    const { rows } = await createOrder(
+      order({
+        order_type: 'take_away',
+        table_id: null,
+        pax: null,
+        customer_name: null,
+      }),
+      [{ menu_item_id: MENU_ID, quantity: 2 }],
+    )
+
+    expect(rows[0].result.total_cents).toBe(2500)
+    expect(rows[0].result.table_label).toBeNull()
+    expect(rows[0].result.pax).toBeNull()
+
+    const { rows: orderRows } = await db.query('SELECT * FROM orders')
+    expect(orderRows[0]).toMatchObject({
+      delivery_type: 'self_pickup',
+      table_id: null,
+      table_label: null,
+      pax: null,
+      customer_name: 'Walk-in',
+      include_cutlery: true,
+    })
+    expect(await counts()).toEqual({
+      orders: 1,
+      items: 1,
+      modifiers: 0,
+      payments: 1,
+      events: 1,
     })
   })
 

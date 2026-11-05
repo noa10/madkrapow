@@ -24,18 +24,23 @@ const TABLES = [
 ]
 
 type Call = { table: string; op: 'insert' | 'select' | 'delete'; row?: Record<string, unknown>; rows?: Record<string, unknown>[] }
+type RpcCall = { name: string; args: Record<string, unknown> }
 
 interface MockOptions {
   menu?: Record<string, unknown>[]
   modifiers?: Record<string, unknown>[]
   junctions?: Record<string, unknown>[]
   groups?: Record<string, unknown>[]
-  /** Simulate the payments ledger insert failing after the order was written. */
-  paymentError?: { message: string; code?: string }
+  /** Simulate the RPC failing after the order/line/payment writes began. */
+  rpcError?: { message: string; code?: string }
+  /** Total returned by the RPC (the DB is the pricing authority). */
+  rpcTotal?: number
+  rpcTableLabel?: string | null
 }
 
 function buildMockClient(options: MockOptions = {}) {
   const calls: Call[] = []
+  const rpcCalls: RpcCall[] = []
   let lineCounter = 0
 
   const rowsFor = (table: string, column: string, ids: string[]) => {
@@ -110,10 +115,6 @@ function buildMockClient(options: MockOptions = {}) {
               }
             },
             then(resolve: (v: { error: unknown }) => void) {
-              if (table === 'payments' && options.paymentError) {
-                resolve({ error: options.paymentError })
-                return
-              }
               resolve({ error: null })
             },
           }
@@ -129,8 +130,32 @@ function buildMockClient(options: MockOptions = {}) {
         },
       }
     },
+    rpc(name: string, args: Record<string, unknown>) {
+      rpcCalls.push({ name, args })
+      if (options.rpcError) {
+        return Promise.resolve({ data: null, error: options.rpcError })
+      }
+      const order = args.p_order as {
+        order_number: string
+        table_id?: string | null
+        pax?: number | null
+      }
+      return Promise.resolve({
+        data: {
+          order_id: 'order-uuid-1',
+          order_number: order.order_number,
+          display_code: 'MK-001',
+          total_cents: options.rpcTotal ?? 0,
+          table_label:
+            options.rpcTableLabel ??
+            (order.table_id ? 'T7' : null),
+          pax: order.pax ?? null,
+        },
+        error: null,
+      })
+    },
   }
-  return client
+  return { ...client, rpcCalls }
 }
 
 function makeRequest(body: unknown): Request {
@@ -172,8 +197,8 @@ describe('POST /api/pos/orders', () => {
     })
   })
 
-  it('creates a counter order with DB-recomputed prices and a payment row', async () => {
-    const client = buildMockClient()
+  it('creates a counter order through the atomic RPC with DB-recomputed prices', async () => {
+    const client = buildMockClient({ rpcTotal: 2750 })
     requireRoleMock.mockResolvedValue({
       user: { id: 'staff-user-id' },
       supabase: client,
@@ -190,43 +215,31 @@ describe('POST /api/pos/orders', () => {
     )
     expect(res.status).toBe(201)
     const body = await res.json()
-    // 2 x RM12.50 + 1 x RM2.50 — recomputed from the DB, not the client.
+    // 2 x RM12.50 + 1 x RM2.50 — the RPC returns the DB-recomputed total.
     expect(body.total_cents).toBe(2750)
     expect(body.display_code).toBe('MK-001')
 
-    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
-    expect(orderInsert?.row).toMatchObject({
-      source: 'counter',
-      status: 'paid',
-      delivery_type: 'self_pickup',
+    expect(client.rpcCalls).toHaveLength(1)
+    const rpc = client.rpcCalls[0]
+    expect(rpc.name).toBe('create_pos_order')
+    expect(rpc.args.p_actor_id).toBe('staff-user-id')
+    expect(rpc.args.p_order).toMatchObject({
+      order_type: 'take_away',
+      table_id: null,
+      pax: null,
       payment_method: 'cash',
-      subtotal_cents: 2750,
-      total_cents: 2750,
-      discount_cents: 0,
       customer_name: 'Walk-in',
+      notes: null,
     })
+    expect(rpc.args.p_items).toEqual([
+      { menu_item_id: SET_KRAPOW, quantity: 2, modifier_ids: [], notes: null },
+      { menu_item_id: KICKAPOO, quantity: 1, modifier_ids: [], notes: null },
+    ])
 
-    const itemInserts = client.calls.filter(
-      (c) => c.table === 'order_items' && c.op === 'insert'
-    )
-    expect(itemInserts).toHaveLength(1)
-    expect(itemInserts[0]?.rows?.[0]).toMatchObject({
-      menu_item_price_cents: 1250,
-      quantity: 2,
-      line_total_cents: 2500,
-    })
-    expect(itemInserts[0]?.rows?.[1]).toMatchObject({
-      menu_item_price_cents: 250,
-      quantity: 1,
-      line_total_cents: 250,
-    })
-
-    const paymentInsert = client.calls.find((c) => c.table === 'payments' && c.op === 'insert')
-    expect(paymentInsert?.row).toMatchObject({
-      method: 'cash',
-      amount_cents: 2750,
-      status: 'succeeded',
-    })
+    // The route must not write the order/items/payment itself any more: the
+    // RPC owns the whole transaction.
+    expect(client.calls.find((c) => c.op === 'insert')).toBeUndefined()
+    expect(client.calls.find((c) => c.op === 'delete')).toBeUndefined()
   })
 
   it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {
@@ -237,6 +250,7 @@ describe('POST /api/pos/orders', () => {
     const seededModifier = '00000003-0000-0000-0000-000000000001'
     const seededGroup = '00000002-0000-0000-0000-000000000001'
     const client = buildMockClient({
+      rpcTotal: 1000,
       menu: [
         { id: seededItem, name: 'Krapow Daging Sahaja', price_cents: 1000, is_available: true },
       ],
@@ -272,9 +286,9 @@ describe('POST /api/pos/orders', () => {
     expect(body.total_cents).toBe(1000)
   })
 
-  it('deletes the order when the payment ledger write fails (no paid order without a payment)', async () => {
+  it('rolls the whole order back when the payment write fails', async () => {
     const client = buildMockClient({
-      paymentError: { message: 'payments insert failed', code: '23514' },
+      rpcError: { message: 'forced_payment_failure', code: 'P0001' },
     })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
@@ -288,17 +302,17 @@ describe('POST /api/pos/orders', () => {
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.error).toMatch(/not created/i)
-    // The identifiers are the only durable trace of the cash sale (the failed
-    // payments row would cascade away with the order).
-    expect(body.order_number).toBe('MKTEST1234')
+    // The attempted number is the only durable trace of the cash sale.
+    expect(body.order_number).toMatch(/^MK/)
 
-    // The half-written order must be removed so a retry cannot duplicate it.
-    const deleteCall = client.calls.find((c) => c.table === 'orders' && c.op === 'delete')
-    expect(deleteCall).toBeTruthy()
+    // The RPC owns the transaction, so there is nothing to compensate with.
+    expect(client.rpcCalls).toHaveLength(1)
+    expect(client.calls.find((c) => c.op === 'insert')).toBeUndefined()
+    expect(client.calls.find((c) => c.op === 'delete')).toBeUndefined()
   })
 
   it('merges duplicate item rows before pricing', async () => {
-    const client = buildMockClient()
+    const client = buildMockClient({ rpcTotal: 750 })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
     const res = await POST(
@@ -314,11 +328,9 @@ describe('POST /api/pos/orders', () => {
     const body = await res.json()
     expect(body.total_cents).toBe(750) // 3 x RM2.50
 
-    const itemInserts = client.calls.filter(
-      (c) => c.table === 'order_items' && c.op === 'insert'
-    )
-    expect(itemInserts).toHaveLength(1)
-    expect(itemInserts[0]?.rows?.[0]).toMatchObject({ quantity: 3 })
+    const rpcItems = client.rpcCalls[0].args.p_items as Array<Record<string, unknown>>
+    expect(rpcItems).toHaveLength(1)
+    expect(rpcItems[0]).toMatchObject({ menu_item_id: KICKAPOO, quantity: 3 })
   })
 
   it('rejects unavailable menu items', async () => {
@@ -358,7 +370,7 @@ describe('POST /api/pos/orders', () => {
   })
 
   it('creates a dine-in order with the table snapshot and pax', async () => {
-    const client = buildMockClient()
+    const client = buildMockClient({ rpcTotal: 1250, rpcTableLabel: 'T7' })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
     const res = await POST(
@@ -380,16 +392,11 @@ describe('POST /api/pos/orders', () => {
       display_code: 'MK-001',
     })
 
-    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
-    expect(orderInsert?.row).toMatchObject({
-      source: 'counter',
-      status: 'paid',
-      delivery_type: 'dine_in',
+    expect(client.rpcCalls[0].args.p_order).toMatchObject({
+      order_type: 'dine_in',
       table_id: TABLE_ID,
-      table_label: 'T7',
       pax: 4,
       customer_name: null,
-      include_cutlery: false,
       payment_method: 'qr_pay',
     })
   })
@@ -460,12 +467,12 @@ describe('POST /api/pos/orders', () => {
     )
     expect(res.status).toBe(400)
     // Nothing may reach the kitchen unpaid: no order, no payment row.
-    expect(client.calls.find((c) => c.table === 'orders' && c.op === 'insert')).toBeUndefined()
-    expect(client.calls.find((c) => c.table === 'payments')).toBeUndefined()
+    expect(client.rpcCalls).toHaveLength(0)
+    expect(client.calls.find((c) => c.op === 'insert')).toBeUndefined()
   })
 
   it('creates a paid order with its payment record for the chosen method', async () => {
-    const client = buildMockClient()
+    const client = buildMockClient({ rpcTotal: 2500 })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
     const res = await POST(
@@ -482,20 +489,10 @@ describe('POST /api/pos/orders', () => {
       total_cents: 2500,
     })
 
-    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
-    expect(orderInsert?.row).toMatchObject({
-      status: 'paid',
-      source: 'counter',
-      delivery_type: 'self_pickup',
+    expect(client.rpcCalls[0].args.p_order).toMatchObject({
+      order_type: 'take_away',
+      customer_name: 'Aina',
       payment_method: 'qr_pay',
-      total_cents: 2500,
-    })
-
-    const paymentInsert = client.calls.find((c) => c.table === 'payments' && c.op === 'insert')
-    expect(paymentInsert?.row).toMatchObject({
-      method: 'qr_pay',
-      amount_cents: 2500,
-      status: 'succeeded',
     })
   })
 
@@ -511,14 +508,14 @@ describe('POST /api/pos/orders', () => {
       }) as never,
     )
     expect(res.status).toBe(400)
-    expect(client.calls.find((c) => c.table === 'orders')).toBeUndefined()
+    expect(client.rpcCalls).toHaveLength(0)
   })
 
   it('ignores a stale pay-later flag and still creates the order paid', async () => {
     // An old POS build that still sends `payment_timing` must not be able to
     // create an unpaid ticket: unknown keys are stripped, so the order is paid
     // with the method it sent.
-    const client = buildMockClient()
+    const client = buildMockClient({ rpcTotal: 1250 })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
 
     const res = await POST(
@@ -532,9 +529,10 @@ describe('POST /api/pos/orders', () => {
     expect(res.status).toBe(201)
     expect(await res.json()).toMatchObject({ status: 'paid' })
 
-    const orderInsert = client.calls.find((c) => c.table === 'orders' && c.op === 'insert')
-    expect(orderInsert?.row).toMatchObject({ status: 'paid', payment_method: 'cash' })
-    expect(client.calls.find((c) => c.table === 'payments' && c.op === 'insert')).toBeDefined()
+    expect(client.rpcCalls[0].args.p_order).toMatchObject({
+      order_type: 'take_away',
+      payment_method: 'cash',
+    })
   })
 
   it('tells a stale POS page to reload when it sends only payment_timing', async () => {
@@ -555,11 +553,12 @@ describe('POST /api/pos/orders', () => {
 
     expect(res.status).toBe(400)
     expect(json.error).toMatch(/reload the pos/i)
-    expect(client.calls.find((c) => c.table === 'orders')).toBeUndefined()
+    expect(client.rpcCalls).toHaveLength(0)
   })
 
   it('prices add-ons from the database and snapshots them', async () => {
     const client = buildMockClient({
+      rpcTotal: 2900,
       modifiers: MODIFIER_ROWS,
       junctions: JUNCTION_ROWS,
       groups: GROUP_ROWS,
@@ -583,25 +582,12 @@ describe('POST /api/pos/orders', () => {
     const body = await res.json()
     expect(body.total_cents).toBe(2900) // (1250 + 200) × 2
 
-    const itemInsert = client.calls.find(
-      (c) => c.table === 'order_items' && c.op === 'insert'
-    )
-    expect(itemInsert?.rows?.[0]).toMatchObject({
-      menu_item_price_cents: 1250,
-      quantity: 2,
-      line_total_cents: 2900,
-      notes: 'less rice',
-    })
-
-    const modifierInsert = client.calls.find(
-      (c) => c.table === 'order_item_modifiers' && c.op === 'insert'
-    )
-    expect(modifierInsert?.rows).toEqual([
+    expect(client.rpcCalls[0].args.p_items).toEqual([
       {
-        order_item_id: expect.any(String),
-        modifier_id: MODIFIER_ID,
-        modifier_name: 'Fried Egg',
-        modifier_price_delta_cents: 200,
+        menu_item_id: SET_KRAPOW,
+        quantity: 2,
+        modifier_ids: [MODIFIER_ID],
+        notes: 'less rice',
       },
     ])
   })

@@ -11,7 +11,6 @@ import {
   MAX_ITEM_NOTES_LENGTH,
   MAX_MERGED_QUANTITY,
   MAX_MODIFIERS_PER_ITEM,
-  lineTotalCents,
   mergeTableOrderItems,
 } from '@/lib/pos/table-orders'
 
@@ -66,6 +65,26 @@ const PosOrderSchema = z
     ...data,
     items: mergeTableOrderItems(data.items),
   }))
+
+/**
+ * Error codes the RPC can raise for a bad-but-recoverable request. The route
+ * validates all of these before calling, so one reaching here means a
+ * concurrent menu/table change; return 400 rather than 500.
+ */
+const POS_RPC_USER_ERRORS = [
+  'invalid_order',
+  'invalid_payment_method',
+  'invalid_order_number',
+  'invalid_items',
+  'invalid_item',
+  'invalid_modifier_payload',
+  'duplicate_modifier',
+  'item_unavailable',
+  'modifier_unavailable',
+  'invalid_modifier',
+  'too_many_modifiers',
+  'required_modifier_missing',
+] as const
 
 /**
  * Counter POS order creation.
@@ -256,14 +275,7 @@ export async function POST(req: NextRequest) {
       })
       if (selectionError) return { error: selectionError }
 
-      const deltas = item.modifier_ids.map(
-        (id) => modifiersById.get(id)?.price_delta_cents ?? 0
-      )
-      return {
-        item,
-        menuItem,
-        lineTotalCents: lineTotalCents(menuItem.price_cents, deltas, item.quantity),
-      }
+      return { item, menuItem }
     })
 
     const invalidLine = validatedLines.find(
@@ -279,16 +291,10 @@ export async function POST(req: NextRequest) {
     const priced = validatedLines as Array<{
       item: (typeof items)[number]
       menuItem: MenuRow
-      lineTotalCents: number
     }>
 
-    // Integer-cents arithmetic only.
-    const subtotalCents = priced.reduce(
-      (sum, line) => sum + line.lineTotalCents,
-      0
-    )
-    const totalCents = subtotalCents
-
+    // Integer-cents arithmetic only; the RPC re-prices from the database and
+    // returns the authoritative total.
     // Dine-in must point at an active table; the label is snapshotted so the
     // receipt still reads correctly after a rename or deactivation.
     let tableLabel: string | null = null
@@ -313,168 +319,93 @@ export async function POST(req: NextRequest) {
     }
 
     const orderNumber = generateOrderNumber()
-    const now = new Date().toISOString()
 
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        order_number: orderNumber,
-        customer_id: null,
-        customer_name:
-          order_type === 'dine_in'
-            ? customer_name || null
-            : customer_name || 'Walk-in',
-        status: 'paid',
-        source: 'counter',
-        delivery_type: order_type === 'dine_in' ? 'dine_in' : 'self_pickup',
-        table_id: order_type === 'dine_in' ? table_id : null,
-        table_label: tableLabel,
-        pax: order_type === 'dine_in' ? pax : null,
-        payment_method,
-        fulfillment_type: 'asap',
-        order_kind: 'standard',
-        dispatch_status: 'not_ready',
-        subtotal_cents: subtotalCents,
-        discount_cents: 0,
-        delivery_fee_cents: 0,
-        total_cents: totalCents,
-        notes: notes ?? null,
-        // Dine-in food is served on plates; there is nothing to pack.
-        include_cutlery: order_type !== 'dine_in',
-      })
-      .select('id, order_number, display_code')
-      .single()
+    // One transaction owns the header, lines, add-ons, payment and audit
+    // event. A failure at any point rolls all of it back, so there is no
+    // half-written ticket and no order without a payment row.
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'create_pos_order',
+      {
+        p_actor_id: user.id,
+        p_order: {
+          order_number: orderNumber,
+          order_type,
+          table_id: order_type === 'dine_in' ? table_id : null,
+          pax: order_type === 'dine_in' ? pax : null,
+          payment_method,
+          customer_name:
+            order_type === 'dine_in'
+              ? customer_name || null
+              : customer_name || 'Walk-in',
+          notes: notes ?? null,
+        },
+        p_items: priced.map((line) => ({
+          menu_item_id: line.menuItem.id,
+          quantity: line.item.quantity,
+          modifier_ids: line.item.modifier_ids,
+          notes: line.item.notes ?? null,
+        })),
+      }
+    )
 
-    if (orderError || !order) {
-      // The table was deactivated between the lookup and the insert; the
-      // BEFORE INSERT trigger (064) rejects the order.
-      if (
-        (orderError as { message?: string } | null)?.message?.includes(
-          'table_inactive'
-        )
-      ) {
+    if (rpcError || !rpcData) {
+      const message = rpcError?.message ?? ''
+
+      // The table was deactivated between the lookup and the insert; the RPC's
+      // row lock plus migration 064's trigger reject the order.
+      if (message.includes('table_inactive')) {
         return NextResponse.json(
           { error: 'That table is not available. Pick another table.' },
           { status: 409 }
         )
       }
-      console.error('[API/POS] Order insert failed:', orderError)
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-    }
 
-    // Insert all lines in one statement, then all add-ons in one statement.
-    // Generating the line ids here keeps each line's modifiers unambiguously
-    // attached (two lines can share a dish with different options) and cuts a
-    // submit from up to 100 round-trips to two, shrinking the window in which
-    // a crash would leave an item-less ticket.
-    const itemRows = priced.map((line) => ({
-      id: crypto.randomUUID(),
-      order_id: order.id,
-      menu_item_id: line.menuItem.id,
-      menu_item_name: line.menuItem.name,
-      menu_item_price_cents: line.menuItem.price_cents,
-      quantity: line.item.quantity,
-      line_total_cents: line.lineTotalCents,
-      notes: line.item.notes ?? null,
-    }))
-
-    const { error: itemError } = await supabase
-      .from('order_items')
-      .insert(itemRows)
-
-    if (itemError) {
-      console.error('[API/POS] Order item insert failed:', itemError)
-      await supabase.from('orders').delete().eq('id', order.id)
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-    }
-
-    const modifierRows = priced.flatMap((line, index) =>
-      line.item.modifier_ids.map((modifierId) => {
-        const modifier = modifiersById.get(modifierId)!
-        return {
-          order_item_id: itemRows[index].id,
-          modifier_id: modifier.id,
-          modifier_name: modifier.name,
-          modifier_price_delta_cents: modifier.price_delta_cents,
-        }
-      })
-    )
-
-    if (modifierRows.length > 0) {
-      const { error: modifierError } = await supabase
-        .from('order_item_modifiers')
-        .insert(modifierRows)
-      if (modifierError) {
-        console.error('[API/POS] Modifier insert failed:', modifierError)
-        await supabase.from('orders').delete().eq('id', order.id)
-        return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
+      // The route validates all of these before the RPC; reaching one here
+      // means a concurrent menu/table change. Return a 400 rather than a 500.
+      const userError = POS_RPC_USER_ERRORS.find((code) => message.includes(code))
+      if (userError) {
+        return NextResponse.json(
+          {
+            error:
+              userError === 'item_unavailable'
+                ? 'Some items are unavailable'
+                : 'The selected items or add-ons are no longer available. Please review the order.',
+            code: userError,
+          },
+          { status: 400 }
+        )
       }
-    }
 
-    const { error: paymentError } = await supabase.from('payments').insert({
-      order_id: order.id,
-      method: payment_method,
-      amount_cents: totalCents,
-      status: 'succeeded',
-      paid_at: now,
-    })
-    if (paymentError) {
-      // A failed `payments` row cannot be kept: `payments.order_id` is
-      // ON DELETE CASCADE, so the compensating delete below would remove it
-      // with the order. Log the identifiers instead — for a cash sale the
-      // till has already taken money, so the order id and number are what a
-      // reconciliation needs.
-      console.error(
-        `[API/POS] Payment insert failed for order ${order.id} (${order.order_number}):`,
-        paymentError
-      )
-      // Do not leave a "paid" order without a ledger row: the cashier will
-      // retry, and a kept order would create a duplicate ticket (and a
-      // phantom sale in reports). Removing it keeps create + payment
-      // all-or-nothing, matching the item-failure path above.
-      const { error: cleanupError } = await supabase
-        .from('orders')
-        .delete()
-        .eq('id', order.id)
-      if (cleanupError) {
-        console.error('[API/POS] Payment cleanup failed:', cleanupError)
-      }
+      console.error('[API/POS] Atomic order create failed:', rpcError)
       return NextResponse.json(
         {
-          error:
-            'The payment could not be recorded, so the order was not created. Please retry.',
-          order_number: order.order_number,
+          error: 'The order was not created. Please retry.',
+          order_number: orderNumber,
         },
         { status: 500 }
       )
     }
 
-    await supabase.from('order_events').insert({
-      order_id: order.id,
-      event_type: 'created',
-      actor_id: user.id,
-      new_value: {
-        source: 'counter',
-        order_type,
-        table_id: order_type === 'dine_in' ? table_id : null,
-        table_label: tableLabel,
-        pax: order_type === 'dine_in' ? pax : null,
-        payment_method,
-        total_cents: totalCents,
-      },
-    })
+    const created = rpcData as {
+      order_id: string
+      order_number: string
+      display_code: string
+      total_cents: number
+      table_label: string | null
+      pax: number | null
+    }
 
     return NextResponse.json(
       {
-        order_id: order.id,
-        order_number: order.order_number,
-        display_code: order.display_code,
-        total_cents: totalCents,
+        order_id: created.order_id,
+        order_number: created.order_number,
+        display_code: created.display_code,
+        total_cents: created.total_cents,
         order_type,
         payment_method,
         status: 'paid',
-        table_label: tableLabel,
-        pax: order_type === 'dine_in' ? pax : null,
+        table_label: created.table_label ?? tableLabel,
+        pax: created.pax ?? (order_type === 'dine_in' ? pax ?? null : null),
       },
       { status: 201 }
     )

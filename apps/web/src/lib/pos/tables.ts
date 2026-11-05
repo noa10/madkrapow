@@ -121,6 +121,19 @@ export function closeBlockedMessage(
 }
 
 /**
+ * Reopen is the inverse of close, and deliberately narrower than it:
+ * admin/manager only, and only on a free table. A table with open orders is
+ * occupied by a new party — the RPC refuses the reopen too, so the UI never
+ * offers it.
+ */
+export function canReopenTable(
+  role: string | null | undefined,
+  summary: Pick<TableSummary, 'isOccupied'>
+): boolean {
+  return (role === 'admin' || role === 'manager') && !summary.isOccupied
+}
+
+/**
  * Warning for the close confirmation when the kitchen has not finished.
  *
  * Closing completes those tickets, so the cashier is told before confirming

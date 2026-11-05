@@ -9,6 +9,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShoppingBag,
   UtensilsCrossed,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import { adminLabel, parseOrderStatus } from '@/lib/orders/status'
 import {
   buildOrderSettleTarget,
   buildTableSettleTarget,
+  canReopenTable,
   closeBlockedMessage,
 } from '@/lib/pos/tables'
 import type {
@@ -32,6 +34,8 @@ import type {
 interface PosTableBoardProps {
   summaries: TableSummary[]
   unpaidTakeaway: PosOpenOrder[]
+  /** Signed-in staff role; reopen is offered to admin/manager only. */
+  role: string | null
   busyId: string | null
   refreshing: boolean
   onNewOrder: (table: RestaurantTable, summary: TableSummary) => void
@@ -39,6 +43,8 @@ interface PosTableBoardProps {
   onSettle: (target: PosSettleTarget) => void
   onVoid: (order: PosOpenOrder) => void
   onCloseTable: (summary: TableSummary) => void
+  /** Restore today's closed orders and re-occupy a wrongly freed table. */
+  onReopenTable: (summary: TableSummary) => void
   onRefresh: () => void
 }
 
@@ -101,12 +107,14 @@ function OrderItems({ items }: { items: PosOrderItem[] | null | undefined }) {
 export function PosTableBoard({
   summaries,
   unpaidTakeaway,
+  role,
   busyId,
   refreshing,
   onNewOrder,
   onSettle,
   onVoid,
   onCloseTable,
+  onReopenTable,
   onRefresh,
 }: PosTableBoardProps) {
   const occupied = summaries.filter((summary) => summary.isOccupied)
@@ -413,6 +421,19 @@ export function PosTableBoard({
                     )}
                     Close table
                   </Button>
+                  {canReopenTable(role, summary) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onReopenTable(summary)}
+                      disabled={busy}
+                      title="Restore today's closed orders and re-open this table"
+                      className="col-span-2"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reopen table
+                    </Button>
+                  )}
                 </div>
               </article>
             )

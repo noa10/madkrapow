@@ -51,18 +51,18 @@ export async function POST(req: NextRequest) {
 
     const { subtotalCents, deliveryFeeCents } = parsed.data
 
-    const [profileResult, applied] = await Promise.all([
+    const [profileResult, promoResult] = await Promise.all([
       loadCustomerProfile(user, supabase)
         .then((profile) => ({ ok: true as const, profile }))
         .catch((error: unknown) => ({ ok: false as const, error })),
       subtotalCents > 0
-        ? getAutoAppliedPromos(supabase, subtotalCents, deliveryFeeCents).catch(
-            (error: unknown) => {
+        ? getAutoAppliedPromos(supabase, subtotalCents, deliveryFeeCents)
+            .then((applied) => ({ ok: true as const, applied }))
+            .catch((error: unknown) => {
               console.error('[API] /api/checkout/bootstrap promos:', error)
-              return []
-            },
-          )
-        : Promise.resolve([]),
+              return { ok: false as const, applied: [] }
+            })
+        : Promise.resolve({ ok: true as const, applied: [] }),
     ])
 
     if (!profileResult.ok) {
@@ -76,10 +76,13 @@ export async function POST(req: NextRequest) {
         addresses: profileResult.ok ? profileResult.profile.addresses : [],
         contacts: profileResult.ok ? profileResult.profile.contacts : [],
         methods: getAvailablePaymentMethods(),
-        applied,
+        applied: promoResult.applied,
         // A non-auth profile failure is surfaced so the client can fall back
         // to the standalone profile endpoint without guessing why it is empty.
         profileUnavailable: !profileResult.ok,
+        // A promo query failure is not "no promos": the client must retry the
+        // standalone promo read instead of marking this pair as applied.
+        promosUnavailable: !promoResult.ok,
       },
       { status: 200, headers: { 'Cache-Control': 'no-store' } },
     )

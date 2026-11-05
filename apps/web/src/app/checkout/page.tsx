@@ -39,6 +39,9 @@ function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
 }
 
+/** The checkout bootstrap is the gate for profile + payment methods. */
+const BOOTSTRAP_TIMEOUT_MS = 10_000
+
 function formatAddress(address: DeliveryAddress): string {
   const parts = [
     address.address_line1,
@@ -326,10 +329,15 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     if (!isHydrated || bootstrapStartedRef.current) return
     bootstrapStartedRef.current = true
     let cancelled = false
+    const controller = new AbortController()
 
     async function bootstrap() {
       const subtotalCents = getOriginalSubtotal()
       const fee = deliveryFee
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        BOOTSTRAP_TIMEOUT_MS,
+      )
 
       try {
         const res = await fetch('/api/checkout/bootstrap', {
@@ -339,6 +347,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
             subtotalCents,
             deliveryFeeCents: fee,
           }),
+          signal: controller.signal,
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
@@ -358,7 +367,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
           setIsLoadingProfile(false)
         }
 
-        if (subtotalCents > 0) {
+        if (subtotalCents > 0 && !data.promosUnavailable) {
           useCartStore.getState().clearPromos()
           for (const p of data.applied ?? []) {
             useCartStore.getState().applyPromo({
@@ -386,12 +395,15 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
         ])
         bootstrapFinishedRef.current = true
         setBootstrapComplete(true)
+      } finally {
+        clearTimeout(timeoutId)
       }
     }
 
     bootstrap()
     return () => {
       cancelled = true
+      controller.abort()
       // React StrictMode mounts effects twice in development. If the first
       // request was torn down before it finished, let the second mount retry;
       // once it has finished, keep the one-shot guard for fee changes.

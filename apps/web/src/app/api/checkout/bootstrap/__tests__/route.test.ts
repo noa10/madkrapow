@@ -94,6 +94,7 @@ describe('POST /api/checkout/bootstrap', () => {
       methods: METHODS,
       applied: PROMOS,
       profileUnavailable: false,
+      promosUnavailable: false,
     })
 
     expect(mockLoadCustomerProfile).toHaveBeenCalledTimes(1)
@@ -143,6 +144,22 @@ describe('POST /api/checkout/bootstrap', () => {
       methods: METHODS,
       applied: PROMOS,
       profileUnavailable: true,
+    })
+  })
+
+  it('flags promosUnavailable when the promo query fails', async () => {
+    mockGetAutoAppliedPromos.mockRejectedValue(new Error('promo db down'))
+
+    const res = await POST(
+      makeRequest({ subtotalCents: 2500, deliveryFeeCents: 500 }) as never,
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      success: true,
+      methods: METHODS,
+      applied: [],
+      promosUnavailable: true,
     })
   })
 

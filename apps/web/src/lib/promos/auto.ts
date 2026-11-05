@@ -13,6 +13,14 @@ export interface AutoAppliedPromo {
   validUntil: string
 }
 
+/** The promo query itself failed; callers may retry or flag degraded data. */
+export class AutoPromoQueryError extends Error {
+  constructor(message = 'Unable to load auto-promos') {
+    super(message)
+    this.name = 'AutoPromoQueryError'
+  }
+}
+
 interface PromoRow {
   code: string
   description: string | null
@@ -52,7 +60,7 @@ export async function getAutoAppliedPromos(
     if (error) {
       console.error('[API] /api/promos/auto query failed:', error)
     }
-    return []
+    throw new AutoPromoQueryError()
   }
 
   return (promos as PromoRow[])

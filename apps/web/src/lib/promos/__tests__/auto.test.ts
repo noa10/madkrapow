@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getAutoAppliedPromos } from '../auto'
+import { AutoPromoQueryError, getAutoAppliedPromos } from '../auto'
 
 interface PromoRow {
   code: string
@@ -109,12 +109,9 @@ describe('getAutoAppliedPromos', () => {
     expect(deliveryScoped[0].discountCents).toBe(50)
   })
 
-  it('returns an empty list when the promo query fails', async () => {
-    const promos = await getAutoAppliedPromos(
-      client(null, { message: 'db down' }),
-      2500,
-      0,
-    )
-    expect(promos).toEqual([])
+  it('throws a query error when the promo query fails', async () => {
+    await expect(
+      getAutoAppliedPromos(client(null, { message: 'db down' }), 2500, 0),
+    ).rejects.toBeInstanceOf(AutoPromoQueryError)
   })
 })

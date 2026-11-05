@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
-import { getAutoAppliedPromos } from '@/lib/promos/auto'
+import {
+  AutoPromoQueryError,
+  getAutoAppliedPromos,
+} from '@/lib/promos/auto'
 import { z } from 'zod'
 
 const AutoPromoRequestSchema = z.object({
@@ -20,11 +23,24 @@ export async function POST(req: NextRequest) {
     }
 
     const { subtotalCents, deliveryFeeCents } = parsed.data
-    const applied = await getAutoAppliedPromos(
-      getServiceClient(),
-      subtotalCents,
-      deliveryFeeCents,
-    )
+    let applied
+    try {
+      applied = await getAutoAppliedPromos(
+        getServiceClient(),
+        subtotalCents,
+        deliveryFeeCents,
+      )
+    } catch (error) {
+      // A query failure is not a bad request: keep the old 200/[] shape but
+      // tell callers the discount was not evaluated, so they can retry.
+      if (error instanceof AutoPromoQueryError) {
+        return NextResponse.json(
+          { applied: [], promosUnavailable: true },
+          { status: 200 },
+        )
+      }
+      throw error
+    }
 
     return NextResponse.json({ applied }, { status: 200 })
   } catch (error) {

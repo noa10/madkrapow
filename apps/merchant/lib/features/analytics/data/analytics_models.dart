@@ -7,6 +7,7 @@ class DailyPulse {
   final int avgOrderCents;
   final int deliveryCount;
   final int pickupCount;
+  final int dineInCount;
 
   const DailyPulse({
     required this.orderCount,
@@ -14,15 +15,17 @@ class DailyPulse {
     required this.avgOrderCents,
     required this.deliveryCount,
     required this.pickupCount,
+    required this.dineInCount,
   });
 
   factory DailyPulse.fromJson(Map<String, dynamic> json) => DailyPulse(
-        orderCount: json['order_count'] as int? ?? 0,
-        revenueCents: json['revenue_cents'] as int? ?? 0,
-        avgOrderCents: json['avg_order_cents'] as int? ?? 0,
-        deliveryCount: json['delivery_count'] as int? ?? 0,
-        pickupCount: json['pickup_count'] as int? ?? 0,
-      );
+    orderCount: json['order_count'] as int? ?? 0,
+    revenueCents: json['revenue_cents'] as int? ?? 0,
+    avgOrderCents: json['avg_order_cents'] as int? ?? 0,
+    deliveryCount: json['delivery_count'] as int? ?? 0,
+    pickupCount: json['pickup_count'] as int? ?? 0,
+    dineInCount: json['dine_in_count'] as int? ?? 0,
+  );
 }
 
 class TrendPoint {
@@ -34,6 +37,7 @@ class TrendPoint {
   final int discountsCents;
   final int deliveryCount;
   final int pickupCount;
+  final int dineInCount;
 
   const TrendPoint({
     required this.orderDate,
@@ -44,18 +48,20 @@ class TrendPoint {
     required this.discountsCents,
     required this.deliveryCount,
     required this.pickupCount,
+    required this.dineInCount,
   });
 
   factory TrendPoint.fromJson(Map<String, dynamic> json) => TrendPoint(
-        orderDate: json['order_date'] as String,
-        orderCount: json['order_count'] as int? ?? 0,
-        revenueCents: json['revenue_cents'] as int? ?? 0,
-        subtotalCents: json['subtotal_cents'] as int? ?? 0,
-        deliveryFeesCents: json['delivery_fees_cents'] as int? ?? 0,
-        discountsCents: json['discounts_cents'] as int? ?? 0,
-        deliveryCount: json['delivery_count'] as int? ?? 0,
-        pickupCount: json['pickup_count'] as int? ?? 0,
-      );
+    orderDate: json['order_date'] as String,
+    orderCount: json['order_count'] as int? ?? 0,
+    revenueCents: json['revenue_cents'] as int? ?? 0,
+    subtotalCents: json['subtotal_cents'] as int? ?? 0,
+    deliveryFeesCents: json['delivery_fees_cents'] as int? ?? 0,
+    discountsCents: json['discounts_cents'] as int? ?? 0,
+    deliveryCount: json['delivery_count'] as int? ?? 0,
+    pickupCount: json['pickup_count'] as int? ?? 0,
+    dineInCount: json['dine_in_count'] as int? ?? 0,
+  );
 }
 
 class TopItem {
@@ -72,23 +78,21 @@ class TopItem {
   });
 
   factory TopItem.fromJson(Map<String, dynamic> json) => TopItem(
-        menuItemName: json['menu_item_name'] as String,
-        menuItemId: json['menu_item_id'] as String?,
-        totalQuantity: json['total_quantity'] as int? ?? 0,
-        totalRevenueCents: json['total_revenue_cents'] as int? ?? 0,
-      );
+    menuItemName: json['menu_item_name'] as String,
+    menuItemId: json['menu_item_id'] as String?,
+    totalQuantity: json['total_quantity'] as int? ?? 0,
+    totalRevenueCents: json['total_revenue_cents'] as int? ?? 0,
+  );
 }
 
 class AnalyticsTotals {
   final int orderCount;
   final int revenueCents;
 
-  const AnalyticsTotals({
-    required this.orderCount,
-    required this.revenueCents,
-  });
+  const AnalyticsTotals({required this.orderCount, required this.revenueCents});
 
-  factory AnalyticsTotals.fromJson(Map<String, dynamic> json) => AnalyticsTotals(
+  factory AnalyticsTotals.fromJson(Map<String, dynamic> json) =>
+      AnalyticsTotals(
         orderCount: json['order_count'] as int? ?? 0,
         revenueCents: json['revenue_cents'] as int? ?? 0,
       );
@@ -108,19 +112,21 @@ class AnalyticsData {
   });
 
   factory AnalyticsData.fromJson(Map<String, dynamic> json) => AnalyticsData(
-        pulse: DailyPulse.fromJson(json['pulse'] as Map<String, dynamic>),
-        totals: json['totals'] != null
-            ? AnalyticsTotals.fromJson(json['totals'] as Map<String, dynamic>)
-            : const AnalyticsTotals(orderCount: 0, revenueCents: 0),
-        trends: (json['trends'] as List<dynamic>?)
-                ?.map((e) => TrendPoint.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        topItems: (json['top_items'] as List<dynamic>?)
-                ?.map((e) => TopItem.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-      );
+    pulse: DailyPulse.fromJson(json['pulse'] as Map<String, dynamic>),
+    totals: json['totals'] != null
+        ? AnalyticsTotals.fromJson(json['totals'] as Map<String, dynamic>)
+        : const AnalyticsTotals(orderCount: 0, revenueCents: 0),
+    trends:
+        (json['trends'] as List<dynamic>?)
+            ?.map((e) => TrendPoint.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    topItems:
+        (json['top_items'] as List<dynamic>?)
+            ?.map((e) => TopItem.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+  );
 }
 
 /// Format cents as Malaysian Ringgit string.

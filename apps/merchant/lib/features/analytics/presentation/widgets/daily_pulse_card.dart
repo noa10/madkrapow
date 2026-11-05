@@ -17,8 +17,10 @@ class DailyPulseCard extends StatelessWidget {
         child: Column(
           children: [
             // Range totals header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 16,
+              runSpacing: 12,
               children: [
                 _RangeStat(
                   icon: Icons.receipt_long_outlined,
@@ -54,8 +56,10 @@ class DailyPulseCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            Wrap(
+              alignment: WrapAlignment.spaceAround,
+              spacing: 12,
+              runSpacing: 12,
               children: [
                 _TodayStat(label: 'Orders', value: '${pulse.orderCount}'),
                 _TodayStat(
@@ -68,6 +72,7 @@ class DailyPulseCard extends StatelessWidget {
                 ),
                 _TodayStat(label: 'Delivery', value: '${pulse.deliveryCount}'),
                 _TodayStat(label: 'Pickup', value: '${pulse.pickupCount}'),
+                _TodayStat(label: 'Dine-in', value: '${pulse.dineInCount}'),
               ],
             ),
           ],

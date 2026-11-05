@@ -63,7 +63,7 @@ jobs:
       - name: Start local Supabase
         run: npx supabase start --exclude studio,imgproxy,logflare,vector,edge-runtime,supavisor
       - name: Run table RPC pgTAP probes
-        run: npx supabase test db supabase/tests/table_rpc.test.sql
+        run: npx supabase test db
 
   dart-package-tests:
     name: Dart Shared Package Tests

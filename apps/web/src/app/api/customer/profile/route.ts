@@ -1,48 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthenticatedUser } from '@/lib/supabase/server'
+import {
+  loadCustomerProfile,
+  ProfileLoadError,
+  type CustomerProfile,
+} from '@/lib/customer/profile'
 
-interface CustomerAddress {
-  id: string
-  label: string | null
-  address_line1: string
-  address_line2: string | null
-  city: string
-  state: string
-  postal_code: string
-  country: string
-  instructions: string | null
-  is_default: boolean
-}
-
-interface CustomerContact {
-  id: string
-  name: string
-  phone: string
-  is_default: boolean
-}
-
-interface Customer {
-  id: string
-  name: string | null
-  phone: string | null
-  email: string | null
-  avatarUrl: string | null
-}
-
-interface ProfileResponse {
-  success: true
-  customer: Customer
-  addresses: CustomerAddress[]
-  contacts: CustomerContact[]
-}
-
-interface ProfileError {
-  success: false
-  error: string
-}
-
-type ProfileResult = ProfileResponse | ProfileError
+type ProfileResult =
+  | ({ success: true } & CustomerProfile)
+  | { success: false; error: string }
 
 export async function GET(req: NextRequest): Promise<NextResponse<ProfileResult>> {
   try {
@@ -55,86 +22,17 @@ export async function GET(req: NextRequest): Promise<NextResponse<ProfileResult>
       )
     }
 
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
+    const profile = await loadCustomerProfile(user, supabase)
 
-    if (customerError) {
-      console.error('[API] Failed to fetch customer:', customerError)
+    return NextResponse.json({ success: true, ...profile }, { status: 200 })
+  } catch (error) {
+    if (error instanceof ProfileLoadError) {
       return NextResponse.json(
-        { success: false, error: 'Failed to load customer profile' },
-        { status: 500 }
+        { success: false, error: error.message },
+        { status: error.status }
       )
     }
 
-    let resolvedCustomer = customer
-
-    if (!resolvedCustomer) {
-      const googleAvatarUrl = user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null
-
-      const { data: createdCustomer, error: createCustomerError } = await supabase
-        .from('customers')
-        .insert({
-          auth_user_id: user.id,
-          name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? null,
-          phone: user.phone ?? null,
-          avatar_url: googleAvatarUrl,
-        })
-        .select('*')
-        .single()
-
-      if (createCustomerError || !createdCustomer) {
-        console.error('[API] Failed to create customer:', createCustomerError)
-        return NextResponse.json(
-          { success: false, error: 'Failed to initialize customer profile' },
-          { status: 500 }
-        )
-      }
-
-      resolvedCustomer = createdCustomer
-    }
-
-    const [addressesRes, contactsRes] = await Promise.all([
-      supabase
-        .from('customer_addresses')
-        .select('*')
-        .eq('customer_id', resolvedCustomer.id)
-        .order('is_default', { ascending: false })
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('customer_contacts')
-        .select('*')
-        .eq('customer_id', resolvedCustomer.id)
-        .order('is_default', { ascending: false })
-        .order('created_at', { ascending: false }),
-    ])
-
-    if (addressesRes.error) {
-      console.error('[API] Failed to fetch addresses:', addressesRes.error)
-    }
-
-    if (contactsRes.error) {
-      console.error('[API] Failed to fetch contacts:', contactsRes.error)
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        customer: {
-          id: resolvedCustomer.id,
-          name: resolvedCustomer.name,
-          phone: resolvedCustomer.phone,
-          email: user.email || null,
-          avatarUrl: resolvedCustomer.avatar_url ?? null,
-        },
-        addresses: addressesRes.data || [],
-        contacts: contactsRes.data || [],
-      },
-      { status: 200 }
-    )
-  } catch (error) {
     console.error('[API] /api/customer/profile:', error)
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'

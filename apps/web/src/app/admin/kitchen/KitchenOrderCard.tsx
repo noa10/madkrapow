@@ -24,7 +24,7 @@ import {
   StickyNote,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import type { AdminOrder } from '@/hooks/useAdminOrders';
+import type { AdminOrder } from '@/hooks/useKitchenOrders';
 import { useToastStore } from '@/stores/toast';
 import { isPrintBridgeConfigured, printViaBridge } from '@/lib/printing/client';
 import { getOrderDisplayCode } from '@/lib/utils/order-code';

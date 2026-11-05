@@ -36,12 +36,12 @@ vi.mock('@/lib/supabase/client', () => ({
   },
 }))
 
-import { useAdminOrders } from './useAdminOrders'
+import { useKitchenOrders } from './useKitchenOrders'
 
 const ticket = (id: string, status = 'paid', source = 'web') => ({ id, status, source, delivery_type: 'delivery' })
 // The test harness supplies mocked React hooks and renders the hook directly.
 // eslint-disable-next-line react-hooks/rules-of-hooks
-const render = () => { harness.index = 0; return useAdminOrders() }
+const render = () => { harness.index = 0; return useKitchenOrders() }
 const resolve = async (index: number, data: unknown, error: { message: string } | null = null) => {
   harness.requests[index]({ data, error })
   await Promise.resolve()

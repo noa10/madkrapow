@@ -50,6 +50,21 @@ jobs:
       # introduced by this PR). Tracked as a follow-up.
       - run: npx vitest run --exclude 'apps/web/src/app/api/bots/whatsapp/__tests__/webhook.test.ts'
 
+  table-rpc-tests:
+    name: Table RPC integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Start local Supabase
+        run: npx supabase start --exclude studio,imgproxy,logflare,vector,edge-runtime,supavisor
+      - name: Run table RPC pgTAP probes
+        run: npx supabase test db supabase/tests/table_rpc.test.sql
+
   dart-package-tests:
     name: Dart Shared Package Tests
     runs-on: ubuntu-latest

@@ -1928,6 +1928,7 @@ export type Database = {
           delivery_count: number | null
           delivery_fees_cents: number | null
           discounts_cents: number | null
+          dine_in_count: number | null
           order_count: number | null
           order_date: string | null
           pickup_count: number | null

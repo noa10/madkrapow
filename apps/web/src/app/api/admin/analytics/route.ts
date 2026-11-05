@@ -85,8 +85,16 @@ export async function GET(req: NextRequest) {
           avg_order_cents: today.avg_order_cents ?? 0,
           delivery_count: today.delivery_count ?? 0,
           pickup_count: today.pickup_count ?? 0,
+          dine_in_count: today.dine_in_count ?? 0,
         }
-      : { order_count: 0, revenue_cents: 0, avg_order_cents: 0, delivery_count: 0, pickup_count: 0 };
+      : {
+          order_count: 0,
+          revenue_cents: 0,
+          avg_order_cents: 0,
+          delivery_count: 0,
+          pickup_count: 0,
+          dine_in_count: 0,
+        };
 
     // Compute totals for the range
     const totals = trends.reduce(

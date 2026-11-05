@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isBillplzAvailable } from '@/lib/billplz/client'
-import { isStripeAvailable } from '@/lib/stripe/config'
-import { PAYMENT_METHOD_OPTIONS } from '@/lib/payments/methods'
+import { getAvailablePaymentMethods } from '@/lib/payments/availability'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -9,22 +7,12 @@ export const dynamic = 'force-dynamic'
 /**
  * Payment methods the checkout can offer right now.
  *
- * A method is listed only when it is enabled, fully configured, and pointed at
- * the environment matching its credentials. This is what keeps a test-mode
- * gateway from rendering a payment button that cannot take money.
+ * Kept as a standalone endpoint for clients that only need the method list;
+ * the checkout itself gets the same list from `/api/checkout/bootstrap`.
  */
 export async function GET(): Promise<NextResponse> {
-  const availability: Record<string, boolean> = {
-    stripe: isStripeAvailable(),
-    billplz: isBillplzAvailable(),
-  }
-
-  const methods = PAYMENT_METHOD_OPTIONS.filter(
-    (method) => availability[method.id] === true,
-  )
-
   return NextResponse.json(
-    { success: true, methods },
+    { success: true, methods: getAvailablePaymentMethods() },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }

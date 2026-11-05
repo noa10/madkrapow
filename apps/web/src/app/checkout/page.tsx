@@ -39,6 +39,9 @@ function formatPrice(priceCents: number): string {
   return `RM ${(priceCents / 100).toFixed(2)}`
 }
 
+/** The checkout bootstrap is the gate for profile + payment methods. */
+const BOOTSTRAP_TIMEOUT_MS = 10_000
+
 function formatAddress(address: DeliveryAddress): string {
   const parts = [
     address.address_line1,
@@ -67,6 +70,27 @@ interface StoreSettings {
   kitchen_lead_minutes: number
   cutlery_enabled: boolean
   cutlery_default: boolean
+}
+
+interface ProfileAddress {
+  id: string
+  label: string | null
+  address_line1: string
+  address_line2: string | null
+  city: string
+  state: string
+  postal_code: string
+  country: string
+  latitude: number | null
+  longitude: number | null
+  is_default: boolean
+}
+
+interface ProfileContact {
+  id: string
+  name: string
+  phone: string
+  is_default: boolean
 }
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -131,41 +155,6 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
     checkAuth()
   }, [])
 
-  useEffect(() => {
-    async function fetchProfile() {
-      try {
-        const res = await fetch('/api/customer/profile')
-        const data = await res.json()
-        if (data.success) {
-          setProfileAddresses(data.addresses || [])
-          setProfileContacts(data.contacts || [])
-          const defaultContact = data.contacts?.find((c: { is_default: boolean }) => c.is_default) || data.contacts?.[0]
-          const defaultAddress = data.addresses?.find((a: { is_default: boolean }) => a.is_default) || data.addresses?.[0]
-          if (defaultContact || defaultAddress) {
-            const current = useCheckoutStore.getState().delivery_address
-            useCheckoutStore.getState().setDeliveryAddress({
-              full_name: defaultContact?.name || current?.full_name || '',
-              phone: defaultContact?.phone || current?.phone || '',
-              address_line1: defaultAddress?.address_line1 || current?.address_line1 || '',
-              address_line2: defaultAddress?.address_line2 || current?.address_line2,
-              city: defaultAddress?.city || current?.city || '',
-              state: defaultAddress?.state || current?.state || '',
-              postal_code: defaultAddress?.postal_code || current?.postal_code || '',
-              country: defaultAddress?.country || current?.country || 'Malaysia',
-              latitude: defaultAddress?.latitude || current?.latitude,
-              longitude: defaultAddress?.longitude || current?.longitude,
-            })
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch profile:', err)
-      } finally {
-        setIsLoadingProfile(false)
-      }
-    }
-    fetchProfile()
-  }, [])
-
   const handleResendVerification = async () => {
     if (!userEmail) return
     setResendStatus('sending')
@@ -210,6 +199,9 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   // Populated from the server; no payment method is assumed to be available.
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
+  // Gate the standalone auto-promo refresh until the bootstrap request has
+  // resolved, otherwise both fire on mount and the batch saves nothing.
+  const [bootstrapComplete, setBootstrapComplete] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stripe')
   const [showAddressInput, setShowAddressInput] = useState(false)
   const [showContactInput, setShowContactInput] = useState(false)
@@ -226,29 +218,98 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const activeAddressKeyRef = useRef<string | null>(null)
   const requestTokenRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
+  // The checkout reads profile + payment methods + auto-promos once, in one
+  // request. These refs keep that from re-firing when the cart or fee changes;
+  // ordinary promo refreshes still go through /api/promos/auto.
+  const bootstrapStartedRef = useRef(false)
+  const bootstrapFinishedRef = useRef(false)
+  const lastAutoPromoKeyRef = useRef<string | null>(null)
 
-  const [profileAddresses, setProfileAddresses] = useState<Array<{
-    id: string
-    label: string | null
-    address_line1: string
-    address_line2: string | null
-    city: string
-    state: string
-    postal_code: string
-    country: string
-    latitude: number | null
-    longitude: number | null
-    is_default: boolean
-  }>>([])
+  const [profileAddresses, setProfileAddresses] = useState<ProfileAddress[]>([])
 
-  const [profileContacts, setProfileContacts] = useState<Array<{
-    id: string
-    name: string
-    phone: string
-    is_default: boolean
-  }>>([])
+  const [profileContacts, setProfileContacts] = useState<ProfileContact[]>([])
 
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+
+  const applyProfile = useCallback(
+    (data: { addresses?: ProfileAddress[]; contacts?: ProfileContact[] }) => {
+      const addresses = (data.addresses ?? []).map((address) => ({
+        ...address,
+        latitude: address.latitude ?? null,
+        longitude: address.longitude ?? null,
+      }))
+      const contacts = data.contacts ?? []
+      setProfileAddresses(addresses)
+      setProfileContacts(contacts)
+
+      const defaultContact =
+        contacts.find((contact) => contact.is_default) ?? contacts[0]
+      const defaultAddress =
+        addresses.find((address) => address.is_default) ?? addresses[0]
+
+      if (defaultContact || defaultAddress) {
+        const current = useCheckoutStore.getState().delivery_address
+        useCheckoutStore.getState().setDeliveryAddress({
+          full_name: defaultContact?.name || current?.full_name || '',
+          phone: defaultContact?.phone || current?.phone || '',
+          address_line1:
+            defaultAddress?.address_line1 || current?.address_line1 || '',
+          address_line2:
+            defaultAddress?.address_line2 ?? current?.address_line2,
+          city: defaultAddress?.city || current?.city || '',
+          state: defaultAddress?.state || current?.state || '',
+          postal_code:
+            defaultAddress?.postal_code || current?.postal_code || '',
+          country: defaultAddress?.country || current?.country || 'Malaysia',
+          latitude: defaultAddress?.latitude ?? current?.latitude,
+          longitude: defaultAddress?.longitude ?? current?.longitude,
+        })
+      }
+    },
+    [],
+  )
+
+  const applyPaymentMethods = useCallback((methods: PaymentMethodOption[]) => {
+    const filtered = methods.filter(
+      (method) => method?.id === 'stripe' || method?.id === 'billplz',
+    )
+    setPaymentMethods(filtered)
+    if (filtered.length > 0) {
+      setPaymentMethod((current) =>
+        filtered.some((method) => method.id === current)
+          ? current
+          : filtered[0].id,
+      )
+    }
+  }, [])
+
+  const loadProfileFallback = useCallback(async () => {
+    try {
+      const res = await fetch('/api/customer/profile')
+      const data = await res.json()
+      if (data.success) applyProfile(data)
+    } catch (err) {
+      console.error('Failed to fetch profile:', err)
+    } finally {
+      setIsLoadingProfile(false)
+    }
+  }, [applyProfile])
+
+  const loadPaymentMethodsFallback = useCallback(async () => {
+    try {
+      const res = await fetch('/api/payments/methods', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.success && Array.isArray(data.methods)) {
+        applyPaymentMethods(data.methods)
+      }
+    } catch (err) {
+      console.error('Failed to fetch payment methods:', err)
+    } finally {
+      setPaymentMethodsLoaded(true)
+    }
+  }, [applyPaymentMethods])
+
 
   const subtotal = getSubtotal()
   const promoDiscount = useCartStore((state) => state.getDiscountTotal())
@@ -259,6 +320,106 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
   const total = subtotal + deliveryFee - promoDiscount
 
   const isDeliveryFeeLoading = deliveryType === 'delivery' && quoteStatus === 'loading'
+
+  // One authenticated call replaces the three mount fetches (profile,
+  // payment methods, auto-promos). It waits for cart hydration so the promo
+  // calculation gets the real subtotal; later fee/subtotal changes still use
+  // /api/promos/auto below.
+  useEffect(() => {
+    if (!isHydrated || bootstrapStartedRef.current) return
+    bootstrapStartedRef.current = true
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function bootstrap() {
+      const subtotalCents = getOriginalSubtotal()
+      const fee = deliveryFee
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        BOOTSTRAP_TIMEOUT_MS,
+      )
+
+      try {
+        const res = await fetch('/api/checkout/bootstrap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subtotalCents,
+            deliveryFeeCents: fee,
+          }),
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        const data = await res.json()
+        if (!data.success) throw new Error('bootstrap failed')
+        if (cancelled) return
+
+        applyPaymentMethods(
+          Array.isArray(data.methods) ? data.methods : [],
+        )
+        if (data.profileUnavailable) {
+          // The bootstrap route already logged the cause; retry the standalone
+          // read in the background so it does not delay promo application.
+          void loadProfileFallback()
+        } else {
+          applyProfile(data)
+          setIsLoadingProfile(false)
+        }
+
+        if (subtotalCents > 0 && !data.promosUnavailable) {
+          useCartStore.getState().clearPromos()
+          for (const p of data.applied ?? []) {
+            useCartStore.getState().applyPromo({
+              code: p.code,
+              description: p.description,
+              scope: p.scope,
+              discountType: p.discountType,
+              discountValue: p.discountValue,
+              discountCents: p.discountCents,
+            })
+          }
+          lastAutoPromoKeyRef.current = `${subtotalCents}:${fee}`
+        }
+        setPaymentMethodsLoaded(true)
+        bootstrapFinishedRef.current = true
+        setBootstrapComplete(true)
+      } catch (err) {
+        console.error('Failed to load checkout bootstrap:', err)
+        if (cancelled) return
+        // A new endpoint must not block checkout: fall back to the two
+        // independent reads it replaced.
+        await Promise.all([
+          loadProfileFallback(),
+          loadPaymentMethodsFallback(),
+        ])
+        bootstrapFinishedRef.current = true
+        setBootstrapComplete(true)
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    }
+
+    bootstrap()
+    return () => {
+      cancelled = true
+      controller.abort()
+      // React StrictMode mounts effects twice in development. If the first
+      // request was torn down before it finished, let the second mount retry;
+      // once it has finished, keep the one-shot guard for fee changes.
+      if (!bootstrapFinishedRef.current) {
+        bootstrapStartedRef.current = false
+      }
+    }
+  }, [
+    isHydrated,
+    deliveryFee,
+    getOriginalSubtotal,
+    applyProfile,
+    applyPaymentMethods,
+    loadProfileFallback,
+    loadPaymentMethodsFallback,
+  ])
 
   const itemIdsKey = useMemo(
     () => [...new Set(items.map((i) => i.menu_item_id))].sort().join(','),
@@ -306,8 +467,16 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
   useEffect(() => {
     async function fetchAutoPromos() {
+      if (!bootstrapComplete) return
       const originalSubtotal = getOriginalSubtotal()
       if (originalSubtotal <= 0) return
+
+      // The bootstrap response already applied the promos for this exact
+      // subtotal/fee pair; only re-fetch when one of them actually changes.
+      const key = `${originalSubtotal}:${deliveryFee}`
+      if (lastAutoPromoKeyRef.current === key) return
+      lastAutoPromoKeyRef.current = key
+
       try {
         const res = await fetch('/api/promos/auto', {
           method: 'POST',
@@ -331,7 +500,7 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
       }
     }
     fetchAutoPromos()
-  }, [deliveryFee, getOriginalSubtotal, subtotal])
+  }, [bootstrapComplete, deliveryFee, getOriginalSubtotal, subtotal])
 
   const quoteExpired = deliveryType === 'delivery' && Boolean(quoteExpiresAt) && quoteExpiryReached
 
@@ -412,43 +581,6 @@ const setIncludeCutlery = useCartStore((state) => state.setIncludeCutlery)
 
     fetchData()
     fetchSettings()
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function fetchPaymentMethods() {
-      try {
-        const res = await fetch('/api/payments/methods', { cache: 'no-store' })
-        if (!res.ok) return
-
-        const data = await res.json()
-        const methods: PaymentMethodOption[] = Array.isArray(data.methods)
-          ? data.methods.filter(
-              (method: PaymentMethodOption) =>
-                method?.id === 'stripe' || method?.id === 'billplz'
-            )
-          : []
-
-        if (cancelled || !data.success) return
-
-        setPaymentMethods(methods)
-        if (methods.length > 0) {
-          setPaymentMethod((current) =>
-            methods.some((method) => method.id === current) ? current : methods[0].id
-          )
-        }
-      } catch (err) {
-        console.error('Failed to fetch payment methods:', err)
-      } finally {
-        if (!cancelled) setPaymentMethodsLoaded(true)
-      }
-    }
-
-    fetchPaymentMethods()
-    return () => {
-      cancelled = true
-    }
   }, [])
 
   const updateQuoteStatus = useCallback((status: QuoteStatus) => {

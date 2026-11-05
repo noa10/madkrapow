@@ -1,0 +1,12 @@
+BEGIN;
+SELECT plan(3);
+INSERT INTO categories (id, name) VALUES ('70000000-0000-0000-0000-000000000001', 'lock probe');
+INSERT INTO menu_items (id, category_id, name, price_cents) VALUES ('70000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'lock probe item', 1000);
+INSERT INTO restaurant_tables (id, label, is_active) VALUES ('70000000-0000-0000-0000-000000000003', 'lock probe T1', true);
+INSERT INTO orders (order_number, status, source, delivery_type, table_id, subtotal_cents, total_cents) VALUES ('LOCK-1','paid','counter','dine_in','70000000-0000-0000-0000-000000000003',1000,1000),('LOCK-2','paid','counter','dine_in','70000000-0000-0000-0000-000000000003',1000,1000),('LOCK-3','paid','counter','dine_in','70000000-0000-0000-0000-000000000003',1000,1000),('LOCK-4','paid','counter','dine_in','70000000-0000-0000-0000-000000000003',1000,1000),('LOCK-5','paid','counter','dine_in','70000000-0000-0000-0000-000000000003',1000,1000);
+INSERT INTO orders (order_number, status, source, delivery_type, table_id, subtotal_cents, total_cents) VALUES ('LOCK-W1','pending','web','dine_in','70000000-0000-0000-0000-000000000003',500,500),('LOCK-W2','pending','web','dine_in','70000000-0000-0000-0000-000000000003',500,500),('LOCK-W3','pending','web','dine_in','70000000-0000-0000-0000-000000000003',500,500),('LOCK-W4','pending','web','dine_in','70000000-0000-0000-0000-000000000003',500,500);
+SELECT ok(strpos(pg_get_functiondef('enforce_table_order_rate_limit()'::regprocedure), 'pg_advisory_xact_lock') < strpos(pg_get_functiondef('enforce_table_order_rate_limit()'::regprocedure), 'NEW.source'), 'advisory lock precedes the web-only rate-limit gate');
+SELECT is((SELECT count(*) FROM orders WHERE order_number LIKE 'LOCK-_'), 5::bigint, 'five counter rounds on one table, none rate limited');
+SELECT throws_ok($$INSERT INTO orders (order_number, status, source, delivery_type, table_id, subtotal_cents, total_cents) VALUES ('LOCK-W5', 'pending', 'web', 'dine_in', '70000000-0000-0000-0000-000000000003', 500, 500)$$, 'P0001', 'table_order_rate_limited', 'fifth web round within 5 minutes is rate limited');
+SELECT * FROM finish();
+ROLLBACK;

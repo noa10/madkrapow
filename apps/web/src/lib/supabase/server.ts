@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { type User } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { toNextCompatibleCookieOptions } from './cookie-options'
+import { verifyAccessToken } from './jwt'
 
 export async function getServerClient() {
   const cookieStore = await cookies()
@@ -53,31 +54,62 @@ export function getServiceClient() {
  *  1. Cookie-based session (web browser requests via @supabase/ssr)
  *  2. Authorization: Bearer <token> header (mobile app requests)
  *
- * Returns { user, supabase } where supabase is the service client
- * for subsequent DB operations.
+ * The happy path verifies the access token locally (verifyAccessToken, JWKS
+ * cached on a module-level client) instead of paying a getUser() network round
+ * trip per request. Anything local verification rejects — including an expired
+ * access token that needs a refresh — falls back to the original network
+ * behaviour, and a request with neither a cookie session nor a bearer token is
+ * answered without any network call at all.
+ *
+ * Returns { user, supabase } where supabase is the service client for
+ * subsequent DB operations.
  */
 export async function getAuthenticatedUser(req: Request): Promise<{
   user: User | null
   supabase: SupabaseClient | null
 }> {
-  // 1. Try cookie-based auth (web browser)
   const cookieClient = await getServerClient()
-  const { data: { user: cookieUser } } = await cookieClient.auth.getUser()
 
+  // 1. Cookie session (web browser): read the token locally, verify locally.
+  const { data: { session } } = await cookieClient.auth.getSession()
+  const cookieUser = await verifyAccessToken(session?.access_token)
   if (cookieUser) {
     return { user: cookieUser, supabase: getServiceClient() }
   }
 
-  // 2. Try Bearer token auth (mobile app)
+  // 2. Bearer token (mobile app): same local verification.
   const authHeader = req.headers.get('authorization')
-  if (authHeader?.startsWith('Bearer ')) {
-    const accessToken = authHeader.slice(7)
+  const bearerToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null
+  if (bearerToken) {
+    const bearerUser = await verifyAccessToken(bearerToken)
+    if (bearerUser) {
+      return { user: bearerUser, supabase: getServiceClient() }
+    }
+  }
+
+  // 3. Nothing to authenticate: skip the getUser() round trip the old code
+  //    paid for every anonymous request.
+  if (!session?.access_token && !bearerToken) {
+    return { user: null, supabase: null }
+  }
+
+  // 4. Network fallback (the original path) for anything the local check
+  //    rejected — most importantly an expired access token, which getUser()
+  //    refreshes via the refresh token.
+  const { data: { user: fallbackUser } } = await cookieClient.auth.getUser()
+  if (fallbackUser) {
+    return { user: fallbackUser, supabase: getServiceClient() }
+  }
+
+  if (bearerToken) {
     const anonClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
-    const { data: { user: bearerUser }, error } = await anonClient.auth.getUser(accessToken)
+    const { data: { user: bearerUser }, error } = await anonClient.auth.getUser(bearerToken)
     if (!error && bearerUser) {
       return { user: bearerUser, supabase: getServiceClient() }
     }

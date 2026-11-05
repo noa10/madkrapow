@@ -1,5 +1,7 @@
 import { type NextRequest } from 'next/server'
+import type { User } from '@supabase/supabase-js'
 import { refreshSession } from './src/lib/supabase/middleware'
+import { verifyAccessToken } from './src/lib/supabase/jwt'
 
 /** Validate a redirect URL to prevent open-redirect attacks. Only same-origin, relative paths allowed. */
 function isValidRedirect(redirect: string): boolean {
@@ -34,10 +36,19 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // Fetch the user exactly once and reuse it for the role checks below.
+  // Verify the session token locally first (JWKS cached on a module-level
+  // client). The network getUser() is the fallback — it also refreshes an
+  // expired access token, which local verification cannot do.
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
+  let user: User | null = await verifyAccessToken(session?.access_token)
+  if (!user) {
+    const {
+      data: { user: networkUser },
+    } = await supabase.auth.getUser()
+    user = networkUser
+  }
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthRoute && !isApiRoute) {

@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Clock, Loader2, ShieldAlert } from 'lucide-react';
-import { useAdminOrders } from '@/hooks/useAdminOrders';
+import { useKitchenOrders } from '@/hooks/useKitchenOrders';
 import { useRoleGuard } from '@/hooks/use-role-guard';
 import { isKitchenActive } from './utils/order-status';
 import { useKitchenOrderItems } from './hooks/useKitchenOrderItems';
@@ -15,7 +15,7 @@ export default function KitchenDisplayPage() {
     'manager',
     'kitchen',
   ]);
-  const { orders, loading, error, hasLoaded } = useAdminOrders();
+  const { orders, loading, error, hasLoaded } = useKitchenOrders();
 
   // Filter orders to show only active ones for the kitchen. Pending dine-in
   // tickets are included: the diner orders from the table QR and pays at the

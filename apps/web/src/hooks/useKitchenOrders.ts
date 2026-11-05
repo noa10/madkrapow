@@ -31,7 +31,7 @@ export interface AdminOrder {
   source: import("@/types/orders").OrderSource;
 }
 
-export function useAdminOrders() {
+export function useKitchenOrders() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

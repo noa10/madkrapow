@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { KitchenOrderCard } from '../KitchenOrderCard'
-import type { AdminOrder } from '@/hooks/useAdminOrders'
+import type { AdminOrder } from '@/hooks/useKitchenOrders'
 import type { KitchenItem } from '../hooks/useKitchenOrderItems'
 
 /**

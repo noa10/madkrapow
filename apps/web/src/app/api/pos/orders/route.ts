@@ -362,7 +362,12 @@ export async function POST(req: NextRequest) {
 
       // The route validates all of these before the RPC; reaching one here
       // means a concurrent menu/table change. Return a 400 rather than a 500.
-      const userError = POS_RPC_USER_ERRORS.find((code) => message.includes(code))
+      // Longest-first so `invalid_order_number` is not truncated to
+      // `invalid_order`, and `invalid_items` is not truncated to
+      // `invalid_item`.
+      const userError = [...POS_RPC_USER_ERRORS]
+        .sort((a, b) => b.length - a.length)
+        .find((code) => message.includes(code))
       if (userError) {
         return NextResponse.json(
           {

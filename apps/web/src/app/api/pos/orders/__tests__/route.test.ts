@@ -311,6 +311,28 @@ describe('POST /api/pos/orders', () => {
     expect(client.calls.find((c) => c.op === 'delete')).toBeUndefined()
   })
 
+  it('returns the exact RPC code when one error code prefixes another', async () => {
+    // `invalid_order` prefixes `invalid_order_number`, and `invalid_item`
+    // prefixes `invalid_items`; the mapping must not truncate them.
+    for (const [message, code] of [
+      ['invalid_order_number', 'invalid_order_number'],
+      ['invalid_items', 'invalid_items'],
+    ]) {
+      const client = buildMockClient({ rpcError: { message, code: 'P0001' } })
+      requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+      const res = await POST(
+        makeRequest({
+          items: [{ menu_item_id: KICKAPOO, quantity: 1 }],
+          payment_method: 'cash',
+        }) as never,
+      )
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).code).toBe(code)
+    }
+  })
+
   it('merges duplicate item rows before pricing', async () => {
     const client = buildMockClient({ rpcTotal: 750 })
     requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })

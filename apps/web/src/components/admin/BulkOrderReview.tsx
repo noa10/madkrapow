@@ -49,22 +49,18 @@ export function BulkOrderReview({
   const handleApprove = async () => {
     setIsApproving(true)
     try {
-      const floatValue = parseFloat(adjustedTotal)
-      if (isNaN(floatValue) || floatValue <= 0) {
+      // adjustedTotal is already stored in cents; the input converts RM to cents.
+      const cents = Number(adjustedTotal)
+      if (!Number.isSafeInteger(cents) || cents <= 0) {
         console.error('Invalid adjusted total:', adjustedTotal)
         return
       }
-
-      const cents = Math.round(floatValue * 100)
 
       const body = JSON.stringify({
         action: 'approve',
         approved_total_cents: cents,
         review_notes: notes || null,
       })
-
-      console.log('Sending approval:', { action: 'approve', approved_total_cents: cents, review_notes: notes })
-      console.log('Request body:', body)
 
       const response = await fetch(`/api/admin/orders/${orderId}/approve`, {
         method: 'POST',
@@ -73,8 +69,6 @@ export function BulkOrderReview({
       })
 
       const data = await response.json()
-
-      console.log('API response status:', response.status, data)
 
       if (!data.success) {
         console.error('Approval failed:', data.error)

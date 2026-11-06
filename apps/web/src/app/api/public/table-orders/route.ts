@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServiceClient } from '@/lib/supabase/server'
+import { sanitizeForLog } from '@/lib/logging/safe-log'
 import {
   validateModifierSelections,
   type CheckoutModifier,
@@ -62,9 +63,6 @@ const TableOrderSchema = z.object({
    */
   idempotency_key: z.string().trim().min(16).max(128).optional(),
 })
-
-const RATE_WINDOW_MS = 5 * 60 * 1000
-const MAX_ORDERS_PER_WINDOW = 4
 
 type ExistingOrder = {
   id: string
@@ -149,7 +147,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (tableError) {
-      console.error('[API/TableOrder] Table lookup failed:', tableError)
+      console.error('[API/TableOrder] Table lookup failed:', sanitizeForLog(tableError))
       return NextResponse.json({ error: 'Unable to validate table' }, { status: 500 })
     }
     if (!table || !table.is_active) {
@@ -172,7 +170,7 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
 
       if (existingError) {
-        console.error('[API/TableOrder] Idempotency lookup failed:', existingError)
+        console.error('[API/TableOrder] Idempotency lookup failed:', sanitizeForLog(existingError))
         return NextResponse.json({ error: 'Unable to place order' }, { status: 500 })
       }
       if (existing) {
@@ -188,39 +186,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 3. Per-table rate limit ────────────────────────────────────────────
-    // Scope: anonymous QR orders only (`source = 'web'`). Counter/POS rounds
-    // are staff-authenticated and deliberately excluded — counting them would
-    // let a busy table's own POS traffic exhaust the diners' cap. The BEFORE
-    // INSERT trigger (063) uses the same filter, so this pre-check and the
-    // authority stay identical.
-    const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-    const { data: recent, error: rateError } = await supabase
-      .from('orders')
-      .select('created_at')
-      .eq('table_id', table.id)
-      .eq('delivery_type', 'dine_in')
-      .eq('source', 'web')
-      .gte('created_at', windowStart)
-      .order('created_at', { ascending: false })
-      // The cap check only needs to know whether the window is full. If a
-      // future message needs "retry in N minutes", drop this limit: it
-      // truncates the window, so the oldest row here is not necessarily the
-      // oldest order in it.
-      .limit(MAX_ORDERS_PER_WINDOW)
-
-    if (rateError) {
-      console.error('[API/TableOrder] Rate check failed:', rateError)
-      return NextResponse.json({ error: 'Unable to place order' }, { status: 500 })
-    }
-
-    const recentOrders = (recent ?? []) as { created_at: string }[]
-    if (recentOrders.length >= MAX_ORDERS_PER_WINDOW) {
-      return NextResponse.json(
-        { error: 'Too many orders for this table. Please call a staff member.' },
-        { status: 429 }
-      )
-    }
+    // The database serializes the per-table rate limit with creation. Checking
+    // it here would reject a simultaneous retry just before the original order
+    // becomes visible, even though both requests use the same idempotency key.
 
     // ── 4. Normalise lines ────────────────────────────────────────────────
     const lineItems = mergeTableOrderItems(input.items)
@@ -251,7 +219,7 @@ export async function POST(req: NextRequest) {
     if (menuResult.error || modifierResult.error) {
       console.error(
         '[API/TableOrder] Menu validation failed:',
-        menuResult.error ?? modifierResult.error
+        sanitizeForLog(menuResult.error ?? modifierResult.error)
       )
       return NextResponse.json({ error: 'Unable to validate prices' }, { status: 500 })
     }
@@ -293,7 +261,7 @@ export async function POST(req: NextRequest) {
       .in('menu_item_id', menuItemIds)
 
     if (junctionsError) {
-      console.error('[API/TableOrder] Modifier junction fetch failed:', junctionsError)
+      console.error('[API/TableOrder] Modifier junction fetch failed:', sanitizeForLog(junctionsError))
       return NextResponse.json({ error: 'Unable to validate options' }, { status: 500 })
     }
 
@@ -308,7 +276,7 @@ export async function POST(req: NextRequest) {
       : { data: [], error: null }
 
     if (groupsError) {
-      console.error('[API/TableOrder] Modifier group fetch failed:', groupsError)
+      console.error('[API/TableOrder] Modifier group fetch failed:', sanitizeForLog(groupsError))
       return NextResponse.json({ error: 'Unable to validate options' }, { status: 500 })
     }
 
@@ -365,38 +333,34 @@ export async function POST(req: NextRequest) {
 
     const subtotalCents = priced.reduce((sum, line) => sum + line.lineTotalCents, 0)
 
-    // ── 6. Create the order ───────────────────────────────────────────────
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        order_number: generateOrderNumber(),
-        customer_id: null,
-        customer_name: input.customer_name || null,
-        status: 'pending',
-        source: 'web',
-        delivery_type: 'dine_in',
-        table_id: table.id,
-        table_label: table.label,
-        pax: input.pax,
-        fulfillment_type: 'asap',
-        order_kind: 'standard',
-        dispatch_status: 'not_ready',
-        subtotal_cents: subtotalCents,
-        delivery_fee_cents: 0,
-        discount_cents: 0,
-        total_cents: subtotalCents,
-        notes: input.notes ?? null,
-        include_cutlery: false,
-        idempotency_key: input.idempotency_key ?? null,
-      })
-      .select('id, order_number, display_code')
-      .single()
+    // Save the complete ticket and its completion event in one transaction.
+    // The RPC locks the menu rows and creates its own price snapshots.
+    const lines = priced.map((line) => ({
+      menu_item_id: line.menuItem.id,
+      quantity: line.item.quantity,
+      notes: line.item.notes ?? null,
+      modifiers: line.item.modifier_ids.map((id) => ({ modifier_id: id })),
+    }))
 
-    if (orderError || !order) {
-      // A concurrent retry with the same key lost the race to the unique
-      // index: the other request created the order, so return that one.
+    const { data: result, error: orderError } = await supabase.rpc('create_table_qr_order', {
+      p_order: {
+        order_number: generateOrderNumber(),
+        table_id: table.id,
+        pax: input.pax,
+        customer_name: input.customer_name || null,
+        notes: input.notes ?? null,
+        subtotal_cents: subtotalCents,
+        idempotency_key: input.idempotency_key ?? null,
+      },
+      p_lines: lines,
+    })
+
+    if (orderError || !result) {
+      // A legacy writer may have committed the same key while this request was
+      // in progress. The new RPC itself serializes retries before rate limiting.
       if (
-        (orderError as { code?: string } | null)?.code === '23505' &&
+        orderError?.code === '23505' &&
+        orderError.message.includes('"idx_orders_idempotency_key"') &&
         input.idempotency_key
       ) {
         const { data: existing } = await supabase
@@ -413,8 +377,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // The BEFORE INSERT trigger enforces the same limit under a per-table
-      // advisory lock. Map its exception to the same 429 the pre-check uses.
       const message = orderError?.message ?? ''
       if (message.includes('table_order_rate_limited')) {
         return NextResponse.json(
@@ -422,96 +384,63 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         )
       }
-      // The table was deactivated between the lookup and the insert; the
-      // BEFORE INSERT trigger (064) rejects the order rather than landing it
-      // on a table the POS board no longer lists.
       if (message.includes('table_inactive')) {
         return NextResponse.json(
           { error: 'This table QR is not active. Please ask a staff member.' },
           { status: 409 }
         )
       }
-      console.error('[API/TableOrder] Order insert failed:', orderError)
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-    }
-
-    // Insert all lines in one statement, then all add-ons in one statement.
-    // Generating the line ids here keeps each line's modifiers unambiguously
-    // attached (two lines can share a dish with different options) and cuts a
-    // submit from up to 100 round-trips to two, shrinking the window in which
-    // a crash would leave an item-less ticket.
-    const itemRows = priced.map((line) => ({
-      id: crypto.randomUUID(),
-      order_id: order.id,
-      menu_item_id: line.menuItem.id,
-      menu_item_name: line.menuItem.name,
-      menu_item_price_cents: line.menuItem.price_cents,
-      quantity: line.item.quantity,
-      line_total_cents: line.lineTotalCents,
-      notes: line.item.notes ?? null,
-    }))
-
-    const { error: itemError } = await supabase
-      .from('order_items')
-      .insert(itemRows)
-
-    if (itemError) {
-      console.error('[API/TableOrder] Order item insert failed:', itemError)
-      await supabase.from('orders').delete().eq('id', order.id)
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-    }
-
-    const modifierRows = priced.flatMap((line, index) =>
-      line.item.modifier_ids.map((id) => {
-        const modifier = modifiersById.get(id)!
-        return {
-          order_item_id: itemRows[index].id,
-          modifier_id: modifier.id,
-          modifier_name: modifier.name,
-          modifier_price_delta_cents: modifier.price_delta_cents,
-        }
-      })
-    )
-
-    if (modifierRows.length > 0) {
-      const { error: modifierError } = await supabase
-        .from('order_item_modifiers')
-        .insert(modifierRows)
-
-      if (modifierError) {
-        console.error('[API/TableOrder] Modifier insert failed:', modifierError)
-        await supabase.from('orders').delete().eq('id', order.id)
-        return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
+      if (message.includes('idempotency_key_conflict')) {
+        return NextResponse.json(
+          { error: 'This order key was already used at another table' },
+          { status: 409 }
+        )
       }
+      if (
+        message.includes('table_order_item_unavailable') ||
+        message.includes('table_order_invalid_modifier')
+      ) {
+        return NextResponse.json(
+          { error: 'The menu changed while you were ordering. Please review it and try again.' },
+          { status: 409 }
+        )
+      }
+      if (message.includes('table_order_total_mismatch')) {
+        return NextResponse.json(
+          { error: 'Menu prices changed. Please review your order and try again.' },
+          { status: 409 }
+        )
+      }
+      if (message.includes('table_order_total_too_large')) {
+        return NextResponse.json(
+          {
+            error: 'This order is too large. Please split it or call a staff member.',
+            code: 'INVALID_REQUEST',
+          },
+          { status: 400 }
+        )
+      }
+      // The Zod schema above already bounds pax, items, quantities and
+      // modifiers, so these can only mean the RPC contract drifted (or an
+      // unguarded cast surfaced). Keep them distinct from a real size limit
+      // and leave the detail in the server log.
+      if (message.includes('invalid_table_order')) {
+        console.error(
+          '[API/TableOrder] Invalid order payload passed to the RPC:',
+          sanitizeForLog(message)
+        )
+        return NextResponse.json(
+          { error: 'Unable to place order. Please try again.', code: 'INVALID_REQUEST' },
+          { status: 400 }
+        )
+      }
+      console.error('[API/TableOrder] Order transaction failed:', sanitizeForLog(orderError?.message))
+      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
     }
 
-    await supabase.from('order_events').insert({
-      order_id: order.id,
-      event_type: 'table_order_placed',
-      actor_id: null,
-      new_value: {
-        table_id: table.id,
-        table_label: table.label,
-        pax: input.pax,
-        source_channel: 'table_qr',
-        total_cents: subtotalCents,
-      },
-    })
-
-    return NextResponse.json(
-      {
-        order_id: order.id,
-        order_number: order.order_number,
-        display_code: order.display_code,
-        total_cents: subtotalCents,
-        table_label: table.label,
-        pax: input.pax,
-        status: 'pending' as const,
-      },
-      { status: 201 }
-    )
+    return NextResponse.json(result, { status: result.duplicate ? 200 : 201 })
   } catch (err) {
-    console.error('[API/TableOrder] Unexpected error:', err)
+    console.error('[API/TableOrder] Unexpected error:', sanitizeForLog(err instanceof Error ? err.message : err))
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

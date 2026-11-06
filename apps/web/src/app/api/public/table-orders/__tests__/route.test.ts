@@ -18,16 +18,16 @@ type Call = {
   table: string
   op: string
   row?: Record<string, unknown>
-  rows?: Record<string, unknown>[]
 }
 
 interface MockOptions {
   table?: Record<string, unknown> | null
-  recent?: { created_at: string }[]
   /** Order returned by an idempotency-key lookup. */
   existingOrder?: Record<string, unknown> | null
-  /** Simulate the orders insert failing (e.g. a 23505 unique violation). */
-  orderInsertError?: { message: string; code?: string } | null
+  /** A concurrent order visible only after the transaction attempt. */
+  existingOrderAfterRpc?: Record<string, unknown> | null
+  /** Simulate the atomic order transaction failing. */
+  rpcError?: { message: string; code?: string } | null
   menu?: Record<string, unknown>[]
   modifiers?: Record<string, unknown>[]
   junctions?: Record<string, unknown>[]
@@ -48,9 +48,29 @@ function queryResult(data: unknown, error: unknown = null) {
 
 function buildClient(options: MockOptions) {
   const calls: Call[] = []
+  let rpcAttempted = false
 
   const client = {
     calls,
+    async rpc(name: string, params: Record<string, unknown>) {
+      calls.push({ table: name, op: 'rpc', row: params })
+      rpcAttempted = true
+      const order = params.p_order as { subtotal_cents: number; pax: number }
+      const error = options.rpcError ?? null
+      return {
+        data: error ? null : {
+          order_id: 'order-1',
+          order_number: 'MKTEST1234',
+          display_code: 'MK-001',
+          table_label: options.table?.label,
+          pax: order.pax,
+          total_cents: order.subtotal_cents,
+          status: 'pending',
+          duplicate: false,
+        },
+        error,
+      }
+    },
     from(table: string) {
       if (table === 'restaurant_tables') {
         return {
@@ -75,37 +95,14 @@ function buildClient(options: MockOptions) {
               builder[method] = () => builder
             }
             builder.maybeSingle = async () => ({
-              data: idempotencyLookup ? (options.existingOrder ?? null) : null,
+              data: idempotencyLookup
+                ? (rpcAttempted ? options.existingOrderAfterRpc ?? options.existingOrder ?? null : options.existingOrder ?? null)
+                : null,
               error: null,
             })
             builder.single = async () => ({ data: null, error: null })
-            builder.then = (resolve: (value: unknown) => void) =>
-              resolve({ data: options.recent ?? [], error: null })
             return builder
           },
-          insert: (row: Record<string, unknown>) => {
-            calls.push({ table, op: 'insert', row })
-            return {
-              select: () => ({
-                single: async () => ({
-                  data: options.orderInsertError
-                    ? null
-                    : {
-                        id: 'order-1',
-                        order_number: 'MKTEST1234',
-                        display_code: 'MK-001',
-                      },
-                  error: options.orderInsertError ?? null,
-                }),
-              }),
-            }
-          },
-          delete: () => ({
-            eq: () => ({
-              then: (resolve: (value: unknown) => void) =>
-                resolve({ error: null }),
-            }),
-          }),
         }
       }
 
@@ -120,38 +117,6 @@ function buildClient(options: MockOptions) {
       }
       if (table === 'modifier_groups') {
         return { select: () => queryResult(options.groups ?? []) }
-      }
-
-      if (table === 'order_items') {
-        return {
-          insert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
-            calls.push({
-              table,
-              op: 'insert',
-              rows: Array.isArray(rows) ? rows : [rows],
-            })
-            return {
-              then: (resolve: (value: unknown) => void) =>
-                resolve({ error: null }),
-            }
-          },
-        }
-      }
-
-      if (table === 'order_item_modifiers' || table === 'order_events') {
-        return {
-          insert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
-            calls.push({
-              table,
-              op: 'insert',
-              rows: Array.isArray(rows) ? rows : [rows],
-            })
-            return {
-              then: (resolve: (value: unknown) => void) =>
-                resolve({ error: null }),
-            }
-          },
-        }
       }
 
       return { select: () => queryResult([]) }
@@ -183,7 +148,6 @@ const VALID_BODY = {
 
 const BASE_DATA: MockOptions = {
   table: TABLE,
-  recent: [],
   menu: [{ id: ITEM, name: 'Krapow', price_cents: 1250, is_available: true }],
   modifiers: [
     {
@@ -221,52 +185,83 @@ describe('POST /api/public/table-orders', () => {
       pax: 3,
     })
 
-    const orderInsert = client.calls.find(
-      (call) => call.table === 'orders' && call.op === 'insert'
-    )
-    expect(orderInsert?.row).toMatchObject({
-      status: 'pending',
-      source: 'web',
-      delivery_type: 'dine_in',
-      table_id: 'table-1',
-      table_label: 'T3',
-      pax: 3,
-      subtotal_cents: 2900,
-      total_cents: 2900,
-      delivery_fee_cents: 0,
-      include_cutlery: false,
+    expect(client.calls).toContainEqual({
+      table: 'create_table_qr_order',
+      op: 'rpc',
+      row: expect.objectContaining({
+        p_order: expect.objectContaining({
+          table_id: 'table-1',
+          pax: 3,
+          subtotal_cents: 2900,
+        }),
+        p_lines: [{
+          menu_item_id: ITEM,
+          quantity: 2,
+          notes: null,
+          modifiers: [{ modifier_id: MOD }],
+        }],
+      }),
+    })
+  })
+
+  it('returns an error when the atomic order transaction fails', async () => {
+    const client = buildClient({ ...BASE_DATA, rpcError: { message: 'event insert failed' } })
+    state.client = client
+
+    const response = await POST(makeRequest(VALID_BODY) as never)
+
+    expect(response.status).toBe(500)
+    expect((await response.json()).error).toBe('Failed to create order')
+    expect(client.calls).toContainEqual(expect.objectContaining({
+      table: 'create_table_qr_order',
+      op: 'rpc',
+    }))
+  })
+
+  it.each([
+    ['table_inactive', 409, /not active/i],
+    ['idempotency_key_conflict', 409, /another table/i],
+    ['table_order_rate_limited', 429, /too many orders/i],
+    ['table_order_item_unavailable', 409, /menu changed/i],
+    ['table_order_invalid_modifier', 409, /menu changed/i],
+    ['table_order_total_mismatch', 409, /prices changed/i],
+  ])('maps %s from the transaction to a safe response', async (message, status, expected) => {
+    state.client = buildClient({ ...BASE_DATA, rpcError: { message } })
+    const response = await POST(makeRequest(VALID_BODY) as never)
+    expect(response.status).toBe(status)
+    expect((await response.json()).error).toMatch(expected)
+  })
+
+  it('keeps the size message for the total-ceiling guard only', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      rpcError: { message: 'table_order_total_too_large' },
     })
 
-    const itemInsert = client.calls.find(
-      (call) => call.table === 'order_items' && call.op === 'insert'
-    )
-    expect(itemInsert?.rows?.[0]).toMatchObject({
-      menu_item_id: ITEM,
-      menu_item_name: 'Krapow',
-      menu_item_price_cents: 1250,
-      quantity: 2,
-      line_total_cents: 2900,
-    })
+    const response = await POST(makeRequest(VALID_BODY) as never)
 
-    const modifierInsert = client.calls.find(
-      (call) => call.table === 'order_item_modifiers' && call.op === 'insert'
-    )
-    expect(modifierInsert?.rows).toEqual([
-      {
-        order_item_id: expect.any(String),
-        modifier_id: MOD,
-        modifier_name: 'Fried egg',
-        modifier_price_delta_cents: 200,
-      },
-    ])
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.code).toBe('INVALID_REQUEST')
+    expect(body.error).toMatch(/too large.*split/i)
+  })
 
-    const eventInsert = client.calls.find(
-      (call) => call.table === 'order_events' && call.op === 'insert'
-    )
-    expect(eventInsert?.rows?.[0]).toMatchObject({
-      event_type: 'table_order_placed',
-      actor_id: null,
-    })
+  it.each([
+    'invalid_table_order',
+    'invalid_table_order_lines',
+    'invalid_table_order_number',
+    'invalid_table_order_line',
+    'invalid_table_order_modifiers',
+  ])('does not disguise %s as a size problem', async (message) => {
+    state.client = buildClient({ ...BASE_DATA, rpcError: { message } })
+
+    const response = await POST(makeRequest(VALID_BODY) as never)
+
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.code).toBe('INVALID_REQUEST')
+    expect(body.error).toBe('Unable to place order. Please try again.')
+    expect(body.error).not.toMatch(/too large|split/i)
   })
 
   it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {
@@ -277,8 +272,7 @@ describe('POST /api/public/table-orders', () => {
     const seededGroup = '00000002-0000-0000-0000-000000000001'
     const client = buildClient({
       table: TABLE,
-      recent: [],
-      menu: [
+          menu: [
         { id: seededItem, name: 'Krapow Daging', price_cents: 1000, is_available: true },
       ],
       modifiers: [
@@ -329,36 +323,9 @@ describe('POST /api/public/table-orders', () => {
     expect(response.status).toBe(404)
   })
 
-  it('rate-limits a table that already has four orders in the window', async () => {
-    state.client = buildClient({
-      ...BASE_DATA,
-      recent: Array.from({ length: 4 }, () => ({
-        created_at: new Date(Date.now() - 120_000).toISOString(),
-      })),
-    })
-    const response = await POST(makeRequest(VALID_BODY) as never)
-    expect(response.status).toBe(429)
-  })
-
-  it('accepts a second order inside ten seconds', async () => {
-    // Two diners at one table sending within seconds is normal; the 4 / 5 min
-    // cap is the abuse bound (the 10 s gap was removed in migration 063).
-    state.client = buildClient({
-      ...BASE_DATA,
-      recent: [{ created_at: new Date(Date.now() - 2_000).toISOString() }],
-    })
-    const response = await POST(makeRequest(VALID_BODY) as never)
-    expect(response.status).toBe(201)
-  })
-
   it('returns the existing order when a submission is retried with the same key', async () => {
     const client = buildClient({
       ...BASE_DATA,
-      // Even with the table at its cap, a retry must resolve to the order that
-      // already landed rather than a 429.
-      recent: Array.from({ length: 4 }, () => ({
-        created_at: new Date(Date.now() - 120_000).toISOString(),
-      })),
       existingOrder: {
         id: 'order-9',
         order_number: 'MKORIGINAL',
@@ -382,7 +349,7 @@ describe('POST /api/public/table-orders', () => {
       duplicate: true,
     })
     expect(
-      client.calls.some((call) => call.table === 'orders' && call.op === 'insert')
+      client.calls.some((call) => call.table === 'create_table_qr_order')
     ).toBe(false)
   })
 
@@ -454,13 +421,14 @@ describe('POST /api/public/table-orders', () => {
     expect((await response.json()).error).toMatch(/another table/i)
   })
 
-  it('returns the original order when a concurrent retry wins the insert race', async () => {    state.client = buildClient({
+  it('returns the original order when a concurrent retry wins the insert race', async () => {
+    const client = buildClient({
       ...BASE_DATA,
-      orderInsertError: {
-        message: 'duplicate key value violates unique constraint',
+      rpcError: {
+        message: 'duplicate key value violates unique constraint "idx_orders_idempotency_key"',
         code: '23505',
       },
-      existingOrder: {
+      existingOrderAfterRpc: {
         id: 'order-9',
         order_number: 'MKORIGINAL',
         display_code: 'MK-009',
@@ -470,11 +438,39 @@ describe('POST /api/public/table-orders', () => {
         table_id: 'table-1',
       },
     })
+    state.client = client
     const response = await POST(
       makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
     )
     expect(response.status).toBe(200)
     expect((await response.json()).duplicate).toBe(true)
+    expect(client.calls.some((call) => call.table === 'create_table_qr_order')).toBe(true)
+  })
+
+  it('does not treat an order-number collision as an idempotent retry', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      rpcError: {
+        message: 'duplicate key value violates unique constraint "orders_order_number_key"',
+        code: '23505',
+      },
+      // An unrelated order may be committed with this key after the first lookup.
+      existingOrderAfterRpc: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+      },
+    })
+
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(500)
+    expect((await response.json()).error).toBe('Failed to create order')
   })
 
   it('rejects unavailable menu items', async () => {

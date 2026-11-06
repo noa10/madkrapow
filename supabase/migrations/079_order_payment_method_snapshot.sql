@@ -243,7 +243,7 @@ BEGIN
     'refund_ids', to_jsonb(v_refund_ids)
   );
 END;
-$function$
+$function$;
 
 COMMENT ON FUNCTION import_legacy_order(JSONB) IS
   'Atomically imports one legacy POS order (order, items, payment, channel identity, refunds, audit). Idempotent via channel_orders(channel, external_order_id). Writes orders.payment_method (057 snapshot) from the payload, falling back to the payment ledger.';

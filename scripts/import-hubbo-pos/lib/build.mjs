@@ -281,8 +281,11 @@ export function buildImportModel(rows) {
   }
 
   // Attach refunds to the order they reverse — the RPC writes them atomically
-  // with that order.
-  const refundsByInvoice = new Map();
+  // with that order. Keyed by the ORIGINAL row's System ID, not the invoice:
+  // the POS reuses invoice numbers (two concurrent platform orders can share
+  // one), so an invoice key would hand the same refund to both orders and
+  // double-count it.
+  const refundsBySystemId = new Map();
   for (const r of refunds) {
     const model = {
       amountCents: r.amountCents,
@@ -292,12 +295,18 @@ export function buildImportModel(rows) {
       reason: `HubboPOS refund/cancel (${(r.refundRow['Invoice No'] ?? '').trim()}, matched by ${r.strategy})`,
       raw: r.refundRow,
       linkedInvoice: r.linkedInvoice,
+      linkedSystemId: r.linkedSystemId,
     };
-    if (!refundsByInvoice.has(model.linkedInvoice)) refundsByInvoice.set(model.linkedInvoice, []);
-    refundsByInvoice.get(model.linkedInvoice).push(model);
+    const key = model.linkedSystemId;
+    if (!key) {
+      warnings.push(`refund ${model.invoice} has no linked System ID — dropped`);
+      continue;
+    }
+    if (!refundsBySystemId.has(key)) refundsBySystemId.set(key, []);
+    refundsBySystemId.get(key).push(model);
   }
   for (const o of orders) {
-    o.refunds = refundsByInvoice.get(o.legacy.invoice) ?? [];
+    o.refunds = refundsBySystemId.get(o.legacy.systemId) ?? [];
   }
 
   for (const neg of unmatchedRefunds) {

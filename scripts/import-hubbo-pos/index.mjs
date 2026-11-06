@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 import { parseCsvRecords } from './lib/csv.mjs';
 import { buildImportModel } from './lib/build.mjs';
@@ -28,7 +29,17 @@ import { centsToRm } from '../import-legacy-pos/lib/money.mjs';
 const require = createRequire(import.meta.url);
 
 function parseArgs(argv) {
-  const args = { apply: false, file: null, out: null, concurrency: 4, limit: 0, since: null, batch: null };
+  const args = {
+    apply: false,
+    file: null,
+    out: null,
+    concurrency: 4,
+    limit: 0,
+    since: null,
+    batch: null,
+    allowErrors: false,
+    allowUnmatchedRefunds: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--apply') args.apply = true;
@@ -38,6 +49,8 @@ function parseArgs(argv) {
     else if (a === '--limit') args.limit = parseInt(argv[++i], 10);
     else if (a === '--since') args.since = argv[++i];
     else if (a === '--batch') args.batch = argv[++i];
+    else if (a === '--allow-errors') args.allowErrors = true;
+    else if (a === '--allow-unmatched-refunds') args.allowUnmatchedRefunds = true;
     else if (a === '--help' || a === '-h') args.help = true;
   }
   return args;
@@ -45,7 +58,10 @@ function parseArgs(argv) {
 
 function loadEnvLocal() {
   for (const rel of ['../../.env.local', '../../apps/web/.env.local']) {
-    const path = new URL(rel, import.meta.url).pathname;
+    // fileURLToPath, not .pathname: the latter returns a percent-encoded POSIX
+    // path ("/C:/…"), which resolves to a bogus path on Windows and would skip
+    // a real .env.local.
+    const path = fileURLToPath(new URL(rel, import.meta.url));
     try {
       const content = readFileSync(path, 'utf8');
       for (const line of content.split('\n')) {
@@ -118,7 +134,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help || !args.file) {
-    console.error('Usage: node scripts/import-hubbo-pos/index.mjs --file <export.csv> [--apply] [--out report.json] [--concurrency 4] [--limit N] [--since YYYY-MM-DD]');
+    console.error('Usage: node scripts/import-hubbo-pos/index.mjs --file <export.csv> [--apply] [--out report.json] [--concurrency 4] [--limit N] [--since YYYY-MM-DD] [--allow-errors] [--allow-unmatched-refunds]');
     process.exit(args.help ? 0 : 1);
   }
 
@@ -155,6 +171,24 @@ async function main() {
     console.log('\ndry run only — re-run with --apply to write to the database');
     if (model.errors.length > 0) process.exit(2);
     return;
+  }
+
+  // Never write a partial history silently. `printReport` above has already
+  // listed every error; without this guard the run would RPC the orders that
+  // did build and leave the rest out of the dataset.
+  if (model.errors.length > 0 && !args.allowErrors) {
+    console.error(
+      `\nrefusing to apply: ${model.errors.length} order(s) failed validation (see ERRORS above).\n` +
+        'Fix the catalog/export, or re-run with --allow-errors to import the rest anyway.'
+    );
+    process.exit(2);
+  }
+  if (model.stats.unmatchedRefunds > 0 && !args.allowUnmatchedRefunds) {
+    console.error(
+      `\nrefusing to apply: ${model.stats.unmatchedRefunds} refund record(s) could not be paired with an order ` +
+        '(revenue would be overstated). Re-run with --allow-unmatched-refunds to import anyway.'
+    );
+    process.exit(2);
   }
 
   const envPath = loadEnvLocal();

@@ -154,6 +154,38 @@ describe('buildImportModel', () => {
     expect(new Set(numbers).size).toBe(2);
   });
 
+  it('attaches a refund to the original order only, even when invoices collide', () => {
+    // Two concurrent platform orders share an invoice — the POS does this.
+    // A refund on the first must not also land on the second, or revenue
+    // would be reduced twice.
+    const refund = orderRow({
+      order_group: '999',
+      Date: '2025-04-07',
+      Time: '14:25',
+      'Invoice No': '#0-00004020-canceled',
+      'System ID': 'sys-refund',
+      Table: 'REFUND',
+      'Total Gross Sales': '-45.5',
+      'Total Discount': '-3.4',
+      'Total Nett Sales': '-42.1',
+      Remarks: '',
+    });
+    const model = buildImportModel([
+      orderRow(), // sys-1, #0-00004020
+      itemRow(),
+      orderRow({ 'System ID': 'sys-2', 'Invoice No': '#0-00004020', Time: '20:30', order_group: '222' }),
+      itemRow({ order_group: '222' }),
+      refund,
+    ]);
+
+    expect(model.orders).toHaveLength(2);
+    const [first, second] = model.orders;
+    expect(first.refunds).toHaveLength(1);
+    expect(first.refunds[0].amountCents).toBe(4550);
+    expect(second.refunds).toEqual([]);
+    expect(model.stats.refunds).toBe(1);
+  });
+
   it('rejects an order whose line totals do not add up to the gross', () => {
     const model = buildImportModel([orderRow(), itemRow({ Items: '1x Set Krapow Daging | 10' })]);
     expect(model.orders).toHaveLength(0);

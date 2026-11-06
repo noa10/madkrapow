@@ -39,7 +39,10 @@ node scripts/import-hubbo-pos/index.mjs --file ~/export.csv --apply --limit 5 --
 ```
 
 The dry run must report `errors: 0` before applying — an unmapped item name or
-an item-sum/gross mismatch means the catalog or the export changed.
+an item-sum/gross mismatch means the catalog or the export changed. `--apply`
+enforces this too: it refuses to write when any order failed validation, or when
+a refund row could not be paired with the order it reverses (`--allow-errors` /
+`--allow-unmatched-refunds` override, for a deliberate partial load).
 
 ## Behaviour
 
@@ -49,7 +52,9 @@ an item-sum/gross mismatch means the catalog or the export changed.
   same file imports only what is missing and reports the rest as skipped.
 - Refunds are the negative `Table=REFUND` rows; each is attached to the order it
   reverses (invoice match, then amount+recency) instead of becoming a negative
-  order.
+  order. Attachment is keyed on the original row's **System ID**, not the
+  invoice — the POS reuses invoice numbers, and an invoice key would hand one
+  refund to both orders sharing it.
 - `order_number` is `HUB-<invoice>`; a repeated invoice (the POS reuses a number
   for two concurrent platform orders) gets a `-2` suffix because the column is
   UNIQUE.

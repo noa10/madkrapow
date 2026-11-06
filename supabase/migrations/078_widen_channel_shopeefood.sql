@@ -41,19 +41,29 @@ COMMENT ON COLUMN orders.source IS
 -- ============================================
 -- 2. Re-tag the imported ShopeeFood rows
 -- ============================================
--- The importer put the platform name in orders.notes; the channel identity
--- lives in channel_orders with the SF order number.
+-- The importer marked these orders by writing the platform name into
+-- orders.notes; the channel identity (legacy_pos + an SF number) is what
+-- actually identifies them, so that is the join here — not the free text.
+-- Only the importer's own marker is stripped, so a note an operator added
+-- alongside it survives.
 UPDATE orders o
 SET source = 'shopeefood',
-    notes = NULL
-WHERE o.source = 'counter'
-  AND o.notes LIKE 'ShopeeFood%'
-  AND EXISTS (
-    SELECT 1 FROM channel_orders co
-    WHERE co.order_id = o.id
-      AND co.channel = 'legacy_pos'
-      AND co.external_order_number LIKE 'SF%'
-  );
+    notes = NULLIF(
+      btrim(
+        regexp_replace(
+          coalesce(o.notes, ''),
+          'ShopeeFood( SF[0-9A-Za-z]+)? \(imported from HubboPOS\)',
+          '',
+          'g'
+        )
+      ),
+      ''
+    )
+FROM channel_orders co
+WHERE co.order_id = o.id
+  AND co.channel = 'legacy_pos'
+  AND co.external_order_number LIKE 'SF%'
+  AND o.source = 'counter';
 
 -- channel identity: SF numbers were booked as legacy_pos
 UPDATE channel_orders

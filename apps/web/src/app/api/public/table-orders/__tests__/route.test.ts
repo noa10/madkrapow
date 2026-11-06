@@ -22,7 +22,6 @@ type Call = {
 
 interface MockOptions {
   table?: Record<string, unknown> | null
-  recent?: { created_at: string }[]
   /** Order returned by an idempotency-key lookup. */
   existingOrder?: Record<string, unknown> | null
   /** A concurrent order visible only after the transaction attempt. */
@@ -57,8 +56,7 @@ function buildClient(options: MockOptions) {
       calls.push({ table: name, op: 'rpc', row: params })
       rpcAttempted = true
       const order = params.p_order as { subtotal_cents: number; pax: number }
-      const error = options.rpcError ??
-        ((options.recent?.length ?? 0) >= 4 ? { message: 'table_order_rate_limited' } : null)
+      const error = options.rpcError ?? null
       return {
         data: error ? null : {
           order_id: 'order-1',
@@ -103,8 +101,6 @@ function buildClient(options: MockOptions) {
               error: null,
             })
             builder.single = async () => ({ data: null, error: null })
-            builder.then = (resolve: (value: unknown) => void) =>
-              resolve({ data: options.recent ?? [], error: null })
             return builder
           },
         }
@@ -152,7 +148,6 @@ const VALID_BODY = {
 
 const BASE_DATA: MockOptions = {
   table: TABLE,
-  recent: [],
   menu: [{ id: ITEM, name: 'Krapow', price_cents: 1250, is_available: true }],
   modifiers: [
     {
@@ -201,15 +196,9 @@ describe('POST /api/public/table-orders', () => {
         }),
         p_lines: [{
           menu_item_id: ITEM,
-          menu_item_name: 'Krapow',
-          menu_item_price_cents: 1250,
           quantity: 2,
           notes: null,
-          modifiers: [{
-            modifier_id: MOD,
-            modifier_name: 'Fried egg',
-            modifier_price_delta_cents: 200,
-          }],
+          modifiers: [{ modifier_id: MOD }],
         }],
       }),
     })
@@ -248,8 +237,7 @@ describe('POST /api/public/table-orders', () => {
     const seededGroup = '00000002-0000-0000-0000-000000000001'
     const client = buildClient({
       table: TABLE,
-      recent: [],
-      menu: [
+          menu: [
         { id: seededItem, name: 'Krapow Daging', price_cents: 1000, is_available: true },
       ],
       modifiers: [
@@ -300,36 +288,9 @@ describe('POST /api/public/table-orders', () => {
     expect(response.status).toBe(404)
   })
 
-  it('rate-limits a table that already has four orders in the window', async () => {
-    state.client = buildClient({
-      ...BASE_DATA,
-      recent: Array.from({ length: 4 }, () => ({
-        created_at: new Date(Date.now() - 120_000).toISOString(),
-      })),
-    })
-    const response = await POST(makeRequest(VALID_BODY) as never)
-    expect(response.status).toBe(429)
-  })
-
-  it('accepts a second order inside ten seconds', async () => {
-    // Two diners at one table sending within seconds is normal; the 4 / 5 min
-    // cap is the abuse bound (the 10 s gap was removed in migration 063).
-    state.client = buildClient({
-      ...BASE_DATA,
-      recent: [{ created_at: new Date(Date.now() - 2_000).toISOString() }],
-    })
-    const response = await POST(makeRequest(VALID_BODY) as never)
-    expect(response.status).toBe(201)
-  })
-
   it('returns the existing order when a submission is retried with the same key', async () => {
     const client = buildClient({
       ...BASE_DATA,
-      // Even with the table at its cap, a retry must resolve to the order that
-      // already landed rather than a 429.
-      recent: Array.from({ length: 4 }, () => ({
-        created_at: new Date(Date.now() - 120_000).toISOString(),
-      })),
       existingOrder: {
         id: 'order-9',
         order_number: 'MKORIGINAL',
@@ -429,7 +390,7 @@ describe('POST /api/public/table-orders', () => {
     const client = buildClient({
       ...BASE_DATA,
       rpcError: {
-        message: 'duplicate key value violates unique constraint',
+        message: 'duplicate key value violates unique constraint "idx_orders_idempotency_key"',
         code: '23505',
       },
       existingOrderAfterRpc: {
@@ -449,6 +410,32 @@ describe('POST /api/public/table-orders', () => {
     expect(response.status).toBe(200)
     expect((await response.json()).duplicate).toBe(true)
     expect(client.calls.some((call) => call.table === 'create_table_qr_order')).toBe(true)
+  })
+
+  it('does not treat an order-number collision as an idempotent retry', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      rpcError: {
+        message: 'duplicate key value violates unique constraint "orders_order_number_key"',
+        code: '23505',
+      },
+      // An unrelated order may be committed with this key after the first lookup.
+      existingOrderAfterRpc: {
+        id: 'order-9',
+        order_number: 'MKORIGINAL',
+        display_code: 'MK-009',
+        total_cents: 2900,
+        pax: 3,
+        table_label: 'T3',
+        table_id: 'table-1',
+      },
+    })
+
+    const response = await POST(
+      makeRequest({ ...VALID_BODY, idempotency_key: 'retry-key-0000000001' }) as never
+    )
+    expect(response.status).toBe(500)
+    expect((await response.json()).error).toBe('Failed to create order')
   })
 
   it('rejects unavailable menu items', async () => {

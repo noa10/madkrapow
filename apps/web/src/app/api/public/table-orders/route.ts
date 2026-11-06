@@ -334,21 +334,12 @@ export async function POST(req: NextRequest) {
     const subtotalCents = priced.reduce((sum, line) => sum + line.lineTotalCents, 0)
 
     // Save the complete ticket and its completion event in one transaction.
-    // Every price and modifier snapshot below came from the database above.
+    // The RPC locks the menu rows and creates its own price snapshots.
     const lines = priced.map((line) => ({
       menu_item_id: line.menuItem.id,
-      menu_item_name: line.menuItem.name,
-      menu_item_price_cents: line.menuItem.price_cents,
       quantity: line.item.quantity,
       notes: line.item.notes ?? null,
-      modifiers: line.item.modifier_ids.map((id) => {
-        const modifier = modifiersById.get(id)!
-        return {
-          modifier_id: modifier.id,
-          modifier_name: modifier.name,
-          modifier_price_delta_cents: modifier.price_delta_cents,
-        }
-      }),
+      modifiers: line.item.modifier_ids.map((id) => ({ modifier_id: id })),
     }))
 
     const { data: result, error: orderError } = await supabase.rpc('create_table_qr_order', {
@@ -368,7 +359,8 @@ export async function POST(req: NextRequest) {
       // A legacy writer may have committed the same key while this request was
       // in progress. The new RPC itself serializes retries before rate limiting.
       if (
-        (orderError as { code?: string } | null)?.code === '23505' &&
+        orderError?.code === '23505' &&
+        orderError.message.includes('"idx_orders_idempotency_key"') &&
         input.idempotency_key
       ) {
         const { data: existing } = await supabase

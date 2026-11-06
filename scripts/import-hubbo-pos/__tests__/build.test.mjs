@@ -106,16 +106,17 @@ describe('buildImportModel', () => {
     });
   });
 
-  it('stores ShopeeFood as counter + legacy_pos and names the platform in notes', () => {
+  it('stores ShopeeFood as its own source, channel and payment method', () => {
     const model = buildImportModel([
       orderRow({ Table: 'ShopeeFood', Remarks: 'SF231', 'Counter Payment Method': 'ShopeeFood' }),
       itemRow({ Items: '1x Set Krapow Ayam | 45.5' }),
     ]);
     const [o] = model.orders;
-    expect(o.order.source).toBe('counter');
-    expect(o.order.notes).toBe('ShopeeFood SF231 (imported from HubboPOS)');
-    expect(o.channelOrder.channel).toBe('legacy_pos');
-    expect(o.payment.method).toBe('other');
+    expect(o.order.source).toBe('shopeefood');
+    expect(o.order.notes).toBeNull();
+    expect(o.channelOrder.channel).toBe('shopeefood');
+    expect(o.channelOrder.external_order_number).toBe('SF231');
+    expect(o.payment.method).toBe('shopeefood');
   });
 
   it('attaches a negative row to the order it reverses instead of creating one', () => {

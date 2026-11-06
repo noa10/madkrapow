@@ -31,7 +31,8 @@ ALTER TABLE channel_orders ADD CONSTRAINT channel_orders_channel_check CHECK (
 
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_method_check;
 ALTER TABLE payments ADD CONSTRAINT payments_method_check CHECK (
-  method IN ('stripe', 'cash', 'qr_pay', 'grabfood', 'foodpanda', 'shopeefood', 'other')
+  -- 'billplz' comes from 056_billplz_payments.sql — keep it.
+  method IN ('stripe', 'billplz', 'cash', 'qr_pay', 'grabfood', 'foodpanda', 'shopeefood', 'other')
 );
 
 COMMENT ON COLUMN orders.source IS

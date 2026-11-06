@@ -14,11 +14,9 @@
 //   negative ORDER row -> refunds row linked to the order it reverses
 //
 // Channel is read from the export's `Table` column (GrabFood / FoodPanda /
-// ShopeeFood / Counter). ShopeeFood has no column value in the canonical
-// schema (orders.source CHECK), so it is stored as `counter` — these orders
-// really were booked pay-at-counter on the POS — while channel_orders keeps
-// `legacy_pos` + the SF order number and orders.notes names the platform, so
-// provenance is never lost.
+// ShopeeFood / Counter). `counter` orders are POS walk-ins booked with
+// channel_orders `legacy_pos`; 078 widened the CHECK constraints so ShopeeFood
+// is stored under its own value.
 
 import { parseMoneyToCents, legacyTimestampToIso, hasSubsenPrecision } from '../../import-legacy-pos/lib/money.mjs';
 import { qualifierTokensToNotes } from '../../import-legacy-pos/lib/items.mjs';
@@ -39,17 +37,16 @@ const PAYMENT_BY_METHOD = {
   'qr pay': 'qr_pay',
   grabfood: 'grabfood',
   foodpanda: 'foodpanda',
-  shopeefood: 'other',
+  shopeefood: 'shopeefood',
   '': 'other',
 };
 
-/** Channel values the orders.source CHECK constraint accepts. */
+/** Channel values the orders.source CHECK constraint accepts (078 adds shopeefood). */
 const SOURCE_STORAGE = {
   grabfood: 'grabfood',
   foodpanda: 'foodpanda',
   counter: 'counter',
-  // No 'shopeefood' in orders.source yet — POS-booked, so stored as counter.
-  shopeefood: 'counter',
+  shopeefood: 'shopeefood',
 };
 
 /** Channel values the channel_orders.channel CHECK constraint accepts. */
@@ -57,7 +54,7 @@ const CHANNEL_ORDER_STORAGE = {
   grabfood: 'grabfood',
   foodpanda: 'foodpanda',
   counter: 'legacy_pos',
-  shopeefood: 'legacy_pos',
+  shopeefood: 'shopeefood',
 };
 
 function classify(table) {
@@ -227,13 +224,6 @@ export function buildImportModel(rows) {
     const displayCode = `${invoice.replace(/^#/, '')}${occurrence > 1 ? `-${occurrence}` : ''}`;
     const paymentMethod = PAYMENT_BY_METHOD[(row['Counter Payment Method'] ?? '').trim().toLowerCase()] ?? 'other';
 
-    // ShopeeFood has no canonical source value; name the platform in notes so
-    // staff reviewing history can tell it apart from a walk-in.
-    const notes =
-      channel === 'shopeefood'
-        ? `ShopeeFood${externalOrderNumber ? ` ${externalOrderNumber}` : ''} (imported from HubboPOS)`
-        : null;
-
     orders.push({
       legacy: {
         invoice,
@@ -256,7 +246,7 @@ export function buildImportModel(rows) {
         total_cents: nettCents,
         customer_id: null,
         customer_name: channel === 'counter' ? 'Walk-in' : null,
-        notes,
+        notes: null,
         include_cutlery: cutlery ?? true,
         created_at: placedAtIso,
         updated_at: placedAtIso,

@@ -53,15 +53,12 @@ an item-sum/gross mismatch means the catalog or the export changed.
 - `order_number` is `HUB-<invoice>`; a repeated invoice (the POS reuses a number
   for two concurrent platform orders) gets a `-2` suffix because the column is
   UNIQUE.
-- Channel comes from the `Table` column. ShopeeFood has no `orders.source`
-  value in the CHECK constraint yet, so it is stored as `counter` with
-  `channel_orders.channel = legacy_pos`, the SF number, and a note on the order.
+- Channel comes from the `Table` column. Counter orders are stored as
+  `source = counter` with `channel_orders.channel = legacy_pos`; ShopeeFood gets
+  its own `shopeefood` value on all three tables (migration 078).
 
 ## Known limitations
 
 - 45 orders from the first four days of the export window (2024-11-01…04) have
   no ITEM rows — the POS wasn't capturing item detail yet. They are imported
   header-only.
-- Widening `orders_source_check` / `channel_orders_channel_check` /
-  `payments_method_check` with `shopeefood` needs SQL access (psql or the
-  dashboard), not the REST service key.

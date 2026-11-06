@@ -1,7 +1,10 @@
-import { type NextRequest } from 'next/server'
+// Next.js 16 renamed Middleware to Proxy and resolves this file from the
+// directory that holds the App Router. The router lives in src/app, so this
+// must stay at src/proxy.ts — a root-level proxy.ts is not built.
+import { NextResponse, type NextRequest } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { refreshSession } from './src/lib/supabase/middleware'
-import { verifyAccessToken } from './src/lib/supabase/jwt'
+import { refreshSession } from './lib/supabase/middleware'
+import { verifyAccessToken } from './lib/supabase/jwt'
 
 /** Validate a redirect URL to prevent open-redirect attacks. Only same-origin, relative paths allowed. */
 function isValidRedirect(redirect: string): boolean {
@@ -18,7 +21,19 @@ function isValidRedirect(redirect: string): boolean {
   return true
 }
 
-export async function middleware(request: NextRequest) {
+/**
+ * Redirect without losing the session cookies refreshSession() may have just
+ * rotated. A bare Response.redirect() starts a fresh response, so an expired
+ * token refreshed on this request would be dropped and the user would appear
+ * signed out (or re-refresh on every visit).
+ */
+function redirectWithSession(url: URL, response: NextResponse): NextResponse {
+  const redirect = NextResponse.redirect(url, 302)
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie))
+  return redirect
+}
+
+export async function proxy(request: NextRequest) {
   const { supabase, response } = await refreshSession(request)
 
   const pathname = request.nextUrl.pathname
@@ -57,7 +72,7 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = isCheckoutRoute ? '/auth/signup' : '/auth'
       url.searchParams.set('redirect', pathname)
-      return Response.redirect(url)
+      return redirectWithSession(url, response)
     }
   }
 
@@ -68,7 +83,7 @@ export async function middleware(request: NextRequest) {
     if (!role || !staffRoles.includes(role)) {
       const url = request.nextUrl.clone()
       url.pathname = '/'
-      return Response.redirect(url)
+      return redirectWithSession(url, response)
     }
   }
 
@@ -85,7 +100,7 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = isStaff ? '/admin' : '/'
       url.searchParams.delete('redirect')
-      return Response.redirect(url)
+      return redirectWithSession(url, response)
     }
   }
 
@@ -99,8 +114,10 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
+     * - image files served from public/
+     * - the avatar upload API: it authenticates with a bearer token and
+     *   accepts 5 MB files, above the 4 MB cap on proxied request bodies
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/customer/avatar|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

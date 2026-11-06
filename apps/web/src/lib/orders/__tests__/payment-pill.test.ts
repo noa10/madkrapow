@@ -88,6 +88,7 @@ describe("getPaymentPill", () => {
       [{ source: "counter", payment_method: "qr_pay" }, "QR Pay"],
       [{ source: "grabfood" }, "GrabFood"],
       [{ source: "foodpanda" }, "Foodpanda"],
+      [{ source: "shopeefood" }, "ShopeeFood"],
     ]
     for (const [overrides, method] of cases) {
       const pill = getPaymentPill(order(overrides))

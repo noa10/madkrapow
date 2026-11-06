@@ -33,6 +33,10 @@ const PAYMENT_STYLE: Record<PaymentProvider, { className: string; Icon: typeof C
     className: "bg-pink-500/15 text-pink-400 border-pink-500/30",
     Icon: Wallet,
   },
+  shopeefood: {
+    className: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    Icon: Wallet,
+  },
   pending: {
     className: "bg-amber-500/15 text-amber-400 border-amber-500/30",
     Icon: Hourglass,

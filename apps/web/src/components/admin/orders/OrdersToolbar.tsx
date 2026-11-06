@@ -21,6 +21,7 @@ const SOURCE_OPTIONS: { value: "all" | OrderSource; label: string }[] = [
   { value: "counter", label: "Counter" },
   { value: "grabfood", label: "GrabFood" },
   { value: "foodpanda", label: "Foodpanda" },
+  { value: "shopeefood", label: "ShopeeFood" },
 ]
 
 interface OrdersToolbarProps {

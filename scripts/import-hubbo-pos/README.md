@@ -1,0 +1,73 @@
+# HubboPOS historical import
+
+Loads the `Order with Items` export from the HubboPOS admin portal into the
+canonical order model (orders, order_items, payments, channel_orders, refunds).
+
+## Getting the export
+
+1. Sign in at `https://admin.hubbopos.com/admin/login` (chain admin account).
+2. **Report → Detail**. The page is a Metabase embed, so it needs two things
+   before it renders rows: the merchant (`Select merchant` → *Mad Krapow -
+   Subang Permai*) and a date range (the `Start Date` / `End Date` widgets).
+3. The embed exposes three cards. **Order with Items** is the one this importer
+   reads — it carries the line detail and the `order_group` that links ITEM rows
+   to their ORDER row. Set the date range to cover the window you need
+   (HubboPOS only retains two years) and copy the CSV endpoint URL out of the
+   network panel, or use the card's download control.
+4. Save the CSV locally. Rows look like:
+
+   ```
+   row_num,order_group,Date,Time,...,Invoice No,System ID,...,Record Type,Items,...
+   1521.0,100067500,2025-04-03,14:18,...,#0-00004018,aup2-2514-qmux-3173,...,ORDER,,...
+   9578.0,100067500,,,,,,,,,ITEM,"1x Chicken Krapow Set | 17 | Extra Spicy 🌶️🌶️, Food Container (Photodegradable)",...
+   ```
+
+   `System ID` is empty on ITEM rows — join on `order_group`, never on System ID.
+
+## Running
+
+```bash
+# dry run: parse + validate + reconcile, writes nothing
+node scripts/import-hubbo-pos/index.mjs --file ~/export.csv
+
+# write (needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY,
+# from .env.local or the process environment)
+node scripts/import-hubbo-pos/index.mjs --file ~/export.csv --apply --concurrency 6
+
+# a slice, for a smoke test
+node scripts/import-hubbo-pos/index.mjs --file ~/export.csv --apply --limit 5 --concurrency 1
+```
+
+The dry run must report `errors: 0` before applying — an unmapped item name or
+an item-sum/gross mismatch means the catalog or the export changed. `--apply`
+enforces this too: it refuses to write when any order failed validation, or when
+a refund row could not be paired with the order it reverses (`--allow-errors` /
+`--allow-unmatched-refunds` override, for a deliberate partial load).
+
+## Behaviour
+
+- One RPC call per order (`import_legacy_order`): order + items + payment +
+  channel identity + refunds + audit rows are written atomically.
+- Idempotent on `channel_orders(channel, external_order_id)` — re-running the
+  same file imports only what is missing and reports the rest as skipped.
+- Refunds are the negative `Table=REFUND` rows; each is attached to the order it
+  reverses (invoice match, then amount+recency) instead of becoming a negative
+  order. Attachment is keyed on the original row's **System ID**, not the
+  invoice — the POS reuses invoice numbers, and an invoice key would hand one
+  refund to both orders sharing it.
+- `order_number` is `HUB-<invoice>`; a repeated invoice (the POS reuses a number
+  for two concurrent platform orders) gets a `-2` suffix because the column is
+  UNIQUE.
+- Channel comes from the `Table` column. Counter orders are stored as
+  `source = counter` with `channel_orders.channel = legacy_pos`; ShopeeFood gets
+  its own `shopeefood` value on all three tables (migration 078).
+- The payment ledger (`payments.method`) and the list-surface snapshot
+  (`orders.payment_method`) carry the same value: `grabfood` / `foodpanda` /
+  `shopeefood` for platform orders, `cash` / `qr_pay` for counter sales
+  (migration 079).
+
+## Known limitations
+
+- 45 orders from the first four days of the export window (2024-11-01…04) have
+  no ITEM rows — the POS wasn't capturing item detail yet. They are imported
+  header-only.

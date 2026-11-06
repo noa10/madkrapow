@@ -8,6 +8,7 @@ export type OrderSource =
   | "counter"
   | "grabfood"
   | "foodpanda"
+  | "shopeefood"
 
 export interface Order {
   id: string

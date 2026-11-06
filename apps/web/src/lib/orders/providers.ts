@@ -24,6 +24,7 @@ export type PaymentProvider =
   | "qr_pay"
   | "grabfood"
   | "foodpanda"
+  | "shopeefood"
   | "pending"
 export type DeliveryProvider =
   | "lalamove"
@@ -71,6 +72,9 @@ export function getPaymentBadge(order: ProviderSourceFields): PaymentBadge {
   if (order.source === "foodpanda") {
     return { provider: "foodpanda", label: "Foodpanda" }
   }
+  if (order.source === "shopeefood") {
+    return { provider: "shopeefood", label: "ShopeeFood" }
+  }
   if (order.payment_method === "qr_pay") {
     return { provider: "qr_pay", label: "QR Pay" }
   }
@@ -92,6 +96,9 @@ export function getDeliveryBadge(order: ProviderSourceFields): DeliveryBadge {
   }
   if (order.source === "foodpanda") {
     return { provider: "platform", label: "Foodpanda Rider" }
+  }
+  if (order.source === "shopeefood") {
+    return { provider: "platform", label: "ShopeeFood Rider" }
   }
   if (order.lalamove_order_id || order.lalamove_quote_id) {
     return { provider: "lalamove", label: "Lalamove" }

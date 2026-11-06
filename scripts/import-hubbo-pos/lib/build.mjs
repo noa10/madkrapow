@@ -247,6 +247,8 @@ export function buildImportModel(rows) {
         customer_id: null,
         customer_name: channel === 'counter' ? 'Walk-in' : null,
         notes: null,
+        // List-surface snapshot (057); the payments row is the ledger.
+        payment_method: paymentMethod,
         include_cutlery: cutlery ?? true,
         created_at: placedAtIso,
         updated_at: placedAtIso,

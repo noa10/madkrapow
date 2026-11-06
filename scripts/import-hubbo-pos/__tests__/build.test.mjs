@@ -91,6 +91,8 @@ describe('buildImportModel', () => {
       include_cutlery: false,
     });
     expect(o.payment).toMatchObject({ method: 'grabfood', amount_cents: 4210, external_ref: 'sys-1' });
+    // The list-surface snapshot mirrors the ledger method (migration 079).
+    expect(o.order.payment_method).toBe('grabfood');
     expect(o.channelOrder).toMatchObject({
       channel: 'grabfood',
       external_order_id: 'sys-1',
@@ -117,6 +119,7 @@ describe('buildImportModel', () => {
     expect(o.channelOrder.channel).toBe('shopeefood');
     expect(o.channelOrder.external_order_number).toBe('SF231');
     expect(o.payment.method).toBe('shopeefood');
+    expect(o.order.payment_method).toBe('shopeefood');
   });
 
   it('attaches a negative row to the order it reverses instead of creating one', () => {

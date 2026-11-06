@@ -56,6 +56,10 @@ an item-sum/gross mismatch means the catalog or the export changed.
 - Channel comes from the `Table` column. Counter orders are stored as
   `source = counter` with `channel_orders.channel = legacy_pos`; ShopeeFood gets
   its own `shopeefood` value on all three tables (migration 078).
+- The payment ledger (`payments.method`) and the list-surface snapshot
+  (`orders.payment_method`) carry the same value: `grabfood` / `foodpanda` /
+  `shopeefood` for platform orders, `cash` / `qr_pay` for counter sales
+  (migration 079).
 
 ## Known limitations
 

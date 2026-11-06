@@ -132,7 +132,7 @@ describe('atomic order submission SQL probes', () => {
       const passed = results.flatMap((result) => result.rows).filter((row) =>
         Object.values(row).some((value) => typeof value === 'string' && value.startsWith('ok - ')),
       )
-      expect(passed).toHaveLength(41)
+      expect(passed).toHaveLength(44)
     } finally {
       await db.close()
     }

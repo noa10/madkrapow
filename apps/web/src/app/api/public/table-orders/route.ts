@@ -411,12 +411,26 @@ export async function POST(req: NextRequest) {
           { status: 409 }
         )
       }
-      if (
-        message.includes('invalid_table_order') ||
-        message.includes('table_order_total_too_large')
-      ) {
+      if (message.includes('table_order_total_too_large')) {
         return NextResponse.json(
-          { error: 'This order is too large. Please split it or call a staff member.' },
+          {
+            error: 'This order is too large. Please split it or call a staff member.',
+            code: 'INVALID_REQUEST',
+          },
+          { status: 400 }
+        )
+      }
+      // The Zod schema above already bounds pax, items, quantities and
+      // modifiers, so these can only mean the RPC contract drifted (or an
+      // unguarded cast surfaced). Keep them distinct from a real size limit
+      // and leave the detail in the server log.
+      if (message.includes('invalid_table_order')) {
+        console.error(
+          '[API/TableOrder] Invalid order payload passed to the RPC:',
+          sanitizeForLog(message)
+        )
+        return NextResponse.json(
+          { error: 'Unable to place order. Please try again.', code: 'INVALID_REQUEST' },
           { status: 400 }
         )
       }

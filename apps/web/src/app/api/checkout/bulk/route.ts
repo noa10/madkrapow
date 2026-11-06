@@ -100,7 +100,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       )
     }
 
-    const requestedDateTime = new Date(`${bulkFields.requested_date}T${bulkFields.requested_time}`)
+    // The bulk form picks a wall-clock time in Malaysia, and the Vercel Node
+    // runtime is UTC, so the slot must carry the +08:00 offset explicitly.
+    const requestedTime = bulkFields.requested_time.length === 5
+      ? `${bulkFields.requested_time}:00`
+      : bulkFields.requested_time
+    const requestedDateTime = new Date(`${bulkFields.requested_date}T${requestedTime}+08:00`)
     if (!Number.isFinite(requestedDateTime.getTime())) {
       return NextResponse.json(
         { success: false, error: 'Invalid requested date or time', code: 'INVALID_REQUEST' },
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
 
     if (lookupError) {
       return NextResponse.json(
-        { success: false, error: 'Unable to create customer profile', code: 'CUSTOMER_FAILED' },
+        { success: false, error: 'Unable to load your customer profile', code: 'CUSTOMER_FAILED' },
         { status: 500 }
       )
     }
@@ -149,17 +154,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
       customerId = newCustomer.id
     }
 
-    // Reject missing/sold-out dishes before submission. The RPC re-reads and
-    // locks their prices and modifier metadata when it writes the snapshots.
+    // Reject missing/sold-out dishes before submission. This is an existence
+    // and availability check only: the RPC re-reads and locks the prices and
+    // modifier metadata when it writes the snapshots.
     const menuItemIds = items.map(item => item.id)
-    const { data: dbItems, error: priceError } = await supabase
+    const { data: dbItems, error: itemLookupError } = await supabase
       .from('menu_items')
-      .select('id, name, price_cents, image_url, is_available')
+      .select('id, name, is_available')
       .in('id', menuItemIds)
 
-    if (priceError || !dbItems) {
+    if (itemLookupError || !dbItems) {
       return NextResponse.json(
-        { success: false, error: 'Unable to validate prices', code: 'PRICE_VALIDATION_FAILED' },
+        { success: false, error: 'Unable to check item availability', code: 'ITEM_LOOKUP_FAILED' },
         { status: 500 }
       )
     }
@@ -223,14 +229,23 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
         { status: 400 }
       )
     }
+    if (orderError?.message === 'bulk_total_too_large') {
+      return NextResponse.json(
+        { success: false, error: 'This order is too large. Please split it or contact us.', code: 'INVALID_REQUEST' },
+        { status: 400 }
+      )
+    }
+    // Zod bounds items, quantities and modifier arrays, so these are
+    // contract-drift signals, not client mistakes; do not disguise them as a
+    // size problem.
     if (
       orderError?.message === 'bulk_invalid_order' ||
       orderError?.message === 'bulk_invalid_items' ||
-      orderError?.message === 'bulk_invalid_item' ||
-      orderError?.message === 'bulk_total_too_large'
+      orderError?.message === 'bulk_invalid_item'
     ) {
+      console.error('[API] Invalid bulk order payload:', sanitizeForLog(orderError.message))
       return NextResponse.json(
-        { success: false, error: 'This order is too large. Please split it or contact us.', code: 'INVALID_REQUEST' },
+        { success: false, error: 'Unable to create order. Please try again.', code: 'INVALID_REQUEST' },
         { status: 400 }
       )
     }

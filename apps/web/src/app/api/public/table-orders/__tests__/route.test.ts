@@ -222,11 +222,46 @@ describe('POST /api/public/table-orders', () => {
     ['table_inactive', 409, /not active/i],
     ['idempotency_key_conflict', 409, /another table/i],
     ['table_order_rate_limited', 429, /too many orders/i],
+    ['table_order_item_unavailable', 409, /menu changed/i],
+    ['table_order_invalid_modifier', 409, /menu changed/i],
+    ['table_order_total_mismatch', 409, /prices changed/i],
   ])('maps %s from the transaction to a safe response', async (message, status, expected) => {
     state.client = buildClient({ ...BASE_DATA, rpcError: { message } })
     const response = await POST(makeRequest(VALID_BODY) as never)
     expect(response.status).toBe(status)
     expect((await response.json()).error).toMatch(expected)
+  })
+
+  it('keeps the size message for the total-ceiling guard only', async () => {
+    state.client = buildClient({
+      ...BASE_DATA,
+      rpcError: { message: 'table_order_total_too_large' },
+    })
+
+    const response = await POST(makeRequest(VALID_BODY) as never)
+
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.code).toBe('INVALID_REQUEST')
+    expect(body.error).toMatch(/too large.*split/i)
+  })
+
+  it.each([
+    'invalid_table_order',
+    'invalid_table_order_lines',
+    'invalid_table_order_number',
+    'invalid_table_order_line',
+    'invalid_table_order_modifiers',
+  ])('does not disguise %s as a size problem', async (message) => {
+    state.client = buildClient({ ...BASE_DATA, rpcError: { message } })
+
+    const response = await POST(makeRequest(VALID_BODY) as never)
+
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.code).toBe('INVALID_REQUEST')
+    expect(body.error).toBe('Unable to place order. Please try again.')
+    expect(body.error).not.toMatch(/too large|split/i)
   })
 
   it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {

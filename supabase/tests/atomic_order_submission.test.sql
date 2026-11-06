@@ -1,7 +1,7 @@
 -- Exercise the real submission functions, rate-limit trigger and notification
 -- outbox in a disposable database. All fixtures are rolled back.
 BEGIN;
-SELECT plan(41);
+SELECT plan(44);
 DO $$
 BEGIN
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
@@ -82,6 +82,8 @@ SELECT is((SELECT count(*) FROM public.merchant_notification_outbox n JOIN publi
   4::bigint, 'retry does not enqueue another notification');
 SELECT throws_ok($$SELECT pg_temp.table_order('ATOMIC-QR-5', 'f1000000-0000-4000-8000-000000000007', 'atomic-qr-test-key-0005', 2900)$$,
   'P0001', 'table_order_rate_limited', 'a new fifth table order is rate limited');
+SELECT throws_ok($$SELECT pg_temp.table_order('ATOMIC-QR-CONFLICT', 'f1000000-0000-4000-8000-000000000008', 'atomic-qr-test-key-0001', 2900)$$,
+  'P0001', 'idempotency_key_conflict', 'replaying an idempotency key at another table is a conflict');
 
 CREATE TEMP TABLE before_qr_failure AS SELECT
   (SELECT count(*) FROM public.orders) AS orders,
@@ -101,6 +103,10 @@ SELECT is((SELECT count(*) FROM public.order_items), (SELECT items FROM before_q
 SELECT is((SELECT count(*) FROM public.order_item_modifiers), (SELECT modifiers FROM before_qr_failure), 'failed table orders leave no modifiers');
 SELECT is((SELECT count(*) FROM public.order_events), (SELECT events FROM before_qr_failure), 'failed table orders leave no events');
 SELECT is((SELECT count(*) FROM public.merchant_notification_outbox), (SELECT outbox FROM before_qr_failure), 'failed table orders leave no notifications');
+UPDATE public.menu_items SET price_cents = 2147483647 WHERE id = 'f1000000-0000-4000-8000-000000000002';
+SELECT throws_ok($$SELECT pg_temp.table_order('ATOMIC-QR-OVERSIZE', 'f1000000-0000-4000-8000-000000000008', NULL, 0)$$,
+  'P0001', 'table_order_total_too_large', 'a table line above the integer ceiling aborts submission');
+UPDATE public.menu_items SET price_cents = 1250 WHERE id = 'f1000000-0000-4000-8000-000000000002';
 
 CREATE TEMP TABLE bulk_success AS SELECT pg_temp.bulk_order(
   'ATOMIC-BULK-1', 'f1000000-0000-4000-8000-000000000010',
@@ -129,6 +135,11 @@ SELECT throws_ok($$SELECT pg_temp.bulk_order('ATOMIC-BULK-FAIL', 'f1000000-0000-
   'P0001', 'bulk_item_unavailable', 'a bad later line aborts the whole bulk submission');
 SELECT throws_ok($$SELECT pg_temp.bulk_order('ATOMIC-BULK-OWNER', 'f1000000-0000-4000-8000-000000000011', '[]'::jsonb)$$,
   'P0001', 'bulk_customer_mismatch', 'bulk submission rejects a different customer owner');
+UPDATE public.menu_items SET price_cents = 2147483647 WHERE id = 'f1000000-0000-4000-8000-000000000003';
+SELECT throws_ok($$SELECT pg_temp.bulk_order('ATOMIC-BULK-OVERSIZE', 'f1000000-0000-4000-8000-000000000010',
+  '[{"menu_item_id":"f1000000-0000-4000-8000-000000000003","quantity":2,"modifier_ids":[]}]'::jsonb)$$,
+  'P0001', 'bulk_total_too_large', 'a bulk line above the integer ceiling aborts submission');
+UPDATE public.menu_items SET price_cents = 800 WHERE id = 'f1000000-0000-4000-8000-000000000003';
 
 CREATE FUNCTION pg_temp.fail_outbox() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

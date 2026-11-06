@@ -162,8 +162,8 @@ mad-krapow/
 ├── apps/
 │   └── web/                 # Next.js application workspace
 │       ├── src/             # App source
+│       │   └── proxy.ts     # Next.js 16 proxy entrypoint
 │       ├── public/          # Static assets (icons, manifest)
-│       ├── middleware.ts    # Next.js middleware entrypoint
 │       └── .env.local.example
 ├── packages/
 │   └── shared-types/        # Generated Supabase types shared across workspaces

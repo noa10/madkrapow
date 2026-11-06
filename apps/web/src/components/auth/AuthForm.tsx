@@ -5,16 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { hasAnyRole, ALL_STAFF_ROLES } from "@/lib/auth/roles";
+import { isValidRedirect } from "@/lib/auth/redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-
-/** Only allow same-origin relative redirect paths to prevent open-redirect attacks */
-function isValidRedirect(redirect: string | null): redirect is string {
-  if (!redirect || !redirect.startsWith('/')) return false
-  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
-  return true
-}
 
 /**
  * Maps Supabase auth error codes to user-friendly messages

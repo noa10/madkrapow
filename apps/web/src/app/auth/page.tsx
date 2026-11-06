@@ -8,7 +8,9 @@ import { AuthForm } from '@/components/auth/AuthForm'
 function LoginPageContent() {
   const searchParams = useSearchParams()
   const redirectParam = searchParams.get('redirect')
-  const isCheckoutRedirect = redirectParam === '/checkout'
+  // The proxy preserves a query string in the return path; compare the
+  // pathname so e.g. /checkout?utm_source=… still gets the checkout variant.
+  const isCheckoutRedirect = redirectParam?.split('?')[0] === '/checkout'
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">

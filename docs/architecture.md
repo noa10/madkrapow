@@ -185,8 +185,8 @@ mad-krapow/
 ├── apps/
 │   ├── web/
 │   │   ├── src/                        # Next.js application source
+│   │   │   └── proxy.ts                # Next.js 16 proxy (route guards + session refresh)
 │   │   ├── public/                     # Static assets
-│   │   ├── middleware.ts               # Next.js middleware entrypoint
 │   │   ├── next.config.ts
 │   │   ├── tailwind.config.ts
 │   │   ├── postcss.config.mjs

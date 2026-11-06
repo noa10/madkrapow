@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { hasAnyRole, ALL_STAFF_ROLES } from '@/lib/auth/roles'
+import { isValidRedirect } from '@/lib/auth/redirect'
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
@@ -41,19 +42,6 @@ function getAuthErrorMessage(error: { code?: string; message?: string }): string
 
   // Return mapped message or fall back to the original message or a generic one
   return errorMessages[error.code || ""] || error.message || "An unexpected error occurred";
-}
-
-/** Only allow same-origin relative redirect paths (sanitizer CodeQL recognizes). */
-function isValidRedirect(redirect: string | null): redirect is string {
-  if (!redirect || typeof redirect !== 'string') return false
-  if (!redirect.startsWith('/')) return false
-  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
-  try {
-    const parsed = new URL(redirect, window.location.origin)
-    return parsed.origin === window.location.origin
-  } catch {
-    return false
-  }
 }
 
 function getRedirectPath(params: URLSearchParams): string {

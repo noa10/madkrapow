@@ -102,3 +102,5 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
           NEXT_PUBLIC_URL: http://localhost:3000
+      - name: Assert the proxy is in the production build
+        run: npm run verify:proxy-build

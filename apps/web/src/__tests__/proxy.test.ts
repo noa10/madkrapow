@@ -101,6 +101,24 @@ describe('anonymous visitors', () => {
     expect(target.searchParams.get('redirect')).toBe('/admin/orders')
   })
 
+  it('preserves the query string in the return path', async () => {
+    const response = await proxy(request('/orders?tab=active'))
+
+    expect(response.status).toBe(302)
+    const target = redirectTarget(response)
+    expect(target.pathname).toBe('/auth')
+    expect(target.searchParams.get('redirect')).toBe('/orders?tab=active')
+  })
+
+  it('preserves query strings when redirecting checkout to sign-up', async () => {
+    const response = await proxy(request('/checkout?utm_source=email'))
+
+    expect(response.status).toBe(302)
+    const target = redirectTarget(response)
+    expect(target.pathname).toBe('/auth/signup')
+    expect(target.searchParams.get('redirect')).toBe('/checkout?utm_source=email')
+  })
+
   it('lets anonymous visitors reach the auth screens', async () => {
     for (const path of ['/auth', '/auth/callback?code=abc', '/auth/update-password']) {
       const response = await proxy(request(path))
@@ -132,6 +150,7 @@ describe('session refresh on redirects', () => {
   it('keeps rotated cookies on staff and signed-in auth redirects', async () => {
     sessionReturns('token')
     localUserReturns(CUSTOMER)
+    networkUserReturns(CUSTOMER)
     refreshedResponse('sb-refresh-token')
 
     const authRedirect = await proxy(request('/auth'))
@@ -148,6 +167,7 @@ describe('authenticated customers', () => {
   beforeEach(() => {
     sessionReturns('access-token')
     localUserReturns(CUSTOMER)
+    networkUserReturns(CUSTOMER)
   })
 
   it('passes guarded customer pages through', async () => {
@@ -187,7 +207,7 @@ describe('authenticated customers', () => {
   })
 
   it('blocks an open redirect to another origin', async () => {
-    for (const attack of ['//evil.example', 'https://evil.example', '\\\\evil.example']) {
+    for (const attack of ['//evil.example', 'https://evil.example', '\\\\evil.example', '/\\evil.example']) {
       const response = await proxy(request(`/auth?redirect=${encodeURIComponent(attack)}`))
       expect(response.status, attack).toBe(302)
       expect(redirectTarget(response).pathname, attack).toBe('/')
@@ -207,6 +227,7 @@ describe('authenticated staff', () => {
   beforeEach(() => {
     sessionReturns('staff-token')
     localUserReturns(MANAGER)
+    networkUserReturns(MANAGER)
   })
 
   it('passes admin routes through', async () => {
@@ -214,6 +235,22 @@ describe('authenticated staff', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
+  })
+
+  it('asks the auth server for /admin even when the local claim verifies', async () => {
+    // Local claims can be stale for the rest of the access token's lifetime;
+    // the auth server returns the authoritative user, so a demotion applies
+    // immediately.
+    sessionReturns('staff-token')
+    localUserReturns(MANAGER)
+    networkUserReturns(CUSTOMER)
+
+    const response = await proxy(request('/admin'))
+
+    expect(mocks.verifyAccessToken).not.toHaveBeenCalled()
+    expect(mocks.getUser).toHaveBeenCalledTimes(1)
+    expect(response.status).toBe(302)
+    expect(redirectTarget(response).pathname).toBe('/')
   })
 
   it('sends staff from the auth screens to the admin dashboard', async () => {
@@ -230,7 +267,7 @@ describe('network fallback', () => {
     localUserReturns(null)
     networkUserReturns(MANAGER)
 
-    const response = await proxy(request('/admin'))
+    const response = await proxy(request('/orders'))
 
     expect(mocks.verifyAccessToken).toHaveBeenCalledWith('expired-token')
     expect(mocks.getUser).toHaveBeenCalledTimes(1)

@@ -5,11 +5,12 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { CheckCircle, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { getBrowserClient } from '@/lib/supabase/client'
+import { isValidRedirect } from '@/lib/auth/redirect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 /**
- * Maps Supabase auth error codes to user-friendly messages
+ * Maps Supabase auth error code map to user-friendly messages
  */
 function getAuthErrorMessage(error: { code?: string; message?: string }): string {
   const errorMessages: Record<string, string> = {
@@ -41,18 +42,13 @@ function getAuthErrorMessage(error: { code?: string; message?: string }): string
   return errorMessages[error.code || ''] || error.message || 'An unexpected error occurred'
 }
 
-/** Only allow same-origin relative redirect paths */
-function isValidRedirect(redirect: string | null): redirect is string {
-  if (!redirect || !redirect.startsWith('/')) return false
-  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
-  return true
-}
-
 function SignUpPageContent() {
   const supabase = getBrowserClient()
   const searchParams = useSearchParams()
   const redirectParam = searchParams.get('redirect')
-  const isCheckoutRedirect = redirectParam === '/checkout'
+  // The proxy preserves a query string in the return path; compare the
+  // pathname so e.g. /checkout?utm_source=… still gets the checkout variant.
+  const isCheckoutRedirect = redirectParam?.split('?')[0] === '/checkout'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

@@ -5,21 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import type { User } from '@supabase/supabase-js'
 import { refreshSession } from './lib/supabase/middleware'
 import { verifyAccessToken } from './lib/supabase/jwt'
-
-/** Validate a redirect URL to prevent open-redirect attacks. Only same-origin, relative paths allowed. */
-function isValidRedirect(redirect: string): boolean {
-  if (!redirect.startsWith('/')) return false
-  // Block protocol-relative URLs (//evil.com) and backslash tricks
-  if (redirect.startsWith('//') || redirect.startsWith('\\')) return false
-  // Block any URL with a host component
-  try {
-    const url = new URL(redirect, 'http://localhost')
-    if (url.host !== 'localhost') return false
-  } catch {
-    return false
-  }
-  return true
-}
+import { isValidRedirect } from './lib/auth/redirect'
 
 /**
  * Redirect without losing the session cookies refreshSession() may have just
@@ -51,18 +37,30 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
-  // Verify the session token locally first (JWKS cached on a module-level
-  // client). The network getUser() is the fallback — it also refreshes an
-  // expired access token, which local verification cannot do.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  let user: User | null = await verifyAccessToken(session?.access_token)
-  if (!user) {
+  // /admin asks the auth server for the authoritative user, so role changes
+  // take effect immediately — claims cached in an access token can be stale
+  // for its remaining lifetime (up to 1h). Fail closed: if the auth server
+  // is unreachable, admin is treated as signed out. (refreshSession above
+  // has already refreshed an expired access token via getSession().)
+  // Other routes verify locally first (JWKS cached on a module-level
+  // client); the network getUser() is the fallback.
+  let user: User | null
+  if (isAdminRoute) {
     const {
       data: { user: networkUser },
     } = await supabase.auth.getUser()
     user = networkUser
+  } else {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    user = await verifyAccessToken(session?.access_token)
+    if (!user) {
+      const {
+        data: { user: networkUser },
+      } = await supabase.auth.getUser()
+      user = networkUser
+    }
   }
 
   // Redirect unauthenticated users away from protected routes
@@ -71,7 +69,7 @@ export async function proxy(request: NextRequest) {
     if (isProtectedRoute) {
       const url = request.nextUrl.clone()
       url.pathname = isCheckoutRoute ? '/auth/signup' : '/auth'
-      url.searchParams.set('redirect', pathname)
+      url.searchParams.set('redirect', `${pathname}${request.nextUrl.search}`)
       return redirectWithSession(url, response)
     }
   }

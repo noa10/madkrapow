@@ -48,6 +48,13 @@ describe("getPaymentBadge", () => {
     })
   })
 
+  it("returns ShopeeFood when source is shopeefood", () => {
+    expect(getPaymentBadge({ status: "paid", source: "shopeefood" })).toEqual({
+      provider: "shopeefood",
+      label: "ShopeeFood",
+    })
+  })
+
   it("returns QR Pay when payment_method is qr_pay (counter POS)", () => {
     expect(
       getPaymentBadge({ status: "paid", source: "counter", payment_method: "qr_pay" }),
@@ -136,6 +143,12 @@ describe("getDeliveryBadge", () => {
     expect(
       getDeliveryBadge({ delivery_type: "delivery", source: "foodpanda" }),
     ).toEqual({ provider: "platform", label: "Foodpanda Rider" })
+  })
+
+  it("returns platform rider for shopeefood delivery orders", () => {
+    expect(
+      getDeliveryBadge({ delivery_type: "delivery", source: "shopeefood" }),
+    ).toEqual({ provider: "platform", label: "ShopeeFood Rider" })
   })
 
   it("keeps self_pickup priority for platform pickup orders", () => {

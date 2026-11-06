@@ -18,6 +18,7 @@ export const SOURCE_LABELS: Record<OrderSource, string> = {
   counter: "Counter",
   grabfood: "GrabFood",
   foodpanda: "Foodpanda",
+  shopeefood: "ShopeeFood",
 }
 
 /** Dark-theme text-pill classes for every known order source. */
@@ -29,6 +30,7 @@ export const SOURCE_PILL_CLASSES: Record<OrderSource, string> = {
   counter: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   grabfood: "bg-green-500/15 text-green-400 border-green-500/30",
   foodpanda: "bg-pink-500/15 text-pink-400 border-pink-500/30",
+  shopeefood: "bg-orange-500/15 text-orange-400 border-orange-500/30",
 }
 
 /** Label for a source, falling back to the raw wire string when unknown. */

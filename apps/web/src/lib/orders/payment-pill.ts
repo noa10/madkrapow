@@ -33,6 +33,7 @@ const EVIDENCE_BACKED_PROVIDERS = new Set<PaymentProvider>([
   "billplz",
   "grabfood",
   "foodpanda",
+  "shopeefood",
   "qr_pay",
 ])
 

@@ -41,6 +41,7 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
   counter: <Store className="h-4 w-4" />,
   grabfood: <Bike className="h-4 w-4" />,
   foodpanda: <UtensilsCrossed className="h-4 w-4" />,
+  shopeefood: <UtensilsCrossed className="h-4 w-4" />,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -51,6 +52,7 @@ const SOURCE_LABELS: Record<string, string> = {
   counter: 'Counter',
   grabfood: 'GrabFood',
   foodpanda: 'Foodpanda',
+  shopeefood: 'ShopeeFood',
 };
 
 /** Tint for the elapsed label, so a ticket going stale is visible at a glance. */

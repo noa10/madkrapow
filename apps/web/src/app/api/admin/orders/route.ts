@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const ordersQuerySchema = z.object({
   source: z
-    .enum(['web', 'telegram', 'whatsapp', 'mobile', 'counter', 'grabfood', 'foodpanda'])
+    .enum(['web', 'telegram', 'whatsapp', 'mobile', 'counter', 'grabfood', 'foodpanda', 'shopeefood'])
     .optional(),
   status: z.string().optional(),
   limit: z.coerce.number().min(1).max(500).optional().default(200),

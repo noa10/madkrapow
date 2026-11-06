@@ -65,7 +65,7 @@ async function posPost(path: string, body?: unknown) {
 type PosView = 'sale' | 'tables'
 
 export default function PosPage() {
-  const { hasAccess, isLoading: accessLoading } = useRoleGuard([
+  const { hasAccess, isLoading: accessLoading, role } = useRoleGuard([
     'admin',
     'manager',
     'cashier',
@@ -104,6 +104,7 @@ export default function PosPage() {
   const [settleError, setSettleError] = useState<string | null>(null)
   const [voidOrder, setVoidOrder] = useState<PosOpenOrder | null>(null)
   const [closeTableTarget, setCloseTableTarget] = useState<TableSummary | null>(null)
+  const [reopenTableTarget, setReopenTableTarget] = useState<TableSummary | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const submitLock = useRef(false)
@@ -526,6 +527,38 @@ export default function PosPage() {
     }
   }
 
+  const handleReopenTable = async (note?: string) => {
+    if (!reopenTableTarget || busyId) return
+    const { table } = reopenTableTarget
+    const reason = (note ?? '').trim()
+    if (!reason) return
+    setBusyId(table.id)
+    try {
+      const { res, json } = await posPost(`/api/pos/tables/${table.id}/reopen`, {
+        reason,
+      })
+      if (!res.ok) {
+        addToast({
+          type: 'error',
+          title: 'Could not reopen the table',
+          description: json?.error ?? `HTTP ${res.status}`,
+        })
+        return
+      }
+      addToast({
+        type: 'success',
+        title: `Table ${table.label} reopened`,
+        description: `${json.reopened} order${json.reopened === 1 ? '' : 's'} restored to the kitchen.`,
+      })
+      setReopenTableTarget(null)
+      await refresh()
+    } catch {
+      addToast({ type: 'error', title: 'Network error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const startTableOrder = (table: RestaurantTable, summary: TableSummary) => {
     setOrderType('dine_in')
     setSelectedTableId(table.id)
@@ -649,6 +682,7 @@ export default function PosPage() {
         <PosTableBoard
           summaries={summaries}
           unpaidTakeaway={unpaidTakeaway}
+          role={role}
           busyId={busyId}
           refreshing={refreshing}
           onNewOrder={startTableOrder}
@@ -658,6 +692,7 @@ export default function PosPage() {
           }}
           onVoid={setVoidOrder}
           onCloseTable={setCloseTableTarget}
+          onReopenTable={setReopenTableTarget}
           onRefresh={handleRefresh}
         />
       )}
@@ -736,6 +771,22 @@ export default function PosPage() {
         variant="warning"
         loading={busyId !== null && busyId === closeTableTarget?.table.id}
         onConfirm={handleCloseTable}
+      />
+
+      <ConfirmModal
+        open={reopenTableTarget !== null}
+        onClose={() => {
+          if (!busyId) setReopenTableTarget(null)
+        }}
+        title={`Reopen table ${reopenTableTarget?.table.label ?? ''}?`}
+        description="Today's closed orders are restored to the kitchen as Ready and the table re-occupies. Only use this when the table was closed by mistake."
+        confirmLabel="Reopen table"
+        variant="warning"
+        loading={busyId !== null && busyId === reopenTableTarget?.table.id}
+        requireNote
+        noteMinLength={3}
+        notePlaceholder="Why is this table being reopened? (min 3 chars)"
+        onConfirm={handleReopenTable}
       />
     </div>
   )

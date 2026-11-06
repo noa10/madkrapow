@@ -55,5 +55,5 @@ export function useRoleGuard(allowedRoles: string[]) {
     }
   }, [isLoading, hasAccess, router]);
 
-  return { hasAccess, isLoading };
+  return { hasAccess, isLoading, role: auth?.role ?? null };
 }

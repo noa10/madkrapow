@@ -7,6 +7,7 @@ export type TableEventType =
   | 'deactivated'
   | 'token_rotated'
   | 'deleted'
+  | 'reopened'
 
 interface TableEventInput {
   tableId: string | null

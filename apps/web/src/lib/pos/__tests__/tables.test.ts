@@ -3,6 +3,7 @@ import {
   buildOrderSettleTarget,
   buildTableSettleTarget,
   buildTableSettleTargetFromOrders,
+  canReopenTable,
   closeBlockedMessage,
   closeTableWarning,
   isOpenDineInStatus,
@@ -282,5 +283,27 @@ describe('normaliseOpenOrder', () => {
 
   it('defaults to an empty list when the embed is missing', () => {
     expect(normaliseOpenOrder(order()).items).toEqual([])
+  })
+})
+
+describe('canReopenTable', () => {
+  const free = summarizeTable(TABLE, [])
+  const occupied = summarizeTable(TABLE, [order({ status: 'ready' })])
+
+  it('allows admin and manager on a free table', () => {
+    expect(canReopenTable('admin', free)).toBe(true)
+    expect(canReopenTable('manager', free)).toBe(true)
+  })
+
+  it('rejects cashier, kitchen, missing and unknown roles', () => {
+    expect(canReopenTable('cashier', free)).toBe(false)
+    expect(canReopenTable('kitchen', free)).toBe(false)
+    expect(canReopenTable(null, free)).toBe(false)
+    expect(canReopenTable(undefined, free)).toBe(false)
+    expect(canReopenTable('owner', free)).toBe(false)
+  })
+
+  it('rejects an occupied table even for an admin', () => {
+    expect(canReopenTable('admin', occupied)).toBe(false)
   })
 })

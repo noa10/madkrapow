@@ -6,13 +6,9 @@ import { getAuthenticatedUser, getServiceClient } from '@/lib/supabase/server'
 const BulkCheckoutItemSchema = z.object({
   // Seeded menu IDs are GUID-shaped but do not have RFC version bits.
   id: z.guid(),
-  name: z.string().min(1),
-  price: z.number().int().positive(), // cents; the server re-prices the item
   quantity: z.number().positive().int().max(1000),
   modifiers: z.array(z.object({
     id: z.guid(),
-    name: z.string().min(1),
-    price_delta_cents: z.number().int(),
   })).max(20).default([]),
 })
 
@@ -194,7 +190,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BulkCheckoutR
         delivery_address: deliveryAddress,
         scheduled_for: requestedDateTime.toISOString(),
         requested_date: bulkFields.requested_date,
-        budget_cents: bulkFields.budget ? bulkFields.budget * 100 : null,
+        budget_cents: bulkFields.budget === undefined ? null : bulkFields.budget * 100,
         invoice_name: bulkFields.invoice_name || null,
         special_notes: bulkFields.special_notes || null,
         dropoff_instructions: bulkFields.dropoff_instructions || null,

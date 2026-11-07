@@ -57,6 +57,17 @@ matches a `.env.example` placeholder:
 | `GOOGLE_WEB_CLIENT_ID_MOBILE` / `GOOGLE_WEB_CLIENT_ID_MERCHANT` | both apps | yes |
 | `GOOGLE_ANDROID_CLIENT_ID_MOBILE` / `GOOGLE_ANDROID_CLIENT_ID_MERCHANT` | both apps | injected, unused by Envied |
 | `FCM_SENDER_ID_MERCHANT` | merchant | no |
+| `FIREBASE_GOOGLE_SERVICES_MERCHANT_BASE64` | merchant | yes; base64 of the merchant Firebase Android `google-services.json` |
+
+The merchant Firebase configuration must contain the Android app
+`com.madkrapow.merchant` and belong to the same Firebase project as the
+notification worker's service account. The release workflow validates the
+file and fails if it is absent or invalid. Keep the file out of source
+control; for a local notification-enabled debug build, place the correct file
+at `apps/merchant/android/app/google-services.json` before building. A debug
+build without it can run, but cannot receive FCM notifications. See the
+[notification backend guide](../supabase/functions/notify-admin/README.md) for
+server configuration and deployment requirements.
 
 The workflow writes `apps/<app>/.env` **from scratch**. Never seed it from
 `.env.example` first: Envied keeps the **first** value when a key is duplicated,

@@ -50,11 +50,13 @@ beforeAll(async () => {
     INSERT INTO employees VALUES ('${staff}', 'kitchen', true), ('${other}', 'cashier', true);
   `)
   await db.exec(await readFile(new URL('../supabase/migrations/019_fcm_tokens.sql', import.meta.url), 'utf8'))
-  await db.exec(await readFile(new URL('../supabase/migrations/073_merchant_notifications.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261105184927_merchant_notifications_registration.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261105185040_merchant_notifications_outbox.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../supabase/migrations/20261106120000_merchant_notification_preferences.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../supabase/migrations/20261107120000_merchant_notification_repeat.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../supabase/migrations/20261107130000_repeat_interval_10s.sql', import.meta.url), 'utf8'))
   await db.exec(await readFile(new URL('../supabase/migrations/20261107140000_alert_sound.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261107150000_merchant_notification_delivery_guards.sql', import.meta.url), 'utf8'))
   await db.query('INSERT INTO merchant_notification_owners(user_id) VALUES ($1)', [owner])
 })
 
@@ -460,6 +462,83 @@ describe('repeat until viewed', () => {
 
     await claims(staff); await ack(device, second)
     expect(await repeatRows()).toHaveLength(0)
+  })
+
+  it('starts the next order repeat even when the old schedule expired before cleanup', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(owner, 'service_role')
+    const first = await makeOrder('counter'); await event(first, 'created')
+    await complete((await claim())[0], 'sent')
+    await db.query("UPDATE merchant_notification_repeats SET expires_at=now() - interval '1 second'")
+
+    const second = await makeOrder('counter'); await event(second, 'created')
+    await complete((await claim())[0], 'sent')
+    expect((await repeatRows())[0]).toMatchObject({ order_id: second, repeat_count: 0 })
+    await db.query("UPDATE merchant_notification_repeats SET next_at=now() - interval '1 second'")
+    expect((await claimRepeat())[0].order_id).toBe(second)
+  })
+
+  it('does not replace a newer order when an older initial delivery completes later', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(owner, 'service_role')
+    const first = await makeOrder('counter'); await event(first, 'created')
+    const firstDelivery = (await claim())[0]
+    const second = await makeOrder('counter'); await event(second, 'created')
+    await complete((await claim())[0], 'sent')
+    await complete(firstDelivery, 'sent')
+    expect((await repeatRows())[0].order_id).toBe(second)
+  })
+
+  it('does not resume an older order when a newer order was viewed before its completion', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(owner, 'service_role')
+    const first = await makeOrder('counter'); await event(first, 'created')
+    const firstDelivery = (await claim())[0]
+    const second = await makeOrder('counter'); await event(second, 'created')
+    await complete((await claim())[0], 'sent')
+    await claims(staff); await ack(device, second)
+    await claims(owner, 'service_role')
+    await complete(firstDelivery, 'sent')
+    expect(await repeatRows()).toHaveLength(0)
+  })
+
+  it('does not resume an old retry after the newer order repeat window expired', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(owner, 'service_role')
+    const first = await makeOrder('counter'); await event(first, 'created')
+    const firstDelivery = (await claim())[0]
+    await complete(firstDelivery, 'retry')
+    const second = await makeOrder('counter'); await event(second, 'created')
+    await complete((await claim())[0], 'sent')
+    await db.query("UPDATE merchant_notification_repeats SET expires_at=now() - interval '1 second'")
+    await claimRepeat()
+    await db.query("UPDATE merchant_notification_deliveries SET available_at=now() WHERE id=$1", [firstDelivery.delivery_id])
+    await complete((await claim())[0], 'sent')
+    expect(await repeatRows()).toHaveLength(0)
+  })
+
+  it('does not resume an older order after a newer one was viewed before any delivery', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(owner, 'service_role')
+    const first = await makeOrder('counter'); await event(first, 'created')
+    const firstDelivery = (await claim())[0]
+    const second = await makeOrder('counter'); await event(second, 'created')
+    await claims(staff); await ack(device, second)
+    await claims(owner, 'service_role')
+    await complete(firstDelivery, 'sent')
+    expect(await repeatRows()).toHaveLength(0)
+  })
+
+  it('does not send an initial alert to a device that viewed the order before fan-out', async () => {
+    await claims(staff); await register(device); await setV2(device)
+    await claims(other); await register(secondDevice, 'another-token'); await setV2(secondDevice)
+    await claims(owner, 'service_role')
+    const order = await makeOrder('counter'); await event(order, 'created')
+    await claims(staff); await ack(device, order)
+
+    await claims(owner, 'service_role')
+    const deliveries = await claimAll()
+    expect(deliveries.map((row) => row.device_id)).toEqual([secondDevice])
   })
 
   it('stops repeats when preferences are disabled and preserves them on token refresh', async () => {

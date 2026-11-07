@@ -17,6 +17,11 @@ import '../data/notification_preferences.dart';
 import '../data/order_notification.dart';
 import '../providers/notification_providers.dart';
 
+typedef _HeldForegroundAlert = ({
+  OrderNotification notification,
+  RemoteNotification? message,
+});
+
 /// Keeps FCM listeners at the app root across sign-ins and route changes.
 class OrderNotificationHandler extends ConsumerStatefulWidget {
   const OrderNotificationHandler({
@@ -58,9 +63,7 @@ class _OrderNotificationHandlerState
   bool _drainScheduled = false;
   Timer? _routerRetry;
   int _routerRetryCount = 0;
-  OrderNotification? _pendingForeground;
-  RemoteNotification? _pendingForegroundMessage;
-  String? _lastForegroundEventId;
+  Map<String, _HeldForegroundAlert> _pendingForeground = const {};
 
   @override
   void initState() {
@@ -71,19 +74,19 @@ class _OrderNotificationHandlerState
     _authSubscription = ref.listenManual<AsyncValue<AuthState>>(
       authStateProvider,
       (_, next) {
+        if (next is AsyncError<AuthState>) _pendingForeground = const {};
         if (next is! AsyncData<AuthState>) return;
         final user = next.value.session?.user;
         final rawRole = user?.appMetadata['role'];
         final isStaff =
             rawRole is String && StaffRoleExtension.fromString(rawRole) != null;
         final userId = isStaff ? user?.id : null;
+        if (userId == null) _pendingForeground = const {};
         if (_previousUserId != null && _previousUserId != userId) {
           _taps.clear();
           _foregroundEvents.clear();
           ref.read(viewedOrderRegistryProvider).clear();
-          _pendingForeground = null;
-          _pendingForegroundMessage = null;
-          _lastForegroundEventId = null;
+          _pendingForeground = const {};
           _routerRetry?.cancel();
           _routerRetry = null;
           _routerRetryCount = 0;
@@ -134,7 +137,7 @@ class _OrderNotificationHandlerState
     if (!mounted) return;
     final notification = OrderNotification.fromData(message.data);
     if (notification == null) return;
-    _refreshOrders();
+    if (notification.repeatNumber == 0) _refreshOrders();
     _presentForeground(notification, message.notification);
   }
 
@@ -151,42 +154,34 @@ class _OrderNotificationHandlerState
     }
     if (ref.read(currentUserProvider) == null ||
         ref.read(staffRoleProvider) == null) {
-      // Auth restoration can finish after FCM delivers. Hold the alert until
-      // the session is known; the message is not redelivered later.
-      _pendingForeground = notification;
-      _pendingForegroundMessage = message;
+      // FCM does not replay foreground messages after session restoration.
+      // Keep each distinct event; coalesce its repeats to the latest alert.
+      // A known signed-out/non-staff session must not queue for a later user.
+      if (ref.read(authStateProvider) is AsyncLoading<AuthState>) {
+        final pending = _pendingForeground[notification.eventId];
+        if (pending == null ||
+            notification.repeatNumber > pending.notification.repeatNumber) {
+          _pendingForeground = {
+            ..._pendingForeground,
+            notification.eventId: (
+              notification: notification,
+              message: message,
+            ),
+          };
+        }
+      }
       return;
     }
     if (!_foregroundEvents.accept(notification.dedupeKey)) return;
-    final isNewOrder = _lastForegroundEventId != notification.eventId;
-    _lastForegroundEventId = notification.eventId;
-    unawaited(
-      _showForeground(
-        local,
-        notification,
-        message,
-        preferences,
-        clearExisting: isNewOrder,
-      ),
-    );
+    unawaited(_showForeground(local, notification, message, preferences));
   }
 
   Future<void> _showForeground(
     LocalOrderNotifications local,
     OrderNotification notification,
     RemoteNotification? message,
-    NotificationPreferences preferences, {
-    required bool clearExisting,
-  }) async {
-    if (clearExisting) {
-      // Keep the tray to the newest order only; repeats of the same event
-      // replace their own visible notification instead.
-      try {
-        await local.cancelAll();
-      } catch (_) {
-        debugPrint('Could not clear the notification tray.');
-      }
-    }
+    NotificationPreferences preferences,
+  ) async {
     try {
       await local.show(notification, message, preferences);
     } catch (_) {
@@ -219,12 +214,12 @@ class _OrderNotificationHandlerState
       final ready =
           ref.read(currentUserProvider) != null &&
           ref.read(staffRoleProvider) != null;
-      if (ready && _pendingForeground != null) {
-        final pending = _pendingForeground!;
-        final pendingMessage = _pendingForegroundMessage;
-        _pendingForeground = null;
-        _pendingForegroundMessage = null;
-        _presentForeground(pending, pendingMessage);
+      if (ready && _pendingForeground.isNotEmpty) {
+        final pending = _pendingForeground.values.toList(growable: false);
+        _pendingForeground = const {};
+        for (final alert in pending) {
+          _presentForeground(alert.notification, alert.message);
+        }
       }
       final routerReady = widget.navigatorKey.currentState?.mounted ?? false;
       final notification = _taps.takeIfReady(

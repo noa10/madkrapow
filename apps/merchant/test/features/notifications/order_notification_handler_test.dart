@@ -30,7 +30,6 @@ class RecordingLocalNotifications extends LocalOrderNotifications {
   final shown = <String>[];
   final dedupeKeys = <String>[];
   final preferences = <NotificationPreferences>[];
-  int cancelAllCalls = 0;
 
   @override
   Future<void> show(
@@ -42,11 +41,6 @@ class RecordingLocalNotifications extends LocalOrderNotifications {
     dedupeKeys.add(order.dedupeKey);
     this.preferences.add(preferences);
   }
-
-  @override
-  Future<void> cancelAll() async {
-    cancelAllCalls++;
-  }
 }
 
 const orderId = 'ef72d60e-9e92-4b0a-a0a9-cd3b4095780a';
@@ -57,7 +51,7 @@ const payload = {
 };
 const secondOrderPayload = {
   'type': 'new_order',
-  'order_id': orderId,
+  'order_id': 'a7fe288f-d4a3-4f2a-96c0-bd6c12ef952b',
   'event_id': 'event-2',
 };
 
@@ -76,12 +70,14 @@ typedef ForegroundHarness = ({
   StreamController<AuthState> auth,
 });
 
-/// Delivers one foreground alert before the restored session settles, then
-/// waits for it to be presented with [storedPreferences] loaded from disk.
+/// Delivers foreground alerts before the restored session settles, then waits
+/// for them to be presented with [storedPreferences] loaded from disk.
 Future<ForegroundHarness> pumpForegroundAlert(
   WidgetTester tester, {
   required Map<String, Object> storedPreferences,
   ViewedOrderRegistry? viewedRegistry,
+  List<Map<String, dynamic>> initialPayloads = const [payload],
+  AuthState? restoredAuthState,
 }) async {
   final auth = StreamController<AuthState>.broadcast(sync: true);
   final foreground = StreamController<RemoteMessage>.broadcast(sync: true);
@@ -131,9 +127,14 @@ Future<ForegroundHarness> pumpForegroundAlert(
       ),
     ),
   );
-  foreground.add(const RemoteMessage(data: payload));
+  for (final data in initialPayloads) {
+    foreground.add(RemoteMessage(data: data));
+  }
   await tester.pump();
-  auth.add(AuthState(AuthChangeEvent.initialSession, staffSession('cashier')));
+  auth.add(
+    restoredAuthState ??
+        AuthState(AuthChangeEvent.initialSession, staffSession('cashier')),
+  );
   await tester.pumpAndSettle();
   return (local: local, foreground: foreground, auth: auth);
 }
@@ -270,7 +271,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('resume refreshes the visible orders and kitchen providers', (
+  testWidgets('refreshes orders on resume and initial delivery, not repeats', (
     tester,
   ) async {
     final auth = StreamController<AuthState>.broadcast(sync: true);
@@ -342,6 +343,16 @@ void main() {
     expect(orderReads, 2);
     expect(kitchenReads, 2);
     verify(() => fcm.retry()).called(1);
+
+    foreground.add(const RemoteMessage(data: payload));
+    await tester.pumpAndSettle();
+    expect(orderReads, 3);
+    expect(kitchenReads, 3);
+
+    foreground.add(const RemoteMessage(data: {...payload, 'repeat': '1'}));
+    await tester.pumpAndSettle();
+    expect(orderReads, 3);
+    expect(kitchenReads, 3);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -429,6 +440,73 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('retains every distinct held order when repeats are disabled', (
+    tester,
+  ) async {
+    final harness = await pumpForegroundAlert(
+      tester,
+      storedPreferences: {
+        NotificationPreferencesStore.repeatUntilViewedKey: false,
+      },
+      initialPayloads: const [payload, secondOrderPayload, payload],
+    );
+
+    expect(harness.local.shown, ['event-1', 'event-2']);
+    expect(
+      harness.local.preferences.every((value) => !value.repeatUntilViewed),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('coalesces held repeats without dropping another order', (
+    tester,
+  ) async {
+    final harness = await pumpForegroundAlert(
+      tester,
+      storedPreferences: {},
+      initialPayloads: const [
+        payload,
+        secondOrderPayload,
+        {...payload, 'repeat': '1'},
+        {...payload, 'repeat': '1'},
+        payload,
+      ],
+    );
+
+    expect(harness.local.dedupeKeys, ['event-1#1', 'event-2#0']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final signedOut in [true, false]) {
+    testWidgets(
+      'drops held foreground alerts when auth resolves ${signedOut ? 'signed out' : 'without a staff role'}',
+      (tester) async {
+        final harness = await pumpForegroundAlert(
+          tester,
+          storedPreferences: {},
+          initialPayloads: const [payload, secondOrderPayload],
+          restoredAuthState: AuthState(
+            AuthChangeEvent.initialSession,
+            signedOut ? null : staffSession('customer'),
+          ),
+        );
+        expect(harness.local.shown, isEmpty);
+
+        // A stale push arriving after auth settled must not be held for the
+        // next staff account either.
+        harness.foreground.add(const RemoteMessage(data: payload));
+        await tester.pumpAndSettle();
+        harness.auth.add(
+          AuthState(AuthChangeEvent.signedIn, staffSession('manager')),
+        );
+        await tester.pumpAndSettle();
+        expect(harness.local.shown, isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   testWidgets('suppresses foreground alerts when order alerts are off', (
     tester,
   ) async {
@@ -446,7 +524,6 @@ void main() {
     (tester) async {
       final harness = await pumpForegroundAlert(tester, storedPreferences: {});
       expect(harness.local.dedupeKeys, ['event-1#0']);
-      expect(harness.local.cancelAllCalls, 1);
 
       harness.foreground.add(
         const RemoteMessage(data: {...payload, 'repeat': '1'}),
@@ -462,23 +539,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(harness.local.dedupeKeys, ['event-1#0', 'event-1#1', 'event-1#2']);
-      // Repeats replace their own visible alert instead of clearing the tray.
-      expect(harness.local.cancelAllCalls, 1);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
-  testWidgets('clears the tray when a different order supersedes the alert', (
+  testWidgets('preserves other tray entries when a different order arrives', (
     tester,
   ) async {
     final harness = await pumpForegroundAlert(tester, storedPreferences: {});
-    expect(harness.local.cancelAllCalls, 1);
 
     harness.foreground.add(const RemoteMessage(data: secondOrderPayload));
     await tester.pumpAndSettle();
 
     expect(harness.local.dedupeKeys.last, 'event-2#0');
-    expect(harness.local.cancelAllCalls, 2);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -493,7 +566,6 @@ void main() {
     );
 
     expect(harness.local.shown, isEmpty);
-    expect(harness.local.cancelAllCalls, 0);
 
     harness.foreground.add(
       const RemoteMessage(data: {...payload, 'repeat': '1'}),

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_preferences.dart';
@@ -10,6 +12,9 @@ import 'order_notification.dart';
 /// The same Android channel is used by FCM in the background and by local
 /// notifications when the app is in the foreground.
 class LocalOrderNotifications {
+  static const _androidOrders = MethodChannel(
+    'com.madkrapow.merchant/order_notifications',
+  );
   final _plugin = FlutterLocalNotificationsPlugin();
   final _taps = StreamController<String>.broadcast();
   String? _initialPayload;
@@ -77,8 +82,28 @@ class LocalOrderNotifications {
     RemoteNotification? message,
     NotificationPreferences preferences,
   ) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final channel = orderNotificationChannels.firstWhere(
+        (candidate) => candidate.id == preferences.channelId,
+      );
+      // The adapter posts with FCM's ID zero while giving each order a unique
+      // PendingIntent category. The local plugin uses the numeric ID alone for
+      // its tap intent, which would route every ID-zero alert to the last order.
+      return _androidOrders.invokeMethod<void>('show', {
+        'id': 0,
+        'orderId': order.orderId,
+        'tag': OrderNotification.androidTagForOrder(order.orderId),
+        'title': message?.title ?? 'New order',
+        'body': message?.body ?? 'Tap to view the order.',
+        'channelId': channel.id,
+        'playSound': preferences.sound,
+        'enableVibration': preferences.vibration,
+        'rawSound': channel.rawSound,
+        'payload': jsonEncode(order.toData()),
+      });
+    }
     return _plugin.show(
-      order.eventId.hashCode & 0x7fffffff,
+      OrderNotification.localIdForOrder(order.orderId),
       message?.title ?? 'New order',
       message?.body ?? 'Tap to view the order.',
       _details(preferences),
@@ -97,7 +122,19 @@ class LocalOrderNotifications {
     );
   }
 
-  Future<void> cancelAll() => _plugin.cancelAll();
+  /// Opening an order from any route dismisses its alert without clearing
+  /// other orders. An event ID is deliberately not needed here.
+  Future<void> dismissOrder(String orderId) async {
+    if (!OrderNotification.isValidOrderId(orderId)) return;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _plugin.cancel(
+        0,
+        tag: OrderNotification.androidTagForOrder(orderId),
+      );
+    } else {
+      await _plugin.cancel(OrderNotification.localIdForOrder(orderId));
+    }
+  }
 
   NotificationDetails _details(NotificationPreferences preferences) {
     final channel = orderNotificationChannels.firstWhere(

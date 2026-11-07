@@ -41,11 +41,11 @@ class FakeMerchantOrderRepository extends MerchantOrderRepository {
 }
 
 class FakeLocalOrderNotifications extends LocalOrderNotifications {
-  int cancelAllCalls = 0;
+  final dismissedOrders = <String>[];
 
   @override
-  Future<void> cancelAll() async {
-    cancelAllCalls++;
+  Future<void> dismissOrder(String orderId) async {
+    dismissedOrders.add(orderId);
   }
 }
 
@@ -128,7 +128,7 @@ void main() {
     expect(calls.single.$1, 'acknowledge_merchant_order_view');
     expect(calls.single.$2, {'p_device_id': deviceId, 'p_order_id': orderId});
     expect(registry.contains(orderId), isTrue);
-    expect(local.cancelAllCalls, 1);
+    expect(local.dismissedOrders, [orderId]);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

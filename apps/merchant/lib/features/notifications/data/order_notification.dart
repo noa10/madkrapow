@@ -12,10 +12,25 @@ class OrderNotification {
 
   String get dedupeKey => '$eventId#$repeatNumber';
 
+  /// Android/FCM identifies a tray entry by both tag and integer ID. FCM uses
+  /// ID zero, so the full order UUID in the tag distinguishes separate orders.
+  static String androidTagForOrder(String orderId) =>
+      'merchant-order-${orderId.toLowerCase()}';
+
+  /// Platforms without Android tags require a stable integer local ID.
+  static int localIdForOrder(String orderId) =>
+      orderId.toLowerCase().codeUnits.fold<int>(
+        0x811c9dc5,
+        (hash, unit) => ((hash ^ unit) * 0x01000193) & 0xffffffff,
+      ) &
+      0x7fffffff;
+
   static final _uuid = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     caseSensitive: false,
   );
+
+  static bool isValidOrderId(String orderId) => _uuid.hasMatch(orderId);
 
   static int _repeatNumber(Object? repeat) {
     final value = repeat is String
@@ -32,7 +47,7 @@ class OrderNotification {
     final eventId = data['event_id'];
     if (data['type'] != 'new_order' ||
         orderId is! String ||
-        !_uuid.hasMatch(orderId) ||
+        !isValidOrderId(orderId) ||
         eventId is! String ||
         eventId.trim().isEmpty ||
         eventId.length > 200) {

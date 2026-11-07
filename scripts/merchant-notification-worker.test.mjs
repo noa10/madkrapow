@@ -43,7 +43,7 @@ describe('authenticated bounded FCM worker', () => {
     const { message } = JSON.parse(options.body)
     expect(message).toMatchObject({ token: delivery.token, data: { order_id: 'order', event_id: 'event' },
       notification: { title: expect.any(String), body: expect.any(String) },
-      android: { notification: { channel_id: 'merchant_orders', tag: 'merchant-order-event' } } })
+      android: { notification: { channel_id: 'merchant_orders', tag: 'merchant-order-order' } } })
     expect(supabase.rpc).toHaveBeenCalledWith('complete_merchant_notification', {
       p_delivery_id: 'delivery', p_lease_id: 'lease', p_outcome: 'sent',
     })
@@ -187,8 +187,8 @@ describe('repeat order alerts', () => {
     })
     // The same tag as the initial alert replaces the visible notification, and
     // Android re-alerts on replacement, so one entry sounds every repeat.
-    expect(message.android.notification.tag).toBe('merchant-order-event')
-    expect(message.apns.headers['apns-collapse-id']).toBe('event')
+    expect(message.android.notification.tag).toBe('merchant-order-order')
+    expect(message.apns.headers['apns-collapse-id']).toBe('order')
     expect(supabase.rpc).toHaveBeenCalledWith('complete_merchant_notification_repeat', {
       p_token_id: 'token-id', p_lease_id: 'lease', p_outcome: 'sent',
     })
@@ -204,8 +204,8 @@ describe('repeat order alerts', () => {
     expect((await handler(request())).status).toBe(200)
     const { message } = JSON.parse(send.mock.calls[0][1].body)
     expect(message.data.repeat).toBe('0')
-    expect(message.android.notification.tag).toBe('merchant-order-event')
-    expect(message.apns.headers['apns-collapse-id']).toBe('event')
+    expect(message.android.notification.tag).toBe('merchant-order-order')
+    expect(message.apns.headers['apns-collapse-id']).toBe('order')
   })
 
   it('clamps an unexpected repeat sequence to the supported maximum', async () => {
@@ -217,6 +217,6 @@ describe('repeat order alerts', () => {
     expect((await handler(request())).status).toBe(200)
     const { message } = JSON.parse(send.mock.calls[0][1].body)
     expect(message.data.repeat).toBe('90')
-    expect(message.android.notification.tag).toBe('merchant-order-event')
+    expect(message.android.notification.tag).toBe('merchant-order-order')
   })
 })

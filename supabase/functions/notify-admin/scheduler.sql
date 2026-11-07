@@ -1,4 +1,4 @@
--- OPTIONAL deployment setup, executed separately after migration 073 and secret provisioning.
+-- OPTIONAL deployment setup, executed after notification migrations and secret provisioning.
 -- This file is not a migration and has not been run against a remote database.
 -- Requires pg_cron, pg_net and Supabase Vault already enabled by the operator.
 BEGIN;

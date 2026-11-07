@@ -107,8 +107,8 @@ function messageFor(delivery) {
     // replaces the visible notification instead of stacking a new one. The
     // system re-alerts on each replacement (no only-alert-once flag), which is
     // what makes the sound play every repeat interval.
-    android: { priority: 'high', notification: { channel_id: channelFor(delivery), tag: `merchant-order-${delivery.event_id}` } },
-    apns: { headers: { 'apns-collapse-id': delivery.event_id }, payload: { aps: sound ? { sound: 'default' } : {} } },
+    android: { priority: 'high', notification: { channel_id: channelFor(delivery), tag: `merchant-order-${delivery.order_id}` } },
+    apns: { headers: { 'apns-collapse-id': delivery.order_id }, payload: { aps: sound ? { sound: 'default' } : {} } },
   }
 }
 

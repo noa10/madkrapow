@@ -65,6 +65,22 @@ void main() {
     expect(firstRepeat.dedupeKey, isNot(first.dedupeKey));
   });
 
+  test(
+    'uses a stable order identity independent of event, repeat, or casing',
+    () {
+      expect(
+        OrderNotification.androidTagForOrder(orderId.toUpperCase()),
+        'merchant-order-$orderId',
+      );
+      expect(
+        OrderNotification.localIdForOrder(orderId.toUpperCase()),
+        OrderNotification.localIdForOrder(orderId),
+      );
+      expect(OrderNotification.isValidOrderId(orderId), isTrue);
+      expect(OrderNotification.isValidOrderId('../orders'), isFalse);
+    },
+  );
+
   test('holds a tap until both authentication and routing are ready', () {
     final queue = NotificationTapQueue();
     queue.add(data);

@@ -18,35 +18,43 @@ class FcmRepository {
     this._supabase, {
     required DeviceIdentity identity,
     required NotificationPreferencesStore preferences,
+    FirebaseMessaging? messaging,
   }) : _identity = identity,
-       _preferences = preferences;
+       _preferences = preferences,
+       _providedMessaging = messaging;
 
   final SupabaseClient _supabase;
   final DeviceIdentity _identity;
   final NotificationPreferencesStore _preferences;
+  final FirebaseMessaging? _providedMessaging;
+  FirebaseMessaging get _messaging =>
+      _providedMessaging ?? FirebaseMessaging.instance;
   TokenRegistrationManager? _manager;
   bool _signingOut = false;
+  bool _disposed = false;
 
   TokenRegistrationManager get _registrationManager =>
       _manager ??= TokenRegistrationManager(
-        tokenRefreshes: FirebaseMessaging.instance.onTokenRefresh,
+        tokenRefreshes: _messaging.onTokenRefresh,
         currentUserId: () => _supabase.auth.currentUser?.id,
-        getToken: FirebaseMessaging.instance.getToken,
+        getToken: _messaging.getToken,
         register: _register,
       );
 
   void updateUser(String? userId) {
-    if (!firebaseInitialized || _signingOut) return;
+    if (!firebaseInitialized || _signingOut || _disposed) return;
     _registrationManager.updateUser(userId);
   }
 
   void retry() {
-    if (firebaseInitialized && !_signingOut) _manager?.retry();
+    if (firebaseInitialized && !_signingOut && !_disposed) _manager?.retry();
   }
 
   Future<void> _register(String userId, String token) async {
     final deviceId = await _identity.id;
-    if (_signingOut || _supabase.auth.currentUser?.id != userId) return;
+    if (_signingOut || _disposed || _supabase.auth.currentUser?.id != userId) {
+      return;
+    }
     try {
       await _supabase.rpc(
         'register_merchant_fcm_token',
@@ -101,20 +109,22 @@ class FcmRepository {
   /// revocation). Stop registration and invalidate the token locally so the
   /// device stops receiving the previous user's order alerts.
   Future<void> invalidate() async {
-    if (_signingOut) return;
+    if (_signingOut || _disposed) return;
     _signingOut = true;
     try {
       await _manager?.stop();
       await _invalidateFcmToken();
     } finally {
-      _signingOut = false;
+      // A new session may have arrived while token deletion was in flight.
+      // Resume only after invalidating the old token, using the current role.
+      finishSignOut();
     }
   }
 
   Future<void> _invalidateFcmToken() async {
     if (!firebaseInitialized) return;
     try {
-      await FirebaseMessaging.instance.deleteToken();
+      await _messaging.deleteToken();
     } catch (_) {
       debugPrint('Could not invalidate the FCM token.');
     }
@@ -123,6 +133,7 @@ class FcmRepository {
   /// If Supabase sign-out failed, resume registration for the still-valid user.
   void finishSignOut() {
     _signingOut = false;
+    if (_disposed) return;
     final user = _supabase.auth.currentUser;
     final role = user?.appMetadata['role'];
     if (user != null &&
@@ -134,5 +145,8 @@ class FcmRepository {
     }
   }
 
-  Future<void> dispose() async => _manager?.dispose();
+  Future<void> dispose() async {
+    _disposed = true;
+    await _manager?.dispose();
+  }
 }

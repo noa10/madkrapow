@@ -2,7 +2,7 @@
 
 This file contains curated memories, decisions, and learnings that persist across sessions. This is your long-term memory — the distilled essence of what matters.
 
-**Last Updated**: 2026-10-20
+**Last Updated**: 2026-11-07
 
 ---
 
@@ -15,6 +15,33 @@ This file contains curated memories, decisions, and learnings that persist acros
 ---
 
 ## Key Architectural Decisions
+
+### 2026-11-07: One Android notification per order (PR #516 review)
+- Foreground and FCM background notifications share ID `0` and tag
+  `merchant-order-<order_id>`. The native foreground adapter adds a unique Intent
+  category per order because Android PendingIntent matching ignores payload extras.
+  Opening an order cancels only that tag/ID pair; distinct orders remain visible.
+- Queue distinct foreground events while auth restores, coalescing each event's
+  repeats, and refresh order queries only for initial delivery. Remote sign-out
+  invalidation replays the latest authorized session after token deletion finishes.
+- Local verification: 348 Flutter tests, clean analyzer, notification Dart line
+  coverage 84.94%; worker 29 tests and 93.18% line coverage. Android debug build passed.
+  Updated worker/app rollout and device smoke remain pending; iOS cross-state
+  local/APNs coalescing is unverified.
+
+### 2026-11-07: Canonical merchant notification migration history (PR #516)
+- Removed the obsolete combined `073_merchant_notifications.sql`: `073` belongs to
+  `analytics_dine_in_count`, and PR #510 already merged the same notification schema
+  as `20261105184927` (registration) and `20261105185040` (outbox). Renaming the
+  combined file would replay non-idempotent DDL and fail again.
+- Read-only production verification found the correct analytics `073` and both
+  canonical notification versions already recorded, so no history repair is needed.
+- The merchant SQL tests now load those canonical migrations. A migration-version
+  regression rejects duplicate numeric prefixes before local/bootstrap SQL runs.
+- Forward migration `20261107150000` fixes view-before-fanout initial alerts and
+  expired repeat rows blocking a newer order; durable sent/view records also
+  prevent delayed older completions from resurrecting repeats. It is included in the review changes;
+  deployment remains pending.
 
 ### 2026-11-06: Per-device merchant notification settings
 - **Decision**: Order alerts, sound and vibration are configurable per device by
@@ -59,21 +86,23 @@ This file contains curated memories, decisions, and learnings that persist acros
 
 ### 2026-11-05: Merchant order notifications (implemented, not deployed)
 - **Decision**: New orders are alerted on the merchant Android app through a durable
-  transactional outbox (migration `073`) plus a separate `notify-admin` worker. Only
+  transactional outbox (canonical migration `20261105185040`) plus a separate `notify-admin` worker. Only
   actionable sources enqueue: paid web/Telegram/WhatsApp orders, GrabFood, counter POS,
   table QR and bulk submissions. Abandoned unpaid checkouts, historical imports, edits and
   later status changes do not.
 - **Rationale**: The previous APK had no Firebase configuration, and the old sender had no
   reliable order-to-FCM connection, an expiring credential and a mismatched payload.
 - **Implementation**: Table-QR and bulk order writes moved into service-only atomic RPCs
-  (`074`, `075`) so their lines, audit event and notification intent commit together.
+  (`20261105184658`, `20261105184805`) so their lines, audit event and notification intent commit together.
   Staff register tokens through `register_merchant_fcm_token`; the worker fans out per
   device with leases, retries and invalid-token handling. The merchant app shows a
   high-importance `merchant_orders` channel, local foreground alerts and tap routing.
-- **Deployment is pending**: migration `073`/`074`/`075`, owner allowlist, Firebase
+- **Initial deployment requirements**: canonical registration `20261105184927` and outbox
+  `20261105185040`, the atomic RPC migrations above, owner allowlist, Firebase
   service account, Edge Function secrets, `scheduler.sql` (optional prompt wake + cron),
   and `FIREBASE_GOOGLE_SERVICES_MERCHANT_BASE64` for releases. Until then the phone has no
-  working push delivery. See `supabase/functions/notify-admin/README.md`.
+  working push delivery. These backend migrations were subsequently deployed (see the
+  2026-11-06 entries). See `supabase/functions/notify-admin/README.md`.
 
 ### 2026-03-17: ECC Integration
 - **Decision**: Merged ECC (Everything Claude Code) agent harness patterns into the project

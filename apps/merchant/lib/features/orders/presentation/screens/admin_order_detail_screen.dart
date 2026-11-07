@@ -98,9 +98,9 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
     final notifications = ref.read(localOrderNotificationsProvider);
     if (notifications != null) {
       try {
-        await notifications.cancelAll();
+        await notifications.dismissOrder(widget.orderId);
       } catch (_) {
-        debugPrint('Could not clear the notification tray.');
+        debugPrint('Could not dismiss the opened order notification.');
       }
     }
 

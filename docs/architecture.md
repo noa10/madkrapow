@@ -568,8 +568,13 @@ status updates and historical imports do not enqueue alerts.
 
 An authenticated `notify-admin` worker fans out the outbox to active staff
 installations and tracks leased deliveries and retries per device. FCM sends a
-stable event ID and `order_id`; Android uses the `merchant_orders` channel and
-opens the corresponding order when tapped. A post-commit wake-up and scheduled
+stable event ID and `order_id`; Android uses per-device sound/vibration channels
+and a shared `(merchant-order-<order_id>, 0)` notification identity across FCM
+and foreground alerts. Each order has a separate tap intent, and opening it
+dismisses only its alert and acknowledges that installation's view. Distinct
+foreground events queue while auth restores; repeats avoid full order-list
+refetches. Only the latest unviewed order repeats, bounded to 15 minutes.
+A post-commit wake-up and scheduled
 retry require separate operator setup. Delivery is best effort: a timeout after
 FCM accepts a message can still cause a repeated alert.
 

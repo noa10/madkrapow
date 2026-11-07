@@ -558,6 +558,30 @@ Event: postgres_changes (INSERT on orders)
 Payload: new/updated row → updates OrderFeed, plays audio on INSERT
 ```
 
+**Merchant mobile order alerts:**
+
+Actionable new orders create one `new_order` outbox record in the same
+transaction as the order's source event or confirmed payment transition.
+Table-QR and bulk submissions use atomic RPCs so their lines and audit event
+are committed with the notification intent. Unpaid checkout attempts, later
+status updates and historical imports do not enqueue alerts.
+
+An authenticated `notify-admin` worker fans out the outbox to active staff
+installations and tracks leased deliveries and retries per device. FCM sends a
+stable event ID and `order_id`; Android uses per-device sound/vibration channels
+and a shared `(merchant-order-<order_id>, 0)` notification identity across FCM
+and foreground alerts. Each order has a separate tap intent, and opening it
+dismisses only its alert and acknowledges that installation's view. Distinct
+foreground events queue while auth restores; repeats avoid full order-list
+refetches. Only the latest unviewed order repeats, bounded to 15 minutes.
+A post-commit wake-up and scheduled
+retry require separate operator setup. Delivery is best effort: a timeout after
+FCM accepts a message can still cause a repeated alert.
+
+See [`supabase/functions/notify-admin/README.md`](../supabase/functions/notify-admin/README.md)
+for configuration, rollout and verification. The presence of these files does
+not mean the worker or scheduler has been deployed.
+
 ---
 
 ## Multi-Channel Order Model (POS)

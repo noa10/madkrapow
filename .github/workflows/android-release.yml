@@ -59,6 +59,50 @@ jobs:
             echo "release_name=$APP v$VERSION"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Configure merchant Firebase
+        if: steps.tag.outputs.app == 'merchant'
+        shell: bash
+        env:
+          FIREBASE_CONFIG_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_MERCHANT_BASE64 }}
+        run: |
+          set +x
+          set -euo pipefail
+          if [[ -z "$FIREBASE_CONFIG_BASE64" ]]; then
+            echo "::error::Missing required secret FIREBASE_GOOGLE_SERVICES_MERCHANT_BASE64; merchant notifications would not work."
+            exit 1
+          fi
+          CONFIG=apps/merchant/android/app/google-services.json
+          if ! printf '%s' "$FIREBASE_CONFIG_BASE64" | base64 --decode > "$CONFIG"; then
+            echo "::error::Merchant Firebase configuration is not valid base64."
+            exit 1
+          fi
+          chmod 600 "$CONFIG"
+          # Do not print credentials or the contents of the Firebase config.
+          if ! python3 -I - "$CONFIG" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding='utf-8') as stream:
+                  config = json.load(stream)
+              project = config['project_info']
+              assert str(project['project_number']).isdigit()
+              assert isinstance(project['project_id'], str) and project['project_id'].strip()
+              clients = config['client']
+              assert any(
+                  client['client_info']['android_client_info']['package_name'] == 'com.madkrapow.merchant'
+                  and client['client_info']['mobilesdk_app_id']
+                  and any(key.get('current_key') for key in client.get('api_key', []))
+                  for client in clients
+              )
+          except (OSError, ValueError, KeyError, TypeError, AssertionError):
+              sys.exit(1)
+          PY
+          then
+            echo "::error::Merchant Firebase configuration is invalid or does not contain com.madkrapow.merchant."
+            exit 1
+          fi
+
       - name: Set up JDK
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -325,5 +369,6 @@ jobs:
         run: |
           rm -f "apps/${APP}/android/app/release.keystore" \
                 "apps/${APP}/android/app/key.properties" || true
+          rm -f "apps/merchant/android/app/google-services.json"
           test ! -f "apps/${APP}/android/app/release.keystore"
           test ! -f "apps/${APP}/android/app/key.properties"

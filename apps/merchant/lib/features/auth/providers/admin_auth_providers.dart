@@ -42,7 +42,10 @@ final isAdminProvider = Provider<bool>((ref) {
 
 /// A family provider that checks if the current user has any of the allowed roles.
 /// Returns false if not authenticated.
-final roleGuardProvider = Provider.family<bool, List<String>>((ref, allowedRoles) {
+final roleGuardProvider = Provider.family<bool, List<String>>((
+  ref,
+  allowedRoles,
+) {
   final role = ref.watch(currentRoleProvider);
   if (role == null) return false;
   return allowedRoles.contains(role);
@@ -59,10 +62,7 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
   @override
   void build() {}
 
-  Future<void> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final repo = ref.read(adminAuthRepositoryProvider);
@@ -84,7 +84,7 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
       if (staffRole == null) {
         // Not a recognized staff role — sign them out immediately
         debugPrint('AdminSignIn: unrecognized role "$role", signing out');
-        await repo.signOut();
+        await _rejectNonStaff(repo);
         throw const AuthRequiredException('Access denied — unrecognized role');
       }
     });
@@ -114,7 +114,7 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
       debugPrint('AdminSignIn(google): user=${user.email}, role=$role');
       final staffRole = StaffRoleExtension.fromString(role);
       if (staffRole == null) {
-        await repo.signOut();
+        await _rejectNonStaff(repo);
         throw const AuthRequiredException('Access denied — unrecognized role');
       }
     });
@@ -122,6 +122,22 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
       debugPrint('AdminSignIn(google): failed — ${state.error}');
     }
     return !cancelled && !state.hasError;
+  }
+
+  /// A signed-in auth user without a staff role must not keep this device
+  /// registered for the previous staff member's order alerts.
+  Future<void> _rejectNonStaff(AdminAuthRepository repo) async {
+    final fcmRepo = ref.read(fcmRepositoryProvider);
+    try {
+      await fcmRepo.deleteToken();
+    } catch (_) {
+      debugPrint('AdminSignIn: FCM token cleanup failed.');
+    }
+    try {
+      await repo.signOut();
+    } finally {
+      fcmRepo.finishSignOut();
+    }
   }
 
   Future<void> signOut() async {
@@ -132,14 +148,19 @@ class AdminSignInNotifier extends AsyncNotifier<void> {
     // clears auth.currentUser, FcmRepository.deleteToken() can no longer
     // identify the row to remove and returns early — leaving the device
     // subscribed to the signed-out staff member's order pushes.
+    final fcmRepo = ref.read(fcmRepositoryProvider);
     try {
-      await ref.read(fcmRepositoryProvider).deleteToken();
-    } catch (e) {
-      debugPrint('AdminSignIn: FCM token cleanup failed — $e');
+      await fcmRepo.deleteToken();
+    } catch (_) {
+      debugPrint('AdminSignIn: FCM token cleanup failed.');
     }
 
     final repo = ref.read(adminAuthRepositoryProvider);
-    await repo.signOut();
+    try {
+      await repo.signOut();
+    } finally {
+      fcmRepo.finishSignOut();
+    }
   }
 }
 

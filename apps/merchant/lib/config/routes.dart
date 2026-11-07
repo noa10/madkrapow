@@ -38,6 +38,9 @@ class AppRoutes {
   // Sales Reports
   static const salesReports = '/more/reports';
 
+  // Notification settings (available to every staff role)
+  static const notificationSettings = '/more/notifications';
+
   // Settings
   static const settings = '/settings';
 }

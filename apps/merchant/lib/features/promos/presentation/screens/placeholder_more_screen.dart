@@ -93,6 +93,17 @@ class _PlaceholderMoreScreenState extends ConsumerState<PlaceholderMoreScreen> {
           onTap: () => context.go(AppRoutes.salesReports),
         ),
         const Divider(),
+        ListTile(
+          leading: const Icon(
+            Icons.notifications_outlined,
+            color: AppColors.emberText,
+          ),
+          title: const Text('Notification Settings'),
+          subtitle: const Text('Order alerts, sound and vibration'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go(AppRoutes.notificationSettings),
+        ),
+        const Divider(),
         if (canManageStaff) ...[
           ListTile(
             leading: const Icon(Icons.people_outline),

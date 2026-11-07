@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -12,10 +13,14 @@ import 'config/env.dart';
 import 'core/services/update/update_providers.dart';
 import 'core/services/update/update_settings_service.dart';
 import 'core/services/update/updater_config.dart';
+import 'features/notifications/data/local_order_notifications.dart';
+import 'features/notifications/data/notification_preferences_store.dart';
+import 'features/notifications/providers/notification_providers.dart';
 
 /// Whether Firebase initialized successfully.
 /// Used to guard FCM calls when config files are missing.
 bool firebaseInitialized = false;
+LocalOrderNotifications? localOrderNotifications;
 
 /// Top-level background message handler.
 /// Required for FCM to work when the app is in the background/terminated.
@@ -33,18 +38,39 @@ void main() async {
     anonKey: AppEnv.supabaseAnonKey,
   );
 
-  // Firebase init is wrapped in try-catch because google-services.json /
-  // GoogleService-Info.plist may not be configured yet in dev builds.
+  // Android reads the real configuration generated from google-services.json.
+  // Debug builds without that file stay usable, with a visible warning.
   try {
     await Firebase.initializeApp();
-    await FirebaseMessaging.instance.requestPermission();
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     firebaseInitialized = true;
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   } catch (_) {
-    // Firebase not configured — FCM features will be unavailable
+    debugPrint(
+      'Firebase initialization failed; order notifications are unavailable.',
+    );
+  }
+
+  if (firebaseInitialized) {
+    try {
+      final localNotifications = LocalOrderNotifications();
+      await localNotifications.initialize();
+      localOrderNotifications = localNotifications;
+    } catch (_) {
+      debugPrint('Local order notification setup failed.');
+    }
+    try {
+      await FirebaseMessaging.instance.requestPermission();
+    } catch (_) {
+      debugPrint('Could not request order notification permission.');
+    }
   }
 
   await Hive.initFlutter();
+
+  // Local notification preferences are read synchronously by the settings UI
+  // and the foreground alert handler.
+  final sharedPreferences = await SharedPreferences.getInstance();
+  final notificationPreferences = NotificationPreferencesStore(sharedPreferences);
 
   // In-app updater prerequisites. Loaded here so first frame sees them.
   final updateSettings = await UpdateSettingsService.create();
@@ -64,6 +90,9 @@ void main() async {
         updaterConfigProvider.overrideWithValue(updaterConfig),
         updateSettingsProvider.overrideWithValue(updateSettings),
         packageInfoProvider.overrideWithValue(packageInfo),
+        notificationPreferencesStoreProvider.overrideWithValue(
+          notificationPreferences,
+        ),
       ],
       child: const MerchantApp(),
     ),

@@ -1,4 +1,3 @@
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,11 +21,11 @@ import 'features/menu/presentation/screens/menu_item_form_screen.dart';
 import 'features/menu/presentation/screens/menu_management_screen.dart';
 import 'features/menu/presentation/screens/modifier_management_screen.dart';
 import 'features/menu/providers/menu_providers.dart';
-import 'features/notifications/providers/notification_providers.dart';
+import 'features/notifications/presentation/order_notification_handler.dart';
+import 'features/notifications/presentation/screens/notification_settings_screen.dart';
 import 'features/orders/presentation/screens/admin_orders_screen.dart';
 import 'features/orders/presentation/screens/admin_order_detail_screen.dart';
 import 'features/orders/presentation/screens/kitchen_display_screen.dart';
-import 'features/orders/providers/admin_order_providers.dart';
 import 'features/analytics/presentation/screens/sales_reports_screen.dart';
 import 'features/pos/presentation/screens/pos_screen.dart';
 import 'features/pos/presentation/screens/tables_management_screen.dart';
@@ -35,7 +34,7 @@ import 'features/promos/presentation/screens/promo_list_screen.dart';
 import 'features/promos/presentation/screens/promo_form_screen.dart';
 import 'features/promos/providers/promo_providers.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
-import 'main.dart' show firebaseInitialized;
+import 'main.dart' show firebaseInitialized, localOrderNotifications;
 
 // Navigator keys for each branch of the shell
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -204,6 +203,11 @@ GoRouter _createRouter(Ref ref) {
                     builder: (context, state) => const SalesReportsScreen(),
                   ),
                   GoRoute(
+                    path: 'notifications',
+                    builder: (context, state) =>
+                        const NotificationSettingsScreen(),
+                  ),
+                  GoRoute(
                     path: 'staff',
                     builder: (context, state) => const EmployeeListScreen(),
                     routes: [
@@ -262,104 +266,6 @@ GoRouter _createRouter(Ref ref) {
 }
 
 final routerProvider = Provider<GoRouter>(_createRouter);
-
-/// Listens for FCM notification taps and navigates to the order detail.
-/// Also registers/deletes FCM tokens on sign-in/sign-out.
-class _NotificationHandler extends ConsumerStatefulWidget {
-  const _NotificationHandler({required this.child});
-
-  final Widget child;
-
-  @override
-  ConsumerState<_NotificationHandler> createState() =>
-      _NotificationHandlerState();
-}
-
-class _NotificationHandlerState extends ConsumerState<_NotificationHandler> {
-  @override
-  void initState() {
-    super.initState();
-    _setupNotificationTap();
-    _setupForegroundListener();
-    _setupTokenManagement();
-  }
-
-  void _setupNotificationTap() {
-    if (!firebaseInitialized) return;
-
-    // App opened from terminated state via notification tap
-    FirebaseMessaging.instance.getInitialMessage().then((message) {
-      if (message != null && mounted) {
-        _navigateToOrder(message);
-      }
-    });
-
-    // App opened from background via notification tap
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      if (mounted) {
-        _navigateToOrder(message);
-      }
-    });
-  }
-
-  void _navigateToOrder(RemoteMessage message) {
-    final orderId = message.data['order_id'] as String?;
-    if (orderId == null || orderId.isEmpty) return;
-
-    // Validate UUID format before navigating
-    final uuidRegex = RegExp(
-      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-      caseSensitive: false,
-    );
-    if (!uuidRegex.hasMatch(orderId)) return;
-
-    // Only navigate if user is authenticated with a valid staff role
-    final user = ref.read(currentUserProvider);
-    final staffRole = ref.read(staffRoleProvider);
-    if (user == null || staffRole == null) return;
-
-    final router = ref.read(routerProvider);
-    router.go('/orders/$orderId');
-  }
-
-  void _setupForegroundListener() {
-    if (!firebaseInitialized) return;
-
-    FirebaseMessaging.onMessage.listen((message) {
-      // Invalidate orders list so it refreshes with new/updated orders
-      ref.invalidate(adminOrdersProvider);
-    });
-  }
-
-  void _setupTokenManagement() {
-    ref.listenManual(authStateProvider, (_, _) async {
-      if (!mounted) return;
-      try {
-        final user = ref.read(currentUserProvider);
-        final staffRole = ref.read(staffRoleProvider);
-        // Register FCM for all authenticated staff; server filters by role.
-        //
-        // Deletion is deliberately not handled here: by the time this listener
-        // observes a sign-out, auth.currentUser is already null and
-        // FcmRepository.deleteToken() would no-op. AdminSignInNotifier.signOut()
-        // deletes while the session is still valid.
-        if (user != null && staffRole != null) {
-          await ref.read(fcmRepositoryProvider).registerToken();
-          ref.read(fcmRepositoryProvider).setupTokenRefresh();
-        }
-      } catch (e) {
-        // Guard: sign-out triggers GoRouter redirect which may dispose this
-        // widget before the listener callback finishes using ref.
-        debugPrint('NotificationHandler: token management skipped — $e');
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
-}
 
 /// Shows AnalyticsScreen for admin.
 /// Managers no longer have a dedicated Analytics/Staff branch tab —
@@ -502,14 +408,43 @@ class MerchantApp extends ConsumerWidget {
       themeMode: ThemeMode.dark,
       routerConfig: router,
       builder: (context, child) {
-        return UpdateLifecycleObserver(
-          child: UpdatePromptMount(
-            child: _WhatsNewGate(
-              child: _NotificationHandler(
-                child: child ?? const SizedBox.shrink(),
+        return Column(
+          children: [
+            if (!firebaseInitialized || localOrderNotifications == null)
+              const SafeArea(
+                bottom: false,
+                child: Material(
+                  color: Color(0xFF8A4300),
+                  child: Padding(
+                    padding: EdgeInsets.all(10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        'Order notifications are unavailable in this build. '
+                        'Check the Firebase configuration.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: UpdateLifecycleObserver(
+                child: UpdatePromptMount(
+                  child: _WhatsNewGate(
+                    child: OrderNotificationHandler(
+                      router: router,
+                      navigatorKey: rootNavigatorKey,
+                      firebaseReady: firebaseInitialized,
+                      localNotifications: localOrderNotifications,
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         );
       },
     );

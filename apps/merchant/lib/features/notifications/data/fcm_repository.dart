@@ -1,123 +1,138 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:hive/hive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/constants/roles.dart';
 import '../../../main.dart' show firebaseInitialized;
+import 'device_identity.dart';
+import 'notification_preferences_repository.dart';
+import 'notification_preferences_store.dart';
+import 'token_registration_manager.dart';
 
-/// Repository for managing FCM device tokens.
+/// Registers the installation through the authenticated merchant RPC.
 class FcmRepository {
-  FcmRepository(this._supabase);
+  FcmRepository(
+    this._supabase, {
+    required DeviceIdentity identity,
+    required NotificationPreferencesStore preferences,
+  }) : _identity = identity,
+       _preferences = preferences;
 
   final SupabaseClient _supabase;
+  final DeviceIdentity _identity;
+  final NotificationPreferencesStore _preferences;
+  TokenRegistrationManager? _manager;
+  bool _signingOut = false;
 
-  /// The active `onTokenRefresh` listener, if any.
-  ///
-  /// Held so it can be cancelled: the auth listener calls
-  /// [setupTokenRefresh] on every auth event, and a subscription that is
-  /// never cancelled stacks a new listener each time.
-  StreamSubscription<String>? _tokenRefreshSub;
+  TokenRegistrationManager get _registrationManager =>
+      _manager ??= TokenRegistrationManager(
+        tokenRefreshes: FirebaseMessaging.instance.onTokenRefresh,
+        currentUserId: () => _supabase.auth.currentUser?.id,
+        getToken: FirebaseMessaging.instance.getToken,
+        register: _register,
+      );
 
-  /// Register the current device's FCM token.
-  /// Upserts by (user_id, device_id) so each device has one token.
-  Future<void> registerToken() async {
-    if (!firebaseInitialized) return;
-
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token == null) return;
-
-    final deviceId = await _getDeviceId();
-
-    await _supabase.from('fcm_tokens').upsert(
-      {
-        'user_id': user.id,
-        'device_id': deviceId,
-        'token': token,
-        'platform': Platform.isIOS ? 'ios' : 'android',
-      },
-      onConflict: 'user_id,device_id',
-    );
+  void updateUser(String? userId) {
+    if (!firebaseInitialized || _signingOut) return;
+    _registrationManager.updateUser(userId);
   }
 
-  /// Delete the current device's FCM token (on sign-out).
-  ///
-  /// Must run while the session is still active. After sign-out
-  /// `auth.currentUser` is null, so this returns early, the `fcm_tokens` row
-  /// survives, and the device keeps receiving the signed-out staff member's
-  /// order pushes.
+  void retry() {
+    if (firebaseInitialized && !_signingOut) _manager?.retry();
+  }
+
+  Future<void> _register(String userId, String token) async {
+    final deviceId = await _identity.id;
+    if (_signingOut || _supabase.auth.currentUser?.id != userId) return;
+    try {
+      await _supabase.rpc(
+        'register_merchant_fcm_token',
+        params: {
+          'p_device_id': deviceId,
+          'p_token': token,
+          'p_platform': Platform.isIOS ? 'ios' : 'android',
+        },
+      );
+      // The row now exists; mirror this device's local preferences so a
+      // reinstall or account switch restores what the staff member chose.
+      final saved = await saveNotificationPreferences(
+        _supabase,
+        deviceId,
+        _preferences.read(),
+      );
+      if (!saved) {
+        throw StateError('Notification preferences were not saved');
+      }
+    } on PostgrestException catch (error) {
+      // 42501: not an authorized staff member. 22023: the stored installation
+      // id or token shape was rejected. Retrying cannot fix either.
+      if (error.code == '42501' || error.code == '22023') {
+        throw PermanentRegistrationException(error.code!);
+      }
+      rethrow;
+    }
+  }
+
+  /// Delete before ending the session; DELETE is restricted to its own row.
   Future<void> deleteToken() async {
-    await _tokenRefreshSub?.cancel();
-    _tokenRefreshSub = null;
-
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
-    final deviceId = await _getDeviceId();
-
-    await _supabase
-        .from('fcm_tokens')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('device_id', deviceId);
-
-    if (firebaseInitialized) {
-      await FirebaseMessaging.instance.deleteToken();
+    _signingOut = true;
+    await _manager?.stop();
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final deviceId = await _identity.id;
+        await _supabase
+            .from('fcm_tokens')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('device_id', deviceId);
+      }
+    } finally {
+      // Invalidate the FCM token even when the session or row is already gone:
+      // the next send then reports UNREGISTERED and the worker removes the row.
+      await _invalidateFcmToken();
     }
   }
 
-  /// Listen for token refresh and update the server.
-  ///
-  /// Safe to call repeatedly — any previous subscription is cancelled first, so
-  /// repeated auth events cannot stack listeners.
-  void setupTokenRefresh() {
+  /// Session ended without the explicit sign-out path (expiry, remote
+  /// revocation). Stop registration and invalidate the token locally so the
+  /// device stops receiving the previous user's order alerts.
+  Future<void> invalidate() async {
+    if (_signingOut) return;
+    _signingOut = true;
+    try {
+      await _manager?.stop();
+      await _invalidateFcmToken();
+    } finally {
+      _signingOut = false;
+    }
+  }
+
+  Future<void> _invalidateFcmToken() async {
     if (!firebaseInitialized) return;
-
-    _tokenRefreshSub?.cancel();
-    _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
-      (newToken) async {
-        try {
-          final user = _supabase.auth.currentUser;
-          if (user == null) return;
-
-          final deviceId = await _getDeviceId();
-
-          await _supabase.from('fcm_tokens').upsert(
-            {
-              'user_id': user.id,
-              'device_id': deviceId,
-              'token': newToken,
-              'platform': Platform.isIOS ? 'ios' : 'android',
-            },
-            onConflict: 'user_id,device_id',
-          );
-        } catch (e) {
-          debugPrint('FcmRepository: token refresh upsert failed — $e');
-        }
-      },
-      onError: (Object e) =>
-          debugPrint('FcmRepository: token refresh stream error — $e'),
-    );
-  }
-
-  /// Generate a stable device ID using a Hive box.
-  Future<String> _getDeviceId() async {
-    // Use a simple box to store a persistent device ID
-    final box = await Hive.openBox('fcm');
-    var deviceId = box.get('device_id') as String?;
-    if (deviceId == null) {
-      deviceId = base64UrlEncode(
-          List<int>.generate(16, (_) => Random.secure().nextInt(256)),
-        ).replaceAll('=', '');
-      await box.put('device_id', deviceId);
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (_) {
+      debugPrint('Could not invalidate the FCM token.');
     }
-    return deviceId;
   }
+
+  /// If Supabase sign-out failed, resume registration for the still-valid user.
+  void finishSignOut() {
+    _signingOut = false;
+    final user = _supabase.auth.currentUser;
+    final role = user?.appMetadata['role'];
+    if (user != null &&
+        role is String &&
+        StaffRoleExtension.fromString(role) != null) {
+      updateUser(user.id);
+    } else {
+      updateUser(null);
+    }
+  }
+
+  Future<void> dispose() async => _manager?.dispose();
 }

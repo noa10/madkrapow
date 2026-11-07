@@ -16,6 +16,65 @@ This file contains curated memories, decisions, and learnings that persist acros
 
 ## Key Architectural Decisions
 
+### 2026-11-06: Per-device merchant notification settings
+- **Decision**: Order alerts, sound and vibration are configurable per device by
+  every staff role (More → Notification Settings), plus a local test alert.
+- **Why the server is involved**: Android draws background/terminated
+  notifications from the FCM payload, so the app cannot change them after
+  delivery. The worker must choose the channel. Migration
+  `20261106120000_merchant_notification_preferences.sql` adds three default-true
+  columns to `fcm_tokens`, an authenticated `set_merchant_notification_preferences`
+  RPC, and returns the flags from `claim_merchant_notification`; muted devices
+  are excluded from fan-out and their pending deliveries are skipped.
+- **Channels**: four immutable Android channels — `merchant_orders`,
+  `merchant_orders_sound`, `merchant_orders_vibrate`, `merchant_orders_silent`;
+  APNs sound is set only when sound is enabled. Missing flags default to true
+  for backward compatibility with older claims.
+- **App**: SharedPreferences is the local source for the UI and foreground
+  alerts; every successful save and every FCM token registration mirrors the
+  values to the device row. Failed saves keep the old value.
+- **Status**: implemented and tested (33 Vitest, 300 Flutter tests, analyzer
+  clean). The migration and worker are live in production (worker version 4);
+  the merchant app release is still pending. Deploy order: migration → worker →
+  app.
+
+### 2026-11-06: Atomic table-QR and bulk submission merged (PR #510)
+- **Decision**: Merged `deploy/atomic-table-bulk-routes` to master as `d35acc6`.
+  Table-QR creation now goes through `create_table_qr_order` and bulk checkout
+  through `submit_bulk_order` — both `SECURITY DEFINER`, `service_role`-only,
+  with header, lines, modifiers, audit event and notification intent in one
+  transaction. The compensating deletes and the header-then-lines window are gone.
+- **Review outcome**: three review rounds; the final head fixed bulk
+  `scheduled_for` parsing (explicit `+08:00`, not Vercel's UTC), added a
+  44-assertion pgTAP suite (rate limit, idempotency conflict, total ceilings,
+  rollback, outbox), covered every table/bulk RPC error mapping in route tests,
+  and separated real size-limit responses from malformed-payload contract drift.
+- **Verification**: CI green on the merged head, including `Table RPC integration
+  tests` (pgTAP) and Vercel production deployment. The two RPC migrations were
+  already live, so the deploy order was satisfied before merge.
+- **Still open** (Trello card #49): bulk submission idempotency, modifier deltas
+  in bulk totals, table-QR displayed-price confirmation, approve-route ordering,
+  and the operator audit of past inflated bulk approvals. Merchant Flutter
+  release with Firebase config also remains from the notification rollout.
+
+### 2026-11-05: Merchant order notifications (implemented, not deployed)
+- **Decision**: New orders are alerted on the merchant Android app through a durable
+  transactional outbox (migration `073`) plus a separate `notify-admin` worker. Only
+  actionable sources enqueue: paid web/Telegram/WhatsApp orders, GrabFood, counter POS,
+  table QR and bulk submissions. Abandoned unpaid checkouts, historical imports, edits and
+  later status changes do not.
+- **Rationale**: The previous APK had no Firebase configuration, and the old sender had no
+  reliable order-to-FCM connection, an expiring credential and a mismatched payload.
+- **Implementation**: Table-QR and bulk order writes moved into service-only atomic RPCs
+  (`074`, `075`) so their lines, audit event and notification intent commit together.
+  Staff register tokens through `register_merchant_fcm_token`; the worker fans out per
+  device with leases, retries and invalid-token handling. The merchant app shows a
+  high-importance `merchant_orders` channel, local foreground alerts and tap routing.
+- **Deployment is pending**: migration `073`/`074`/`075`, owner allowlist, Firebase
+  service account, Edge Function secrets, `scheduler.sql` (optional prompt wake + cron),
+  and `FIREBASE_GOOGLE_SERVICES_MERCHANT_BASE64` for releases. Until then the phone has no
+  working push delivery. See `supabase/functions/notify-admin/README.md`.
+
 ### 2026-03-17: ECC Integration
 - **Decision**: Merged ECC (Everything Claude Code) agent harness patterns into the project
 - **Rationale**: ECC adds behavioral frameworks and persistent memory

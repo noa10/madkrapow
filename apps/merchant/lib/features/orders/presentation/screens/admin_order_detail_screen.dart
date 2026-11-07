@@ -6,6 +6,10 @@ import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/utils/order_code.dart';
+import '../../../../core/utils/order_fields.dart';
+import '../../../../core/widgets/async_value_widget.dart';
+import '../../../notifications/providers/notification_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../data/merchant_order_repository.dart';
 import '../../data/orders_row_billplz.dart';
@@ -17,9 +21,6 @@ import '../widgets/order_event_timeline.dart';
 import '../widgets/order_item_card.dart';
 import '../widgets/cancel_order_button.dart';
 import '../widgets/provider_badges.dart';
-import '../../../../core/utils/order_code.dart';
-import '../../../../core/utils/order_fields.dart';
-import '../../../../core/widgets/async_value_widget.dart';
 
 class AdminOrderDetailScreen extends ConsumerStatefulWidget {
   const AdminOrderDetailScreen({super.key, required this.orderId});
@@ -35,6 +36,7 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
     with WidgetsBindingObserver {
   RealtimeChannel? _channel;
   Timer? _pollingTimer;
+  bool _acknowledged = false;
 
   @override
   void initState() {
@@ -42,6 +44,9 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
     WidgetsBinding.instance.addObserver(this);
     _subscribeToOrder();
     _startPolling();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_tryAcknowledgeView());
+    });
   }
 
   void _subscribeToOrder() {
@@ -77,6 +82,39 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(adminOrderDetailProvider(widget.orderId));
+      unawaited(_tryAcknowledgeView());
+    }
+  }
+
+  /// Marks this device as having seen the order, which stops the server-side
+  /// repeats for this device only. Failures are retried on the next resume.
+  Future<void> _tryAcknowledgeView() async {
+    if (_acknowledged || !mounted) return;
+    final route = ModalRoute.of(context);
+    if (route?.isCurrent != true) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+
+    final notifications = ref.read(localOrderNotificationsProvider);
+    if (notifications != null) {
+      try {
+        await notifications.cancelAll();
+      } catch (_) {
+        debugPrint('Could not clear the notification tray.');
+      }
+    }
+
+    try {
+      final acknowledged = await ref
+          .read(orderViewAcknowledgerProvider)
+          .acknowledge(widget.orderId);
+      if (!acknowledged || !mounted) return;
+      _acknowledged = true;
+      ref.read(viewedOrderRegistryProvider).add(widget.orderId);
+    } catch (_) {
+      debugPrint(
+        'Could not acknowledge the opened order; repeats remain active.',
+      );
     }
   }
 
@@ -183,9 +221,7 @@ class _OrderDetailContent extends StatelessWidget {
                     color: AppColors.emberText,
                   ),
                 ),
-                Text(
-                  'Type: ${orderTypeLabel(order.deliveryType)}',
-                ),
+                Text('Type: ${orderTypeLabel(order.deliveryType)}'),
                 if (order.isDineIn)
                   Text(
                     'Table: ${order.tableLabel ?? '—'} · '

@@ -1,4 +1,4 @@
--- Analytics views must honour the caller's RLS (081).
+-- Analytics views honour the caller's RLS (081) AND are gated by grants (082).
 --
 -- The pg_prove connection is a superuser and bypasses RLS, so SET LOCAL ROLE
 -- plus a simulated JWT is required (same pattern as staff_orders_rls.test.sql).
@@ -15,15 +15,21 @@ INSERT INTO order_items (order_id, menu_item_id, menu_item_name, menu_item_price
 SELECT id, '72000000-0000-4000-8000-000000000002', 'Analytics Probe Item', 1000, 1, 1000
   FROM orders WHERE order_number = 'AVIEW-1';
 
--- Anonymous callers: no revenue, no quantities, no channel mix.
+-- Anonymous callers are denied at the privilege layer (082) before RLS runs.
 SET LOCAL ROLE anon;
 SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
-SELECT is((SELECT count(*) FROM daily_order_summary), 0::bigint,
-  'anon sees no daily revenue');
+SELECT throws_ok('SELECT * FROM daily_order_summary', '42501', NULL,
+  'anon is denied daily revenue by grants');
+SELECT throws_ok('SELECT * FROM top_selling_items', '42501', NULL,
+  'anon is denied per-item revenue by grants');
+RESET ROLE;
+
+-- A signed-in caller without a staff role is allowed through the grants but
+-- filtered to zero rows by RLS — this is the security_invoker contract (081).
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 SELECT is((SELECT count(*) FROM daily_channel_summary), 0::bigint,
-  'anon sees no per-channel revenue');
-SELECT is((SELECT count(*) FROM top_selling_items), 0::bigint,
-  'anon sees no per-item revenue');
+  'unprivileged authenticated sees no channel revenue (RLS)');
 RESET ROLE;
 
 -- Admin JWT: the analytics page still gets its data.

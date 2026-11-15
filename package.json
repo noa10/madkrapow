@@ -23,7 +23,7 @@
     "prepare": "[ -z \"$CI\" ] && husky || true"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite": "^0.5.16",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",

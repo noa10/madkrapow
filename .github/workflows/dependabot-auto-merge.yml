@@ -36,15 +36,29 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # GitHub cannot queue auto-merge without branch protection. Leave the PR
+      # for manual review instead of merging without required checks.
+      - name: Check base branch protection
+        id: protection
+        env:
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          protected=$(gh api "repos/$GITHUB_REPOSITORY/branches/$BASE_BRANCH" --jq .protected)
+          printf 'protected=%s\n' "$protected" >> "$GITHUB_OUTPUT"
+          if [ "$protected" != true ]; then
+            echo 'Base branch is unprotected; auto-merge is unavailable and manual review is required.'
+          fi
+
       - name: Enable auto-merge for patch updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' && steps.protection.outputs.protected == 'true'
         run: gh pr merge "$PR_URL" --auto --squash
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge for minor updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        if: steps.metadata.outputs.update-type == 'version-update:semver-minor' && steps.protection.outputs.protected == 'true'
         run: gh pr merge "$PR_URL" --auto --squash
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

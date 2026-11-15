@@ -62,7 +62,7 @@ idempotent handling, kitchen notification, HubboPOS sync, and delivery dispatch.
 5. Apply the migration and regenerate the checked-in database types:
 
    ```bash
-   supabase db push          # linked project
+   supabase db push --remote # linked project
    # or apply supabase/migrations/056_billplz_payments.sql manually
    npm run generate-types
    ```

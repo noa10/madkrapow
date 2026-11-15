@@ -56,8 +56,8 @@ npm run test:e2e:ui           # Playwright UI mode
 ### Database
 ```bash
 npx supabase db reset         # Reset DB + run migrations + seed
-npx supabase db push          # Push local migrations to remote
-npx supabase db pull          # Pull remote schema to local
+npx supabase db push --remote  # Push local migrations to the linked remote project
+npx supabase db pull --remote  # Pull the linked remote schema to local
 npx supabase migration new <name>  # Create new migration
 ```
 

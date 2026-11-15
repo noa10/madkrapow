@@ -72,6 +72,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
+          # Match the Flutter version used by the Android CI and release workflows.
+          flutter-version: '3.41.9'
           channel: stable
       - working-directory: packages/madkrapow_orders
         run: |

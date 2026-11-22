@@ -59,7 +59,7 @@
     "@tailwindcss/postcss": "^4.3.5",
     "@types/canvas-confetti": "^1.9.0",
     "@types/google.maps": "^3.66.10",
-    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "@typescript-eslint/eslint-plugin": "^8.73.0",
     "@typescript-eslint/parser": "^8.61.1",
     "@vitest/coverage-v8": "^5.1.0",
     "class-variance-authority": "^0.7.1",
@@ -71,7 +71,7 @@
     "supabase": "^3.0.0",
     "tailwind-merge": "^3.7.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "vitest": "^5.0.5"
   }
 }

@@ -838,6 +838,34 @@ supabase/
   the original order, concurrent duplicates lose to the index, and the 4 / 5 min cap still bounds
   abuse. A cooldown punishes the honest retry and misses the dishonest one.
 
+- **A payment method that is listed is not a payment method that works.** Production advertised
+  Stripe because `isStripeAvailable()` only checks that `sk_live_`/`pk_live_` prefixes agree, a
+  webhook secret exists and `STRIPE_ENABLED` is not false. All of that was true while
+  `public.payments` held zero Stripe rows and no order had ever stored a `stripe_session_id` — no
+  card payment has ever completed. Config guards prove shape, never account activation, key
+  ownership or a working charge; only a real payment (then refund) does.
+
+- **The amount charged must be the amount stored, not just the amount displayed.** Checkout applied
+  a delivery-only promo to `total_cents` but only created the Stripe coupon when
+  `orderPromoCodeId` was set (order-scoped promos), so a delivery promo charged the undiscounted
+  amount while the order row recorded the discounted one. Any discount that reaches the order total
+  must reach the gateway as a fixed-amount coupon on the same currency.
+
+- **A webhook that does not bind the session to the order can finalise the wrong money.** The Stripe
+  handler acted on the session's `metadata.order_id` alone. It now refuses unless the session id
+  equals the stored `stripe_session_id`, `amount_total` equals `total_cents` and the currency is
+  `myr`, and returns 500 for reconciliation instead of guessing. `checkout/verify` checks the same
+  three things.
+
+- **A Stripe-paid order has no `payments` ledger row.** Only Billplz writes one
+  (`recordBillplzPayment`), so the printed receipt's payment method is blank for card orders. Known
+  gap, not yet fixed — decide before the first live card payment.
+
+- **Trello #53 (platform orders with `payment_method` NULL) was not a Stripe problem.** GrabFood
+  inserts bypassed the snapshot column. The Stripe/Billplz and bot checkout paths had the same gap
+  and are now fixed to write `payment_method` at insert time; the platform RPCs still need the same
+  treatment.
+
 ---
 
 **Philosophy**: This file grows over time. Add what's worth remembering. Remove what's no longer relevant. Keep it focused and actionable.

@@ -355,6 +355,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
         kitchen_lead_minutes: kitchenLeadMinutes,
         include_cutlery: includeCutlery,
         stripe_session_id: null,
+        payment_method: 'stripe',
         source: platform,
         bot_session_id: sessionId,
       })
@@ -484,11 +485,28 @@ export async function POST(req: NextRequest): Promise<NextResponse<BotCheckoutRe
       )
     }
 
-    // Update order with Stripe session ID
-    await supabase
-      .from('orders')
-      .update({ stripe_session_id: session.id })
-      .eq('id', order.id)
+    // Only expose the payment URL after the order confirms its session ID.
+    try {
+      const { data: updatedOrder, error: updateError } = await supabase
+        .from('orders')
+        .update({ stripe_session_id: session.id })
+        .eq('id', order.id)
+        .select('id')
+        .maybeSingle()
+
+      if (updateError || !updatedOrder) throw updateError || new Error('Order not found')
+    } catch (updateError) {
+      console.error('[BotCheckout] Failed to persist Stripe session:', { orderId: order.id, sessionId: session.id, error: updateError })
+      try {
+        await stripe.checkout.sessions.expire(session.id)
+      } catch (expireError) {
+        console.error('[BotCheckout] Failed to expire Stripe session:', { orderId: order.id, sessionId: session.id, error: expireError })
+      }
+      return NextResponse.json(
+        { success: false, error: 'Unable to process checkout. Please try again.', code: 'CHECKOUT_FAILED' },
+        { status: 500 }
+      )
+    }
 
     // ── Clear bot session ──────────────────────────────────────────
     try {

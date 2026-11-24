@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { POST } from '../route'
+import { clearSession } from '@/lib/bots/conversation'
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
 
 const mockStripeCheckoutCreate = vi.fn()
-const { mockStripeIssue } = vi.hoisted(() => ({
+const mockStripeCheckoutExpire = vi.fn()
+const { mockStripeIssue, mockInsertOrder } = vi.hoisted(() => ({
   mockStripeIssue: vi.fn(),
+  mockInsertOrder: vi.fn(),
 }))
 
 vi.mock('stripe', () => ({
@@ -15,6 +18,7 @@ vi.mock('stripe', () => ({
       checkout: {
         sessions: {
           create: mockStripeCheckoutCreate,
+          expire: mockStripeCheckoutExpire,
         },
       },
     }
@@ -59,7 +63,7 @@ vi.mock('@/lib/bots/conversation', () => ({
   clearSession: vi.fn().mockResolvedValue(undefined),
 }))
 
-function buildMockSupabaseClient(responses: Record<string, { data: unknown; error: unknown }>) {
+function buildMockSupabaseClient(responses: Record<string, { data: unknown; error: unknown }>, writeResult: { data: unknown; error: unknown } | Error = { data: { id: 'order-1' }, error: null }) {
   const from = vi.fn().mockImplementation((table: string) => {
     const response = responses[table] ?? { data: null, error: null }
 
@@ -105,12 +109,17 @@ function buildMockSupabaseClient(responses: Record<string, { data: unknown; erro
 
     return {
       select,
-      insert: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue(terminal),
+      insert: vi.fn().mockImplementation((value: unknown) => {
+        if (table === 'orders') mockInsertOrder(value)
+        return { select: vi.fn().mockReturnValue(terminal) }
       }),
       update: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue(terminal),
+          then: (resolve: (v: typeof writeResult) => unknown) => resolve(writeResult),
+          select: vi.fn().mockReturnValue({ maybeSingle: vi.fn().mockImplementation(async () => {
+            if (writeResult instanceof Error) throw writeResult
+            return writeResult
+          }) }),
         }),
       }),
       delete: vi.fn().mockReturnValue({
@@ -139,6 +148,9 @@ function createRequest(body: unknown): Request {
 describe('POST /api/bots/checkout', () => {
   beforeEach(() => {
     mockStripeCheckoutCreate.mockReset()
+    mockStripeCheckoutExpire.mockReset().mockResolvedValue({ id: 'cs_test', status: 'expired' })
+    vi.mocked(clearSession).mockClear()
+    mockInsertOrder.mockClear()
     mockStripeIssue.mockReturnValue(null)
     mockSupabase = buildMockSupabaseClient({})
   })
@@ -198,6 +210,37 @@ describe('POST /api/bots/checkout', () => {
     expect(json.checkoutUrl).toBe('https://checkout.stripe.com/test')
     expect(json.orderId).toBe('order-1')
     expect(json.orderNumber).toMatch(/^MK/)
+    expect(mockInsertOrder).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'stripe' }))
+  })
+
+  it.each([
+    ['database error', { data: null, error: { message: 'write failed' } }],
+    ['no matching order', { data: null, error: null }],
+    ['lost database response', new Error('connection lost')],
+    ['failed expiration', { data: null, error: { message: 'write failed' } }],
+  ])('withholds the payment URL and preserves the cart on %s', async (name, writeResult) => {
+    if (name === 'failed expiration') mockStripeCheckoutExpire.mockRejectedValueOnce(new Error('Stripe unavailable'))
+    mockSupabase = buildMockSupabaseClient({
+      store_settings: { data: { delivery_fee: 500, kitchen_lead_minutes: 20, cutlery_enabled: true, cutlery_default: true }, error: null },
+      menu_items: { data: [{ id: 'item-1', name: 'Nasi Goreng', price_cents: 1200, image_url: null, is_available: true }], error: null },
+      modifiers: { data: [], error: null },
+      bot_sessions: { data: { id: '550e8400-e29b-41d4-a716-446655440001' }, error: null },
+      orders: { data: { id: 'order-1' }, error: null },
+      order_items: { data: [{ id: 'oi-1' }], error: null },
+    }, writeResult)
+    mockStripeCheckoutCreate.mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.com/test' })
+    const response = await POST(createRequest({
+      platform: 'telegram', platformUserId: '12345',
+      items: [{ menuItemId: 'item-1', quantity: 1, modifiers: [] }],
+      deliveryAddress: { address_line1: '123 Main St', city: 'Shah Alam', state: 'Selangor', postal_code: '40150' },
+      contactName: 'John', contactPhone: '+60123456789', deliveryType: 'delivery',
+      sessionId: '550e8400-e29b-41d4-a716-446655440001',
+    }) as never)
+    const body = await response.json()
+    expect(response.status).toBe(500)
+    expect(body.checkoutUrl).toBeUndefined()
+    expect(mockStripeCheckoutExpire).toHaveBeenCalledWith('cs_test')
+    expect(clearSession).not.toHaveBeenCalled()
   })
 
   it('returns error for invalid JSON', async () => {

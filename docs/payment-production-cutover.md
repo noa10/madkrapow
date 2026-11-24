@@ -62,29 +62,62 @@ variable.
 `NEXT_PUBLIC_URL` and every `NEXT_PUBLIC_*` value are baked at build time.
 Changing them requires a new deployment, not just a restart.
 
+## Before deploying the payment-integrity fixes
+
+The webhook now refuses to finalise a session whose id is not stored on the
+order. Older code could return a payment URL even when saving that id failed, so
+check for orders that were left pending without a reference before you deploy:
+
+```sql
+select id, order_number, status, created_at
+from public.orders
+where status = 'pending' and stripe_session_id is null;
+```
+
+Reconcile any row against the Stripe Dashboard by `metadata.order_id` before the
+deploy. A paid session found this way must be finalised or refunded by hand;
+after the deploy the webhook will keep returning `500` for it so it is retried
+rather than silently ignored.
+
 ## Cutover order
 
-1. **Billplz first.** Create the production account and collection, complete
-   KYC, then set the production Billplz values above. Keep
-   `STRIPE_ENABLED=false` so the broken card option disappears immediately.
-2. **Deploy and verify the method list.**
+1. **Check channel availability before changing either gateway.** Mobile and bot
+   checkout use Stripe; switching Stripe off makes card checkout unavailable in
+   those channels. Coordinate any temporary interruption with the operator.
+2. **Activate Stripe.** Complete account activation and any required business
+   verification in the Stripe Dashboard. Create a live webhook endpoint at
+   `https://www.madkrapow.com/api/webhooks/stripe` for
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded`, and
+   `checkout.session.async_payment_failed`. Copy its signing secret directly to
+   Vercel; do not share it in chat.
+3. **Configure and deploy.** Set the live `sk_live_…`, `pk_live_…`, the live
+   endpoint's signing secret, and `STRIPE_ENABLED=true` in Vercel Production.
+   Deploy the reviewed, tested changes. Coordinate the change and the live test
+   with the operator.
+4. **Check the method list.**
    ```bash
    curl -s https://www.madkrapow.com/api/payments/methods
    ```
-   Expected while Stripe is off: only `billplz`. If Billplz is missing, read the
-   server log for `[API] Billplz unavailable:` and fix the named condition.
-3. **Take one small live FPX payment.** Confirm the Billplz callback reaches
-   `/api/webhooks/billplz`, the order moves to `preparing`, and the payment row
-   uses the production bill URL.
-4. **Activate Stripe.** Complete the Stripe account activation, create a live
-   webhook endpoint at `https://www.madkrapow.com/api/webhooks/stripe` for
-   `checkout.session.completed`, `checkout.session.async_payment_succeeded`, and
-   `checkout.session.async_payment_failed`, then copy its `whsec_…`.
-5. **Switch Stripe on.** Set the live `sk_live_…`, `pk_live_…`, the live webhook
-   secret, and `STRIPE_ENABLED=true`. Redeploy.
-6. **Verify and take one small card payment.** The methods endpoint should list
-   both gateways, and the order should advance to `preparing` through the live
-   webhook.
+   Stripe should appear. This confirms the configuration guard passes; it does
+   not prove the credentials work, the account can accept payments, or webhook
+   events are delivered.
+5. **Verify one small live card payment.** With the operator's approval, place a
+   pickup order with a known amount. Confirm the live Stripe payment and
+   successful webhook delivery in the Stripe Dashboard, and confirm the matching
+   order amount, payment and order status in the application. Refund the test
+   payment and check the refund in Stripe. Record the result without exposing
+   card details or secrets.
+6. **Verify Billplz separately.** Complete its production account and collection
+   setup and KYC, configure the Billplz values above, and verify its method is
+   listed. With the operator's approval, take a small live FPX payment and confirm
+   its callback, order and payment record; arrange any refund through the
+   appropriate Billplz process. Stripe and Billplz can be checked independently.
+
+For delivery orders, a paid or `preparing` order does not by itself prove that a
+rider was booked. If dispatch fails or its outcome is uncertain, check both the
+application and Lalamove before arranging another rider. Do not blindly retry an
+ambiguous booking: the first request may have succeeded even when its response
+or local record was lost.
 
 ## Rollback
 

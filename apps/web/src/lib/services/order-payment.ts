@@ -12,6 +12,7 @@ import type { createServerClient } from '@supabase/ssr'
 import { env } from '@/lib/validators/env'
 import { fulfillDeliveryOrder } from '@/lib/services/order-fulfillment'
 import { notifyKitchenOfPaidOrder } from '@/lib/bots/notifications'
+import { recordStripePayment } from '@/lib/stripe/payments'
 
 type ServiceClient = ReturnType<typeof createServerClient>
 
@@ -33,6 +34,8 @@ export type FinalizePaidOrderResult =
 export interface FinalizePaidOrderOptions {
   /** Gateway-specific columns written in the same atomic update. */
   paymentPatch?: Record<string, unknown>
+  /** Stripe values confirmed by the gateway before finalisation. */
+  stripePayment?: { sessionId: string; amountTotal: number; currency: string }
   /** Label used in log lines, e.g. `Stripe Webhook`. */
   logLabel: string
 }
@@ -48,6 +51,14 @@ export async function finalizePaidOrder(
   orderId: string,
   options: FinalizePaidOrderOptions,
 ): Promise<FinalizePaidOrderResult> {
+  if (options.stripePayment && (
+    !options.stripePayment.sessionId ||
+    !Number.isInteger(options.stripePayment.amountTotal) ||
+    options.stripePayment.currency !== 'myr'
+  )) {
+    return { outcome: 'failed', error: 'Invalid Stripe payment details' }
+  }
+
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .select('*')
@@ -58,11 +69,24 @@ export async function finalizePaidOrder(
     return { outcome: 'not_found' }
   }
 
+  if (options.stripePayment && (
+    order.stripe_session_id !== options.stripePayment.sessionId ||
+    order.total_cents !== options.stripePayment.amountTotal
+  )) {
+    return { outcome: 'failed', error: 'Stripe payment no longer matches order' }
+  }
+
   if (POST_PAYMENT_STATUSES.has(order.status)) {
+    // Heal a ledger row lost to a crash between the status update and the
+    // insert below. A cancelled order is deliberately left without one: the
+    // money needs a human refund decision, not a "succeeded" record.
+    if (options.stripePayment && order.status !== 'cancelled') {
+      await recordStripePayment(supabase, orderId, options.stripePayment)
+    }
     return { outcome: 'already_processed', status: order.status }
   }
 
-  const { data: updatedRows, error: updateError } = await supabase
+  let update = supabase
     .from('orders')
     .update({
       status: 'preparing',
@@ -70,17 +94,51 @@ export async function finalizePaidOrder(
     })
     .eq('id', orderId)
     .eq('status', order.status)
-    .select('id')
+
+  if (options.stripePayment) {
+    update = update
+      .eq('stripe_session_id', options.stripePayment.sessionId)
+      .eq('total_cents', options.stripePayment.amountTotal)
+  }
+
+  const { data: updatedRows, error: updateError } = await update.select('id')
 
   if (updateError) {
     return { outcome: 'failed', error: updateError.message }
   }
 
   if (!updatedRows || updatedRows.length === 0) {
+    if (options.stripePayment) {
+      const { data: currentOrder, error: currentError } = await supabase
+        .from('orders')
+        .select('status, stripe_session_id, total_cents')
+        .eq('id', orderId)
+        .single()
+
+      if (
+        !currentError && currentOrder &&
+        currentOrder.stripe_session_id === options.stripePayment.sessionId &&
+        currentOrder.total_cents === options.stripePayment.amountTotal &&
+        currentOrder.status !== 'cancelled' &&
+        POST_PAYMENT_STATUSES.has(currentOrder.status)
+      ) {
+        // Another finaliser advanced the order; make sure the money record
+        // exists even if its insert was lost.
+        await recordStripePayment(supabase, orderId, options.stripePayment)
+        return { outcome: 'already_processed', status: currentOrder.status }
+      }
+      return { outcome: 'failed', error: 'Stripe payment no longer matches order or order state changed' }
+    }
     return { outcome: 'already_processed', status: 'preparing' }
   }
 
   console.log(`[${options.logLabel}] Order ${orderId} marked as paid and advanced to preparing`)
+
+  // The canonical money record, written before any fulfilment side effect so a
+  // card order always has a ledger row even if dispatch fails.
+  if (options.stripePayment) {
+    await recordStripePayment(supabase, orderId, options.stripePayment)
+  }
 
   // Bot order notifications are best-effort and must never fail the webhook.
   if (order.source === 'telegram' || order.source === 'whatsapp') {

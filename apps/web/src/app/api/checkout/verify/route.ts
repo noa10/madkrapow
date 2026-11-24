@@ -252,6 +252,14 @@ async function verifyStripePayment(
     )
   }
 
+  if (!session.id || session.id !== sessionId || session.id !== order.stripe_session_id) {
+    console.error('[Verify] Stripe session id mismatch for order:', sanitizeForLog(order.id))
+    return NextResponse.json(
+      { success: false, error: 'Session does not match order' },
+      { status: 400 }
+    )
+  }
+
   // Security: ensure the session belongs to the requested order
   if (session.metadata?.order_id !== order.id) {
     console.error(
@@ -312,12 +320,11 @@ async function verifyStripePayment(
     )
   }
 
-  // Idempotency: skip if already in post-preparing or terminal status.
-  // 'paid' and 'accepted' are NOT skipped — we must advance them to 'preparing'.
-  if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
+  if (session.currency !== 'myr') {
+    console.error('[Verify] Stripe currency mismatch for order:', sanitizeForLog(order.id))
     return NextResponse.json(
-      { success: true, status: order.status, message: 'Order already processed' },
-      { status: 200 }
+      { success: false, error: 'Payment currency does not match order' },
+      { status: 400 }
     )
   }
 
@@ -330,6 +337,7 @@ async function verifyStripePayment(
       stripe_payment_intent_id: paymentIntentId,
       stripe_session_id: session.id,
     },
+    stripePayment: { sessionId: session.id, amountTotal: session.amount_total, currency: session.currency },
     logLabel: 'Verify',
   })
 
@@ -349,6 +357,13 @@ async function verifyStripePayment(
   }
 
   if (result.outcome === 'already_processed') {
+    if (result.status === 'cancelled') {
+      console.error('[Verify] Paid Stripe order is cancelled; reconciliation required:', sanitizeForLog(order.id))
+      return NextResponse.json(
+        { success: false, error: 'Payment requires reconciliation' },
+        { status: 500 }
+      )
+    }
     return NextResponse.json(
       { success: true, status: result.status, message: 'Order already processed' },
       { status: 200 }

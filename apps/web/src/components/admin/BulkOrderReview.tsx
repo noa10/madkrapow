@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 interface BulkOrderReviewProps {
   orderId: string
   approvalStatus: string
+  orderStatus: string
   subtotalCents: number
   bulkCompanyName: string | null
   bulkRequestedDate: string | null
@@ -27,6 +28,7 @@ interface BulkOrderReviewProps {
 export function BulkOrderReview({
   orderId,
   approvalStatus,
+  orderStatus,
   subtotalCents,
   bulkCompanyName,
   bulkRequestedDate,
@@ -45,14 +47,48 @@ export function BulkOrderReview({
   const [notes, setNotes] = useState(reviewNotes ?? '')
   const [isApproving, setIsApproving] = useState(false)
   const [isRejecting, setIsRejecting] = useState(false)
+  const [checkoutUrl, setCheckoutUrl] = useState('')
+  const [error, setError] = useState('')
+  const [isLoadingLink, setIsLoadingLink] = useState(false)
+
+  const saveCheckoutUrl = (url: unknown) => {
+    try {
+      if (typeof url === 'string' && new URL(url).protocol === 'https:') {
+        setCheckoutUrl(url)
+        return true
+      }
+    } catch {
+      // Invalid URLs are handled as unavailable payment links.
+    }
+    return false
+  }
+
+  const handleGetPaymentLink = async () => {
+    setError('')
+    setIsLoadingLink(true)
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/approve`)
+      const data = await response.json()
+      if (!data.success) {
+        setError(`${data.error || 'Unable to get the payment link.'} Refresh the order and try again; contact support if it remains unavailable.`)
+      } else if (!saveCheckoutUrl(data.checkoutUrl)) {
+        setError('The payment link is unavailable. Refresh the order and try again.')
+      }
+    } catch {
+      setError('Unable to get the payment link. Check your connection and try again.')
+    } finally {
+      setIsLoadingLink(false)
+    }
+  }
 
   const handleApprove = async () => {
+    setError('')
     setIsApproving(true)
     try {
       // adjustedTotal is already stored in cents; the input converts RM to cents.
       const cents = Number(adjustedTotal)
       if (!Number.isSafeInteger(cents) || cents <= 0) {
-        console.error('Invalid adjusted total:', adjustedTotal)
+        setError('Enter an approved total greater than zero.')
         return
       }
 
@@ -71,22 +107,23 @@ export function BulkOrderReview({
       const data = await response.json()
 
       if (!data.success) {
-        console.error('Approval failed:', data.error)
+        setError(`${data.error || 'Unable to approve the order.'} Refresh the order before trying again.`)
         return
       }
 
-      // If approval returns a checkout URL, redirect customer
-      if (data.checkoutUrl) {
-        onStatusUpdate('approved', cents, notes)
+      if (!saveCheckoutUrl(data.checkoutUrl)) {
+        setError('The order was approved, but the payment link is unavailable. Use Get payment link to try again.')
       }
-    } catch (err) {
-      console.error('Failed to approve bulk order:', err)
+      onStatusUpdate('approved', cents, notes)
+    } catch {
+      setError('Unable to confirm approval. Refresh the order before trying again.')
     } finally {
       setIsApproving(false)
     }
   }
 
   const handleReject = async () => {
+    setError('')
     setIsRejecting(true)
     try {
       const response = await fetch(`/api/admin/orders/${orderId}/approve`, {
@@ -101,13 +138,13 @@ export function BulkOrderReview({
       const data = await response.json()
 
       if (!data.success) {
-        console.error('Rejection failed:', data.error)
+        setError(data.error || 'Unable to reject the order. Please try again.')
         return
       }
 
       onStatusUpdate('rejected', undefined, notes)
-    } catch (err) {
-      console.error('Failed to reject bulk order:', err)
+    } catch {
+      setError('Unable to confirm rejection. Refresh the order before trying again.')
     } finally {
       setIsRejecting(false)
     }
@@ -176,6 +213,24 @@ export function BulkOrderReview({
           )}
         </div>
 
+        {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+
+        {approvalStatus === 'approved' && orderStatus === 'pending' && (
+          <div className="space-y-2">
+            {checkoutUrl ? (
+              <>
+                <label htmlFor="bulk-checkout-url" className="block text-sm font-medium">Payment link</label>
+                <Input id="bulk-checkout-url" value={checkoutUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+                <p className="text-xs text-muted-foreground">Copy this link to share it with the customer.</p>
+              </>
+            ) : (
+              <Button onClick={handleGetPaymentLink} disabled={isLoadingLink}>
+                {isLoadingLink ? 'Getting payment link…' : 'Get payment link'}
+              </Button>
+            )}
+          </div>
+        )}
+
         {approvalStatus === 'pending_review' && (
           <>
             {/* Adjusted total */}
@@ -222,7 +277,7 @@ export function BulkOrderReview({
                 ) : (
                   <Check className="h-4 w-4" />
                 )}
-                Approve & Send Payment Link
+                Approve & Get Payment Link
               </Button>
               <Button
                 variant="destructive"

@@ -12,7 +12,12 @@ import type Stripe from 'stripe'
  * upgrade then forces a deliberate migration (see the `stripe` entry in
  * node_modules/stripe/CHANGELOG.md for the breaking changes).
  *
+ * The October 2026 Endive monthly release is non-breaking relative to the
+ * September Endive release. Webhook endpoint payload versions are configured
+ * separately in Stripe and are not changed by this request version.
+ * See https://docs.stripe.com/api/versioning and https://docs.stripe.com/changelog
+ *
  * Keep this as the single source of truth: do not inline the version string
  * at call sites.
  */
-export const STRIPE_API_VERSION: Stripe.LatestApiVersion = '2026-09-30.endive'
+export const STRIPE_API_VERSION: Stripe.LatestApiVersion = '2026-10-28.endive'

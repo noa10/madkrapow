@@ -214,6 +214,34 @@ describe('POST /api/checkout/verify', () => {
     expect(mockFinalize).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['wrong currency', { currency: 'usd' }],
+    ['missing currency', { currency: null }],
+    ['different session id', { id: 'cs_other' }],
+  ])('rejects a Stripe session with %s', async (_description, overrides) => {
+    mockCreateServerClient.mockReturnValue(buildSupabase(stripeOrder))
+    mockRetrieveSession.mockResolvedValue({ ...paidSession, ...overrides })
+    const res = await POST(makeRequest({ orderId: 'order-1' }) as never)
+    expect(res.status).toBe(400)
+    expect(mockFinalize).not.toHaveBeenCalled()
+  })
+
+  it('requires reconciliation when a paid Stripe order is cancelled', async () => {
+    mockCreateServerClient.mockReturnValue(buildSupabase({ ...stripeOrder, status: 'cancelled' }))
+    mockFinalize.mockResolvedValue({ outcome: 'already_processed', status: 'cancelled' })
+    const res = await POST(makeRequest({ orderId: 'order-1' }) as never)
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ success: false })
+  })
+
+  it('does not report payment success when the validated session becomes stale', async () => {
+    mockCreateServerClient.mockReturnValue(buildSupabase(stripeOrder))
+    mockFinalize.mockResolvedValue({ outcome: 'failed', error: 'Stripe payment no longer matches order' })
+    const res = await POST(makeRequest({ orderId: 'order-1' }) as never)
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ success: false })
+  })
+
   it('finalises a paid Stripe order', async () => {
     mockCreateServerClient.mockReturnValue(buildSupabase(stripeOrder))
 
@@ -226,6 +254,7 @@ describe('POST /api/checkout/verify', () => {
         stripe_payment_intent_id: 'pi_1',
         stripe_session_id: 'cs_1',
       },
+      stripePayment: { sessionId: 'cs_1', amountTotal: 1250, currency: 'myr' },
       logLabel: 'Verify',
     })
   })

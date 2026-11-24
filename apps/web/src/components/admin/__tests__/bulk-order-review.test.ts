@@ -22,6 +22,8 @@ type ElementProps = {
   children?: ReactNode
   type?: string
   value?: unknown
+  readOnly?: boolean
+  role?: string
   onClick?: () => Promise<void>
   onChange?: (event: { target: { value: string } }) => void
 }
@@ -43,6 +45,7 @@ const update = vi.fn()
 const props = {
   orderId: 'bulk-order-1',
   approvalStatus: 'pending_review',
+  orderStatus: 'pending',
   subtotalCents: 3300,
   bulkCompanyName: 'Example Co',
   bulkRequestedDate: null,
@@ -56,14 +59,14 @@ const props = {
   onStatusUpdate: update,
 }
 
-function render() {
+function render(overrides: Partial<typeof props> = {}) {
   state.cursor = 0
-  return BulkOrderReview(props)
+  return BulkOrderReview({ ...props, ...overrides })
 }
 
 function approveButton(tree: ReactNode) {
   return findElement(tree, (element) =>
-    Array.isArray(element.props.children) && element.props.children.includes('Approve & Send Payment Link'),
+    Array.isArray(element.props.children) && element.props.children.includes('Approve & Get Payment Link'),
   )
 }
 
@@ -75,6 +78,74 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('BulkOrderReview payment link', () => {
+  it('keeps the returned link copyable after the parent switches to approved', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      json: async () => ({ success: true, checkoutUrl: 'https://checkout.stripe.com/pay/test-session' }),
+    })))
+
+    await approveButton(render())?.props.onClick?.()
+
+    const approved = render({ approvalStatus: 'approved' })
+    const link = findElement(approved, (element) => element.props.readOnly === true)
+    expect(link?.props.value).toBe('https://checkout.stripe.com/pay/test-session')
+    expect(update).toHaveBeenCalledWith('approved', 3300, '')
+  })
+  it('recovers a link only when an approved pending order requests it', async () => {
+    const fetchMock = vi.fn(async () => ({
+      json: async () => ({ success: true, checkoutUrl: 'https://pay.example.test/recovered' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const tree = render({ approvalStatus: 'approved' })
+    expect(fetchMock).not.toHaveBeenCalled()
+    const button = findElement(tree, (element) => element.props.children === 'Get payment link')
+    await button?.props.onClick?.()
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/orders/bulk-order-1/approve')
+    const link = findElement(render({ approvalStatus: 'approved' }), (element) => element.props.readOnly === true)
+    expect(link?.props.value).toBe('https://pay.example.test/recovered')
+    expect(findElement(render({ approvalStatus: 'approved', orderStatus: 'paid' }), (element) => element.props.readOnly === true)).toBeUndefined()
+  })
+
+  it('does not offer recovery for other statuses', () => {
+    for (const overrides of [
+      { approvalStatus: 'pending_review', orderStatus: 'pending' },
+      { approvalStatus: 'rejected', orderStatus: 'cancelled' },
+      { approvalStatus: 'approved', orderStatus: 'paid' },
+    ]) {
+      expect(findElement(render(overrides), (element) => element.props.children === 'Get payment link')).toBeUndefined()
+    }
+  })
+
+  it('shows recovery errors and allows retry', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      json: async () => ({ success: false, error: 'Payment session expired' }),
+    })))
+    await findElement(render({ approvalStatus: 'approved' }), (element) => element.props.children === 'Get payment link')?.props.onClick?.()
+    const tree = render({ approvalStatus: 'approved' })
+    expect(findElement(tree, (element) => element.props.role === 'alert')?.props.children).toContain('Payment session expired')
+    expect(findElement(tree, (element) => element.props.role === 'alert')?.props.children).toContain('contact support')
+    expect(findElement(tree, (element) => element.props.children === 'Get payment link')).toBeDefined()
+  })
+
+  it('does not display unsafe checkout URLs and offers recovery', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      json: async () => ({ success: true, checkoutUrl: 'javascript:alert(1)' }),
+    })))
+    await approveButton(render())?.props.onClick?.()
+    const tree = render({ approvalStatus: 'approved' })
+    expect(findElement(tree, (element) => element.props.readOnly === true)).toBeUndefined()
+    expect(findElement(tree, (element) => element.props.role === 'alert')).toBeDefined()
+    expect(findElement(tree, (element) => element.props.children === 'Get payment link')).toBeDefined()
+  })
+
+  it('shows an actionable error when approval response is lost', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network error') }))
+    await approveButton(render())?.props.onClick?.()
+    expect(findElement(render(), (element) => element.props.role === 'alert')?.props.children).toContain('Refresh the order')
+    expect(update).not.toHaveBeenCalled()
+  })
 })
 
 describe('BulkOrderReview payment amount', () => {

@@ -542,6 +542,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
 
     const totalCents = subtotalCents + effectiveDeliveryFee - totalDiscountCents
 
+    // Free Stripe sessions have no payment intent and cannot be finalized by
+    // the existing paid-session fulfillment flow.
+    if (paymentMethod === 'stripe' && totalCents === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Free orders are not supported. Please adjust your promotions or cart.', code: 'ZERO_TOTAL_UNSUPPORTED' },
+        { status: 400 }
+      )
+    }
+
     // Generate the order number before the gateway call so it can be used in
     // the Stripe coupon metadata and the Billplz bill description.
     const orderNumber = generateOrderNumber()
@@ -576,6 +585,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         kitchen_lead_minutes: kitchenLeadMinutes,
         include_cutlery: effectiveIncludeCutlery,
         stripe_session_id: null,
+        payment_method: paymentMethod,
       })
       .select('id')
       .single()
@@ -835,16 +845,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       apiVersion: STRIPE_API_VERSION,
     })
 
-    // ── Create Stripe Coupons for order-scoped promos ──────────────
+    // ── Apply the complete validated discount to Stripe ───────────
     const stripeCouponIds: string[] = []
-    if (totalDiscountCents > 0 && orderPromoCodeId) {
+    if (totalDiscountCents > 0) {
       const coupon = await stripe.coupons.create({
         amount_off: totalDiscountCents,
         currency: 'myr',
         duration: 'once',
         max_redemptions: 1,
         metadata: {
-          promo_code_id: orderPromoCodeId,
+          ...(orderPromoCodeId ? { promo_code_id: orderPromoCodeId } : {}),
           order_number: orderNumber,
         },
       })
@@ -914,11 +924,28 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       )
     }
 
-    // Update order with Stripe session ID
-    await supabase
-      .from('orders')
-      .update({ stripe_session_id: session.id })
-      .eq('id', order.id)
+    // Only expose the payment URL after the order confirms its session ID.
+    try {
+      const { data: updatedOrder, error: updateError } = await supabase
+        .from('orders')
+        .update({ stripe_session_id: session.id })
+        .eq('id', order.id)
+        .select('id')
+        .maybeSingle()
+
+      if (updateError || !updatedOrder) throw updateError || new Error('Order not found')
+    } catch (updateError) {
+      console.error('[API] Failed to persist Stripe session:', { orderId: order.id, sessionId: session.id, error: updateError })
+      try {
+        await stripe.checkout.sessions.expire(session.id)
+      } catch (expireError) {
+        console.error('[API] Failed to expire Stripe session:', { orderId: order.id, sessionId: session.id, error: expireError })
+      }
+      return NextResponse.json(
+        { success: false, error: 'Unable to process checkout. Please try again.', code: 'CHECKOUT_FAILED' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json(
       {

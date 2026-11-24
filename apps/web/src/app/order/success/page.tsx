@@ -13,7 +13,9 @@ import { PageContainer } from '@/components/layout/PageContainer'
 import { OrderSuccessSkeleton } from '@/components/ui/PageSkeleton'
 import { getOrderDisplayCode } from '@/lib/utils/order-code'
 
-type PaymentStatus = 'confirming' | 'confirmed' | 'timed_out' | 'verifying' | 'processing'
+type PaymentStatus = 'confirming' | 'confirmed' | 'cancelled' | 'timed_out' | 'verifying' | 'processing'
+
+const PAID_ORDER_STATUSES = new Set(['paid', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered'])
 
 interface OrderItemModifier {
   id: string
@@ -44,7 +46,7 @@ function SuccessContent() {
   const orderId = searchParams.get('orderId') || searchParams.get('order_id')
   const estimatedDelivery = searchParams.get('delivery')
 
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('confirming')
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(orderId ? 'confirming' : 'timed_out')
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [orderTotalCents, setOrderTotalCents] = useState(0)
   const [deliveryFeeCents, setDeliveryFeeCents] = useState(0)
@@ -140,13 +142,17 @@ function SuccessContent() {
   }, [paymentStatus])
 
   const checkStatus = useCallback(async (supabase: ReturnType<typeof getBrowserClient>, orderId: string) => {
-    const { data, error } = await supabase
-      .from('orders')
-      .select('status')
-      .eq('id', orderId)
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('status')
+        .eq('id', orderId)
+        .single()
 
-    return !error && data && data.status !== 'pending'
+      return !error && typeof data?.status === 'string' ? data.status : null
+    } catch {
+      return null
+    }
   }, [])
 
   // Fallback: verify the payment directly with the gateway if the webhook is
@@ -171,9 +177,8 @@ function SuccessContent() {
       }
 
       const data = await response.json()
-      if (data.success) {
-        console.log('[SuccessPage] Payment verified via API fallback:', data.status)
-        return data.status as string
+      if (data.success === true && typeof data.status === 'string') {
+        return data.status
       }
       return null
     } catch (err) {
@@ -190,14 +195,23 @@ function SuccessContent() {
     let intervalId: ReturnType<typeof setInterval> | undefined
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let cancelled = false
+    let finished = false
+
+    const finish = (status: 'confirmed' | 'cancelled' | 'timed_out') => {
+      if (cancelled || finished) return
+      finished = true
+      if (intervalId) clearInterval(intervalId)
+      if (timeoutId) clearTimeout(timeoutId)
+      setPaymentStatus(status)
+    }
 
     const poll = async () => {
-      const isConfirmed = await checkStatus(supabase, orderId)
-      if (cancelled) return
-      if (isConfirmed) {
-        setPaymentStatus('confirmed')
-        if (intervalId) clearInterval(intervalId)
-        if (timeoutId) clearTimeout(timeoutId)
+      const status = await checkStatus(supabase, orderId)
+      if (cancelled || finished) return
+      if (status === 'cancelled') {
+        finish('cancelled')
+      } else if (status && PAID_ORDER_STATUSES.has(status)) {
+        finish('confirmed')
       }
     }
 
@@ -208,29 +222,23 @@ function SuccessContent() {
     // Timeout after 20 seconds — attempt Stripe verification fallback
     timeoutId = setTimeout(async () => {
       if (intervalId) clearInterval(intervalId)
-      if (cancelled) return
+      if (cancelled || finished) return
 
       setPaymentStatus('verifying')
       const status = await verifyPayment()
-      if (cancelled) return
+      if (cancelled || finished) return
 
       if (status === 'processing') {
         // Async payment (e.g. FPX) still pending bank confirmation.
-        // Restart polling and extend timeout instead of showing timed-out.
         setPaymentStatus('processing')
         intervalId = setInterval(poll, 3000)
-        timeoutId = setTimeout(async () => {
-          if (intervalId) clearInterval(intervalId)
-          if (!cancelled) setPaymentStatus('timed_out')
-        }, 45000)
-      } else if (status && status !== 'cancelled') {
-        // Any successful verification (preparing/paid/...) means the order
-        // has left `pending`; the poll would have caught it too, but this
-        // avoids showing a false timeout while the webhook is delayed.
-        // A cancelled order is a failed payment, not a confirmation.
-        setPaymentStatus('confirmed')
+        timeoutId = setTimeout(() => finish('timed_out'), 45000)
+      } else if (status === 'cancelled') {
+        finish('cancelled')
+      } else if (status && PAID_ORDER_STATUSES.has(status)) {
+        finish('confirmed')
       } else {
-        setPaymentStatus('timed_out')
+        finish('timed_out')
       }
     }, 20000)
 
@@ -288,14 +296,26 @@ function SuccessContent() {
               </>
             )}
 
+            {paymentStatus === 'cancelled' && (
+              <>
+                <div className="h-20 w-20 rounded-full bg-amber-500/10 flex items-center justify-center mb-6">
+                  <CreditCard className="h-10 w-10 text-amber-500" />
+                </div>
+                <h1 className="text-3xl font-semibold font-display mb-2">Order Cancelled</h1>
+                <p className="text-muted-foreground text-center max-w-md">
+                  This order was cancelled. Please contact the store if you have questions about your payment.
+                </p>
+              </>
+            )}
+
             {paymentStatus === 'timed_out' && (
               <>
                 <div className="h-20 w-20 rounded-full bg-amber-500/10 flex items-center justify-center mb-6">
                   <CreditCard className="h-10 w-10 text-amber-500" />
                 </div>
-                <h1 className="text-3xl font-semibold font-display mb-2">Payment Received</h1>
+                <h1 className="text-3xl font-semibold font-display mb-2">Payment Not Confirmed</h1>
                 <p className="text-muted-foreground text-center max-w-md">
-                  Your payment is being processed. You can track your order status below.
+                  We could not confirm your payment yet. Check your order status or contact the store before trying again.
                 </p>
               </>
             )}

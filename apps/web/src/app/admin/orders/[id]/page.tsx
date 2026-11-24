@@ -738,6 +738,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
         <BulkOrderReview
           orderId={order.id}
           approvalStatus={order.approval_status}
+          orderStatus={order.status}
           subtotalCents={order.total_cents}
           bulkCompanyName={order.bulk_company_name}
           bulkRequestedDate={order.bulk_requested_date}

@@ -56,6 +56,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       metadata?: Record<string, string>
       payment_intent?: string | { id: string }
       payment_status?: string
+      amount_total?: number | null
+      currency?: string | null
     }
     const orderId = session.metadata?.order_id
 
@@ -85,6 +87,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
+    // Session creation and persistence are separate operations. Retry missing or
+    // mismatched references so an operator can reconcile any paid session.
+    if (!session.id || !order.stripe_session_id || session.id !== order.stripe_session_id) {
+      console.error('[Webhook] Session mismatch; reconciliation required:', {
+        eventId: event.id, orderId, sessionId: session.id, storedSessionId: order.stripe_session_id,
+      })
+      return NextResponse.json({ success: false, error: 'Session does not match order' }, { status: 500 })
+    }
+
+    if (typeof session.amount_total !== 'number' || session.amount_total !== order.total_cents || session.currency !== 'myr') {
+      console.error('[Webhook] Payment amount or currency mismatch; reconciliation required:', {
+        eventId: event.id, orderId, sessionId: session.id,
+        amount: session.amount_total, expectedAmount: order.total_cents, currency: session.currency,
+      })
+      return NextResponse.json({ success: false, error: 'Payment does not match order' }, { status: 500 })
+    }
+
+    if (order.status === 'cancelled' && session.payment_status === 'paid') {
+      console.error('[Webhook] Paid session for cancelled order; reconciliation required:', {
+        eventId: event.id, orderId, sessionId: session.id,
+      })
+      return NextResponse.json({ success: false, error: 'Paid order is cancelled' }, { status: 500 })
+    }
+
     // Idempotency: skip if already in a post-preparing or terminal status.
     // 'paid' and 'accepted' are NOT skipped — the webhook must advance them to 'preparing'.
     if (['preparing', 'ready', 'picked_up', 'delivered', 'cancelled'].includes(order.status)) {
@@ -94,13 +120,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Handle async payment failure
     if (event.type === 'checkout.session.async_payment_failed') {
-      const { error: cancelError } = await supabase
+      if (order.status !== 'pending') {
+        console.error('[Webhook] Failed payment for non-pending order; reconciliation required:', {
+          eventId: event.id, orderId, sessionId: session.id, status: order.status,
+        })
+        return NextResponse.json({ success: false, error: 'Order is not pending' }, { status: 500 })
+      }
+
+      const { data: cancelledRows, error: cancelError } = await supabase
         .from('orders')
         .update({ status: 'cancelled' })
         .eq('id', orderId)
+        .eq('status', 'pending')
+        .eq('stripe_session_id', session.id)
+        .eq('total_cents', session.amount_total)
+        .select('id')
 
-      if (cancelError) {
-        console.error('[Webhook] Failed to cancel order after async payment failure:', orderId, cancelError)
+      if (cancelError || !cancelledRows?.length) {
+        console.error('[Webhook] Failed to cancel order after async payment failure; reconciliation required:', {
+          eventId: event.id, orderId, sessionId: session.id, error: cancelError,
+        })
         return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 })
       }
 
@@ -116,6 +155,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
+    if (session.payment_status !== 'paid') {
+      console.error('[Webhook] Async success without paid status; reconciliation required:', {
+        eventId: event.id, orderId, sessionId: session.id, paymentStatus: session.payment_status,
+      })
+      return NextResponse.json({ success: false, error: 'Payment not completed' }, { status: 500 })
+    }
+
     // Extract Payment Intent ID (not Checkout Session ID)
     const paymentIntentId = typeof session.payment_intent === 'string'
       ? session.payment_intent
@@ -123,12 +169,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const result = await finalizePaidOrder(supabase, orderId, {
       paymentPatch: { stripe_payment_intent_id: paymentIntentId },
+      stripePayment: { sessionId: session.id, amountTotal: session.amount_total, currency: 'myr' },
       logLabel: 'Webhook',
     })
 
     if (result.outcome === 'failed') {
       console.error('[Webhook] Failed to advance order to preparing:', orderId, result.error)
       return NextResponse.json({ success: false, error: 'Failed to advance order to preparing' }, { status: 500 })
+    }
+
+    if (result.outcome === 'already_processed' && result.status === 'cancelled') {
+      console.error('[Webhook] Paid session for cancelled order; reconciliation required:', {
+        eventId: event.id, orderId, sessionId: session.id,
+      })
+      return NextResponse.json({ success: false, error: 'Paid order is cancelled' }, { status: 500 })
     }
 
     if (result.outcome === 'not_found') {

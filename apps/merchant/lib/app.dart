@@ -401,7 +401,7 @@ class MerchantApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Mad Krapow Merchant',
+      title: 'MadKrapow Merchant',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,

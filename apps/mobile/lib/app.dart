@@ -281,7 +281,7 @@ class MadKrapowApp extends ConsumerWidget {
 
     return AuthListener(
       child: MaterialApp.router(
-        title: 'Mad Krapow',
+        title: 'MadKrapow',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         darkTheme: AppTheme.darkTheme,

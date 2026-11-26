@@ -500,7 +500,9 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           );
         }
 
-        _selectedGroupId ??= groups.first.id;
+        if (!groups.any((group) => group.id == _selectedGroupId)) {
+          _selectedGroupId = groups.first.id;
+        }
 
         final modifiersAsync = ref.watch(
           modifiersForGroupProvider(_selectedGroupId!),
@@ -514,6 +516,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      key: ValueKey(_selectedGroupId),
                       initialValue: _selectedGroupId,
                       decoration: const InputDecoration(
                         labelText: 'Modifier Group',

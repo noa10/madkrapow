@@ -148,12 +148,13 @@ Cron routes (Bearer `CRON_SECRET`):
   disabled rather than treating it as an idle queue.
 - Rollout order: apply the archival migration `20261126131000` first because
   the deployed Get Menu and storefront select `archived_at`; then the atomic
-  binding RPC `20261126132000` and the menu write security migration
-  `20261126140000`, then the Grab refresh queue `20261126130000`, then deploy
-  the worker and enable the schedule. The integration's existing runtime switch
-  must be enabled before it sends; after enabling it, run the worker once by
-  hand to send the initial notification for the menu as it stands, because the
-  queue only holds edits made after this migration.
+  binding RPC `20261126132000`, its lock-order follow-up
+  `20261127100000`, and the menu write security migration `20261126140000`,
+  then the Grab refresh queue `20261126130000`, then deploy the worker and
+  enable the schedule. The integration's existing runtime switch must be
+  enabled before it sends; after enabling it, run the worker once by hand to
+  send the initial notification for the menu as it stands, because the queue
+  only holds edits made after this migration.
   An accepted notification means Grab was asked to pull, not that Grab applied
   the menu; use the Grab menu trace to inspect upstream status. Existing manual
   and immediate notifications can duplicate a scheduled request, and retries

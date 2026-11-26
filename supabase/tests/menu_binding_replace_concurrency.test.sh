@@ -32,7 +32,7 @@ CREATE TABLE public.channel_categories (category_id uuid, channel text, external
 CREATE TABLE public.channel_modifiers (modifier_id uuid, channel text, price_cents integer);
 SQL
 
-for migration in 20261126130000_grabfood_menu_refresh 20261126131000_menu_archival 20261126140000_menu_write_security 20261126132000_atomic_item_modifier_groups; do
+for migration in 20261126130000_grabfood_menu_refresh 20261126131000_menu_archival 20261126140000_menu_write_security 20261126132000_atomic_item_modifier_groups 20261127100000_menu_binding_lock_order; do
   "${PSQL[@]}" -d "$DB" < "$ROOT/supabase/migrations/$migration.sql" >/dev/null
 done
 
@@ -68,4 +68,33 @@ groups=$("${PSQL[@]}" -d "$DB" -c "SELECT string_agg(modifier_group_id::text, ',
 [ "$groups" = "55111111-0000-0000-0000-000000000004" ] || fail "bindings were merged instead of replaced (got: $groups)"
 
 echo "ok - concurrent replacements serialize and the last writer owns the binding set"
+
+# A replacement used to delete the item's bindings first and only then take the
+# modifier-group advisory lock. A concurrent group archive takes the group lock
+# first and then deletes the same binding rows, producing a 40P01 deadlock. The
+# lock-order migration takes every group lock before the DELETE.
+"${PSQL[@]}" -d "$DB" -c "INSERT INTO public.menu_item_modifier_groups (menu_item_id, modifier_group_id) VALUES ('55111111-0000-0000-0000-000000000002', '55111111-0000-0000-0000-000000000003') ON CONFLICT DO NOTHING" >/dev/null
+
+group_holder() {
+  "${PSQL[@]}" -d "$DB" -c "SELECT set_config('request.jwt.claims', '{\"role\":\"service_role\"}', false)" \
+    -c "BEGIN" \
+    -c "SELECT public.lock_menu_parent('modifier_groups', '$1')" \
+    -c "SELECT pg_sleep($2)" \
+    -c "DELETE FROM public.menu_item_modifier_groups WHERE menu_item_id = '55111111-0000-0000-0000-000000000002' AND modifier_group_id = '$1'" \
+    -c "COMMIT"
+}
+
+group_holder 55111111-0000-0000-0000-000000000003 1.5 >/tmp/menu_binding_group_holder.log 2>&1 &
+group_holder_pid=$!
+sleep 0.5
+session 55111111-0000-0000-0000-000000000003 0 >/tmp/menu_binding_group_waiter.log 2>&1 &
+group_waiter_pid=$!
+
+wait "$group_holder_pid" || fail "group holder failed"
+wait "$group_waiter_pid" || fail "replacement deadlocked with a concurrent group archive"
+if grep -qi "deadlock detected" /tmp/menu_binding_group_holder.log /tmp/menu_binding_group_waiter.log; then
+  fail "replacement deadlocked with a concurrent group archive"
+fi
+
+echo "ok - replacement takes group locks before deleting bindings"
 "${PSQL[@]}" -d postgres -c "DROP DATABASE $DB" >/dev/null

@@ -274,7 +274,6 @@ class MenuApiClient {
     String? description,
     int minSelections = 0,
     int maxSelections = 1,
-    bool isRequired = false,
     int sortOrder = 0,
   }) async {
     final response = await _http.post(
@@ -285,7 +284,6 @@ class MenuApiClient {
         'description': description,
         'min_selections': minSelections,
         'max_selections': maxSelections,
-        'is_required': isRequired,
         'sort_order': sortOrder,
       }),
     );
@@ -300,7 +298,6 @@ class MenuApiClient {
     String? description,
     int? minSelections,
     int? maxSelections,
-    bool? isRequired,
     int? sortOrder,
   }) async {
     final body = <String, dynamic>{};
@@ -308,7 +305,6 @@ class MenuApiClient {
     if (hasDescription) body['description'] = description;
     if (minSelections != null) body['min_selections'] = minSelections;
     if (maxSelections != null) body['max_selections'] = maxSelections;
-    if (isRequired != null) body['is_required'] = isRequired;
     if (sortOrder != null) body['sort_order'] = sortOrder;
 
     final response = await _http.patch(

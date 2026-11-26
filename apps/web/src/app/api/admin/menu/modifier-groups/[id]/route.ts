@@ -8,7 +8,6 @@ const updateModifierGroupSchema = z.object({
   description: z.string().nullable().optional(),
   min_selections: z.number().int().min(0).optional(),
   max_selections: z.number().int().min(1).optional(),
-  is_required: z.boolean().optional(),
   sort_order: z.number().int().optional(),
 });
 

@@ -38,6 +38,10 @@ $$;
 REVOKE ALL ON FUNCTION public.lock_menu_parent_pair(text, uuid, uuid) FROM PUBLIC, anon, authenticated;
 -- The invoker-rights archive trigger calls these as the deleting role, so the
 -- roles that may delete menu rows need EXECUTE on the lock helpers.
+-- Accepted tradeoff: a signed-in user can call these helpers directly and take
+-- a transaction-scoped advisory lock for a menu-parent key. The lock cannot
+-- read or write rows and ends with the request; making the helpers SECURITY
+-- DEFINER would not prevent arbitrary-key locking either.
 GRANT EXECUTE ON FUNCTION public.menu_parent_key(text, uuid), public.lock_menu_parent(text, uuid),
   public.lock_menu_parent_pair(text, uuid, uuid)
   TO authenticated, service_role;

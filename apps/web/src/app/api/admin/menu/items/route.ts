@@ -9,6 +9,7 @@ const createItemSchema = z.object({
   price_cents: z.number().int().min(0),
   image_url: z.string().nullable().optional(),
   is_available: z.boolean().optional().default(true),
+  is_signature: z.boolean().optional().default(false),
   category_id: z.string().guid(),
   sort_order: z.number().int().optional().default(0),
 });

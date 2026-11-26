@@ -69,6 +69,33 @@ const ROWS: MenuCategoryRow[] = [
 ]
 
 describe('buildGrabMenu', () => {
+  it('omits archived items and modifiers while keeping unavailable active products', () => {
+    const rows = structuredClone(ROWS)
+    const item = rows[0].menu_items![0] as NonNullable<MenuCategoryRow['menu_items']>[number] & { archived_at?: string }
+    const group = item.menu_item_modifier_groups![0].modifier_groups as { modifiers: Array<{ archived_at?: string }> }
+    group.modifiers[0].archived_at = '2026-11-26T00:00:00Z'
+    let menu = buildGrabMenu(rows)
+    expect(menu.categories[0].items[0].modifierGroups![0].modifiers!.map((m) => m.id)).toEqual(['mod-2'])
+    item.archived_at = '2026-11-26T00:00:00Z'
+    menu = buildGrabMenu(rows)
+    expect(menu.categories).toEqual([])
+  })
+
+  it('omits a modifier group whose options are all archived', () => {
+    const rows = structuredClone(ROWS)
+    const item = rows[0].menu_items![0]
+    const group = item.menu_item_modifier_groups![0].modifier_groups as {
+      modifiers: Array<{ archived_at?: string }>
+    }
+    group.modifiers.forEach((modifier) => {
+      modifier.archived_at = '2026-11-26T00:00:00Z'
+    })
+
+    const menu = buildGrabMenu(rows)
+
+    expect(menu.categories[0].items[0].modifierGroups).toBeUndefined()
+  })
+
   it('emits only mapped categories and items, with stable ids and prices', () => {
     const menu = buildGrabMenu(ROWS, { merchantId: '1-TEST', partnerMerchantId: 'Partner-1' })
     expect(menu.merchantID).toBe('1-TEST')

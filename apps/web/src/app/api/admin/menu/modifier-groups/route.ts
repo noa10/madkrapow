@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const createModifierGroupSchema = z.object({
   name: z.string().min(1),
+  description: z.string().nullable().optional(),
+  min_selections: z.number().int().min(0).optional().default(0),
   max_selections: z.number().int().min(1).optional().default(1),
   is_required: z.boolean().optional().default(false),
   sort_order: z.number().int().optional().default(0),
@@ -74,6 +77,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     const message = getNextErrorMessage(error);

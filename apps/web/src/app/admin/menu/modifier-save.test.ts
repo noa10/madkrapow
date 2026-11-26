@@ -19,6 +19,7 @@ vi.mock("react", async (importOriginal) => ({
   },
   useEffect: () => {},
   useMemo: (fn: () => unknown) => fn(),
+  useRef: (initial: unknown) => ({ current: initial }),
 }));
 vi.mock("@/hooks/use-role-guard", () => ({ useRoleGuard: () => ({ hasAccess: true, isLoading: false }) }));
 vi.mock("@/stores/toast", () => ({ useToastStore: () => ({ addToast: vi.fn() }) }));
@@ -71,7 +72,7 @@ function setup(options: { price?: string; original?: number | null; created?: bo
       then(resolve: (value: unknown) => void) {
         if (operation === "write") events.push("local");
         else events.push(`read:${table}`);
-        resolve({ data: table === "modifier_groups" ? [group] : table === "modifiers" && operation === "read" ? [local] : null, error: operation === "read" && table === options.readFails ? { message: "read failed" } : null });
+        resolve({ data: operation === "write" ? [{ id: "option" }] : table === "modifier_groups" ? [group] : table === "modifiers" ? [local] : null, error: operation === "read" && table === options.readFails ? { message: "read failed" } : null });
       },
     };
     return builder;

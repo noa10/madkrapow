@@ -9,6 +9,7 @@ const updateItemSchema = z.object({
   price_cents: z.number().int().min(0).optional(),
   image_url: z.string().nullable().optional(),
   is_available: z.boolean().optional(),
+  is_signature: z.boolean().optional(),
   category_id: z.string().guid().optional(),
   sort_order: z.number().int().optional(),
 });

@@ -117,6 +117,8 @@ async function fetchCategories(): Promise<CategoryWithMenuItems[]> {
     .from('categories')
     .select('*, menu_items(*, menu_item_modifier_groups(menu_item_id))')
     .eq('is_active', true)
+    .is('archived_at', null)
+    .is('menu_items.archived_at', null)
     .order('sort_order', { ascending: true })
 
   if (error) throw error
@@ -167,6 +169,7 @@ async function fetchModifierGroupsByMenuItem(): Promise<ModifierGroupsByMenuItem
   const { data: modifierGroups, error: mgError } = await supabase
     .from('modifier_groups')
     .select('*')
+    .is('archived_at', null)
     .in('id', modifierGroupIds)
     .order('sort_order', { ascending: true })
 
@@ -221,6 +224,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const { data: menuItems, error } = await supabase
     .from('menu_items')
     .select('*')
+    .is('archived_at', null)
     .order('sort_order', { ascending: true })
 
   if (error) throw error
@@ -236,6 +240,7 @@ export async function getMenuItems(): Promise<MenuItemWithModifierGroups[]> {
   const { data: modifierGroups, error: mgError } = await supabase
     .from('modifier_groups')
     .select('*')
+    .is('archived_at', null)
     .in('id', modifierGroupIds)
     .order('sort_order', { ascending: true })
 
@@ -291,6 +296,7 @@ export async function getFullMenuTree(): Promise<(Category & { menu_items: FullM
   const { data: menuItems, error: menuItemsError } = await supabase
     .from('menu_items')
     .select('*')
+    .is('archived_at', null)
     .order('sort_order', { ascending: true })
 
   if (menuItemsError) throw menuItemsError
@@ -306,6 +312,7 @@ export async function getFullMenuTree(): Promise<(Category & { menu_items: FullM
   const { data: modifierGroups, error: mgError } = await supabase
     .from('modifier_groups')
     .select('*')
+    .is('archived_at', null)
     .in('id', modifierGroupIds)
     .order('sort_order', { ascending: true })
 
@@ -414,6 +421,7 @@ async function fetchItemById(id: string): Promise<FullMenuItem | null> {
   const { data, error } = await supabase
     .from('menu_items')
     .select(ITEM_DETAIL_SELECT)
+    .is('archived_at', null)
     .eq('id', id)
     .maybeSingle()
 
@@ -432,6 +440,7 @@ async function fetchItemBySlug(slug: string): Promise<FullMenuItem | null> {
   const { data, error } = await supabase
     .from('menu_items')
     .select(ITEM_DETAIL_SELECT)
+    .is('archived_at', null)
     .eq('slug', slug)
     .maybeSingle()
 
@@ -464,6 +473,7 @@ export const getItemSlugs = unstable_cache(
     const { data, error } = await supabase
       .from('menu_items')
       .select('slug')
+      .is('archived_at', null)
       .order('sort_order', { ascending: true })
 
     if (error) throw error

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const bindSchema = z.object({
@@ -47,10 +48,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify menu item exists
+    // Verify menu item exists and is active
     const { data: menuItem, error: menuItemError } = await supabase
       .from('menu_items')
-      .select('id')
+      .select('*')
       .eq('id', validation.data.menu_item_id)
       .single();
 
@@ -61,10 +62,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify modifier group exists
+    if (menuItem.archived_at) {
+      return NextResponse.json(
+        { error: 'Cannot bind options to an archived menu item' },
+        { status: 400 }
+      );
+    }
+
+    // Verify modifier group exists and is active
     const { data: modifierGroup, error: modifierGroupError } = await supabase
       .from('modifier_groups')
-      .select('id')
+      .select('*')
       .eq('id', validation.data.modifier_group_id)
       .single();
 
@@ -75,13 +83,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (modifierGroup.archived_at) {
+      return NextResponse.json(
+        { error: 'Cannot bind an archived modifier group' },
+        { status: 400 }
+      );
+    }
+
     // Check for duplicate binding
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('menu_item_modifier_groups')
       .select('id')
       .eq('menu_item_id', validation.data.menu_item_id)
       .eq('modifier_group_id', validation.data.modifier_group_id)
-      .single();
+      .maybeSingle();
+
+    if (existingError) {
+      return NextResponse.json(
+        { error: `Database error: ${existingError.message}` },
+        { status: 500 }
+      );
+    }
 
     if (existing) {
       return NextResponse.json(
@@ -107,6 +129,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     const message = getNextErrorMessage(error);
@@ -152,23 +175,12 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Delete all existing bindings for this menu item
-    await supabase
-      .from('menu_item_modifier_groups')
-      .delete()
-      .eq('menu_item_id', validation.data.menu_item_id);
-
-    // Insert new bindings
-    const bindingsToInsert = validation.data.bindings.map((binding) => ({
-      menu_item_id: validation.data.menu_item_id,
-      modifier_group_id: binding.modifier_group_id,
-      is_required: binding.is_required,
-    }));
-
-    const { data, error } = await supabase
-      .from('menu_item_modifier_groups')
-      .insert(bindingsToInsert)
-      .select();
+    // Replace every binding in one statement so a failed insert cannot leave
+    // the item with the old bindings already deleted.
+    const { data, error } = await supabase.rpc('replace_item_modifier_groups', {
+      p_menu_item_id: validation.data.menu_item_id,
+      p_bindings: validation.data.bindings,
+    });
 
     if (error) {
       return NextResponse.json(
@@ -177,6 +189,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data });
   } catch (error) {
     const message = getNextErrorMessage(error);
@@ -221,6 +234,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = getNextErrorMessage(error);

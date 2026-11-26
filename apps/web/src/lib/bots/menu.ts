@@ -93,6 +93,7 @@ export async function getBotItemWithModifiers(
   const { data: menuItem, error } = await supabase
     .from('menu_items')
     .select('*')
+    .is('archived_at', null)
     .eq('id', itemId)
     .single()
 
@@ -126,6 +127,7 @@ export async function getBotItemWithModifiers(
   const { data: modifierGroups, error: mgError } = await supabase
     .from('modifier_groups')
     .select('*')
+    .is('archived_at', null)
     .in('id', modifierGroupIds)
     .order('sort_order', { ascending: true })
 
@@ -136,6 +138,7 @@ export async function getBotItemWithModifiers(
   const { data: modifiers, error: modError } = await supabase
     .from('modifiers')
     .select('*')
+    .is('archived_at', null)
     .in('modifier_group_id', modifierGroupIdList)
     .order('sort_order', { ascending: true })
 

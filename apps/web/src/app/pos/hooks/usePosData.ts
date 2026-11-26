@@ -69,6 +69,7 @@ export function usePosData(enabled: boolean) {
       supabase
         .from('menu_items')
         .select('id, name, description, image_url, price_cents, is_available, category_id, sort_order')
+        .is('archived_at', null)
         .order('sort_order', { ascending: true }),
       supabase
         .from('menu_item_modifier_groups')
@@ -99,6 +100,7 @@ export function usePosData(enabled: boolean) {
         supabase
           .from('modifier_groups')
           .select('*')
+          .is('archived_at', null)
           .in('id', groupIds)
           .order('sort_order', { ascending: true }),
         supabase
@@ -184,6 +186,7 @@ export function usePosData(enabled: boolean) {
         supabase
           .from('modifier_groups')
           .select('*')
+          .is('archived_at', null)
           .in('id', groupIds)
           .order('sort_order', { ascending: true }),
         supabase

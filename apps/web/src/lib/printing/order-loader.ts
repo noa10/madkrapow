@@ -23,7 +23,7 @@ export async function loadPrintOrder(
   const { data: order, error } = await supabase
     .from('orders')
     .select(
-      'id, order_number, source, status, created_at, customer_name, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, payment_method, notes, delivery_type, table_label, pax'
+      'id, order_number, display_code, source, status, created_at, customer_name, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, payment_method, notes, delivery_type, table_label, pax'
     )
     .eq('id', orderId)
     .maybeSingle()
@@ -86,6 +86,7 @@ export async function loadPrintOrder(
 
   return {
     orderNumber: order.order_number as string,
+    displayCode: (order.display_code as string | null) ?? undefined,
     source: order.source as string,
     status: (order.status as string | null) ?? null,
     deliveryType: (order.delivery_type as string | null) ?? null,

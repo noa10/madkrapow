@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
-import { createGrabFoodClient } from '@/lib/grabfood/client'
+import { createGrabFoodClient, GrabFoodApiError } from '@/lib/grabfood/client'
 import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 import { env } from '@/lib/validators/env'
 
@@ -34,10 +34,15 @@ export async function POST(req: NextRequest) {
   if (!claim) return NextResponse.json({ notified: false, skipped: true, reason: 'nothing pending' })
 
   let failure: string | null = null
+  let deferred = false
   try {
     await createGrabFoodClient().notifyMenuUpdate(env.GRABFOOD_MERCHANT_ID)
   } catch (err) {
     failure = (err instanceof Error ? err.message : '') || 'Menu notification failed'
+    // Grab is still finishing its previous pull. The event stays pending and
+    // the queue retries after the cooldown; a red failed workflow adds noise
+    // without any action to take.
+    deferred = err instanceof GrabFoodApiError && err.status === 409
   }
   const { data: finished, error: finishError } = await db.rpc('finish_grabfood_menu_refresh', {
     p_token: token,
@@ -50,6 +55,11 @@ export async function POST(req: NextRequest) {
   if (finishError || !finished) {
     return NextResponse.json({ error: 'Could not record menu notification; it will be retried' }, { status: 500 })
   }
-  if (failure) return NextResponse.json({ error: 'Menu notification failed; it will be retried' }, { status: 502 })
+  if (failure && !deferred) {
+    return NextResponse.json({ error: 'Menu notification failed; it will be retried' }, { status: 502 })
+  }
+  if (deferred) {
+    return NextResponse.json({ notified: false, deferred: true, revision: claim.covered_revision })
+  }
   return NextResponse.json({ notified: true, revision: claim.covered_revision })
 }

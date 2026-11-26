@@ -20,7 +20,7 @@ jobs:
             -X POST "${NEXT_PUBLIC_URL}/api/cron/grabfood/menu-refresh" \
             -H "Authorization: Bearer ${CRON_SECRET}")
           printf '%s\n' "${response}"
-          printf '%s' "${response}" | jq -e '.notified == true or .skipped == true' > /dev/null
+          printf '%s' "${response}" | jq -e '.notified == true or .skipped == true or .deferred == true' > /dev/null
           if [ "$(printf '%s' "${response}" | jq -r '.reason // empty')" = "disabled" ]; then
             echo "::warning::GrabFood integration is disabled; menu refresh is paused"
           fi

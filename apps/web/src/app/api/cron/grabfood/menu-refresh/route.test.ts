@@ -11,7 +11,17 @@ const state = vi.hoisted(() => ({
 const notify = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/validators/env', () => ({ env: { CRON_SECRET: 'secret', GRABFOOD_MERCHANT_ID: 'merchant' } }))
 vi.mock('@/lib/grabfood/guard', () => ({ requireGrabFoodEnabled: () => state.enabled ? null : { error: 'disabled' } }))
-vi.mock('@/lib/grabfood/client', () => ({ createGrabFoodClient: () => ({ notifyMenuUpdate: notify }) }))
+vi.mock('@/lib/grabfood/client', () => {
+  class GrabFoodApiError extends Error {
+    readonly status: number
+    constructor(message: string, status: number, _path: string) {
+      super(message)
+      this.name = 'GrabFoodApiError'
+      this.status = status
+    }
+  }
+  return { GrabFoodApiError, createGrabFoodClient: () => ({ notifyMenuUpdate: notify }) }
+})
 vi.mock('@/lib/supabase/server', () => ({ getServiceClient: () => ({ rpc: async (name: string, args: Record<string, unknown>) => {
   state.calls.push([name, args ?? {}])
   if (name === 'cleanup_grabfood_menu_refresh') return { data: 0, error: state.cleanupError }
@@ -19,6 +29,7 @@ vi.mock('@/lib/supabase/server', () => ({ getServiceClient: () => ({ rpc: async 
   return { data: state.finish, error: null }
 } }) }))
 const { POST } = await import('./route')
+const { GrabFoodApiError } = await import('@/lib/grabfood/client')
 const request = (auth = 'Bearer secret') => new Request('http://localhost/api/cron/grabfood/menu-refresh', { method: 'POST', headers: { authorization: auth } }) as Parameters<typeof POST>[0]
 const argsFor = (name: string) => state.calls.find(([called]) => called === name)?.[1]
 
@@ -52,6 +63,13 @@ describe('GrabFood menu refresh cron', () => {
     expect(result).toMatchObject({ notified: true, revision: 12 })
     expect(result).not.toHaveProperty('applied')
     expect(argsFor('finish_grabfood_menu_refresh')).toMatchObject({ p_revision: 12, p_error: null })
+  })
+  it('reports a Grab cooldown as deferred while keeping the event pending', async () => {
+    notify.mockRejectedValueOnce(new GrabFoodApiError('sync menu too frequently', 409, '/partner/v1/merchant/menu/notification'))
+    const response = await POST(request())
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ notified: false, deferred: true, revision: 12 })
+    expect(argsFor('finish_grabfood_menu_refresh')?.p_error).toContain('sync menu too frequently')
   })
   it('retains a failure for retry', async () => {
     notify.mockRejectedValueOnce(new Error('network failure'))

@@ -21,7 +21,19 @@ const PG_FOREIGN_KEY_VIOLATION = '23503'
 /** Postgres unique violation: another client claimed the job first. */
 const PG_UNIQUE_VIOLATION = '23505'
 
-const CLAIM_WINDOW_HOURS = 24
+/**
+ * How far back each channel looks for jobs that never printed.
+ *
+ * The bridge is a long-lived process, so a day of slack is safe and lets a
+ * pay-later order settled hours later still print. The merchant app is opened
+ * by hand: with a 24-hour window its first launch after this feature shipped
+ * would dump a day of old orders onto paper, so it only looks back far enough
+ * to cover a restart between an order arriving and the app printing it.
+ */
+const CLAIM_WINDOW_MS: Record<'bridge' | 'staff', number> = {
+  bridge: 24 * 3600_000,
+  staff: 30 * 60_000,
+}
 const ACTIVE_STATUSES = ['paid', 'preparing', 'ready', 'delivering', 'completed']
 
 export interface ClaimedJob {
@@ -33,8 +45,8 @@ export interface ClaimedJob {
 }
 
 /**
- * Print jobs that became due in the last 24 hours and have not printed yet.
- * Returns an empty list when auto-printing is switched off in settings.
+ * Print jobs that became due inside the channel's window and have not printed
+ * yet. Returns an empty list when auto-printing is switched off in settings.
  *
  * The window uses `updated_at`, not `created_at`, so a pay-later order settled
  * hours later still prints its receipt; the docket marker dedupes it.
@@ -44,7 +56,7 @@ export async function claimPendingJobs(via: 'bridge' | 'staff'): Promise<Claimed
   const settings = await loadPrintStoreSettings(supabase)
   if (!settings.autoPrintEnabled) return []
 
-  const since = new Date(Date.now() - CLAIM_WINDOW_HOURS * 3600_000).toISOString()
+  const since = new Date(Date.now() - CLAIM_WINDOW_MS[via]).toISOString()
   const { data: orders, error } = await supabase
     .from('orders')
     .select('id, source, status, delivery_type')

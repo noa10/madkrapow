@@ -84,6 +84,25 @@ describe('buildKitchenDocket', () => {
     const job = buildKitchenDocket(ORDER, { reprint: true })
     expect(job.lines[0]).toMatchObject({ text: '** REPRINT **' })
   })
+
+  it('puts every pipe-separated remark on its own line', () => {
+    const order = {
+      ...ORDER,
+      items: [
+        {
+          ...ORDER.items[0],
+          notes: 'Tak Pedas | Bekas Makanan (Photodegradable) | 135g | Thai Holy Basil',
+        },
+      ],
+    }
+    const job = buildKitchenDocket(order)
+    const texts = job.lines.flatMap((l) => (l.kind === 'text' ? [l.text] : []))
+    expect(texts).toContain('   ! Tak Pedas')
+    expect(texts).toContain('   ! Bekas Makanan (Photodegradable)')
+    expect(texts).toContain('   ! 135g')
+    expect(texts).toContain('   ! Thai Holy Basil')
+    expect(texts.some((t) => t.includes('|'))).toBe(false)
+  })
 })
 
 describe('buildGrabfoodTicket', () => {
@@ -294,6 +313,19 @@ describe('dine-in tickets', () => {
     expect(textsOf(buildKitchenDocket(ORDER))).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/^TABLE /)])
     )
+  })
+
+  it('prints each addon of a pipe-packed remark on its own line on the receipt', () => {
+    const order = {
+      ...ORDER,
+      items: [{ ...ORDER.items[0], notes: 'Tak Pedas | Bekas Makanan | Thai Holy Basil' }],
+    }
+    const texts = textsOf(buildReceipt(order, STORE))
+    expect(texts).toContain('   ! Tak Pedas')
+    expect(texts).toContain('   ! Bekas Makanan')
+    expect(texts).toContain('   ! Thai Holy Basil')
+    const remarkLines = texts.filter((t) => t.trimStart().startsWith('!'))
+    expect(remarkLines.every((t) => !t.includes('|'))).toBe(true)
   })
 })
 

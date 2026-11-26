@@ -52,6 +52,7 @@ vi.mock('@/lib/supabase/client', () => ({
 vi.mock('next/dynamic', () => ({ default: () => () => null }))
 
 import AdminOrderDetailPage from './page'
+import { GrabDeliveryStatusCard } from '@/components/admin/orders/GrabDeliveryStatusCard'
 
 const order = {
   id: 'one', display_code: 'ABC', status: 'paid', source: 'grabfood',
@@ -65,6 +66,13 @@ const renderDetail = () => {
 }
 
 describe('order detail refresh errors', () => {
+  it.each(['grabfood', 'web'])('shows the Grab delivery card only for GrabFood (source %s)', (source) => {
+    state.index = 0; state.id = 'one'
+    state.values = [{ ...order, source, channel_orders: [] }, null, false, null, [], null, false]
+    const children = renderDetail().props.children[2].props.children
+    const card = children.find((child: { type?: unknown } | null) => child?.type === GrabDeliveryStatusCard)
+    expect(Boolean(card)).toBe(source === 'grabfood')
+  })
   it('does not expose order actions until payment claim status is known', () => {
     state.index = 0; state.id = 'one'
     state.values = [order, null, false, null, [], null, null]

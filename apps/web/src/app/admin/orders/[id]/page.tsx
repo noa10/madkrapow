@@ -19,6 +19,7 @@ import { isClaimedByDiner } from "@/lib/pos/receipt";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
+import { GrabDeliveryStatusCard } from "@/components/admin/orders/GrabDeliveryStatusCard";
 import { ProviderBadges } from "@/components/orders/ProviderBadges";
 import {
   ADMIN_STATUS_LABELS,
@@ -638,6 +639,10 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
         </Card>
       )}
 
+      {order.source === 'grabfood' && (
+        <GrabDeliveryStatusCard orderId={order.id} terminal={isTerminalStatus(order.status)} />
+      )}
+
       {order.fulfillment_type === 'scheduled' && order.scheduled_for && (
         <Card>
           <CardContent className="pt-4">
@@ -730,6 +735,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
       <StatusTransitionButtons
         orderId={order.id}
         currentStatus={order.status}
+        isGrabFood={order.source === "grabfood"}
         onStatusUpdate={(newStatus) => setOrder(prev => prev ? { ...prev, status: newStatus } : null)}
       />
 

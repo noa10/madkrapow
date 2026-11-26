@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 const requestSchema = z.object({
   status: z.string(),
+  alreadyMarkedReadyInGrab: z.boolean().optional(),
 });
 
 export async function POST(
@@ -43,6 +44,87 @@ export async function POST(
 
     const { status: newStatus } = validation.data;
 
+    // Every staff role may move kitchen state (paid → preparing → ready), but
+    // money-state and destructive transitions stay with admins/managers.
+    const actorRole = user.app_metadata?.role as string | undefined;
+    const isManagerial = actorRole === 'admin' || actorRole === 'manager';
+
+    if (validation.data.alreadyMarkedReadyInGrab) {
+      if (!isManagerial || !user.id) {
+        return NextResponse.json({ error: 'Only an admin or manager can confirm Grab readiness.' }, { status: 403 });
+      }
+      if (newStatus !== 'ready') {
+        return NextResponse.json({ error: 'Confirmation applies only to GrabFood orders marked ready.' }, { status: 400 });
+      }
+
+      // The RPC locks the order and claim, verifies source/status, promotes a
+      // failed/uncertain claim, and writes the status plus audit row in one
+      // transaction. The route must not pre-read or pre-write those tables:
+      // doing so would reintroduce the non-atomic window this replaces.
+      const { data, error } = await getServiceClient().rpc('confirm_grabfood_order_ready', {
+        p_order_id: id,
+        p_actor_id: user.id,
+      });
+
+      if (error) {
+        console.error('[Status API] Grab confirmation RPC failed:', error);
+        return NextResponse.json({ error: 'Could not record Grab ready confirmation.' }, { status: 503 });
+      }
+
+      const result = data as {
+        ok?: boolean;
+        code?: string;
+        status?: string;
+        changed?: boolean;
+        duplicate?: boolean;
+        previous_status?: string;
+      } | null;
+
+      if (result?.ok) {
+        const duplicate = result.duplicate === true;
+        return NextResponse.json({
+          success: true,
+          status: 'ready',
+          changed: result.changed === true,
+          duplicate,
+          ...(duplicate ? { warning: 'Grab was already marked ready; no changes were needed.' } : {}),
+        });
+      }
+
+      switch (result?.code) {
+        case 'not_found':
+          return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+        case 'not_grabfood':
+          return NextResponse.json(
+            { error: 'Confirmation applies only to GrabFood orders marked ready.' },
+            { status: 400 }
+          );
+        case 'pending':
+          return NextResponse.json(
+            { error: 'Order must be paid before Grab can be told it is ready.' },
+            { status: 409 }
+          );
+        case 'not_eligible':
+          return NextResponse.json(
+            { error: 'Order is not eligible for Grab ready confirmation.' },
+            { status: 409 }
+          );
+        case 'in_progress':
+          return NextResponse.json(
+            { error: 'Grab ready notification is in progress or needs review.' },
+            { status: 409 }
+          );
+        case 'actor_required':
+          return NextResponse.json(
+            { error: 'Only an admin or manager can confirm Grab readiness.' },
+            { status: 403 }
+          );
+        default:
+          console.error('[Status API] Unexpected Grab confirmation result:', result);
+          return NextResponse.json({ error: 'Could not record Grab ready confirmation.' }, { status: 500 });
+      }
+    }
+
     const { data: order, error: fetchError } = await db
       .from('orders')
       .select('status, delivery_type, source')
@@ -59,10 +141,6 @@ export async function POST(
       );
     }
 
-    // Every staff role may move kitchen state (paid → preparing → ready), but
-    // money-state and destructive transitions stay with admins/managers.
-    const actorRole = user.app_metadata?.role as string | undefined;
-    const isManagerial = actorRole === 'admin' || actorRole === 'manager';
     const isPosOrder =
       order.source === 'counter' || order.delivery_type === 'dine_in';
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { notifyMenuChanged } from "@/lib/admin/menu-cache";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -33,19 +33,16 @@ import { cn } from "@/lib/utils";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { useToastStore } from "@/stores/toast";
 import { notifyGrabMenuAfterChange } from "@/lib/grabfood/notify-client";
-import { visibleMenuCategories, visibleMenuItems } from "./menu-visibility";
+import { isMissingColumnError, resolveGroupSelectionRange, visibleMenuCategories, visibleMenuItems } from "./menu-visibility";
 import { MenuItemActions } from "./menu-item-actions";
 
-const MENU_ITEM_SELECT =
-  "id, category_id, name, description, price_cents, image_url, is_available, sort_order, spice_level, ingredients, is_signature";
-const CATEGORY_SELECT =
-  "id, name, description, sort_order, is_active, created_at, updated_at";
-const MODIFIER_GROUP_SELECT =
-  "id, name, description, min_selections, max_selections, sort_order, created_at, updated_at";
-const MODIFIER_SELECT =
-  "id, modifier_group_id, name, price_delta_cents, is_default, is_available, sort_order, created_at, updated_at, channel_modifiers(channel, price_cents)";
+const MENU_ITEM_SELECT = "*";
+const CATEGORY_SELECT = "*";
+const MODIFIER_GROUP_SELECT = "*";
+const MODIFIER_SELECT = "*, channel_modifiers(channel, price_cents)";
 
 interface Category {
+  archived_at?: string | null;
   id: string;
   name: string;
   description: string | null;
@@ -56,6 +53,7 @@ interface Category {
 }
 
 interface MenuItem {
+  archived_at?: string | null;
   id: string;
   category_id: string;
   name: string;
@@ -70,6 +68,7 @@ interface MenuItem {
 }
 
 interface ModifierGroup {
+  archived_at?: string | null;
   id: string;
   name: string;
   description: string | null;
@@ -82,6 +81,7 @@ interface ModifierGroup {
 }
 
 interface Modifier {
+  archived_at?: string | null;
   id: string;
   modifier_group_id: string;
   name: string;
@@ -107,6 +107,7 @@ function SortableMenuItemRow({
   onDeleteStart,
   onDelete,
   onDeleteCancel,
+  autoFocusDelete,
   onToggleAvailability,
   canMoveUp,
   canMoveDown,
@@ -121,6 +122,7 @@ function SortableMenuItemRow({
   onDeleteStart: () => void;
   onDelete: () => void;
   onDeleteCancel: () => void;
+  autoFocusDelete: boolean;
   onToggleAvailability: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -237,6 +239,7 @@ function SortableMenuItemRow({
           name={item.name}
           isDeleting={isDeleting}
           isSaving={isSaving}
+          autoFocusDelete={autoFocusDelete}
           onDeleteStart={onDeleteStart}
           onDelete={onDelete}
           onDeleteCancel={onDeleteCancel}
@@ -255,6 +258,8 @@ function SortableModifierRow({
   onDelete,
   onDeleteStart,
   onDeleteCancel,
+  autoFocusDelete,
+  losesAssignments,
   formatPrice,
   canMoveUp,
   canMoveDown,
@@ -269,6 +274,8 @@ function SortableModifierRow({
   onDelete: () => void;
   onDeleteStart: () => void;
   onDeleteCancel: () => void;
+  autoFocusDelete: boolean;
+  losesAssignments: boolean;
   formatPrice: (cents: number) => string;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -351,16 +358,38 @@ function SortableModifierRow({
           <Pencil className="h-4 w-4" />
         </Button>
         {isDeleting ? (
-          <div className="flex items-center gap-1">
-            <Button variant="destructive" size="sm" onClick={onDelete} disabled={isSaving}>
+          <div className="flex flex-wrap items-center gap-1">
+            <span id={`modifier-delete-warning-${modifier.id}`} className="text-sm text-destructive">This removes {modifier.name} from active menus.{losesAssignments ? " This is the last available option, so required item assignments for this group will be removed." : ""}</span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onDelete}
+              disabled={isSaving}
+              autoFocus
+              aria-label={`Confirm delete option ${modifier.name}`}
+              aria-describedby={`modifier-delete-warning-${modifier.id}`}
+            >
               Confirm
             </Button>
-            <Button variant="outline" size="sm" onClick={onDeleteCancel} disabled={isSaving}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDeleteCancel}
+              disabled={isSaving}
+              aria-label={`Cancel delete option ${modifier.name}`}
+            >
               Cancel
             </Button>
           </div>
         ) : (
-          <Button variant="ghost" size="icon" onClick={onDeleteStart} disabled={isSaving} aria-label={`Delete ${modifier.name}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDeleteStart}
+            disabled={isSaving}
+            autoFocus={autoFocusDelete}
+            aria-label={`Delete ${modifier.name}`}
+          >
             <Trash2 className="h-4 w-4 text-red-500" />
           </Button>
         )}
@@ -369,22 +398,55 @@ function SortableModifierRow({
   );
 }
 
+function mutationErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  return "An unexpected error occurred.";
+}
+
+// Monotonic token so a slow binding response for a previously selected item
+// cannot overwrite the current item's assignments.
+let bindingsRequestSeq = 0;
+
+/**
+ * A DELETE filtered by RLS returns success with no rows changed. Archiving is
+ * confirmed by reading the archived row back before reporting success.
+ */
+async function assertArchived(
+  supabase: ReturnType<typeof getBrowserClient>,
+  table: "categories" | "menu_items" | "modifier_groups" | "modifiers",
+  id: string,
+  label: string,
+): Promise<void> {
+  const { data, error } = await supabase.from(table).select("archived_at").eq("id", id);
+  if (error) {
+    // Before the archival migration the column does not exist and the DELETE
+    // above hard-deletes the row, which is also a successful delete.
+    if (isMissingColumnError(error)) return;
+    throw error;
+  }
+  if (!data?.[0]?.archived_at) {
+    throw new Error(`The server did not confirm that the ${label} was deleted. You may not have permission, or the row may have changed. Reload the page and try again.`);
+  }
+}
+
 export default function AdminMenuPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin", "manager"]);
   const { addToast } = useToastStore();
 
-  const notifyGrabAfterMenuChange = async (label: string) => {
+  const notifyGrabAfterMenuChange = async (label: string, action: "saved" | "deleted" = "saved") => {
     const warning = await notifyGrabMenuAfterChange();
     if (warning) {
       addToast({
         type: "error",
-        title: `${label} saved, but Grab menu was not refreshed`,
+        title: `${label} ${action}, but Grab menu was not refreshed`,
         description: warning,
       });
     } else {
       addToast({
         type: "success",
-        title: `${label} saved; Grab menu refresh requested`,
+        title: `${label} ${action}; Grab menu refresh requested`,
       });
     }
   };
@@ -409,7 +471,10 @@ export default function AdminMenuPage() {
   const [snoozingItemId, setSnoozingItemId] = useState<string | null>(null);
 
   // Modifier groups state
-  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const [allModifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const modifierGroups = useMemo(() => allModifierGroups
+    .filter((group) => !group.archived_at)
+    .map((group) => ({ ...group, modifiers: group.modifiers?.filter((modifier) => !modifier.archived_at) })), [allModifierGroups]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editingGroup, setEditingGroup] = useState<{
     id?: string;
@@ -417,6 +482,8 @@ export default function AdminMenuPage() {
     description: string;
     type: "radio" | "checkbox";
     required: boolean;
+    minSelections?: number;
+    maxSelections?: number;
   } | null>(null);
   const [editingModifier, setEditingModifier] = useState<{
     groupId: string;
@@ -438,13 +505,19 @@ export default function AdminMenuPage() {
 
   // Item-modifier group bindings state
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
+  const selectedMenuItemIdRef = useRef(selectedMenuItemId);
   const [selectedBindings, setSelectedBindings] = useState<Record<string, { bound: boolean; required: boolean }>>({});
   const [bindingsLoading, setBindingsLoading] = useState(false);
   const [bindingsSaving, setBindingsSaving] = useState(false);
   const [bindingsSaved, setBindingsSaved] = useState(false);
+  const [bindingsLoadFailed, setBindingsLoadFailed] = useState(false);
+  const [bindingsLoadError, setBindingsLoadError] = useState<string | null>(null);
 
   // Drag state
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [restoreFocusId, setRestoreFocusId] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = getBrowserClient();
@@ -465,8 +538,10 @@ export default function AdminMenuPage() {
           .order("sort_order", { ascending: true }),
       ]);
 
-      if (menuItemsRes.error) {
-        setError(menuItemsRes.error.message);
+      const loadError = menuItemsRes.error ?? categoriesRes.error ?? groupsRes.error;
+      if (loadError) {
+        setError(loadError.message);
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -478,11 +553,18 @@ export default function AdminMenuPage() {
 
       if (groupsData.length > 0) {
         const groupIds = groupsData.map((group) => group.id);
-        const { data: modifiers } = await supabase
+        const { data: modifiers, error: modifiersError } = await supabase
           .from("modifiers")
           .select(MODIFIER_SELECT)
           .in("modifier_group_id", groupIds)
           .order("sort_order", { ascending: true });
+
+        if (modifiersError) {
+          setError(modifiersError.message);
+          setLoadFailed(true);
+          setLoading(false);
+          return;
+        }
 
         const modifiersData: Modifier[] = modifiers ?? [];
         const groupsWithModifiers = groupsData.map((group) => ({
@@ -490,6 +572,8 @@ export default function AdminMenuPage() {
           modifiers: modifiersData.filter((modifier) => modifier.modifier_group_id === group.id),
         }));
         setModifierGroups(groupsWithModifiers);
+      } else {
+        setModifierGroups([]);
       }
 
       setLoading(false);
@@ -549,6 +633,7 @@ export default function AdminMenuPage() {
   const openCreateForm = () => {
     setFormData({ name: "", description: "" });
     setEditingCategory(null);
+    setFormError(null);
     setIsFormOpen(true);
   };
 
@@ -558,6 +643,7 @@ export default function AdminMenuPage() {
       description: category.description || "",
     });
     setEditingCategory(category);
+    setFormError(null);
     setIsFormOpen(true);
   };
 
@@ -565,6 +651,7 @@ export default function AdminMenuPage() {
     setIsFormOpen(false);
     setEditingCategory(null);
     setFormData({ name: "", description: "" });
+    setFormError(null);
   };
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
@@ -572,6 +659,7 @@ export default function AdminMenuPage() {
     if (!formData.name.trim()) return;
 
     setSaving(true);
+    setFormError(null);
     const supabase = getBrowserClient();
 
     try {
@@ -598,19 +686,26 @@ export default function AdminMenuPage() {
 
         if (error) throw error;
       }
+    } catch (err: unknown) {
+      setFormError(mutationErrorMessage(err));
+      setSaving(false);
+      return;
+    }
 
-      notifyMenuChanged();
+    closeForm();
+    notifyMenuChanged();
+
+    try {
       await notifyGrabAfterMenuChange("Menu section");
 
       const categoriesRes = await supabase
         .from("categories")
         .select(CATEGORY_SELECT)
         .order("sort_order", { ascending: true });
-      setCategories(categoriesRes.data || []);
-      closeForm();
+      if (categoriesRes.error) throw categoriesRes.error;
+      setCategories(categoriesRes.data ?? []);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      setError(errorMessage);
+      setError(`Category saved, but the menu could not be refreshed: ${mutationErrorMessage(err)} Reload the page to see the current menu.`);
     } finally {
       setSaving(false);
     }
@@ -619,6 +714,7 @@ export default function AdminMenuPage() {
   const handleDeleteCategory = async () => {
     if (!deletingCategory) return;
 
+    setError(null);
     setSaving(true);
     const supabase = getBrowserClient();
 
@@ -629,20 +725,42 @@ export default function AdminMenuPage() {
         .eq("id", deletingCategory.id);
 
       if (error) throw error;
+      await assertArchived(supabase, "categories", deletingCategory.id, "category");
+    } catch (err: unknown) {
+      setError(`Could not delete category: ${mutationErrorMessage(err)}`);
+      setSaving(false);
+      return;
+    }
 
-      notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Menu section");
+    const deletedCategoryId = deletingCategory.id;
+    const selectedItemWasInCategory = menuItems.some(
+      (item) => item.id === selectedMenuItemId && item.category_id === deletedCategoryId
+    );
+
+    setDeletingCategory(null);
+    if (categoryFilter === deletedCategoryId) setCategoryFilter("all");
+    if (selectedItemWasInCategory) {
+      selectedMenuItemIdRef.current = "";
+      setSelectedMenuItemId("");
+      setSelectedBindings({});
+      setBindingsLoadFailed(false);
+      setBindingsLoadError(null);
+    }
+    notifyMenuChanged();
+
+    try {
+      await notifyGrabAfterMenuChange("Menu section", "deleted");
 
       const [menuItemsRes, categoriesRes] = await Promise.all([
         supabase.from("menu_items").select(MENU_ITEM_SELECT).order("sort_order", { ascending: true }),
         supabase.from("categories").select(CATEGORY_SELECT).order("sort_order", { ascending: true }),
       ]);
-      setMenuItems(menuItemsRes.data || []);
-      setCategories(categoriesRes.data || []);
-      setDeletingCategory(null);
+      if (menuItemsRes.error) throw menuItemsRes.error;
+      if (categoriesRes.error) throw categoriesRes.error;
+      setMenuItems(menuItemsRes.data ?? []);
+      setCategories(categoriesRes.data ?? []);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      setError(errorMessage);
+      setError(`Category deleted, but the menu could not be refreshed: ${mutationErrorMessage(err)} Reload the page to see the current menu.`);
     } finally {
       setSaving(false);
     }
@@ -651,6 +769,7 @@ export default function AdminMenuPage() {
   const handleDeleteMenuItem = async () => {
     if (!deletingMenuItem) return;
 
+    setError(null);
     setSaving(true);
     const supabase = getBrowserClient();
 
@@ -661,20 +780,36 @@ export default function AdminMenuPage() {
         .eq("id", deletingMenuItem.id);
 
       if (error) throw error;
+      await assertArchived(supabase, "menu_items", deletingMenuItem.id, "menu item");
+    } catch (err: unknown) {
+      setError(`Could not delete item: ${mutationErrorMessage(err)}`);
+      setSaving(false);
+      return;
+    }
 
-      notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Menu item");
+    const deletedItemId = deletingMenuItem.id;
+    setDeletingMenuItem(null);
+    if (selectedMenuItemId === deletedItemId) {
+      selectedMenuItemIdRef.current = "";
+      setSelectedMenuItemId("");
+      setSelectedBindings({});
+      setBindingsLoadFailed(false);
+      setBindingsLoadError(null);
+    }
+    notifyMenuChanged();
+
+    try {
+      await notifyGrabAfterMenuChange("Menu item", "deleted");
 
       const menuItemsRes = await supabase
         .from("menu_items")
         .select(MENU_ITEM_SELECT)
         .order("sort_order", { ascending: true });
+      if (menuItemsRes.error) throw menuItemsRes.error;
 
-      setMenuItems(menuItemsRes.data || []);
-      setDeletingMenuItem(null);
+      setMenuItems(menuItemsRes.data ?? []);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred";
-      setError(errorMessage);
+      setError(`Item deleted, but the menu could not be refreshed: ${mutationErrorMessage(err)} Reload the page to see the current menu.`);
     } finally {
       setSaving(false);
     }
@@ -906,7 +1041,7 @@ export default function AdminMenuPage() {
     });
   };
 
-  const fetchModifierGroups = async () => {
+  const fetchModifierGroups = async (): Promise<ModifierGroup[]> => {
     const supabase = getBrowserClient();
     const { data: groups, error: groupsError } = await supabase
       .from("modifier_groups")
@@ -931,9 +1066,11 @@ export default function AdminMenuPage() {
         modifiers: modifiersData.filter((modifier) => modifier.modifier_group_id === group.id),
       }));
       setModifierGroups(groupsWithModifiers);
-    } else {
-      setModifierGroups([]);
+      return groupsWithModifiers;
     }
+
+    setModifierGroups([]);
+    return [];
   };
 
   const handleCreateGroup = () => {
@@ -942,6 +1079,8 @@ export default function AdminMenuPage() {
       description: "",
       type: "radio",
       required: false,
+      minSelections: 0,
+      maxSelections: 1,
     });
   };
 
@@ -952,6 +1091,8 @@ export default function AdminMenuPage() {
       description: group.description || "",
       type: group.max_selections === 1 ? "radio" : "checkbox",
       required: group.min_selections > 0,
+      minSelections: group.min_selections,
+      maxSelections: group.max_selections,
     });
   };
 
@@ -960,12 +1101,25 @@ export default function AdminMenuPage() {
 
     const supabase = getBrowserClient();
     setSaving(true);
-    const maxSelections = editingGroup.type === "radio" ? 1 : 10;
-    const minSelections = editingGroup.required ? 1 : 0;
+
+    const wasRequired = (editingGroup.minSelections ?? 0) > 0;
+    const { minSelections, maxSelections } = resolveGroupSelectionRange(editingGroup);
+
+    if (minSelections > 0 && editingGroup.id && !wasRequired) {
+      const existingGroup = allModifierGroups.find((group) => group.id === editingGroup.id);
+      const hasAvailableOption = existingGroup?.modifiers?.some(
+        (modifier) => modifier.is_available && !modifier.archived_at
+      );
+      if (!hasAvailableOption) {
+        setError("A required option group needs at least one available option. Add an option and make it available before requiring this group.");
+        setSaving(false);
+        return;
+      }
+    }
 
     try {
       if (editingGroup.id) {
-        const { error: updateError } = await supabase
+        const { data: updated, error: updateError } = await supabase
           .from("modifier_groups")
           .update({
             name: editingGroup.name.trim(),
@@ -973,9 +1127,13 @@ export default function AdminMenuPage() {
             min_selections: minSelections,
             max_selections: maxSelections,
           })
-          .eq("id", editingGroup.id);
+          .eq("id", editingGroup.id)
+          .select("id");
 
         if (updateError) throw updateError;
+        if (!updated?.length) {
+          throw new Error("The server did not confirm that the option group was saved. You may not have permission, or the group may have changed. Reload the page and try again.");
+        }
       } else {
         const { data: maxOrder } = await supabase
           .from("modifier_groups")
@@ -1001,7 +1159,8 @@ export default function AdminMenuPage() {
 
       notifyMenuChanged();
       await notifyGrabAfterMenuChange("Option group");
-      await fetchModifierGroups();
+      const groups = await fetchModifierGroups();
+      await refreshSelectedItemBindings(groups);
       setEditingGroup(null);
     } catch (err: any) {
       setError(err.message);
@@ -1012,28 +1171,38 @@ export default function AdminMenuPage() {
 
   const handleDeleteGroup = async (groupId: string) => {
     const supabase = getBrowserClient();
+    setError(null);
     setSaving(true);
     try {
-      const { error: deleteModError } = await supabase
-        .from("modifiers")
-        .delete()
-        .eq("modifier_group_id", groupId);
-
-      if (deleteModError) throw deleteModError;
-
       const { error: deleteGroupError } = await supabase
         .from("modifier_groups")
         .delete()
         .eq("id", groupId);
 
       if (deleteGroupError) throw deleteGroupError;
+      await assertArchived(supabase, "modifier_groups", groupId, "option group");
+    } catch (err: unknown) {
+      setError(`Could not delete option group: ${mutationErrorMessage(err)}`);
+      setSaving(false);
+      return;
+    }
 
-      notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Option group");
+    setDeletingGroup(null);
+    // The archived group keeps its identity, so a stale selection would
+    // otherwise save a hidden group back onto the item.
+    setSelectedBindings((prev) => {
+      if (!(groupId in prev)) return prev;
+      const next = { ...prev };
+      delete next[groupId];
+      return next;
+    });
+    notifyMenuChanged();
+
+    try {
+      await notifyGrabAfterMenuChange("Option group", "deleted");
       await fetchModifierGroups();
-      setDeletingGroup(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(`Option group deleted, but the options list could not be refreshed: ${mutationErrorMessage(err)} Reload the page before making more changes.`);
     } finally {
       setSaving(false);
     }
@@ -1095,7 +1264,7 @@ export default function AdminMenuPage() {
     try {
       let modifierId = editingModifier.modifier.id;
       if (modifierId) {
-        const { error: updateError } = await supabase
+        const { data: updated, error: updateError } = await supabase
           .from("modifiers")
           .update({
             name: editingModifier.modifier.name.trim(),
@@ -1103,9 +1272,13 @@ export default function AdminMenuPage() {
             is_default: editingModifier.modifier.is_default,
             is_available: editingModifier.modifier.is_available,
           })
-          .eq("id", modifierId);
+          .eq("id", modifierId)
+          .select("id");
 
         if (updateError) throw updateError;
+        if (!updated?.length) {
+          throw new Error("The server did not confirm that the option was saved. You may not have permission, or the option may have changed. Reload the page and try again.");
+        }
         localSaved = true;
         notifyMenuChanged();
       } else {
@@ -1178,14 +1351,16 @@ export default function AdminMenuPage() {
 
       grabNotified = true;
       await notifyGrabAfterMenuChange("Option");
-      await fetchModifierGroups();
+      const groups = await fetchModifierGroups();
+      await refreshSelectedItemBindings(groups);
       setEditingModifier(null);
     } catch (err: any) {
       let refreshError = "";
       if (localSaved) {
         if (!grabNotified) await notifyGrabAfterMenuChange("Option");
         try {
-          await fetchModifierGroups();
+          const groups = await fetchModifierGroups();
+          await refreshSelectedItemBindings(groups);
         } catch {
           refreshError = " The options list could not be refreshed; reload the page before retrying.";
         }
@@ -1198,6 +1373,7 @@ export default function AdminMenuPage() {
 
   const handleDeleteModifier = async (modifierId: string) => {
     const supabase = getBrowserClient();
+    setError(null);
     setSaving(true);
     try {
       const { error: deleteError } = await supabase
@@ -1206,39 +1382,48 @@ export default function AdminMenuPage() {
         .eq("id", modifierId);
 
       if (deleteError) throw deleteError;
+      await assertArchived(supabase, "modifiers", modifierId, "option");
+    } catch (err: unknown) {
+      setError(`Could not delete option: ${mutationErrorMessage(err)}`);
+      setSaving(false);
+      return;
+    }
 
-      notifyMenuChanged();
-      await notifyGrabAfterMenuChange("Option");
-      await fetchModifierGroups();
-      setDeletingModifier(null);
-    } catch (err: any) {
-      setError(err.message);
+    setDeletingModifier(null);
+    notifyMenuChanged();
+
+    try {
+      await notifyGrabAfterMenuChange("Option", "deleted");
+      const groups = await fetchModifierGroups();
+      await refreshSelectedItemBindings(groups);
+    } catch (err: unknown) {
+      setError(`Option deleted, but the options list could not be refreshed: ${mutationErrorMessage(err)} Reload the page before making more changes.`);
     } finally {
       setSaving(false);
     }
   };
 
   // Item-modifier group binding functions
-  const handleMenuItemSelect = async (menuItemId: string) => {
-    setSelectedMenuItemId(menuItemId);
-    setBindingsSaved(false);
-
-    if (!menuItemId) {
-      setSelectedBindings({});
-      return;
-    }
-
+  const loadBindings = async (menuItemId: string, groups: ModifierGroup[] = modifierGroups) => {
+    const requestId = ++bindingsRequestSeq;
     setBindingsLoading(true);
+    setBindingsLoadFailed(false);
+    setBindingsLoadError(null);
+    // Clear immediately so a Save during the spinner cannot write the previous
+    // item's assignments to this item.
+    setSelectedBindings({});
     const supabase = getBrowserClient();
 
     try {
-      const { data: bindings } = await supabase
+      const { data: bindings, error: bindingsError } = await supabase
         .from("menu_item_modifier_groups")
         .select("modifier_group_id, is_required")
         .eq("menu_item_id", menuItemId);
 
+      if (bindingsError) throw bindingsError;
+
       const bindingsMap: Record<string, { bound: boolean; required: boolean }> = {};
-      for (const group of modifierGroups) {
+      for (const group of groups) {
         const binding = bindings?.find(
           (binding: { modifier_group_id: string; is_required: boolean }) =>
             binding.modifier_group_id === group.id
@@ -1248,12 +1433,45 @@ export default function AdminMenuPage() {
           required: binding?.is_required ?? false,
         };
       }
+      if (requestId !== bindingsRequestSeq || menuItemId !== selectedMenuItemIdRef.current) return;
       setSelectedBindings(bindingsMap);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (requestId !== bindingsRequestSeq || menuItemId !== selectedMenuItemIdRef.current) return;
+      // Never leave a previous item's bindings selected: saving them would
+      // overwrite this item's real assignments.
+      setSelectedBindings({});
+      setBindingsLoadFailed(true);
+      setBindingsLoadError(mutationErrorMessage(err));
     } finally {
-      setBindingsLoading(false);
+      if (requestId === bindingsRequestSeq && menuItemId === selectedMenuItemIdRef.current) {
+        setBindingsLoading(false);
+      }
     }
+  };
+
+  const refreshSelectedItemBindings = async (groups: ModifierGroup[]) => {
+    // A refresh can finish after the admin has selected another item. Read the
+    // current selection instead of the one captured when the refresh started.
+    const menuItemId = selectedMenuItemIdRef.current;
+    if (!menuItemId) return;
+    await loadBindings(menuItemId, groups);
+  };
+
+  const handleMenuItemSelect = async (menuItemId: string) => {
+    selectedMenuItemIdRef.current = menuItemId;
+    setSelectedMenuItemId(menuItemId);
+    setBindingsSaved(false);
+    setBindingsLoadFailed(false);
+    setBindingsLoadError(null);
+
+    if (!menuItemId) {
+      bindingsRequestSeq += 1;
+      setBindingsLoading(false);
+      setSelectedBindings({});
+      return;
+    }
+
+    await loadBindings(menuItemId);
   };
 
   const handleBindingToggle = (groupId: string) => {
@@ -1270,6 +1488,8 @@ export default function AdminMenuPage() {
   };
 
   const handleRequiredToggle = (groupId: string) => {
+    const group = modifierGroups.find((candidate) => candidate.id === groupId);
+    if (group && group.min_selections > 0) return;
     setSelectedBindings((prev) => {
       const current = prev[groupId];
       if (!current?.bound) return prev;
@@ -1281,34 +1501,28 @@ export default function AdminMenuPage() {
   };
 
   const handleSaveBindings = async () => {
-    if (!selectedMenuItemId) return;
+    if (!selectedMenuItemId || bindingsLoading || bindingsLoadFailed) return;
 
     setBindingsSaving(true);
     const supabase = getBrowserClient();
 
     try {
-      const { error: deleteError } = await supabase
-        .from("menu_item_modifier_groups")
-        .delete()
-        .eq("menu_item_id", selectedMenuItemId);
-
-      if (deleteError) throw deleteError;
-
-      const rowsToInsert = Object.entries(selectedBindings)
-        .filter(([, val]) => val.bound)
+      const visibleGroupIds = new Set(modifierGroups.map((group) => group.id));
+      const rowsToBind = Object.entries(selectedBindings)
+        // A group archived in another session is hidden from the panel, so it
+        // must not be resent or the atomic replace rejects every binding.
+        .filter(([groupId, val]) => val.bound && visibleGroupIds.has(groupId))
         .map(([groupId, val]) => ({
-          menu_item_id: selectedMenuItemId,
           modifier_group_id: groupId,
           is_required: val.required,
         }));
 
-      if (rowsToInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from("menu_item_modifier_groups")
-          .insert(rowsToInsert);
+      const { error: bindError } = await supabase.rpc("replace_item_modifier_groups", {
+        p_menu_item_id: selectedMenuItemId,
+        p_bindings: rowsToBind,
+      });
 
-        if (insertError) throw insertError;
-      }
+      if (bindError) throw bindError;
 
       notifyMenuChanged();
       await notifyGrabAfterMenuChange("Item options");
@@ -1366,6 +1580,18 @@ export default function AdminMenuPage() {
     return `+RM ${(cents / 100).toFixed(2)}`;
   };
 
+  const editingModifierGroup = editingModifier
+    ? modifierGroups.find((group) => group.id === editingModifier.groupId)
+    : undefined;
+  const editingModifierAvailableOptions = editingModifierGroup?.modifiers?.filter((option) => option.is_available) ?? [];
+  const editingModifierIsLastAvailable = Boolean(
+    editingModifier &&
+    editingModifier.modifier.id &&
+    editingModifier.modifier.is_available &&
+    editingModifierAvailableOptions.length === 1 &&
+    editingModifierAvailableOptions[0].id === editingModifier.modifier.id
+  );
+
   if (guardLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
@@ -1386,11 +1612,12 @@ export default function AdminMenuPage() {
     );
   }
 
-  if (error) {
+  if (loadFailed) {
     return (
       <Card className="bg-card border-destructive/50 shadow-sm rounded-xl">
-        <CardContent className="pt-6">
-          <p className="text-destructive text-center">{error}</p>
+        <CardContent className="pt-6 text-center" role="alert">
+          <p className="text-destructive">Could not load the menu: {error}</p>
+          <Button variant="outline" className="mt-2" onClick={() => window.location.reload()}>Try again</Button>
         </CardContent>
       </Card>
     );
@@ -1398,6 +1625,13 @@ export default function AdminMenuPage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div role="alert" className="rounded-xl border border-destructive/50 bg-card p-4 text-sm text-destructive">
+          <p>{error}</p>
+          <p>Review the message above. Dismiss it to keep managing the menu, or reload the page if the menu looks out of date.</p>
+          <Button variant="outline" size="sm" onClick={() => setError(null)} className="mt-2">Dismiss</Button>
+        </div>
+      )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Catalog</p>
@@ -1515,11 +1749,16 @@ export default function AdminMenuPage() {
                                     isDeleting={deletingMenuItem?.id === item.id}
                                     isSaving={saving}
                                     isSnoozing={snoozingItemId === item.id}
-                                    onDeleteStart={() =>
-                                      setDeletingMenuItem({ id: item.id, name: item.name })
-                                    }
+                                    onDeleteStart={() => {
+                                      setRestoreFocusId(null);
+                                      setDeletingMenuItem({ id: item.id, name: item.name });
+                                    }}
                                     onDelete={handleDeleteMenuItem}
-                                    onDeleteCancel={() => setDeletingMenuItem(null)}
+                                    onDeleteCancel={() => {
+                                      setDeletingMenuItem(null);
+                                      setRestoreFocusId(`item-${item.id}`);
+                                    }}
+                                    autoFocusDelete={restoreFocusId === `item-${item.id}`}
                                     onToggleAvailability={() => handleToggleAvailability(item)}
                                     canMoveUp={index > 0}
                                     canMoveDown={index < catItems.length - 1}
@@ -1605,7 +1844,7 @@ export default function AdminMenuPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline">{itemCount} items</Badge>
+                      <Badge variant="outline">{itemCount} {itemCount === 1 ? "item" : "items"}</Badge>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1615,20 +1854,28 @@ export default function AdminMenuPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                       {deletingCategory?.id === category.id ? (
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span id={`category-delete-warning-${category.id}`} className="text-sm text-destructive">This removes {itemCount} {itemCount === 1 ? "item" : "items"} from active menus. Past orders and Grab mappings are kept, but the menu entry cannot be restored here.</span>
                           <Button
                             variant="destructive"
                             size="sm"
                             onClick={handleDeleteCategory}
                             disabled={saving}
+                            autoFocus
+                            aria-label={`Confirm delete category ${category.name}`}
+                            aria-describedby={`category-delete-warning-${category.id}`}
                           >
                             Confirm
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setDeletingCategory(null)}
+                            onClick={() => {
+                              setDeletingCategory(null);
+                              setRestoreFocusId(`category-${category.id}`);
+                            }}
                             disabled={saving}
+                            aria-label={`Cancel delete category ${category.name}`}
                           >
                             Cancel
                           </Button>
@@ -1637,7 +1884,11 @@ export default function AdminMenuPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setDeletingCategory(category)}
+                          onClick={() => {
+                            setRestoreFocusId(null);
+                            setDeletingCategory(category);
+                          }}
+                          autoFocus={restoreFocusId === `category-${category.id}`}
                           aria-label={`Delete ${category.name}`}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
@@ -1693,6 +1944,9 @@ export default function AdminMenuPage() {
                     placeholder="Brief description"
                   />
                 </div>
+                {formError && (
+                  <p role="alert" className="text-sm text-destructive">{formError}</p>
+                )}
                 <div className="flex justify-end gap-2 pt-4">
                   <Button
                     type="button"
@@ -1855,20 +2109,28 @@ export default function AdminMenuPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                       {deletingGroup === group.id ? (
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span id={`group-delete-warning-${group.id}`} className="text-sm text-destructive">This removes {group.modifiers?.length ?? 0} {(group.modifiers?.length ?? 0) === 1 ? "option" : "options"} from active menus. Their per-item assignments and required settings are permanently deleted and cannot be restored.</span>
                           <Button
                             variant="destructive"
                             size="sm"
                             onClick={() => handleDeleteGroup(group.id)}
                             disabled={saving}
+                            autoFocus
+                            aria-label={`Confirm delete option group ${group.name}`}
+                            aria-describedby={`group-delete-warning-${group.id}`}
                           >
                             Confirm
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setDeletingGroup(null)}
+                            onClick={() => {
+                              setDeletingGroup(null);
+                              setRestoreFocusId(`group-${group.id}`);
+                            }}
                             disabled={saving}
+                            aria-label={`Cancel delete option group ${group.name}`}
                           >
                             Cancel
                           </Button>
@@ -1877,8 +2139,12 @@ export default function AdminMenuPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setDeletingGroup(group.id)}
+                          onClick={() => {
+                            setRestoreFocusId(null);
+                            setDeletingGroup(group.id);
+                          }}
                           disabled={saving}
+                          autoFocus={restoreFocusId === `group-${group.id}`}
                           aria-label={`Delete ${group.name}`}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
@@ -1985,6 +2251,11 @@ export default function AdminMenuPage() {
                               Available
                             </label>
                           </div>
+                          {editingModifierIsLastAvailable && (
+                            <p className="text-xs text-destructive">
+                              Unchecking Available removes required item assignments for this group because it would have no available options.
+                            </p>
+                          )}
                           {editingModifier.error && (
                             <p role="alert" className="text-sm text-destructive">{editingModifier.error}</p>
                           )}
@@ -2032,6 +2303,7 @@ export default function AdminMenuPage() {
                             <div className="space-y-2">
                               {group.modifiers.map((modifier, index) => {
                                 const isActive = activeDragId === modifier.id;
+                                const availableCount = group.modifiers?.filter((option) => option.is_available).length ?? 0;
                                 return (
                                   <SortableModifierRow
                                     key={modifier.id}
@@ -2041,8 +2313,16 @@ export default function AdminMenuPage() {
                                     isSaving={saving}
                                     onEdit={() => handleEditModifier(modifier)}
                                     onDelete={() => handleDeleteModifier(modifier.id)}
-                                    onDeleteStart={() => setDeletingModifier(modifier.id)}
-                                    onDeleteCancel={() => setDeletingModifier(null)}
+                                    onDeleteStart={() => {
+                                      setRestoreFocusId(null);
+                                      setDeletingModifier(modifier.id);
+                                    }}
+                                    onDeleteCancel={() => {
+                                      setDeletingModifier(null);
+                                      setRestoreFocusId(`modifier-${modifier.id}`);
+                                    }}
+                                    autoFocusDelete={restoreFocusId === `modifier-${modifier.id}`}
+                                    losesAssignments={availableCount === 1 && Boolean(modifier.is_available)}
                                     formatPrice={formatPrice}
                                     canMoveUp={index > 0}
                                     canMoveDown={index < (group.modifiers?.length ?? 0) - 1}
@@ -2079,6 +2359,7 @@ export default function AdminMenuPage() {
             <select
               value={selectedMenuItemId}
               aria-label="Select menu item"
+              disabled={bindingsLoading || bindingsSaving}
               onChange={(e) => handleMenuItemSelect(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             >
@@ -2097,6 +2378,19 @@ export default function AdminMenuPage() {
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
+              ) : bindingsLoadFailed ? (
+                <div role="alert" className="rounded-lg border border-destructive/50 bg-card p-4 text-sm text-destructive">
+                  <p>Could not load this item&apos;s option assignments: {bindingsLoadError ?? "Unknown error"}</p>
+                  <p>Saving is disabled until the assignments load, so the item&apos;s existing bindings are not overwritten.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => void handleMenuItemSelect(selectedMenuItemId)}
+                  >
+                    Retry
+                  </Button>
+                </div>
               ) : modifierGroups.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   No modifier groups available. Create one first.
@@ -2105,6 +2399,7 @@ export default function AdminMenuPage() {
                 <div className="space-y-2">
                   {modifierGroups.map((group) => {
                     const binding = selectedBindings[group.id] ?? { bound: false, required: false };
+                    const effectivelyRequired = binding.bound && (binding.required || group.min_selections > 0);
                     return (
                       <div
                         key={group.id}
@@ -2136,11 +2431,17 @@ export default function AdminMenuPage() {
                           </Badge>
                           {binding.bound && (
                             <Button
-                              variant={binding.required ? "default" : "outline"}
+                              variant={effectivelyRequired ? "default" : "outline"}
                               size="sm"
+                              disabled={group.min_selections > 0}
+                              title={group.min_selections > 0 ? `This group requires at least ${group.min_selections} option${group.min_selections === 1 ? "" : "s"}.` : undefined}
                               onClick={() => handleRequiredToggle(group.id)}
                             >
-                              {binding.required ? "Required" : "Optional"}
+                              {effectivelyRequired
+                                ? group.min_selections > 0
+                                  ? `Required · min ${group.min_selections}`
+                                  : "Required"
+                                : "Optional"}
                             </Button>
                           )}
                         </div>
@@ -2153,7 +2454,7 @@ export default function AdminMenuPage() {
               <div className="flex items-center gap-3 pt-2">
                 <Button
                   onClick={handleSaveBindings}
-                  disabled={bindingsSaving || modifierGroups.length === 0}
+                  disabled={bindingsSaving || bindingsLoading || bindingsLoadFailed || modifierGroups.length === 0}
                   size="sm"
                 >
                   {bindingsSaving ? (

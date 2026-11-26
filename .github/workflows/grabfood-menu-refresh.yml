@@ -1,0 +1,29 @@
+name: GrabFood Menu Refresh
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Process pending menu refresh
+        run: |
+          # No -L on purpose: a redirect would forward the bearer token.
+          response=$(curl --fail-with-body --silent --show-error --max-time 240 \
+            -X POST "${NEXT_PUBLIC_URL}/api/cron/grabfood/menu-refresh" \
+            -H "Authorization: Bearer ${CRON_SECRET}")
+          printf '%s\n' "${response}"
+          printf '%s' "${response}" | jq -e '.notified == true or .skipped == true' > /dev/null
+          if [ "$(printf '%s' "${response}" | jq -r '.reason // empty')" = "disabled" ]; then
+            echo "::warning::GrabFood integration is disabled; menu refresh is paused"
+          fi
+        env:
+          NEXT_PUBLIC_URL: ${{ secrets.NEXT_PUBLIC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

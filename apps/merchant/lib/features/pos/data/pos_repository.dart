@@ -69,13 +69,16 @@ class PosRepository {
           .from('categories')
           .select('id, name, sort_order')
           .eq('is_active', true)
+          .isFilter('archived_at', null)
           .order('sort_order', ascending: true),
       _supabase
           .from('menu_items')
           .select(
             'id, name, description, image_url, price_cents, is_available, '
-            'category_id, sort_order',
+            'category_id, sort_order, categories!inner(id)',
           )
+          .isFilter('archived_at', null)
+          .isFilter('categories.archived_at', null)
           .order('sort_order', ascending: true),
       _supabase
           .from('menu_item_modifier_groups')
@@ -105,6 +108,7 @@ class PosRepository {
         _supabase
             .from('modifier_groups')
             .select('id, name, min_selections, max_selections')
+            .isFilter('archived_at', null)
             .inFilter('id', groupIds)
             .order('sort_order', ascending: true),
         _supabase
@@ -114,6 +118,7 @@ class PosRepository {
             )
             .inFilter('modifier_group_id', groupIds)
             .eq('is_available', true)
+            .isFilter('archived_at', null)
             .order('sort_order', ascending: true),
       ]);
       groups = (groupResults[0] as List).cast<Map<String, dynamic>>();
@@ -185,6 +190,7 @@ class PosRepository {
         _supabase
             .from('modifier_groups')
             .select('id, name, min_selections, max_selections')
+            .isFilter('archived_at', null)
             .inFilter('id', groupIds)
             .order('sort_order', ascending: true),
         _supabase
@@ -194,6 +200,7 @@ class PosRepository {
             )
             .inFilter('modifier_group_id', groupIds)
             .eq('is_available', true)
+            .isFilter('archived_at', null)
             .order('sort_order', ascending: true),
       ]);
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const updateCategorySchema = z.object({
@@ -68,6 +69,7 @@ export async function PATCH(
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data });
   } catch (error) {
     const message = getNextErrorMessage(error);
@@ -98,6 +100,7 @@ export async function DELETE(
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = getNextErrorMessage(error);

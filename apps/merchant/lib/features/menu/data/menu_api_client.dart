@@ -13,14 +13,26 @@ import '../../../core/utils/auth_exceptions.dart';
 /// All calls require a Supabase auth token in the Authorization header.
 /// Mirrors MerchantApiClient's pattern for consistency.
 class MenuApiClient {
-  MenuApiClient(this._supabase);
+  MenuApiClient(this._supabase, {http.Client? httpClient})
+    : _http = httpClient ?? http.Client();
 
   final SupabaseClient _supabase;
+  final http.Client _http;
 
   String get _baseUrl => resolveApiUrl(AppEnv.webApiUrl);
 
+  Map<String, String>? _authHeadersOverride;
+
+  /// Test seam: avoids requiring a live Supabase session.
+  MenuApiClient withTestHeaders(Map<String, String> headers) {
+    _authHeadersOverride = headers;
+    return this;
+  }
+
   /// Build headers with a valid auth token. Throws if session is missing.
   Map<String, String> get _headers {
+    final override = _authHeadersOverride;
+    if (override != null) return override;
     final token = _supabase.auth.currentSession?.accessToken;
     if (token == null || token.isEmpty) {
       throw const AuthRequiredException(
@@ -33,10 +45,45 @@ class MenuApiClient {
     };
   }
 
+  Future<Map<String, dynamic>> fetchGrabItemPrice(String itemId) async {
+    final uri = Uri.parse(
+      '$_baseUrl/api/integrations/grabfood/menu/price',
+    ).replace(queryParameters: {'menu_item_id': itemId});
+    final response = await _http.get(uri, headers: _headers);
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> saveGrabPrice({
+    required bool isModifier,
+    required String id,
+    required int? priceCents,
+    required int? expectedPriceCents,
+    required bool expectedExists,
+    bool updatePrice = true,
+    bool regularPriceChanged = false,
+    bool retryNotification = false,
+  }) async {
+    final path = isModifier ? 'modifier-price' : 'price';
+    final response = await _http.put(
+      Uri.parse('$_baseUrl/api/integrations/grabfood/menu/$path'),
+      headers: _headers,
+      body: jsonEncode({
+        isModifier ? 'modifier_id' : 'menu_item_id': id,
+        'price_cents': priceCents,
+        'expected_price_cents': expectedPriceCents,
+        'expected_exists': expectedExists,
+        'update_price': updatePrice,
+        'regular_price_changed': regularPriceChanged,
+        'retry_notification': retryNotification,
+      }),
+    );
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
   // -- Categories --
 
   Future<List<Map<String, dynamic>>> fetchCategories() async {
-    final response = await http.get(
+    final response = await _http.get(
       Uri.parse('$_baseUrl/api/admin/menu/categories'),
       headers: _headers,
     );
@@ -49,7 +96,7 @@ class MenuApiClient {
     int sortOrder = 0,
     bool isActive = true,
   }) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/menu/categories'),
       headers: _headers,
       body: jsonEncode({
@@ -73,7 +120,7 @@ class MenuApiClient {
     if (sortOrder != null) body['sort_order'] = sortOrder;
     if (isActive != null) body['is_active'] = isActive;
 
-    final response = await http.patch(
+    final response = await _http.patch(
       Uri.parse('$_baseUrl/api/admin/menu/categories/$categoryId'),
       headers: _headers,
       body: jsonEncode(body),
@@ -83,7 +130,7 @@ class MenuApiClient {
   }
 
   Future<void> deleteCategory(String categoryId) async {
-    final response = await http.delete(
+    final response = await _http.delete(
       Uri.parse('$_baseUrl/api/admin/menu/categories/$categoryId'),
       headers: _headers,
     );
@@ -96,10 +143,11 @@ class MenuApiClient {
     String? categoryId,
   }) async {
     final uri = categoryId != null
-        ? Uri.parse('$_baseUrl/api/admin/menu/items')
-            .replace(queryParameters: {'category_id': categoryId})
+        ? Uri.parse(
+            '$_baseUrl/api/admin/menu/items',
+          ).replace(queryParameters: {'category_id': categoryId})
         : Uri.parse('$_baseUrl/api/admin/menu/items');
-    final response = await http.get(uri, headers: _headers);
+    final response = await _http.get(uri, headers: _headers);
     final body = _handleResponse(response) as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(body['data'] as List);
   }
@@ -111,9 +159,10 @@ class MenuApiClient {
     String? description,
     String? imageUrl,
     bool isAvailable = true,
+    bool isSignature = false,
     int sortOrder = 0,
   }) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/menu/items'),
       headers: _headers,
       body: jsonEncode({
@@ -122,6 +171,7 @@ class MenuApiClient {
         'price_cents': priceCents,
         'image_url': imageUrl,
         'is_available': isAvailable,
+        'is_signature': isSignature,
         'category_id': categoryId,
         'sort_order': sortOrder,
       }),
@@ -131,7 +181,7 @@ class MenuApiClient {
   }
 
   Future<Map<String, dynamic>> fetchMenuItem(String itemId) async {
-    final response = await http.get(
+    final response = await _http.get(
       Uri.parse('$_baseUrl/api/admin/menu/items/$itemId'),
       headers: _headers,
     );
@@ -146,6 +196,7 @@ class MenuApiClient {
     int? priceCents,
     String? imageUrl,
     bool? isAvailable,
+    bool? isSignature,
     String? categoryId,
     int? sortOrder,
   }) async {
@@ -155,10 +206,11 @@ class MenuApiClient {
     if (priceCents != null) body['price_cents'] = priceCents;
     if (imageUrl != null) body['image_url'] = imageUrl;
     if (isAvailable != null) body['is_available'] = isAvailable;
+    if (isSignature != null) body['is_signature'] = isSignature;
     if (categoryId != null) body['category_id'] = categoryId;
     if (sortOrder != null) body['sort_order'] = sortOrder;
 
-    final response = await http.patch(
+    final response = await _http.patch(
       Uri.parse('$_baseUrl/api/admin/menu/items/$itemId'),
       headers: _headers,
       body: jsonEncode(body),
@@ -168,7 +220,7 @@ class MenuApiClient {
   }
 
   Future<void> deleteMenuItem(String itemId) async {
-    final response = await http.delete(
+    final response = await _http.delete(
       Uri.parse('$_baseUrl/api/admin/menu/items/$itemId'),
       headers: _headers,
     );
@@ -186,8 +238,9 @@ class MenuApiClient {
     required bool isAvailable,
     required String categoryId,
     required int sortOrder,
+    bool? isSignature,
   }) async {
-    final response = await http.patch(
+    final response = await _http.patch(
       Uri.parse('$_baseUrl/api/admin/menu/items/$itemId'),
       headers: _headers,
       body: jsonEncode({
@@ -196,6 +249,7 @@ class MenuApiClient {
         'price_cents': priceCents,
         'image_url': imageUrl,
         'is_available': isAvailable,
+        'is_signature': ?isSignature,
         'category_id': categoryId,
         'sort_order': sortOrder,
       }),
@@ -207,7 +261,7 @@ class MenuApiClient {
   // -- Modifier Groups --
 
   Future<List<Map<String, dynamic>>> fetchModifierGroups() async {
-    final response = await http.get(
+    final response = await _http.get(
       Uri.parse('$_baseUrl/api/admin/menu/modifier-groups'),
       headers: _headers,
     );
@@ -217,17 +271,19 @@ class MenuApiClient {
 
   Future<Map<String, dynamic>> createModifierGroup({
     required String name,
+    String? description,
+    int minSelections = 0,
     int maxSelections = 1,
-    bool isRequired = false,
     int sortOrder = 0,
   }) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/menu/modifier-groups'),
       headers: _headers,
       body: jsonEncode({
         'name': name,
+        'description': description,
+        'min_selections': minSelections,
         'max_selections': maxSelections,
-        'is_required': isRequired,
         'sort_order': sortOrder,
       }),
     );
@@ -238,17 +294,20 @@ class MenuApiClient {
   Future<Map<String, dynamic>> updateModifierGroup(
     String groupId, {
     String? name,
+    bool hasDescription = false,
+    String? description,
+    int? minSelections,
     int? maxSelections,
-    bool? isRequired,
     int? sortOrder,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
+    if (hasDescription) body['description'] = description;
+    if (minSelections != null) body['min_selections'] = minSelections;
     if (maxSelections != null) body['max_selections'] = maxSelections;
-    if (isRequired != null) body['is_required'] = isRequired;
     if (sortOrder != null) body['sort_order'] = sortOrder;
 
-    final response = await http.patch(
+    final response = await _http.patch(
       Uri.parse('$_baseUrl/api/admin/menu/modifier-groups/$groupId'),
       headers: _headers,
       body: jsonEncode(body),
@@ -258,7 +317,7 @@ class MenuApiClient {
   }
 
   Future<void> deleteModifierGroup(String groupId) async {
-    final response = await http.delete(
+    final response = await _http.delete(
       Uri.parse('$_baseUrl/api/admin/menu/modifier-groups/$groupId'),
       headers: _headers,
     );
@@ -271,15 +330,19 @@ class MenuApiClient {
     required String name,
     required String modifierGroupId,
     int priceDeltaCents = 0,
+    bool isDefault = false,
+    bool isAvailable = true,
     int sortOrder = 0,
   }) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/menu/modifiers'),
       headers: _headers,
       body: jsonEncode({
         'name': name,
         'modifier_group_id': modifierGroupId,
         'price_delta_cents': priceDeltaCents,
+        'is_default': isDefault,
+        'is_available': isAvailable,
         'sort_order': sortOrder,
       }),
     );
@@ -291,16 +354,20 @@ class MenuApiClient {
     String modifierId, {
     String? name,
     int? priceDeltaCents,
+    bool? isDefault,
+    bool? isAvailable,
     String? modifierGroupId,
     int? sortOrder,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (priceDeltaCents != null) body['price_delta_cents'] = priceDeltaCents;
+    if (isDefault != null) body['is_default'] = isDefault;
+    if (isAvailable != null) body['is_available'] = isAvailable;
     if (modifierGroupId != null) body['modifier_group_id'] = modifierGroupId;
     if (sortOrder != null) body['sort_order'] = sortOrder;
 
-    final response = await http.patch(
+    final response = await _http.patch(
       Uri.parse('$_baseUrl/api/admin/menu/modifiers/$modifierId'),
       headers: _headers,
       body: jsonEncode(body),
@@ -310,7 +377,7 @@ class MenuApiClient {
   }
 
   Future<void> deleteModifier(String modifierId) async {
-    final response = await http.delete(
+    final response = await _http.delete(
       Uri.parse('$_baseUrl/api/admin/menu/modifiers/$modifierId'),
       headers: _headers,
     );
@@ -324,7 +391,7 @@ class MenuApiClient {
     required String modifierGroupId,
     bool isRequired = false,
   }) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/menu/item-modifier-groups'),
       headers: _headers,
       body: jsonEncode({
@@ -341,7 +408,7 @@ class MenuApiClient {
     required String menuItemId,
     required String modifierGroupId,
   }) async {
-    final response = await http.delete(
+    final response = await _http.delete(
       Uri.parse('$_baseUrl/api/admin/menu/item-modifier-groups'),
       headers: _headers,
       body: jsonEncode({
@@ -356,13 +423,10 @@ class MenuApiClient {
     required String menuItemId,
     required List<Map<String, dynamic>> bindings,
   }) async {
-    final response = await http.put(
+    final response = await _http.put(
       Uri.parse('$_baseUrl/api/admin/menu/item-modifier-groups'),
       headers: _headers,
-      body: jsonEncode({
-        'menu_item_id': menuItemId,
-        'bindings': bindings,
-      }),
+      body: jsonEncode({'menu_item_id': menuItemId, 'bindings': bindings}),
     );
     final body = _handleResponse(response) as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(body['data'] as List);
@@ -377,9 +441,7 @@ class MenuApiClient {
     }
 
     if (response.statusCode == 403) {
-      throw const AuthRequiredException(
-        'Access denied — admin role required.',
-      );
+      throw const AuthRequiredException('Access denied — admin role required.');
     }
 
     dynamic body;

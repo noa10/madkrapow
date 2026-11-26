@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const createCategorySchema = z.object({
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     const message = getNextErrorMessage(error);

@@ -10,14 +10,19 @@ import {
 } from '../menu'
 
 function buildMockSupabaseClient(responses: Record<string, { data: unknown; error: unknown }>) {
+  const isCalls: Array<[string, string, unknown]> = []
   const from = vi.fn().mockImplementation((table: string) => {
     const response = responses[table] ?? { data: null, error: null }
 
     function makeThenable(extraMethods: Record<string, unknown> = {}) {
-      const obj = {
+      const obj: Record<string, unknown> = {
         ...extraMethods,
         then: (resolve: (v: typeof response) => unknown) => resolve(response),
       }
+      obj.is = vi.fn((column: string, value: unknown) => {
+        isCalls.push([table, column, value])
+        return obj
+      })
       return obj
     }
 
@@ -58,7 +63,7 @@ function buildMockSupabaseClient(responses: Record<string, { data: unknown; erro
     }
   })
 
-  return { from }
+  return { from, isCalls }
 }
 
 describe('getBotMenu', () => {
@@ -155,6 +160,41 @@ describe('getBotItemWithModifiers', () => {
     expect(result?.modifier_groups).toHaveLength(1)
     expect(result?.modifier_groups[0].modifiers).toHaveLength(2)
     expect(result?.modifier_groups[0].is_required).toBe(true)
+  })
+
+  it('filters archived items, groups and options out of the item detail', async () => {
+    const menuItem = {
+      id: 'item-1',
+      name: 'Nasi Goreng',
+      price_cents: 1200,
+      description: 'Fried rice',
+      is_available: true,
+      category_id: 'cat-1',
+      sort_order: 1,
+    }
+    const modifierGroups = [
+      { id: 'mg-1', name: 'Spice Level', min_selections: 1, max_selections: 1, sort_order: 1 },
+    ]
+    const modifiers = [
+      { id: 'mod-1', name: 'Mild', price_delta_cents: 0, is_available: true, is_default: true, modifier_group_id: 'mg-1', sort_order: 1 },
+    ]
+
+    const mock = buildMockSupabaseClient({
+      menu_items: { data: menuItem, error: null },
+      categories: { data: { id: 'cat-1', name: 'Mains' }, error: null },
+      menu_item_modifier_groups: { data: [{ menu_item_id: 'item-1', modifier_group_id: 'mg-1' }], error: null },
+      modifier_groups: { data: modifierGroups, error: null },
+      modifiers: { data: modifiers, error: null },
+    })
+
+    await getBotItemWithModifiers({ from: mock.from } as never, 'item-1')
+    expect(mock.isCalls).toEqual(
+      expect.arrayContaining([
+        ['menu_items', 'archived_at', null],
+        ['modifier_groups', 'archived_at', null],
+        ['modifiers', 'archived_at', null],
+      ])
+    )
   })
 
   it('returns item without modifiers when none attached', async () => {

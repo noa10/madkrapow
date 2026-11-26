@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const maybeSingle = vi.fn()
+const archiveFilter = vi.fn(() => ({ eq: () => ({ maybeSingle }) }))
 
 // `unstable_cache` needs a Next request/store context; here we only care about
 // what the wrapped function returns or throws.
@@ -12,7 +13,7 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     from: () => ({
       select: () => ({
-        eq: () => ({ maybeSingle }),
+        is: archiveFilter,
       }),
     }),
   }),
@@ -35,6 +36,7 @@ describe('getItemBySlug error handling', () => {
     maybeSingle.mockResolvedValue({ data: null, error: null })
 
     await expect(getItemBySlug('no-such-item')).resolves.toBeNull()
+    expect(archiveFilter).toHaveBeenCalledWith('archived_at', null)
   })
 
   it('throws on a query error so unstable_cache cannot memoise a 404', async () => {

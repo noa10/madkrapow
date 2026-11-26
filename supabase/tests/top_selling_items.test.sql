@@ -1,5 +1,7 @@
 BEGIN;
 SELECT plan(4);
+-- Menu writes require a trusted service claim after 20261126140000.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- One catalog item sold under two historical names (the HubboPOS rename case),
 -- plus a cancelled order that must not contribute.

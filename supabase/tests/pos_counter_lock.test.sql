@@ -1,5 +1,7 @@
 BEGIN;
 SELECT plan(3);
+-- Menu writes require a trusted service claim after 20261126140000.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 INSERT INTO categories (id, name) VALUES ('70000000-0000-0000-0000-000000000001', 'lock probe');
 INSERT INTO menu_items (id, category_id, name, price_cents) VALUES ('70000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', 'lock probe item', 1000);
 INSERT INTO restaurant_tables (id, label, is_active) VALUES ('70000000-0000-0000-0000-000000000003', 'lock probe T1', true);

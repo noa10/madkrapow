@@ -13,6 +13,9 @@ import '../../../../core/utils/order_code.dart';
 import '../../../../core/utils/order_fields.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../notifications/providers/notification_providers.dart';
+import '../../../printing/data/escpos_printer.dart';
+import '../../../printing/data/receipt_print_service.dart';
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../data/merchant_order_repository.dart';
 import '../../data/orders_row_billplz.dart';
@@ -47,6 +50,65 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
 
   Future<void> _printReceipt() async {
     if (_printing) return;
+    final settings = ref.read(printerSettingsProvider);
+    if (!settings.isConfigured) {
+      await _printViaSystemDialog();
+      return;
+    }
+    setState(() => _printing = true);
+    try {
+      await printReceipt(
+        api: ref.read(merchantApiClientProvider),
+        printer: ref.read(escPosPrinterProvider),
+        settings: settings,
+        orderId: widget.orderId,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Receipt sent to printer')),
+        );
+      }
+    } on PrinterUnreachableException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            action: SnackBarAction(
+              label: 'Use system dialog',
+              onPressed: () => unawaited(_printViaSystemDialog()),
+            ),
+          ),
+        );
+      }
+    } on ReceiptNotAvailableException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not print receipt. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  /// Fallback that renders the receipt on the server and hands the HTML to
+  /// Android's system print dialog.
+  Future<void> _printViaSystemDialog() async {
+    // The SnackBar that offers this fallback lives on the root messenger, so it
+    // can outlive this screen; bail out instead of touching a disposed State.
+    if (!mounted || _printing) return;
     setState(() => _printing = true);
     try {
       final response = await ref

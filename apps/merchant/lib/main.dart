@@ -16,6 +16,8 @@ import 'core/services/update/updater_config.dart';
 import 'features/notifications/data/local_order_notifications.dart';
 import 'features/notifications/data/notification_preferences_store.dart';
 import 'features/notifications/providers/notification_providers.dart';
+import 'features/printing/data/printer_settings.dart';
+import 'features/printing/providers/printer_providers.dart';
 
 /// Whether Firebase initialized successfully.
 /// Used to guard FCM calls when config files are missing.
@@ -70,7 +72,10 @@ void main() async {
   // Local notification preferences are read synchronously by the settings UI
   // and the foreground alert handler.
   final sharedPreferences = await SharedPreferences.getInstance();
-  final notificationPreferences = NotificationPreferencesStore(sharedPreferences);
+  final notificationPreferences = NotificationPreferencesStore(
+    sharedPreferences,
+  );
+  final printerSettings = PrinterSettingsStore(sharedPreferences);
 
   // In-app updater prerequisites. Loaded here so first frame sees them.
   final updateSettings = await UpdateSettingsService.create();
@@ -93,6 +98,7 @@ void main() async {
         notificationPreferencesStoreProvider.overrideWithValue(
           notificationPreferences,
         ),
+        printerSettingsStoreProvider.overrideWithValue(printerSettings),
       ],
       child: const MerchantApp(),
     ),

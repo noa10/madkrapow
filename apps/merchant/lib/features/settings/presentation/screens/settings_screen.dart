@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,6 +10,10 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 import '../../../../core/services/update/app_updates_panel.dart';
 import '../../../../generated/tables/store_settings.dart';
 import '../../../../generated/tables/hubbopos_sync_runs.dart';
+import '../../../printing/data/escpos_printer.dart';
+import '../../../printing/data/printer_settings.dart';
+import '../../../printing/data/receipt_print_service.dart';
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../data/settings_repository.dart';
 
@@ -38,6 +43,10 @@ class SettingsScreen extends ConsumerWidget {
 
             // ── App Updates (in-app GitHub updater) ──
             const AppUpdatesPanel(),
+            const SizedBox(height: 16),
+
+            // ── Receipt Printer (direct ESC/POS over TCP) ──
+            const _ReceiptPrinterCard(),
             const SizedBox(height: 16),
 
             // ── HubboPOS Integration ──
@@ -1013,6 +1022,189 @@ class _RecentSyncSection extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Configures the direct ESC/POS receipt printer and verifies connectivity.
+class _ReceiptPrinterCard extends ConsumerStatefulWidget {
+  const _ReceiptPrinterCard();
+
+  @override
+  ConsumerState<_ReceiptPrinterCard> createState() =>
+      _ReceiptPrinterCardState();
+}
+
+class _ReceiptPrinterCardState extends ConsumerState<_ReceiptPrinterCard> {
+  late final TextEditingController _hostController;
+  late final TextEditingController _portController;
+  bool _enabled = true;
+  bool _testing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = ref.read(printerSettingsProvider);
+    _hostController = TextEditingController(text: settings.host);
+    _portController = TextEditingController(text: '${settings.port}');
+    _enabled = settings.enabled;
+  }
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final settings = _readForm();
+    if (settings == null) return;
+    await ref.read(printerSettingsProvider.notifier).save(settings);
+    if (!mounted) return;
+    _showMessage('Printer settings saved');
+  }
+
+  Future<void> _testPrint() async {
+    if (_testing) return;
+    final settings = _readForm();
+    if (settings == null) return;
+    setState(() => _testing = true);
+    try {
+      await printTestSlip(
+        printer: ref.read(escPosPrinterProvider),
+        settings: settings,
+      );
+      if (!mounted) return;
+      _showMessage('Test receipt sent to printer');
+    } on PrinterUnreachableException catch (error) {
+      if (!mounted) return;
+      _showMessage(error.message);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Could not print test receipt');
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  PrinterSettings? _readForm() {
+    if (!_enabled) {
+      // Direct printing is switched off: keep whatever address is stored so it
+      // is ready when staff switch it back on.
+      return PrinterSettings(
+        host: _hostController.text.trim(),
+        port: int.tryParse(_portController.text.trim()) ?? 9100,
+        enabled: false,
+      );
+    }
+    final host = _hostController.text.trim();
+    if (host.isEmpty) {
+      _showMessage('Enter the printer IP address');
+      return null;
+    }
+    final port = int.tryParse(_portController.text.trim());
+    if (port == null || port <= 0 || port > 65535) {
+      _showMessage('Enter a valid port (1-65535)');
+      return null;
+    }
+    return PrinterSettings(host: host, port: port, enabled: true);
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Receipt Printer',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Send receipts straight to a thermal printer on your local '
+              'network. If it cannot be reached, the app offers the system '
+              'print dialog instead.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Print receipts directly'),
+              subtitle: Text(
+                _enabled
+                    ? 'Orders print to the thermal printer below.'
+                    : 'Orders use the Android print dialog.',
+              ),
+              value: _enabled,
+              onChanged: _testing
+                  ? null
+                  : (value) => setState(() => _enabled = value),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _hostController,
+              decoration: const InputDecoration(
+                labelText: 'Printer IP address',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              enabled: !_testing && _enabled,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _portController,
+              decoration: const InputDecoration(
+                labelText: 'Port',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              enabled: !_testing && _enabled,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _testing ? null : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (_testing || !_enabled) ? null : _testPrint,
+                    icon: _testing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.print_outlined),
+                    label: const Text('Test print'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

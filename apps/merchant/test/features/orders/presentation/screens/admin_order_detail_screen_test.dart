@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,9 @@ import 'package:madkrapow_merchant/features/orders/data/merchant_api_client.dart
 import 'package:madkrapow_merchant/features/orders/data/merchant_order_repository.dart';
 import 'package:madkrapow_merchant/features/orders/presentation/screens/admin_order_detail_screen.dart';
 import 'package:madkrapow_merchant/features/orders/providers/admin_order_providers.dart';
+import 'package:madkrapow_merchant/features/printing/data/escpos_printer.dart';
+import 'package:madkrapow_merchant/features/printing/data/printer_settings.dart';
+import 'package:madkrapow_merchant/features/printing/providers/printer_providers.dart';
 import 'package:madkrapow_merchant/generated/tables/orders.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -54,6 +58,34 @@ class FakeLocalOrderNotifications extends LocalOrderNotifications {
 class FakeDeviceIdentity extends DeviceIdentity {
   @override
   Future<String> get id async => deviceId;
+}
+
+class FakePrinterSettingsStore implements PrinterSettingsStore {
+  FakePrinterSettingsStore(this.value);
+
+  PrinterSettings value;
+
+  @override
+  PrinterSettings read() => value;
+
+  @override
+  Future<void> write(PrinterSettings settings) async {
+    value = settings;
+  }
+}
+
+class FakeEscPosPrinter extends EscPosPrinter {
+  FakeEscPosPrinter({this.error});
+
+  final Object? error;
+  final printed = <List<int>>[];
+
+  @override
+  Future<void> printBytes(PrinterSettings settings, List<int> bytes) async {
+    final failure = error;
+    if (failure != null) throw failure;
+    printed.add(List<int>.of(bytes));
+  }
 }
 
 OrderDetail detailFixture() {
@@ -95,8 +127,14 @@ void main() {
 
   Future<void> pumpDetail(
     WidgetTester tester,
-    OrderViewAcknowledger acknowledger,
-  ) async {
+    OrderViewAcknowledger acknowledger, {
+    PrinterSettings printerSettings = const PrinterSettings(
+      host: '',
+      port: 9100,
+    ),
+    EscPosPrinter? printer,
+    Widget? home,
+  }) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpWidget(
       ProviderScope(
@@ -112,9 +150,15 @@ void main() {
           localOrderNotificationsProvider.overrideWithValue(local),
           orderViewAcknowledgerProvider.overrideWithValue(acknowledger),
           viewedOrderRegistryProvider.overrideWithValue(registry),
+          printerSettingsStoreProvider.overrideWithValue(
+            FakePrinterSettingsStore(printerSettings),
+          ),
+          escPosPrinterProvider.overrideWithValue(
+            printer ?? FakeEscPosPrinter(),
+          ),
         ],
-        child: const MaterialApp(
-          home: AdminOrderDetailScreen(orderId: orderId),
+        child: MaterialApp(
+          home: home ?? const AdminOrderDetailScreen(orderId: orderId),
         ),
       ),
     );
@@ -271,6 +315,177 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('prints ESC/POS bytes directly when a printer is configured', (
+    tester,
+  ) async {
+    final printer = FakeEscPosPrinter();
+    when(() => api.post('/print/jobs/render', any())).thenAnswer(
+      (_) async => {
+        'bytes': base64Encode([0x1B, 0x40, 0x48, 0x69]),
+      },
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(
+      tester,
+      acknowledger,
+      printerSettings: const PrinterSettings(host: '192.168.0.99', port: 9100),
+      printer: printer,
+    );
+
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => api.post('/print/jobs/render', {
+        'order_id': orderId,
+        'type': 'receipt',
+        'reprint': true,
+      }),
+    ).called(1);
+    expect(printer.printed.single, [0x1B, 0x40, 0x48, 0x69]);
+    expect(calls, isEmpty);
+    expect(find.text('Receipt sent to printer'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('offers the system dialog when the printer is unreachable', (
+    tester,
+  ) async {
+    final printer = FakeEscPosPrinter(
+      error: const PrinterUnreachableException(
+        'Could not reach the printer. Check that it is powered on.',
+      ),
+    );
+    when(() => api.post('/print/jobs/render', any())).thenAnswer(
+      (_) async => {
+        'bytes': base64Encode([0x1B, 0x40]),
+      },
+    );
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(
+      tester,
+      acknowledger,
+      printerSettings: const PrinterSettings(host: '192.168.0.99', port: 9100),
+      printer: printer,
+    );
+
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Could not reach the printer. Check that it is powered on.'),
+      findsOneWidget,
+    );
+    expect(calls, isEmpty);
+    expect(printer.printed, isEmpty);
+
+    await tester.tap(find.text('Use system dialog'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).called(1);
+    expect(calls.single.method, 'printReceipt');
+    expect(calls.single.arguments, {'html': '<p>Receipt</p>'});
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a denied order explains access instead of asking for a retry', (
+    tester,
+  ) async {
+    when(
+      () => api.post('/print/jobs/render', any()),
+    ).thenAnswer((_) async => throw Exception('Order not found'));
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(
+      tester,
+      acknowledger,
+      printerSettings: const PrinterSettings(host: '192.168.0.99', port: 9100),
+    );
+
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('not available to your role'), findsOneWidget);
+    expect(find.textContaining('Please try again'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('the system-dialog fallback is safe after the screen is closed', (
+    tester,
+  ) async {
+    final printer = FakeEscPosPrinter(
+      error: const PrinterUnreachableException('Could not reach the printer.'),
+    );
+    when(() => api.post('/print/jobs/render', any())).thenAnswer(
+      (_) async => {
+        'bytes': base64Encode([0x1B, 0x40]),
+      },
+    );
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(
+      tester,
+      acknowledger,
+      printerSettings: const PrinterSettings(host: '192.168.0.99', port: 9100),
+      printer: printer,
+      home: const DetailScreenLauncher(),
+    );
+
+    await tester.tap(find.text('Open order'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not reach the printer.'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(AdminOrderDetailScreen), findsNothing);
+    expect(find.text('Use system dialog'), findsOneWidget);
+
+    await tester.tap(find.text('Use system dialog'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(calls, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('acknowledges the opened order after the first frame', (
     tester,
   ) async {
@@ -358,4 +573,26 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+}
+
+/// Home screen that opens the order detail on a route of its own, so tests can
+/// close the detail screen while a SnackBar from it is still on screen.
+class DetailScreenLauncher extends StatelessWidget {
+  const DetailScreenLauncher({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AdminOrderDetailScreen(orderId: orderId),
+            ),
+          ),
+          child: const Text('Open order'),
+        ),
+      ),
+    );
+  }
 }

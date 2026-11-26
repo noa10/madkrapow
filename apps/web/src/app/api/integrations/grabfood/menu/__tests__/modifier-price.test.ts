@@ -94,6 +94,36 @@ describe('GrabFood modifier price', () => {
     expect(db.rows).toMatchObject([{ id: 'race', price_cents: 200 }])
   })
 
+  it('stores and clears a self pick-up add-on price', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', modifier_id: modifier, price_cents: 200, pickup_price_cents: null }])
+    client.mockReturnValue(db)
+    const save = await PUT(request(200, {
+      pickup_price_cents: 150,
+      update_pickup_price: true,
+      expected_pickup_price_cents: null,
+      expected_exists: true,
+    }))
+    expect(save.status).toBe(200)
+    expect(db.rows[0]).toMatchObject({ price_cents: 200, pickup_price_cents: 150 })
+
+    const clear = await PUT(request(200, { pickup_price_cents: null, update_pickup_price: true }))
+    expect(clear.status).toBe(200)
+    expect(db.rows[0].pickup_price_cents).toBeNull()
+  })
+
+  it('rejects a stale self pick-up add-on price', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', modifier_id: modifier, price_cents: 200, pickup_price_cents: 150 }])
+    client.mockReturnValue(db)
+    const res = await PUT(request(200, {
+      pickup_price_cents: 100,
+      update_pickup_price: true,
+      expected_pickup_price_cents: 120,
+      expected_exists: true,
+    }))
+    expect(res.status).toBe(409)
+    expect(db.rows[0].pickup_price_cents).toBe(150)
+  })
+
   it('returns 404 for a modifier that does not exist', async () => {
     const db = database([], { modifierExists: false }); client.mockReturnValue(db)
     expect((await PUT(request(100))).status).toBe(404)

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../providers/kitchen_providers.dart';
 import '../../../../generated/tables/orders.dart';
@@ -31,6 +34,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   void initState() {
     super.initState();
     _subscribeToNewOrders();
+
+    // Anything that arrived while the app was closed or asleep never fired an
+    // event, so claim once the first frame is up. The server only hands out
+    // jobs from the last half hour, and only once across devices.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
+    });
   }
 
   @override
@@ -48,6 +59,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       onNewOrder: () {
         if (!mounted) return;
         ref.invalidate(kitchenOrderCardsProvider);
+        unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
       },
     );
   }

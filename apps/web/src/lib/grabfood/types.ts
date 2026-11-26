@@ -239,6 +239,8 @@ export interface GrabMenuModifier {
   name: string
   availableStatus: GrabAvailableStatus
   price?: number
+  /** Service Based Menu overrides, keyed by Grab's service/order type. */
+  advancedPricing?: Record<string, number>
   sequence?: number
 }
 
@@ -258,6 +260,8 @@ export interface GrabMenuItem {
   availableStatus: GrabAvailableStatus
   description?: string
   price: number
+  /** Service Based Menu overrides, keyed by Grab's service/order type. */
+  advancedPricing?: Record<string, number>
   photos?: string[]
   taxable?: boolean
   sellingTimeID?: string

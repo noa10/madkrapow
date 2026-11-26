@@ -98,6 +98,7 @@ async function fetchMenuItems(): Promise<MenuItemWithModifierGroups[]> {
     .select(
       `${MENU_ITEM_COLUMNS},menu_item_modifier_groups(is_required,group:modifier_groups(${MODIFIER_GROUP_COLUMNS},modifiers(${MODIFIER_COLUMNS})))`
     )
+    .is('archived_at', null)
     .order('sort_order', { ascending: true })
 
   if (error) throw error

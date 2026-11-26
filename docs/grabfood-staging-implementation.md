@@ -132,9 +132,48 @@ Cron routes (Bearer `CRON_SECRET`):
   when present (migration 071) and fall back to `modifiers.price_delta_cents`
   otherwise. A NULL override means "same as the regular add-on price"; zero is
   a real price.
-- Mapping changes (create/update/delete) call
-  `POST /partner/v1/merchant/menu/notification`; failure is returned as a
-  warning because the local change is already saved.
+- Self pick-up prices live in `channel_products.pickup_price_cents` and
+  `channel_modifiers.pickup_price_cents` (migration `20261127130000`). A NULL
+  means the normal GrabFood price. Get Menu emits the override under Grab's
+  Service Based Menu keys `SelfPickUp_OnDemand_GrabApp` and
+  `SelfPickUp_OnDemand_StoreFront`; any service type not listed falls back to
+  `price`. Apply this migration before deploying the code that selects the
+  columns.
+- Catalogue and mapping changes append a durable database event in the same
+  transaction, including changes made directly through Supabase or the merchant
+  API. A snooze expiry also schedules an event, so the restored state is pushed
+  even when no restore flag was set. `/api/cron/grabfood/menu-refresh` claims
+  pending events and calls `POST /partner/v1/merchant/menu/notification`.
+  One claim leases every due event in a single statement and coalesces them into
+  one notification, so a burst does not create a backlog; failed and interrupted
+  attempts remain pending, and edits committed after the claim are never
+  acknowledged by it. Notified events older than seven days are deleted on every
+  run, including while the integration is paused. The GitHub Actions schedule
+  runs every five minutes using `NEXT_PUBLIC_URL` and `CRON_SECRET` repository
+  secrets; it never follows redirects and fails unless the handler reports
+  `notified` or `skipped`, and annotates the run when the integration is
+  disabled rather than treating it as an idle queue.
+- Rollout order: apply the archival migration `20261126131000` first because
+  the deployed Get Menu and storefront select `archived_at`; then the atomic
+  binding RPC `20261126132000`, its lock-order follow-up
+  `20261127100000`, and the menu write security migration `20261126140000`,
+  then the Grab refresh queue `20261126130000`, then deploy the worker and
+  enable the schedule. The integration's existing runtime switch must be
+  enabled before it sends; after enabling it, run the worker once by hand to
+  send the initial notification for the menu as it stands, because the queue
+  only holds edits made after this migration.
+  An accepted notification means Grab was asked to pull, not that Grab applied
+  the menu; use the Grab menu trace to inspect upstream status. Existing manual
+  and immediate notifications can duplicate a scheduled request, and retries
+  can repeat a request after an ambiguous timeout.
+- Deleting a category, item, modifier group or option in the web admin or the
+  merchant app archives it (`archived_at`) instead of removing the row.
+  Archived rows disappear from active menus, the storefront, POS, Get Menu and
+  the admin editors, but channel mappings and historical order references keep
+  their IDs so late Grab orders still resolve. Archiving a category archives its
+  items; archiving a group archives its options and drops per-item bindings.
+- Mapping changes (create/update/delete) also call the notification immediately;
+  failure is returned as a warning because the local change is already saved.
 - Admin catalogue changes that affect Get Menu — availability, item details,
   image, category/item ordering, sections, modifiers and item-option bindings —
   also call the notification endpoint. A failed notification shows a warning;

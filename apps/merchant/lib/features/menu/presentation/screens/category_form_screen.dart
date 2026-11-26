@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../generated/database.dart';
+import '../../data/menu_archive_copy.dart';
 import '../../providers/menu_providers.dart';
 
 class CategoryFormScreen extends ConsumerStatefulWidget {
@@ -89,11 +90,8 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Category'),
-        content: const Text(
-          'Deleting this category will also remove all items in it. '
-          'Are you sure?',
-        ),
+        title: const Text('Archive Category'),
+        content: const Text(archiveCategoryCopy),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -102,7 +100,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -121,7 +119,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete category: $e'),
+              content: Text('Failed to archive category: $e'),
               backgroundColor: AppColors.danger,
             ),
           );
@@ -139,7 +137,7 @@ class _CategoryFormScreenState extends ConsumerState<CategoryFormScreen> {
             ? [
                 IconButton(
                   icon: const Icon(Icons.delete, color: AppColors.dangerText),
-                  tooltip: 'Delete Category',
+                  tooltip: 'Archive Category',
                   onPressed: _confirmDelete,
                 ),
               ]

@@ -1,15 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/utils/order_fields.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../notifications/providers/notification_providers.dart';
+import '../../../printing/data/escpos_printer.dart';
+import '../../../printing/data/receipt_print_service.dart';
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../data/merchant_order_repository.dart';
 import '../../data/orders_row_billplz.dart';
@@ -37,6 +43,114 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
   RealtimeChannel? _channel;
   Timer? _pollingTimer;
   bool _acknowledged = false;
+  bool _printing = false;
+  static const _printChannel = MethodChannel(
+    'com.madkrapow.merchant/receipt_print',
+  );
+
+  Future<void> _printReceipt() => _printJob('receipt');
+
+  Future<void> _printKitchenDocket() => _printJob('kitchen_docket');
+
+  static String _printSuccessMessage(String type) =>
+      type == 'kitchen_docket' ? 'Kitchen docket sent to printer' : 'Receipt sent to printer';
+
+  static String _jobNoun(String type) =>
+      type == 'kitchen_docket' ? 'kitchen docket' : 'receipt';
+
+  Future<void> _printJob(String type) async {
+    if (_printing) return;
+    final settings = ref.read(printerSettingsProvider);
+    if (!settings.isConfigured) {
+      await _printViaSystemDialog(type);
+      return;
+    }
+    setState(() => _printing = true);
+    try {
+      await printReceipt(
+        api: ref.read(merchantApiClientProvider),
+        printer: ref.read(escPosPrinterProvider),
+        settings: settings,
+        orderId: widget.orderId,
+        type: type,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_printSuccessMessage(type))),
+        );
+      }
+    } on PrinterUnreachableException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            action: SnackBarAction(
+              label: 'Use system dialog',
+              onPressed: () => unawaited(_printViaSystemDialog(type)),
+            ),
+          ),
+        );
+      }
+    } on ReceiptNotAvailableException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not print ${_jobNoun(type)}. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  /// Fallback that renders the job on the server and hands the HTML to
+  /// Android's system print dialog.
+  Future<void> _printViaSystemDialog([String type = 'receipt']) async {
+    // The SnackBar that offers this fallback lives on the root messenger, so it
+    // can outlive this screen; bail out instead of touching a disposed State.
+    if (!mounted || _printing) return;
+    setState(() => _printing = true);
+    try {
+      final response = await ref
+          .read(merchantApiClientProvider)
+          .post('/print/jobs/receipt-document', {
+            'order_id': widget.orderId,
+            'type': type,
+          })
+          .timeout(const Duration(seconds: 30));
+      final html = response['html'];
+      if (html is! String || html.trim().isEmpty) {
+        throw const FormatException('Invalid receipt document');
+      }
+      if (!mounted) return;
+      await _printChannel.invokeMethod<void>('printReceipt', {'html': html});
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not print ${_jobNoun(type)}. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
 
   @override
   void initState() {
@@ -136,6 +250,28 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          if (!kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android &&
+              detailAsync.valueOrNull != null) ...[
+            IconButton(
+              tooltip: 'Print kitchen docket',
+              onPressed: _printing ? null : _printKitchenDocket,
+              icon: const Icon(Icons.kitchen_outlined),
+            ),
+            IconButton(
+              tooltip: 'Print receipt',
+              onPressed: _printing ? null : _printReceipt,
+              icon: _printing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+            ),
+          ],
+        ],
         title: Text(
           detailAsync.maybeWhen(
             data: (d) => getOrderDisplayCode(d.order),

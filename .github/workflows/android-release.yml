@@ -309,6 +309,23 @@ jobs:
             --build-name="${{ steps.tag.outputs.version }}" \
             --build-number="${{ steps.tag.outputs.version_code }}"
 
+      # These resources are looked up by name at runtime, so the resource
+      # shrinker cannot see them. Fail the release if one was stripped again.
+      - name: Verify notification resources
+        if: steps.tag.outputs.app == 'merchant'
+        working-directory: apps/${{ steps.tag.outputs.app }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          for name in krapow_mallet service_bell light_chime ic_order_notification; do
+            if ! unzip -p "$APK" resources.arsc | grep -a -q "$name"; then
+              echo "::error::Missing notification resource '$name' in the release APK."
+              exit 1
+            fi
+          done
+          echo "Notification resources present."
+
       - name: Stage & rename artifacts
         id: artifacts
         shell: bash

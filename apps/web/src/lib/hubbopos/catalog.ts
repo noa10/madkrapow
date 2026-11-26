@@ -15,8 +15,10 @@ interface CatalogSyncResult {
   modifiersSynced: number;
   categoriesAdded: number;
   categoriesUpdated: number;
+  categoriesSkippedArchived: number;
   itemsAdded: number;
   itemsUpdated: number;
+  itemsSkippedArchived: number;
   itemsDeactivated: number;
 }
 
@@ -34,8 +36,10 @@ export async function syncCatalog(): Promise<CatalogSyncResult> {
     modifiersSynced: 0,
     categoriesAdded: 0,
     categoriesUpdated: 0,
+    categoriesSkippedArchived: 0,
     itemsAdded: 0,
     itemsUpdated: 0,
+    itemsSkippedArchived: 0,
     itemsDeactivated: 0,
   };
 
@@ -62,11 +66,14 @@ async function syncCategories(
 ): Promise<void> {
   const { data: existingCategories } = await supabase
     .from('categories')
-    .select('id, hubbo_pos_external_id')
+    .select('id, hubbo_pos_external_id, archived_at')
     .not('hubbo_pos_external_id', 'is', null);
 
   const existingMap = new Map(
     (existingCategories || []).map((c) => [c.hubbo_pos_external_id, c.id])
+  );
+  const archivedCategoryIds = new Set(
+    (existingCategories || []).filter((c) => c.archived_at).map((c) => c.id)
   );
 
   for (const hpCategory of menu.categories) {
@@ -74,17 +81,23 @@ async function syncCategories(
     const existingId = existingMap.get(hpCategory.id);
 
     if (existingId) {
-      await supabase
+      if (archivedCategoryIds.has(existingId)) {
+        result.categoriesSkippedArchived += 1;
+        continue;
+      }
+      const { error } = await supabase
         .from('categories')
         .update(localData)
         .eq('id', existingId);
+      if (error) throw new Error(`category update failed: ${error.message}`);
       result.categoriesUpdated += 1;
     } else {
-      const { data: inserted } = await supabase
+      const { data: inserted, error } = await supabase
         .from('categories')
         .insert(localData)
         .select('id')
         .single();
+      if (error) throw new Error(`category insert failed: ${error.message}`);
       if (inserted) {
         existingMap.set(hpCategory.id, inserted.id);
       }
@@ -116,11 +129,13 @@ async function syncMenuItems(
 ): Promise<void> {
   const { data: existingCategories } = await supabase
     .from('categories')
-    .select('id, hubbo_pos_external_id')
+    .select('id, hubbo_pos_external_id, archived_at')
     .not('hubbo_pos_external_id', 'is', null);
 
   const categoryMap = new Map(
-    (existingCategories || []).map((c) => [c.hubbo_pos_external_id, c.id])
+    (existingCategories || [])
+      .filter((c) => !c.archived_at)
+      .map((c) => [c.hubbo_pos_external_id, c.id])
   );
 
   const items = menu.items || [];
@@ -133,11 +148,14 @@ async function syncMenuItems(
 
   const { data: existingItems } = await supabase
     .from('menu_items')
-    .select('id, hubbo_pos_external_id')
+    .select('id, hubbo_pos_external_id, archived_at')
     .not('hubbo_pos_external_id', 'is', null);
 
   const existingItemMap = new Map(
     (existingItems || []).map((i) => [i.hubbo_pos_external_id, i.id])
+  );
+  const archivedItemIds = new Set(
+    (existingItems || []).filter((i) => i.archived_at).map((i) => i.id)
   );
 
   for (const hpItem of allItems) {
@@ -148,13 +166,19 @@ async function syncMenuItems(
     const existingId = existingItemMap.get(hpItem.id);
 
     if (existingId) {
-      await supabase
+      if (archivedItemIds.has(existingId)) {
+        result.itemsSkippedArchived += 1;
+        continue;
+      }
+      const { error } = await supabase
         .from('menu_items')
         .update(localData)
         .eq('id', existingId);
+      if (error) throw new Error(`item update failed: ${error.message}`);
       result.itemsUpdated += 1;
     } else {
-      await supabase.from('menu_items').insert(localData);
+      const { error } = await supabase.from('menu_items').insert(localData);
+      if (error) throw new Error(`item insert failed: ${error.message}`);
       result.itemsAdded += 1;
     }
     result.itemsSynced += 1;

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Package, X, Ban, BadgeDollarSign, ChefHat } from "lucide-react";
+import { getAdminAuth, getCachedAdminAuth, subscribeAdminAuth } from "@/lib/admin/role-cache";
 import {
   CANCELLABLE_STATUSES,
   TERMINAL_STATUSES,
@@ -12,6 +13,7 @@ import {
 interface StatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
+  isGrabFood?: boolean;
   onStatusUpdate?: (newStatus: string) => void;
 }
 
@@ -31,11 +33,30 @@ const STATUS_FLOW: FlowStep[] = [
 export function StatusTransitionButtons({
   orderId,
   currentStatus,
+  isGrabFood = false,
   onStatusUpdate,
 }: StatusTransitionButtonsProps) {
   const [forwardLoading, setForwardLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState(() => getCachedAdminAuth()?.role ?? null);
+
+  useEffect(() => {
+    if (!isGrabFood) return;
+    let active = true;
+    const unsubscribe = subscribeAdminAuth((snapshot) => setRole(snapshot.role));
+    void getAdminAuth()
+      .then((snapshot) => { if (active) setRole(snapshot.role); })
+      .catch(() => { if (active) setRole(null); });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [isGrabFood]);
+
+  const canConfirmGrabReady =
+    isGrabFood && (role === "admin" || role === "manager") &&
+    (currentStatus === "paid" || currentStatus === "preparing");
 
   const parsed = parseOrderStatus(currentStatus);
   const currentStep = STATUS_FLOW.find((s) => s.status === currentStatus);
@@ -44,7 +65,7 @@ export function StatusTransitionButtons({
   const isTerminal = parsed !== "unknown" && TERMINAL_STATUSES.has(parsed);
 
   const handleTransition = useCallback(
-    async (targetStatus: string) => {
+    async (targetStatus: string, localReadyOnly = false) => {
       if (!orderId) return;
 
       setError(null);
@@ -58,7 +79,11 @@ export function StatusTransitionButtons({
         const response = await fetch(`/api/admin/orders/${orderId}/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: targetStatus }),
+          body: JSON.stringify(
+            localReadyOnly
+              ? { status: targetStatus, alreadyMarkedReadyInGrab: true }
+              : { status: targetStatus }
+          ),
         });
 
         if (!response.ok) {
@@ -86,7 +111,7 @@ export function StatusTransitionButtons({
     [orderId, onStatusUpdate]
   );
 
-  if (isTerminal || (!canForward && !canCancel)) {
+  if (isTerminal || (!canForward && !canCancel && !canConfirmGrabReady)) {
     return null;
   }
 
@@ -107,6 +132,24 @@ export function StatusTransitionButtons({
             <ForwardIcon className="h-4 w-4" />
           )}
           {currentStep.label}
+        </Button>
+      )}
+
+      {canConfirmGrabReady && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (typeof window !== "undefined" && !window.confirm(
+              "Only continue if you already marked this order Ready in the Grab Merchant app. " +
+                "This updates Mad Krapow to Ready and will not notify Grab."
+            )) return;
+            void handleTransition("ready", true);
+          }}
+          disabled={loading}
+          className="gap-2"
+        >
+          Already marked ready in Grab
         </Button>
       )}
 

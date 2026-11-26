@@ -32,7 +32,12 @@ export interface MenuModifierRow {
   price_delta_cents: number
   is_available: boolean
   sort_order: number
-  channel_modifiers?: Array<{ channel: string; price_cents: number | null }> | null
+  archived_at?: string | null
+  channel_modifiers?: Array<{
+    channel: string
+    price_cents: number | null
+    pickup_price_cents?: number | null
+  }> | null
 }
 
 export interface MenuModifierGroupRow {
@@ -41,6 +46,7 @@ export interface MenuModifierGroupRow {
   min_selections: number
   max_selections: number
   sort_order: number
+  archived_at?: string | null
   modifiers?: MenuModifierRow[]
 }
 
@@ -49,6 +55,7 @@ export interface MenuChannelProductRow {
   external_item_id: string | null
   external_name: string | null
   price_cents: number | null
+  pickup_price_cents?: number | null
   is_available: boolean
   snooze_till: string | null
 }
@@ -62,6 +69,7 @@ export interface MenuItemRow {
   is_available: boolean
   snooze_till: string | null
   sort_order: number
+  archived_at?: string | null
   channel_products?: MenuChannelProductRow[] | MenuChannelProductRow | null
   menu_item_modifier_groups?: Array<{
     modifier_groups: MenuModifierGroupRow | MenuModifierGroupRow[] | null
@@ -111,27 +119,54 @@ function isPublicImage(url: string | null | undefined): url is string {
  * GrabFood override when one exists. A NULL override means the local add-on
  * price applies; zero is a real price and must survive.
  */
+function grabModifierOverride(modifier: MenuModifierRow) {
+  return asArray(modifier.channel_modifiers).find((row) => row.channel === 'grabfood')
+}
+
 function grabModifierPrice(modifier: MenuModifierRow): number {
-  const override = asArray(modifier.channel_modifiers).find(
-    (row) => row.channel === 'grabfood'
-  )
-  return override?.price_cents ?? modifier.price_delta_cents
+  return grabModifierOverride(modifier)?.price_cents ?? modifier.price_delta_cents
+}
+
+/** Grab's Service Based Menu keys for self pick-up, case-sensitive. */
+export const SELF_PICKUP_SERVICE_KEYS = [
+  'SelfPickUp_OnDemand_GrabApp',
+  'SelfPickUp_OnDemand_StoreFront',
+] as const
+
+/**
+ * Grab falls back to the item's normal price for any service type omitted from
+ * `advancedPricing`. NULL therefore means "no pick-up override" and must not
+ * be emitted; zero is a real pick-up price and must survive.
+ */
+function selfPickupPricing(
+  pickupPriceCents: number | null | undefined
+): Record<string, number> | undefined {
+  if (pickupPriceCents === null || pickupPriceCents === undefined) return undefined
+  return Object.fromEntries(SELF_PICKUP_SERVICE_KEYS.map((key) => [key, pickupPriceCents]))
 }
 
 function buildModifierGroups(item: MenuItemRow): GrabModifierGroup[] {
   return asArray(item.menu_item_modifier_groups)
     .flatMap((link) => asArray(link.modifier_groups))
+    .filter((group) => !group.archived_at)
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map((group) => {
+    .map((group): GrabModifierGroup => {
       const modifiers: GrabMenuModifier[] = asArray(group.modifiers)
+        .filter((modifier) => !modifier.archived_at)
         .sort((a, b) => a.sort_order - b.sort_order)
-        .map((modifier) => ({
-          id: modifier.id,
-          name: modifier.name,
-          availableStatus: modifier.is_available ? 'AVAILABLE' : 'UNAVAILABLE',
-          price: grabModifierPrice(modifier),
-          sequence: modifier.sort_order,
-        }))
+        .map((modifier) => {
+          const advancedPricing = selfPickupPricing(
+            grabModifierOverride(modifier)?.pickup_price_cents
+          )
+          return {
+            id: modifier.id,
+            name: modifier.name,
+            availableStatus: modifier.is_available ? 'AVAILABLE' : 'UNAVAILABLE',
+            price: grabModifierPrice(modifier),
+            ...(advancedPricing ? { advancedPricing } : {}),
+            sequence: modifier.sort_order,
+          }
+        })
       return {
         id: group.id,
         name: group.name,
@@ -144,6 +179,10 @@ function buildModifierGroups(item: MenuItemRow): GrabModifierGroup[] {
         modifiers,
       }
     })
+    // Grab has no representation for an option group with no options. Emitting
+    // one would ask diners to choose from an empty list. Grab's exact handling
+    // of an empty group is unverified, so omit it entirely.
+    .filter((group) => (group.modifiers?.length ?? 0) > 0)
 }
 
 function buildItem(item: MenuItemRow, mapping: MenuChannelProductRow): GrabMenuItem {
@@ -161,11 +200,13 @@ function buildItem(item: MenuItemRow, mapping: MenuChannelProductRow): GrabMenuI
     channel_snooze_till: mapping.snooze_till,
   }
   const availableStatus = grabAvailableStatusFor(availability)
+  const advancedPricing = selfPickupPricing(mapping.pickup_price_cents)
   const menuItem: GrabMenuItem = {
     id: mapping.external_item_id as string,
     name: mapping.external_name ?? item.name,
     availableStatus,
     price: mapping.price_cents ?? item.price_cents,
+    ...(advancedPricing ? { advancedPricing } : {}),
     // `taxable` is Indonesia-only. Malaysia rejects it with INVALID_TAXABLE_COUNTRY.
     sequence: item.sort_order,
   }
@@ -194,7 +235,7 @@ export function buildGrabMenu(
       )?.external_category_id
 
       const items = asArray(category.menu_items)
-        .filter((item) => Boolean(grabMapping(item)?.external_item_id))
+        .filter((item) => !item.archived_at && Boolean(grabMapping(item)?.external_item_id))
         .map((item) => {
           const mapping = grabMapping(item)
           return mapping?.external_item_id ? buildItem(item, mapping) : null

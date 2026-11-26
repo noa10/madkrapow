@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const updateModifierSchema = z.object({
   name: z.string().min(1).optional(),
   price_delta_cents: z.number().int().optional(),
+  is_default: z.boolean().optional(),
+  is_available: z.boolean().optional(),
   modifier_group_id: z.string().guid().optional(),
   sort_order: z.number().int().optional(),
 });
@@ -69,6 +72,7 @@ export async function PATCH(
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data });
   } catch (error) {
     const message = getNextErrorMessage(error);
@@ -99,6 +103,7 @@ export async function DELETE(
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = getNextErrorMessage(error);

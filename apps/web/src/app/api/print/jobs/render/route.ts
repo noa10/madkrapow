@@ -3,9 +3,11 @@ import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
 import { loadPrintOrder } from '@/lib/printing/order-loader'
+import { canStaffPrintOrder } from '@/lib/printing/staff-access'
+import { isBridgeRequest } from '@/lib/printing/bridge-auth'
 import { buildJobBytes } from '@/lib/printing/dispatch'
+import { loadPrintStoreSettings } from '@/lib/printing/store-settings'
 import { toBase64 } from '@/lib/printing/escpos'
-import { env } from '@/lib/validators/env'
 
 /**
  * Render a print job's ESC/POS bytes without claiming it — used by staff
@@ -22,13 +24,13 @@ const renderSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  const secret = env.PRINT_BRIDGE_SECRET
-  const bearer = req.headers.get('authorization') ?? ''
-  const isBridge = Boolean(secret) && bearer === `Bearer ${secret}`
+  const isBridge = isBridgeRequest(req.headers.get('authorization'))
 
+  let staffRole: string | undefined
   if (!isBridge) {
     const auth = await requireRole(req, ['admin', 'manager', 'cashier', 'kitchen'])
     if ('error' in auth) return auth.error
+    staffRole = auth.user.app_metadata?.role as string | undefined
   }
 
   let body: unknown
@@ -46,12 +48,21 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
-  const order = await loadPrintOrder(supabase, parsed.data.order_id)
-  if (!order) {
+  let order
+  try {
+    order = await loadPrintOrder(supabase, parsed.data.order_id)
+  } catch {
+    return NextResponse.json({ error: 'Unable to load order for printing' }, { status: 503 })
+  }
+  if (!order || (!isBridge && !canStaffPrintOrder(staffRole, order))) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   }
 
-  const bytes = buildJobBytes(order, parsed.data.type, { reprint: parsed.data.reprint })
+  const settings = await loadPrintStoreSettings(supabase)
+  const bytes = buildJobBytes(order, parsed.data.type, {
+    reprint: parsed.data.reprint,
+    store: settings,
+  })
   return NextResponse.json({
     ok: true,
     order_id: parsed.data.order_id,
@@ -59,5 +70,5 @@ export async function POST(req: NextRequest) {
     type: parsed.data.type,
     reprint: parsed.data.reprint,
     bytes: toBase64(bytes),
-  })
+  }, { headers: { 'Cache-Control': 'no-store' } })
 }

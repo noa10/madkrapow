@@ -1,6 +1,9 @@
 -- Mad Krapow Seed Data
 -- Restaurant: Mad Krapow TTDI Jaya
 
+-- Menu writes require a trusted claim after 20261126140000.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', false);
+
 -- 1. Store Settings
 INSERT INTO store_settings (id, store_name, address, phone, operating_hours, lalamove_market, min_order_amount, delivery_fee, delivery_geofence_json)
 VALUES (

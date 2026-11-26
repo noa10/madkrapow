@@ -8,6 +8,8 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../core/services/image_upload_service.dart';
 import '../../../../generated/database.dart';
+import '../../data/menu_archive_copy.dart';
+import '../../data/menu_price.dart';
 import '../../providers/menu_providers.dart';
 import '../widgets/modifier_bindings_editor.dart';
 
@@ -30,6 +32,17 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   late String _selectedCategoryId;
   late int _sortOrder;
   bool _isSubmitting = false;
+  late final TextEditingController _grabPriceController;
+  late final TextEditingController _grabPickupPriceController;
+  late bool _isSignature;
+  String? _savedItemId;
+  int? _grabOriginalPrice;
+  int? _grabOriginalPickupPrice;
+  bool _grabOriginalExists = false;
+  bool _grabLoaded = false;
+  bool _grabRetryNotification = false;
+  String? _grabLoadError;
+  String? _saveError;
 
   // Image state
   String? _currentImageUrl;
@@ -59,6 +72,44 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     _selectedCategoryId =
         widget.item?.categoryId ?? widget.initialCategoryId ?? '';
     _sortOrder = widget.item?.sortOrder ?? 0;
+    _isSignature = widget.item?.toJson()['is_signature'] == true;
+    _savedItemId = widget.item?.id;
+    _grabPriceController = TextEditingController();
+    _grabPickupPriceController = TextEditingController();
+    if (_savedItemId == null) {
+      _grabLoaded = true;
+    } else {
+      _loadGrabPrice();
+    }
+  }
+
+  Future<void> _loadGrabPrice() async {
+    setState(() {
+      _grabLoaded = false;
+      _grabLoadError = null;
+    });
+    try {
+      final result = await ref
+          .read(menuRepositoryProvider)
+          .fetchGrabItemPrice(_savedItemId!);
+      if (!mounted) return;
+      setState(() {
+        _grabOriginalPrice = result['price_cents'] as int?;
+        _grabOriginalPickupPrice = result['pickup_price_cents'] as int?;
+        _grabOriginalExists = result['exists'] == true;
+        _grabPriceController.text = _grabOriginalPrice == null
+            ? ''
+            : formatPriceNumber(_grabOriginalPrice!);
+        _grabPickupPriceController.text = _grabOriginalPickupPrice == null
+            ? ''
+            : formatPriceNumber(_grabOriginalPickupPrice!);
+        _grabLoaded = true;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _grabLoadError = 'Could not load Grab price: $e');
+      }
+    }
   }
 
   @override
@@ -66,6 +117,8 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
+    _grabPriceController.dispose();
+    _grabPickupPriceController.dispose();
     super.dispose();
   }
 
@@ -109,14 +162,11 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   }
 
   int? _parsePriceCents() {
-    final text = _priceController.text.trim();
-    if (text.isEmpty) return null;
-    // Remove any non-numeric characters except decimal point
-    final clean = text.replaceAll(RegExp(r'[^0-9.]'), '');
-    if (clean.isEmpty) return null;
-    final numeric = double.tryParse(clean);
-    if (numeric == null) return null;
-    return (numeric * 100).round();
+    try {
+      return parseMenuPrice(_priceController.text);
+    } on FormatException {
+      return null;
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -227,22 +277,41 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       return;
     }
 
-    setState(() => _isSubmitting = true);
+    final grabPrice = parseMenuPrice(_grabPriceController.text);
+    final grabPickupPrice = parseMenuPrice(_grabPickupPriceController.text);
+    final regularPriceChanged =
+        _savedItemId != null &&
+        widget.item != null &&
+        priceCents != widget.item!.priceCents;
+    var primarySaved = false;
+    setState(() {
+      _isSubmitting = true;
+      _saveError = null;
+    });
 
     try {
       // Upload image if a new one was selected
+      final hadNewImage = _selectedImageFile != null;
       final imageUrl = await _uploadImageIfNeeded();
-      if (_selectedImageFile != null && imageUrl == null) {
+      if (hadNewImage && imageUrl == null) {
         // Upload failed — stop here (error already shown)
         setState(() => _isSubmitting = false);
         return;
       }
+      if (hadNewImage && imageUrl != null) {
+        // Keep the uploaded URL so retrying a later failed step does not
+        // upload the same image again.
+        setState(() {
+          _currentImageUrl = imageUrl;
+          _selectedImageFile = null;
+        });
+      }
 
       final repo = ref.read(menuRepositoryProvider);
 
-      if (_isEditing) {
+      if (_savedItemId != null) {
         await repo.replaceMenuItem(
-          itemId: widget.item!.id,
+          itemId: _savedItemId!,
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim().isEmpty
               ? null
@@ -252,6 +321,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           isAvailable: _isAvailable,
           categoryId: _selectedCategoryId,
           sortOrder: _sortOrder,
+          isSignature: _isSignature,
         );
       } else {
         final newItem = MenuItemsRow(
@@ -265,7 +335,54 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           isAvailable: _isAvailable,
           sortOrder: _sortOrder,
         );
-        await repo.createMenuItem(newItem);
+        final created = await repo.createMenuItem(
+          newItem,
+          isSignature: _isSignature,
+        );
+        _savedItemId = created.id;
+      }
+      primarySaved = true;
+
+      final grabPriceChanged = grabPrice != _grabOriginalPrice;
+      final grabPickupPriceChanged =
+          grabPickupPrice != _grabOriginalPickupPrice;
+      if (grabPriceChanged ||
+          grabPickupPriceChanged ||
+          regularPriceChanged ||
+          _grabRetryNotification) {
+        final result = await repo.saveGrabPrice(
+          isModifier: false,
+          id: _savedItemId!,
+          priceCents: grabPrice,
+          expectedPriceCents: _grabOriginalPrice,
+          expectedExists: _grabOriginalExists,
+          pickupPriceCents: grabPickupPrice,
+          expectedPickupPriceCents: _grabOriginalPickupPrice,
+          updatePickupPrice: grabPickupPriceChanged,
+          updatePrice: grabPriceChanged,
+          regularPriceChanged: regularPriceChanged,
+          retryNotification: _grabRetryNotification,
+        );
+        if (grabPriceChanged) _grabOriginalPrice = grabPrice;
+        if (grabPickupPriceChanged) {
+          _grabOriginalPickupPrice = grabPickupPrice;
+        }
+        if (grabPriceChanged || grabPickupPriceChanged) {
+          if (grabPrice != null || grabPickupPrice != null) {
+            _grabOriginalExists = true;
+          }
+        }
+        if (result['warning'] != null) {
+          _grabRetryNotification = true;
+          if (mounted) {
+            setState(
+              () => _saveError =
+                  '${result['warning']} You can push the menu to retry.',
+            );
+          }
+          return;
+        }
+        _grabRetryNotification = false;
       }
 
       if (mounted) {
@@ -276,12 +393,12 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         context.pop();
       }
     } catch (e) {
+      if (primarySaved) _grabRetryNotification = true;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save item: $e'),
-            backgroundColor: AppColors.danger,
-          ),
+        setState(
+          () => _saveError = !primarySaved
+              ? 'Could not save item: $e'
+              : 'Item was saved, but a later step failed: $e. Review and press Save to retry.',
         );
       }
     } finally {
@@ -295,8 +412,8 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Item'),
-        content: const Text('Are you sure you want to delete this menu item?'),
+        title: const Text('Archive Item'),
+        content: const Text(archiveItemCopy),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -305,7 +422,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -324,7 +441,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete item: $e'),
+              content: Text('Failed to archive item: $e'),
               backgroundColor: AppColors.danger,
             ),
           );
@@ -532,7 +649,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
             ? [
                 IconButton(
                   icon: const Icon(Icons.delete, color: AppColors.dangerText),
-                  tooltip: 'Delete Item',
+                  tooltip: 'Archive Item',
                   onPressed: _confirmDelete,
                 ),
               ]
@@ -613,6 +730,74 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                     (v == null || v.isEmpty) ? 'Category is required' : null,
               ),
               const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Signature item'),
+                value: _isSignature,
+                onChanged: (v) => setState(() => _isSignature = v),
+              ),
+              TextFormField(
+                controller: _grabPriceController,
+                enabled: _grabLoaded,
+                decoration: const InputDecoration(
+                  labelText: 'GrabFood price (optional)',
+                  prefixText: 'RM ',
+                  helperText: 'Leave blank to use the regular price',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) {
+                  try {
+                    parseMenuPrice(value ?? '');
+                    return null;
+                  } on FormatException {
+                    return 'Enter a valid price up to RM 99999.99';
+                  }
+                },
+              ),
+              TextFormField(
+                controller: _grabPickupPriceController,
+                enabled: _grabLoaded,
+                decoration: const InputDecoration(
+                  labelText: 'GrabFood self pick-up price (optional)',
+                  prefixText: 'RM ',
+                  helperText: 'Leave blank to use the GrabFood price',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) {
+                  try {
+                    parseMenuPrice(value ?? '');
+                    return null;
+                  } on FormatException {
+                    return 'Enter a valid price up to RM 99999.99';
+                  }
+                },
+              ),
+              if (_grabLoadError != null) ...[
+                Text(
+                  _grabLoadError!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
+                TextButton(
+                  onPressed: _loadGrabPrice,
+                  child: const Text('Retry loading Grab price'),
+                ),
+              ],
+              if (_saveError != null) ...[
+                Text(
+                  _saveError!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
+                if (_savedItemId != null)
+                  TextButton(
+                    onPressed: _loadGrabPrice,
+                    child: const Text('Reload Grab price'),
+                  ),
+              ],
               SwitchListTile(
                 title: const Text('Available'),
                 value: _isAvailable,

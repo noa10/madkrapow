@@ -64,6 +64,8 @@ jobs:
         run: npx supabase start --exclude studio,imgproxy,logflare,vector,edge-runtime,supavisor
       - name: Run table RPC pgTAP probes
         run: npx supabase test db
+      - name: Run GrabFood menu refresh against the local database
+        run: npx vitest run scripts/grabfood-menu-refresh.postgres.test.mjs
 
   dart-package-tests:
     name: Dart Shared Package Tests

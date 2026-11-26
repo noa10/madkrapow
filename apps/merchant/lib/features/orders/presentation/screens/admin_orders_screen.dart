@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/routes.dart';
 import '../../../../core/constants/roles.dart';
 import '../../../auth/providers/admin_auth_providers.dart';
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../widgets/daily_date_picker.dart';
 import '../widgets/flat_order_list.dart';
@@ -44,8 +47,17 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen>
       onNewOrder: () {
         if (!mounted) return;
         _invalidateCurrentTab();
+        unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
       },
     );
+
+    // Anything that arrived while the app was closed or asleep never fired an
+    // event, so claim once the first frame is up. The server only hands out
+    // jobs from the last half hour, and only once across devices.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
+    });
   }
 
   @override

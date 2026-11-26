@@ -6,7 +6,7 @@ import {
   renderJob,
   formatCents,
 } from '../jobs'
-import type { PrintOrder } from '../jobs'
+import type { PrintJob, PrintOrder } from '../jobs'
 
 const ORDER: PrintOrder = {
   orderNumber: 'MKTEST1234',
@@ -30,7 +30,15 @@ const ORDER: PrintOrder = {
   paymentMethod: 'grabfood',
 }
 
-const STORE = { name: 'Mad Krapow', address: '123 Thai Food Street, Shah Alam', phone: '+60123456789' }
+const STORE = {
+  storeName: 'Mad Krapow',
+  address: '123 Thai Food Street, Shah Alam',
+  phone: '+60123456789',
+  companyName: 'Bakaris Enterprise',
+  companyRegistration: '201903057932',
+  footer: 'Powered by Mad Krapow',
+  taxRatePercent: 6,
+}
 
 describe('formatCents', () => {
   it('formats sen amounts and negatives', () => {
@@ -65,6 +73,12 @@ describe('buildKitchenDocket', () => {
     expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
   })
 
+  it('prints the MK short code under the Grab number', () => {
+    const job = buildKitchenDocket({ ...ORDER, displayCode: 'MK-3243' })
+    expect(job.lines[1]).toMatchObject({ text: 'GF-659' })
+    expect(job.lines[2]).toMatchObject({ text: 'MK-3243', style: { double: true } })
+  })
+
   it('indents modifiers and flags item notes', () => {
     const modifier = job.lines.find((l) => l.kind === 'text' && l.text === '   + Extra spicy')
     const note = job.lines.find((l) => l.kind === 'text' && l.text === '   ! less rice')
@@ -75,6 +89,25 @@ describe('buildKitchenDocket', () => {
   it('stamps a REPRINT watermark when reprinting', () => {
     const job = buildKitchenDocket(ORDER, { reprint: true })
     expect(job.lines[0]).toMatchObject({ text: '** REPRINT **' })
+  })
+
+  it('puts every pipe-separated remark on its own line', () => {
+    const order = {
+      ...ORDER,
+      items: [
+        {
+          ...ORDER.items[0],
+          notes: 'Tak Pedas | Bekas Makanan (Photodegradable) | 135g | Thai Holy Basil',
+        },
+      ],
+    }
+    const job = buildKitchenDocket(order)
+    const texts = job.lines.flatMap((l) => (l.kind === 'text' ? [l.text] : []))
+    expect(texts).toContain('   ! Tak Pedas')
+    expect(texts).toContain('   ! Bekas Makanan (Photodegradable)')
+    expect(texts).toContain('   ! 135g')
+    expect(texts).toContain('   ! Thai Holy Basil')
+    expect(texts.some((t) => t.includes('|'))).toBe(false)
   })
 })
 
@@ -103,16 +136,45 @@ describe('buildReceipt', () => {
     expect(texts).toContain('Payment|GRABFOOD')
   })
 
-  it('prints the Grab short number as the Grab ref', () => {
-    const job = buildReceipt(ORDER, STORE)
-    const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
-    expect(texts).toContain('Grab ref|GF-659')
+  it('uses saved item totals and payment snapshots when available', () => {
+    const job = buildReceipt({
+      ...ORDER,
+      items: [{ name: 'Meal', quantity: 2, priceCents: 1000, lineTotalCents: 2500 }],
+      paymentMethod: null,
+      snapshotPaymentMethod: 'cash',
+    }, STORE)
+    expect(job.lines).toContainEqual({ kind: 'columns', label: '2x Meal', value: 'RM 25.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Payment', value: 'CASH' })
   })
 
-  it('skips a whitespace-only Grab ref', () => {
-    const job = buildReceipt({ ...ORDER, externalOrderNumber: '   ' }, STORE)
+  it('warns when a pending order has no successful payment', () => {
+    const job = buildReceipt({ ...ORDER, status: 'pending', paymentMethod: null }, STORE)
+    expect(job.lines).toContainEqual(expect.objectContaining({ text: '** PAYMENT NOT CONFIRMED **' }))
+  })
+
+  it('shows saved adjustments without changing the saved total', () => {
+    const job = buildReceipt({ ...ORDER, subtotalCents: 2500, deliveryFeeCents: 500, discountCents: 300, totalCents: 2700 }, STORE)
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Delivery', value: 'RM 5.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Discount', value: '-RM 3.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'TOTAL', value: 'RM 27.00', bold: true })
+  })
+
+  it('prominently marks cancelled receipts', () => {
+    expect(buildReceipt({ ...ORDER, status: 'cancelled' }, STORE).lines).toContainEqual(
+      expect.objectContaining({ text: '** CANCELLED - VOID **', style: expect.objectContaining({ bold: true }) })
+    )
+  })
+
+  it('drops the separate Grab ref row now that the number is the headline', () => {
+    const job = buildReceipt(ORDER, STORE)
     const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
-    expect(texts.some((text) => String(text).startsWith('Grab ref|'))).toBe(false)
+    expect(texts).not.toContain('Grab ref|GF-659')
+  })
+
+  it('falls back to the MK short code when the Grab number is blank', () => {
+    const job = buildReceipt({ ...ORDER, externalOrderNumber: '   ', displayCode: 'MK-77' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['MK-77'])
   })
 
   it('flags a diner-claimed QR payment for the cashier', () => {
@@ -140,6 +202,91 @@ describe('buildReceipt', () => {
       STORE
     )
     expect(JSON.stringify(job.lines)).not.toContain('CLAIMED BY CUSTOMER')
+  })
+})
+
+describe('buildReceipt layout', () => {
+  const kinds = (job: { lines: Array<{ kind: string }> }) => job.lines.map((line) => line.kind)
+  const texts = (job: { lines: PrintJob['lines'] }) =>
+    job.lines.map((line) =>
+      line.kind === 'text'
+        ? line.text
+        : line.kind === 'columns'
+          ? `${line.label}|${line.value}`
+          : line.kind
+    )
+
+  it('leads with the logo, then the store block in the order staff signed off on', () => {
+    const job = buildReceipt(ORDER, STORE)
+    expect(kinds(job).slice(0, 6)).toEqual(['logo', 'text', 'text', 'text', 'text', 'divider'])
+    expect(texts(job).slice(0, 5)).toEqual([
+      'logo',
+      'Mad Krapow',
+      '123 Thai Food Street, Shah Alam',
+      'Bakaris Enterprise (201903057932)',
+      '+6012-345-6789',
+    ])
+  })
+
+  it('prints the Grab number and the MK short code as the biggest text, not labelled rows', () => {
+    const job = buildReceipt({ ...ORDER, displayCode: 'MK-3243' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['GF-659', 'MK-3243'])
+    expect(texts(job)).not.toContain('Order|MKTEST1234')
+  })
+
+  it('falls back to the internal number when no short code exists', () => {
+    const job = buildReceipt({ ...ORDER, externalOrderNumber: undefined }, STORE)
+    expect(job.lines).toContainEqual({
+      kind: 'text',
+      text: 'MKTEST1234',
+      style: { align: 'center', bold: true, double: true },
+    })
+  })
+
+  it('labels a copy REPRINT and leaves the original unmarked', () => {
+    expect(texts(buildReceipt(ORDER, STORE, { reprint: true }))).toContain('** REPRINT **')
+    expect(texts(buildReceipt(ORDER, STORE))).not.toContain('** REPRINT **')
+  })
+
+  it('reports SST as already included and never inflates the saved total', () => {
+    const job = buildReceipt(ORDER, STORE)
+    // RM 29.50 inclusive at 6% contains RM 1.67 of tax (2950 * 6 / 106).
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'SST 6% (included)', value: 'RM 1.67' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'TOTAL', value: 'RM 29.50', bold: true })
+  })
+
+  it('computes the included tax on the discounted taxable base', () => {
+    const job = buildReceipt({ ...ORDER, subtotalCents: 2500, discountCents: 300 }, STORE)
+    // (2500 - 300) * 6 / 106 = 124.5 -> RM 1.25
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'SST 6% (included)', value: 'RM 1.25' })
+  })
+
+  it('hides the SST row when the rate is zero', () => {
+    const job = buildReceipt(ORDER, { ...STORE, taxRatePercent: 0 })
+    expect(JSON.stringify(job.lines)).not.toContain('SST')
+  })
+
+  it('prints the editable footer line, and nothing when it is blank', () => {
+    expect(texts(buildReceipt(ORDER, STORE))).toContain('Powered by Mad Krapow')
+    expect(texts(buildReceipt(ORDER, { ...STORE, footer: '' }))).not.toContain('Powered by Mad Krapow')
+  })
+
+  it('omits the company registration when none is configured', () => {
+    const job = buildReceipt(ORDER, { ...STORE, companyRegistration: '' })
+    expect(texts(job)).toContain('Bakaris Enterprise')
+    expect(texts(job)).not.toContain('Bakaris Enterprise ()')
+  })
+
+  it('draws the logo as a GS v 0 raster before the header text', () => {
+    const bytes = Array.from(renderJob(buildReceipt(ORDER, STORE)))
+    const rasterAt = bytes.findIndex(
+      (byte, i) => byte === 0x1d && bytes[i + 1] === 0x76 && bytes[i + 2] === 0x30
+    )
+    expect(rasterAt).toBeGreaterThan(-1)
+    // The store name must come after the raster, never before it.
+    const nameAt = bytes.indexOf(0x4d) // 'M' of "Mad Krapow"
+    expect(nameAt).toBeGreaterThan(rasterAt)
   })
 })
 
@@ -178,6 +325,19 @@ describe('dine-in tickets', () => {
     expect(textsOf(buildKitchenDocket(ORDER))).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/^TABLE /)])
     )
+  })
+
+  it('prints each addon of a pipe-packed remark on its own line on the receipt', () => {
+    const order = {
+      ...ORDER,
+      items: [{ ...ORDER.items[0], notes: 'Tak Pedas | Bekas Makanan | Thai Holy Basil' }],
+    }
+    const texts = textsOf(buildReceipt(order, STORE))
+    expect(texts).toContain('   ! Tak Pedas')
+    expect(texts).toContain('   ! Bekas Makanan')
+    expect(texts).toContain('   ! Thai Holy Basil')
+    const remarkLines = texts.filter((t) => t.trimStart().startsWith('!'))
+    expect(remarkLines.every((t) => !t.includes('|'))).toBe(true)
   })
 })
 

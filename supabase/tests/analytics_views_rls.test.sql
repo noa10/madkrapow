@@ -4,6 +4,8 @@
 -- plus a simulated JWT is required (same pattern as staff_orders_rls.test.sql).
 BEGIN;
 SELECT plan(4);
+-- Menu writes require a trusted service claim after 20261126140000.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 INSERT INTO categories (id, name) VALUES
   ('72000000-0000-4000-8000-000000000001', 'analytics rls probe');

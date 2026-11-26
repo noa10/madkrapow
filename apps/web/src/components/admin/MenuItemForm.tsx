@@ -32,10 +32,12 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
   const [description, setDescription] = useState('')
   const [priceCents, setPriceCents] = useState('')
   const [grabPrice, setGrabPrice] = useState('')
+  const [grabPickupPrice, setGrabPickupPrice] = useState('')
   const [priceLoaded, setPriceLoaded] = useState(isNew)
   const [savedItemId, setSavedItemId] = useState<string | null>(menuItem?.id ?? null)
   const [retryNotification, setRetryNotification] = useState(false)
   const [originalGrabPrice, setOriginalGrabPrice] = useState<number | null>(null)
+  const [originalGrabPickupPrice, setOriginalGrabPickupPrice] = useState<number | null>(null)
   const [grabRowExists, setGrabRowExists] = useState(false)
   const [originalPrice, setOriginalPrice] = useState(menuItem?.price_cents ?? null)
   const [pendingRegularNotification, setPendingRegularNotification] = useState(false)
@@ -95,7 +97,9 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         if (!res.ok) throw new Error(body.error || 'Could not load GrabFood price')
         if (!cancelled) {
           setGrabPrice(body.price_cents === null ? '' : (body.price_cents / 100).toFixed(2))
+          setGrabPickupPrice(body.pickup_price_cents == null ? '' : (body.pickup_price_cents / 100).toFixed(2))
           setOriginalGrabPrice(body.price_cents)
+          setOriginalGrabPickupPrice(body.pickup_price_cents ?? null)
           setGrabRowExists(body.exists)
           setPriceLoaded(true)
           setError((current) => current?.startsWith('Could not load GrabFood price') ? null : current)
@@ -163,6 +167,13 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
       setError('Enter a valid GrabFood price with at most two decimal places')
       return
     }
+    const grabPickupCents = grabPickupPrice.trim() === '' ? null : Math.round(Number(grabPickupPrice) * 100)
+    if (grabPickupCents !== null && (!/^\d+(\.\d{1,2})?$/.test(grabPickupPrice.trim()) || !Number.isSafeInteger(grabPickupCents) || grabPickupCents > 9999999)) {
+      setError('Enter a valid GrabFood self pick-up price with at most two decimal places')
+      return
+    }
+    const deliveryPriceChanged = grabPriceCents !== originalGrabPrice
+    const pickupPriceChanged = grabPickupCents !== originalGrabPickupPrice
     if (!categoryId) {
       setError('Please select a category')
       return
@@ -248,7 +259,7 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         response = await fetch('/api/integrations/grabfood/menu/price', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', authorization: `Bearer ${session.session?.access_token ?? ''}` },
-          body: JSON.stringify({ menu_item_id: itemId, price_cents: grabPriceCents, update_price: grabPriceCents !== originalGrabPrice, expected_price_cents: originalGrabPrice, expected_exists: grabRowExists, regular_price_changed: regularPriceChanged, retry_notification: retryNotification }),
+          body: JSON.stringify({ menu_item_id: itemId, price_cents: grabPriceCents, pickup_price_cents: grabPickupCents, update_price: deliveryPriceChanged, update_pickup_price: pickupPriceChanged, expected_price_cents: originalGrabPrice, expected_pickup_price_cents: originalGrabPickupPrice, expected_exists: grabRowExists, regular_price_changed: regularPriceChanged, retry_notification: retryNotification }),
         })
       } catch {
         setRetryNotification(true)
@@ -256,9 +267,10 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
       }
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(`Item saved, but GrabFood price could not be saved: ${result.error || 'Please save again.'}`)
-      if (grabPriceCents !== originalGrabPrice) {
-        setOriginalGrabPrice(grabPriceCents)
-        setGrabRowExists(grabRowExists || grabPriceCents !== null)
+      if (deliveryPriceChanged) setOriginalGrabPrice(grabPriceCents)
+      if (pickupPriceChanged) setOriginalGrabPickupPrice(grabPickupCents)
+      if (deliveryPriceChanged || pickupPriceChanged) {
+        setGrabRowExists(grabRowExists || grabPriceCents !== null || grabPickupCents !== null)
       }
       setPendingRegularNotification(false)
       if (result.warning) {
@@ -376,6 +388,10 @@ export function MenuItemForm({ menuItem, isNew = false }: MenuItemFormProps) {
         <Input id="grab-price" type="number" min="0" step="0.01" max="99999.99" value={grabPrice}
           onChange={(e) => setGrabPrice(e.target.value)} placeholder="Use regular price" disabled={!priceLoaded} />
         <p className="text-sm text-muted-foreground">Leave blank to use the regular price. A price of 0 is allowed.</p>
+        <label htmlFor="grab-pickup-price" className="text-sm font-medium">GrabFood self pick-up price (RM)</label>
+        <Input id="grab-pickup-price" type="number" min="0" step="0.01" max="99999.99" value={grabPickupPrice}
+          onChange={(e) => setGrabPickupPrice(e.target.value)} placeholder="Use GrabFood price" disabled={!priceLoaded} />
+        <p className="text-sm text-muted-foreground">Leave blank to use the GrabFood price. A price of 0 is allowed.</p>
         {!priceLoaded && !isNew && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-amber-400">
             <span>GrabFood price could not be loaded. Other fields can still be saved.</span>

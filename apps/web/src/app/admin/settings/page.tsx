@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { RefreshCw, Activity, AlertTriangle, CheckCircle, XCircle, Clock, ListTodo } from "lucide-react";
 import { BrandingSettings } from "@/components/admin/BrandingSettings";
 import { BotSettingsSection } from "@/components/admin/BotSettingsSection";
+import { ReceiptSettingsCard } from "@/components/admin/settings/ReceiptSettingsCard";
 import { pickCanonicalBrandingRow } from "@/lib/branding";
 
 async function getHubboPosStatus() {
@@ -89,6 +90,8 @@ export default async function AdminSettingsPage() {
       <BrandingSettings logoUrl={logoUrl} heroImageUrl={heroImageUrl} />
 
       <BotSettingsSection />
+
+      <ReceiptSettingsCard />
 
       <Card className="bg-card border-border shadow-sm rounded-xl">
         <CardHeader>

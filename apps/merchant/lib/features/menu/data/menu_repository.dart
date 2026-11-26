@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../generated/database.dart';
 import 'menu_api_client.dart';
+import 'menu_visibility.dart';
 
 /// Hybrid menu repository:
 /// - Reads: Supabase client directly (RLS-enforced, admin SELECT policies)
@@ -12,6 +13,49 @@ class MenuRepository {
   final SupabaseClient _supabase;
   final MenuApiClient _apiClient;
 
+  Future<Map<String, dynamic>> fetchGrabItemPrice(String itemId) =>
+      _apiClient.fetchGrabItemPrice(itemId);
+
+  Future<Map<String, dynamic>> fetchGrabModifierPrice(String modifierId) async {
+    final row = await _supabase
+        .from('channel_modifiers')
+        .select('price_cents, pickup_price_cents')
+        .eq('channel', 'grabfood')
+        .eq('modifier_id', modifierId)
+        .maybeSingle();
+    return {
+      'exists': row != null,
+      'price_cents': row?['price_cents'],
+      'pickup_price_cents': row?['pickup_price_cents'],
+    };
+  }
+
+  Future<Map<String, dynamic>> saveGrabPrice({
+    required bool isModifier,
+    required String id,
+    required int? priceCents,
+    required int? expectedPriceCents,
+    required bool expectedExists,
+    int? pickupPriceCents,
+    int? expectedPickupPriceCents,
+    bool updatePickupPrice = false,
+    bool updatePrice = true,
+    bool regularPriceChanged = false,
+    bool retryNotification = false,
+  }) => _apiClient.saveGrabPrice(
+    isModifier: isModifier,
+    id: id,
+    priceCents: priceCents,
+    expectedPriceCents: expectedPriceCents,
+    expectedExists: expectedExists,
+    pickupPriceCents: pickupPriceCents,
+    expectedPickupPriceCents: expectedPickupPriceCents,
+    updatePickupPrice: updatePickupPrice,
+    updatePrice: updatePrice,
+    regularPriceChanged: regularPriceChanged,
+    retryNotification: retryNotification,
+  );
+
   // -- Categories --
 
   Future<List<CategoriesRow>> fetchCategories() async {
@@ -19,7 +63,10 @@ class MenuRepository {
         .from('categories')
         .select()
         .order('sort_order', ascending: true);
-    return response.map(CategoriesRow.fromJson).toList();
+    return response
+        .where(isVisibleCategory)
+        .map(CategoriesRow.fromJson)
+        .toList();
   }
 
   Future<CategoriesRow> fetchCategory(String categoryId) async {
@@ -52,6 +99,24 @@ class MenuRepository {
 
   Future<void> deleteCategory(String categoryId) async {
     await _apiClient.deleteCategory(categoryId);
+    await _assertArchived('categories', categoryId, 'category');
+  }
+
+  Future<void> _assertArchived(String table, String id, String label) async {
+    final Map<String, dynamic>? row;
+    try {
+      row = await _supabase
+          .from(table)
+          .select('archived_at')
+          .eq('id', id)
+          .maybeSingle();
+    } on PostgrestException catch (e) {
+      // Before the archival migration the DELETE really hard-deleted the row,
+      // so a missing archived_at column still means the delete succeeded.
+      if (isMissingColumnCode(e.code)) return;
+      rethrow;
+    }
+    ensureArchivedRow(row, label);
   }
 
   // -- Menu Items --
@@ -61,17 +126,24 @@ class MenuRepository {
     if (categoryId != null) {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select(
+            '*, categories(name), channel_products(channel, price_cents, pickup_price_cents)',
+          )
           .eq('category_id', categoryId)
           .order('sort_order', ascending: true);
     } else {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select(
+            '*, categories(name), channel_products(channel, price_cents, pickup_price_cents)',
+          )
           .order('sort_order', ascending: true);
     }
 
-    return response.map((json) => MenuItemsRow.fromJson(json as Map<String, dynamic>)).toList();
+    return response
+        .where((row) => isVisibleMenuItem(row as Map<String, dynamic>))
+        .map((json) => MenuItemsRow.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   Future<MenuItemsRow> fetchMenuItem(String itemId) async {
@@ -83,7 +155,10 @@ class MenuRepository {
     return MenuItemsRow.fromJson(response);
   }
 
-  Future<MenuItemsRow> createMenuItem(MenuItemsRow item) async {
+  Future<MenuItemsRow> createMenuItem(
+    MenuItemsRow item, {
+    bool isSignature = false,
+  }) async {
     final created = await _apiClient.createMenuItem(
       name: item.name,
       priceCents: item.priceCents,
@@ -91,6 +166,7 @@ class MenuRepository {
       description: item.description,
       imageUrl: item.imageUrl,
       isAvailable: item.isAvailable,
+      isSignature: isSignature,
       sortOrder: item.sortOrder,
     );
     return MenuItemsRow.fromJson(created);
@@ -112,6 +188,7 @@ class MenuRepository {
 
   Future<void> deleteMenuItem(String itemId) async {
     await _apiClient.deleteMenuItem(itemId);
+    await _assertArchived('menu_items', itemId, 'item');
   }
 
   /// Full replacement — sends every field including null values.
@@ -124,6 +201,7 @@ class MenuRepository {
     required int sortOrder,
     String? description,
     String? imageUrl,
+    bool? isSignature,
   }) async {
     final updated = await _apiClient.replaceMenuItem(
       itemId,
@@ -134,6 +212,7 @@ class MenuRepository {
       isAvailable: isAvailable,
       categoryId: categoryId,
       sortOrder: sortOrder,
+      isSignature: isSignature,
     );
     return MenuItemsRow.fromJson(updated);
   }
@@ -161,14 +240,18 @@ class MenuRepository {
         .from('modifier_groups')
         .select()
         .order('sort_order', ascending: true);
-    return response.map(ModifierGroupsRow.fromJson).toList();
+    return response
+        .where(isActiveMenuRow)
+        .map(ModifierGroupsRow.fromJson)
+        .toList();
   }
 
   Future<ModifierGroupsRow> createModifierGroup(ModifierGroupsRow group) async {
     final created = await _apiClient.createModifierGroup(
       name: group.name,
+      description: group.description,
+      minSelections: group.minSelections,
       maxSelections: group.maxSelections,
-      isRequired: false,
       sortOrder: group.sortOrder,
     );
     return ModifierGroupsRow.fromJson(created);
@@ -178,6 +261,9 @@ class MenuRepository {
     final updated = await _apiClient.updateModifierGroup(
       group.id,
       name: group.name,
+      hasDescription: true,
+      description: group.description,
+      minSelections: group.minSelections,
       maxSelections: group.maxSelections,
       sortOrder: group.sortOrder,
     );
@@ -186,6 +272,7 @@ class MenuRepository {
 
   Future<void> deleteModifierGroup(String groupId) async {
     await _apiClient.deleteModifierGroup(groupId);
+    await _assertArchived('modifier_groups', groupId, 'option group');
   }
 
   // -- Modifiers --
@@ -196,7 +283,7 @@ class MenuRepository {
         .select()
         .eq('modifier_group_id', groupId)
         .order('sort_order', ascending: true);
-    return response.map(ModifiersRow.fromJson).toList();
+    return response.where(isActiveMenuRow).map(ModifiersRow.fromJson).toList();
   }
 
   Future<ModifiersRow> createModifier(ModifiersRow modifier) async {
@@ -204,6 +291,8 @@ class MenuRepository {
       name: modifier.name,
       modifierGroupId: modifier.modifierGroupId,
       priceDeltaCents: modifier.priceDeltaCents,
+      isDefault: modifier.isDefault,
+      isAvailable: modifier.isAvailable,
       sortOrder: modifier.sortOrder,
     );
     return ModifiersRow.fromJson(created);
@@ -215,6 +304,8 @@ class MenuRepository {
       name: modifier.name,
       priceDeltaCents: modifier.priceDeltaCents,
       modifierGroupId: modifier.modifierGroupId,
+      isDefault: modifier.isDefault,
+      isAvailable: modifier.isAvailable,
       sortOrder: modifier.sortOrder,
     );
     return ModifiersRow.fromJson(updated);
@@ -222,6 +313,7 @@ class MenuRepository {
 
   Future<void> deleteModifier(String modifierId) async {
     await _apiClient.deleteModifier(modifierId);
+    await _assertArchived('modifiers', modifierId, 'option');
   }
 
   // -- Item-Modifier Group Bindings --
@@ -234,6 +326,7 @@ class MenuRepository {
         .select('*, modifier_groups(*)')
         .eq('menu_item_id', itemId);
     return response
+        .where(isVisibleBinding)
         .map((json) => MenuItemModifierGroupsRow.fromJson(json))
         .toList();
   }
@@ -276,9 +369,7 @@ class MenuRepository {
 
   // -- Realtime --
 
-  RealtimeChannel subscribeToMenuChanges({
-    required void Function() onChange,
-  }) {
+  RealtimeChannel subscribeToMenuChanges({required void Function() onChange}) {
     return _supabase
         .channel('menu-changes')
         .onPostgresChanges(

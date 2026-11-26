@@ -10,6 +10,7 @@
  *   ESC E n    bold on/off         GS ! n    character size
  *   ESC d n    feed n lines        GS V 66 0 partial cut with feed
  *   ESC p      cash-drawer kick    LF        line feed
+ *   GS v 0     raster bit image
  *
  * Text is ASCII-safe: characters outside printable ASCII pass through a
  * small transliteration map and fall back to '?' — thermal charsets vary by
@@ -26,6 +27,14 @@ export interface TextStyle {
   bold?: boolean
   /** Double width + double height (GS ! 0x11). */
   double?: boolean
+}
+
+/** A 1-bit image the printer can render (see `logo-raster.ts`). */
+export interface PrintRaster {
+  widthDots: number
+  heightDots: number
+  /** Base64 of the packed rows, MSB-first, 1 = black. */
+  data: string
 }
 
 const ESC = 0x1b
@@ -198,6 +207,33 @@ export class EscPosBuilder {
   /** ESC p 0 25 250 — kick the cash drawer (pin 2). */
   openCashDrawer(): this {
     this.bytes.push(ESC, 0x70, 0x00, 0x19, 0xfa)
+    return this
+  }
+
+  /**
+   * GS v 0 — print a 1-bit raster image, centred.
+   *
+   * The raster must be packed the way the printer expects: MSB-first rows,
+   * `ceil(widthDots / 8)` bytes per row, 1 = black. `logo-raster.ts` is
+   * generated in exactly that shape, so receipts can carry the logo without
+   * the printer needing any font or code page support.
+   */
+  image(raster: PrintRaster): this {
+    const bytes = fromBase64(raster.data)
+    const bytesPerRow = Math.ceil(raster.widthDots / 8)
+    this.bytes.push(ESC, 0x61, alignmentByte('center'))
+    this.bytes.push(
+      GS,
+      0x76,
+      0x30,
+      0x00, // m = 0: normal density
+      bytesPerRow & 0xff,
+      (bytesPerRow >> 8) & 0xff,
+      raster.heightDots & 0xff,
+      (raster.heightDots >> 8) & 0xff
+    )
+    for (let i = 0; i < bytes.length; i++) this.bytes.push(bytes[i])
+    this.bytes.push(ESC, 0x61, alignmentByte('left'))
     return this
   }
 

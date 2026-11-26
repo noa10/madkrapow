@@ -69,6 +69,7 @@ function buildMockClient(opts: Opts = {}) {
         gte: (col: string, val: unknown) => unknown
         or: (filter: string) => unknown
         order: (col: string, opts?: unknown) => unknown
+        range: () => Promise<{ data: unknown; error: null }>
         limit: (n: number) => unknown
         insert: (payload: unknown) => unknown
         maybeSingle: () => Promise<{ data: unknown; error: null }>
@@ -93,6 +94,7 @@ function buildMockClient(opts: Opts = {}) {
         order(_col: string, _opts?: unknown) {
           return builder
         },
+        range: async () => ({ data: table === 'payments' ? [{ method: 'cash', raw: null }] : null, error: null }),
         limit(_n: number) {
           return builder
         },
@@ -120,7 +122,7 @@ function buildMockClient(opts: Opts = {}) {
           if (table === 'orders') resolve({ data: opts.orders ?? [], error: null })
           else if (table === 'order_items') resolve({ data: [ITEM_ROW], error: null })
           else if (table === 'order_item_modifiers') resolve({ data: [], error: null })
-          else if (table === 'payments') resolve({ data: { method: 'cash' }, error: null })
+          else if (table === 'payments') resolve({ data: [{ method: 'cash', raw: null }], error: null })
           else if (table === 'order_events')
             resolve({ data: opts.printedMarkerExists ? [{ id: 'evt-0' }] : [], error: null })
           else resolve({ data: null, error: null })
@@ -358,7 +360,7 @@ describe('POST /api/print/jobs/render', () => {
   const body = { order_id: ORDER_ID, type: 'receipt', reprint: true }
 
   it('renders bytes for staff reprints with a REPRINT watermark', async () => {
-    requireRoleMock.mockResolvedValue({ user: { id: 'u1' } })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u1', app_metadata: { role: 'cashier' } } })
     const client = buildMockClient({ orderRow: ORDER_ROW })
     serviceClientMock.mockReturnValue(client)
 
@@ -380,7 +382,7 @@ describe('POST /api/print/jobs/render', () => {
   })
 
   it('404s for unknown orders', async () => {
-    requireRoleMock.mockResolvedValue({ user: { id: 'u1' } })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u1', app_metadata: { role: 'cashier' } } })
     serviceClientMock.mockReturnValue(buildMockClient({}))
 
     const res = await renderPOST(
@@ -391,6 +393,46 @@ describe('POST /api/print/jobs/render', () => {
       }) as never
     )
     expect(res.status).toBe(404)
+  })
+
+  it('returns 503 rather than an unhandled error when loading print data fails', async () => {
+    requireRoleMock.mockResolvedValue({ user: { app_metadata: { role: 'cashier' } } })
+    const client = buildMockClient({ orderRow: ORDER_ROW })
+    const originalFrom = client.from
+    client.from = (table: string) => {
+      if (table === 'payments') throw new Error('payments unavailable')
+      return originalFrom(table)
+    }
+    serviceClientMock.mockReturnValue(client)
+    const res = await renderPOST(
+      new Request('http://localhost/api/print/jobs/render', {
+        method: 'POST', body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', authorization: 'Bearer staff-token' },
+      }) as never
+    )
+    expect(res.status).toBe(503)
+  })
+
+  it('enforces kitchen queue visibility for staff while retaining bridge access', async () => {
+    const delivered = { ...ORDER_ROW, status: 'delivered' }
+    requireRoleMock.mockResolvedValue({ user: { app_metadata: { role: 'kitchen' } } })
+    serviceClientMock.mockReturnValue(buildMockClient({ orderRow: delivered }))
+    const staffRes = await renderPOST(
+      new Request('http://localhost/api/print/jobs/render', {
+        method: 'POST', body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', authorization: 'Bearer staff-token' },
+      }) as never
+    )
+    expect(staffRes.status).toBe(404)
+
+    serviceClientMock.mockReturnValue(buildMockClient({ orderRow: delivered }))
+    const bridgeRes = await renderPOST(
+      new Request('http://localhost/api/print/jobs/render', {
+        method: 'POST', body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${envMock.PRINT_BRIDGE_SECRET}` },
+      }) as never
+    )
+    expect(bridgeRes.status).toBe(200)
   })
 
   it('accepts the bridge secret in place of a staff session', async () => {

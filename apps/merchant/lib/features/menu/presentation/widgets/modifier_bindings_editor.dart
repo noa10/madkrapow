@@ -4,6 +4,7 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../../core/widgets/async_value_widget.dart';
 import '../../../../../generated/database.dart';
+import '../../data/menu_visibility.dart';
 import '../../providers/menu_providers.dart';
 
 /// Reusable widget for editing modifier group bindings for a menu item.
@@ -35,8 +36,19 @@ class _BindingState {
 class _ModifierBindingsEditorState
     extends ConsumerState<ModifierBindingsEditor> {
   Map<String, _BindingState> _bindings = {};
+  Set<String> _visibleGroupIds = <String>{};
   bool _isSaving = false;
   bool _hasLoaded = false;
+
+  @override
+  void didUpdateWidget(covariant ModifierBindingsEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.menuItemId != widget.menuItemId) {
+      _bindings = {};
+      _visibleGroupIds = <String>{};
+      _hasLoaded = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +60,7 @@ class _ModifierBindingsEditorState
     return AsyncValueWidget(
       value: groupsAsync,
       data: (groups) {
+        _visibleGroupIds = groups.map((group) => group.id).toSet();
         if (groups.isEmpty) {
           return const _EmptyGroupsMessage();
         }
@@ -109,6 +122,14 @@ class _ModifierBindingsEditorState
   Widget _buildGroupTile(ModifierGroupsRow group) {
     final binding = _bindings[group.id] ?? _BindingState();
     final isRadio = group.maxSelections == 1;
+    final minSelections = group.minSelections;
+    final effectivelyRequired =
+        binding.bound &&
+        isEffectivelyRequiredBinding(
+          isRequired: binding.required,
+          minSelections: minSelections,
+        );
+    final minLocksRequired = minSelections > 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -170,7 +191,7 @@ class _ModifierBindingsEditorState
                   ),
                 ),
                 _TypeBadge(isRadio: isRadio),
-                if (binding.bound && binding.required) const _RequiredBadge(),
+                if (effectivelyRequired) const _RequiredBadge(),
               ],
             ),
             if (binding.bound && !widget.readOnly)
@@ -180,33 +201,47 @@ class _ModifierBindingsEditorState
                   children: [
                     ChoiceChip(
                       label: const Text('Optional'),
-                      selected: !binding.required,
-                      onSelected: (v) {
-                        if (v) {
-                          setState(() {
-                            _bindings[group.id] = _BindingState(
-                              bound: true,
-                              required: false,
-                            );
-                          });
-                        }
-                      },
+                      selected: !effectivelyRequired,
+                      onSelected: minLocksRequired
+                          ? null
+                          : (v) {
+                              if (v) {
+                                setState(() {
+                                  _bindings[group.id] = _BindingState(
+                                    bound: true,
+                                    required: false,
+                                  );
+                                });
+                              }
+                            },
                     ),
                     const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('Required'),
-                      selected: binding.required,
-                      onSelected: (v) {
-                        if (v) {
-                          setState(() {
-                            _bindings[group.id] = _BindingState(
-                              bound: true,
-                              required: true,
-                            );
-                          });
-                        }
-                      },
+                      selected: effectivelyRequired,
+                      onSelected: minLocksRequired
+                          ? null
+                          : (v) {
+                              if (v) {
+                                setState(() {
+                                  _bindings[group.id] = _BindingState(
+                                    bound: true,
+                                    required: true,
+                                  );
+                                });
+                              }
+                            },
                     ),
+                    if (minLocksRequired) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        'Min $minSelections',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -222,7 +257,7 @@ class _ModifierBindingsEditorState
     try {
       final repo = ref.read(menuRepositoryProvider);
       final bindingsToSave = _bindings.entries
-          .where((e) => e.value.bound)
+          .where((e) => e.value.bound && _visibleGroupIds.contains(e.key))
           .map(
             (e) => {
               'modifier_group_id': e.key,

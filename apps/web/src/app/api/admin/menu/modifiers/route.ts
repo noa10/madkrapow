@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { revalidateMenuContent } from '@/lib/menu/revalidate';
 import { z } from 'zod';
 
 const createModifierSchema = z.object({
   name: z.string().min(1),
   price_delta_cents: z.number().int().optional().default(0),
+  is_default: z.boolean().optional().default(false),
+  is_available: z.boolean().optional().default(true),
   modifier_group_id: z.string().guid(),
   sort_order: z.number().int().optional().default(0),
 });
@@ -52,6 +55,8 @@ export async function POST(req: NextRequest) {
       .insert({
         name: validation.data.name,
         price_delta_cents: validation.data.price_delta_cents,
+        is_default: validation.data.is_default,
+        is_available: validation.data.is_available,
         modifier_group_id: validation.data.modifier_group_id,
         sort_order: validation.data.sort_order,
         created_by: user.id,
@@ -66,6 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    revalidateMenuContent();
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
     const message = getNextErrorMessage(error);

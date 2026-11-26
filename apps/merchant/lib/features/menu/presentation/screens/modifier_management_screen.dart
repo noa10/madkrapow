@@ -5,6 +5,8 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 import '../../../../core/widgets/async_value_widget.dart';
 import '../../../../core/widgets/error_banner.dart';
 import '../../../../generated/database.dart';
+import '../../data/menu_archive_copy.dart';
+import '../../data/menu_price.dart';
 import '../../providers/menu_providers.dart';
 import '../widgets/modifier_bindings_editor.dart';
 
@@ -113,10 +115,8 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Group'),
-        content: Text(
-          'Delete "${group.name}"? This will also remove all modifiers in this group.',
-        ),
+        title: const Text('Archive Group'),
+        content: Text(archiveGroupCopy(group.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -125,7 +125,7 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -142,7 +142,7 @@ class _ModifierGroupsTabState extends ConsumerState<_ModifierGroupsTab> {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete group: $e'),
+              content: Text('Failed to archive group: $e'),
               backgroundColor: AppColors.danger,
             ),
           );
@@ -262,7 +262,7 @@ class _ModifierGroupCard extends StatelessWidget {
                     color: AppColors.dangerText,
                   ),
                   label: const Text(
-                    'Delete',
+                    'Archive',
                     style: TextStyle(color: AppColors.dangerText),
                   ),
                 ),
@@ -289,13 +289,20 @@ class _ModifierGroupFormDialogState
     extends ConsumerState<_ModifierGroupFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  late int _minSelections;
   late int _maxSelections;
   late int _sortOrder;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.group?.name ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.group?.description ?? '',
+    );
+    _minSelections = widget.group?.minSelections ?? 0;
     _maxSelections = widget.group?.maxSelections ?? 1;
     _sortOrder = widget.group?.sortOrder ?? 0;
   }
@@ -303,17 +310,41 @@ class _ModifierGroupFormDialogState
   @override
   void dispose() {
     _nameController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
 
     try {
       final repo = ref.read(menuRepositoryProvider);
       if (widget.group != null) {
-        final updated = widget.group!.copyWith(
+        if (_minSelections > 0 && widget.group!.minSelections == 0) {
+          final options = await repo.fetchModifiers(widget.group!.id);
+          if (!options.any((option) => option.isAvailable)) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'A required option group needs at least one available '
+                    'option. Add an option first.',
+                  ),
+                  backgroundColor: AppColors.danger,
+                ),
+              );
+            }
+            return;
+          }
+        }
+        final updated = ModifierGroupsRow(
+          id: widget.group!.id,
           name: _nameController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+          minSelections: _minSelections,
           maxSelections: _maxSelections,
           sortOrder: _sortOrder,
         );
@@ -321,6 +352,10 @@ class _ModifierGroupFormDialogState
       } else {
         final newGroup = ModifierGroupsRow(
           name: _nameController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+          minSelections: _minSelections,
           maxSelections: _maxSelections,
           sortOrder: _sortOrder,
         );
@@ -339,6 +374,8 @@ class _ModifierGroupFormDialogState
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -346,6 +383,7 @@ class _ModifierGroupFormDialogState
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.group != null ? 'Edit Group' : 'New Group'),
+      scrollable: true,
       content: Form(
         key: _formKey,
         child: Column(
@@ -361,6 +399,31 @@ class _ModifierGroupFormDialogState
                   (v == null || v.trim().isEmpty) ? 'Name is required' : null,
             ),
             const SizedBox(height: 12),
+            TextFormField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: _minSelections.toString(),
+              decoration: const InputDecoration(
+                labelText: 'Min Selections',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _minSelections = int.tryParse(v) ?? -1,
+              validator: (v) {
+                final n = int.tryParse(v ?? '');
+                if (n == null || n < 0 || n > _maxSelections) {
+                  return 'Enter a minimum between 0 and the maximum';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -371,8 +434,13 @@ class _ModifierGroupFormDialogState
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
-                    onChanged: (v) =>
-                        _maxSelections = int.tryParse(v) ?? _maxSelections,
+                    onChanged: (v) => _maxSelections = int.tryParse(v) ?? -1,
+                    validator: (v) {
+                      final n = int.tryParse(v ?? '');
+                      return n == null || n < 1
+                          ? 'Enter a positive maximum'
+                          : null;
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -398,7 +466,10 @@ class _ModifierGroupFormDialogState
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Save')),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: const Text('Save'),
+        ),
       ],
     );
   }
@@ -429,7 +500,9 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           );
         }
 
-        _selectedGroupId ??= groups.first.id;
+        if (!groups.any((group) => group.id == _selectedGroupId)) {
+          _selectedGroupId = groups.first.id;
+        }
 
         final modifiersAsync = ref.watch(
           modifiersForGroupProvider(_selectedGroupId!),
@@ -439,23 +512,39 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           children: [
             Padding(
               padding: const EdgeInsets.all(12.0),
-              child: DropdownButtonFormField<String>(
-                initialValue: _selectedGroupId,
-                decoration: const InputDecoration(
-                  labelText: 'Modifier Group',
-                  border: OutlineInputBorder(),
-                ),
-                isExpanded: true,
-                items: groups
-                    .map(
-                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() => _selectedGroupId = v);
-                  }
-                },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      key: ValueKey(_selectedGroupId),
+                      initialValue: _selectedGroupId,
+                      decoration: const InputDecoration(
+                        labelText: 'Modifier Group',
+                        border: OutlineInputBorder(),
+                      ),
+                      isExpanded: true,
+                      items: groups
+                          .map(
+                            (g) => DropdownMenuItem(
+                              value: g.id,
+                              child: Text(g.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() => _selectedGroupId = v);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Add Modifier',
+                    onPressed: () => _showModifierForm(context),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -532,8 +621,8 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Modifier'),
-        content: Text('Delete "${modifier.name}"?'),
+        title: const Text('Archive Option'),
+        content: Text(archiveOptionCopy(modifier.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -542,7 +631,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -560,7 +649,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete modifier: $e'),
+              content: Text('Failed to archive option: $e'),
               backgroundColor: AppColors.danger,
             ),
           );
@@ -661,6 +750,18 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   late TextEditingController _nameController;
   late int _priceDeltaCents;
   late int _sortOrder;
+  late bool _isDefault;
+  late bool _isAvailable;
+  late final TextEditingController _grabController;
+  late final TextEditingController _grabPickupController;
+  String? _savedId;
+  int? _grabOriginal;
+  int? _grabOriginalPickup;
+  bool _grabExists = false;
+  bool _grabLoaded = false;
+  bool _grabRetryNotification = false;
+  bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -668,22 +769,71 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
     _nameController = TextEditingController(text: widget.modifier?.name ?? '');
     _priceDeltaCents = widget.modifier?.priceDeltaCents ?? 0;
     _sortOrder = widget.modifier?.sortOrder ?? 0;
+    _isDefault = widget.modifier?.isDefault ?? false;
+    _isAvailable = widget.modifier?.isAvailable ?? true;
+    _savedId = widget.modifier?.id;
+    _grabController = TextEditingController();
+    _grabPickupController = TextEditingController();
+    if (_savedId == null) {
+      _grabLoaded = true;
+    } else {
+      _loadGrab();
+    }
+  }
+
+  Future<void> _loadGrab() async {
+    setState(() {
+      _grabLoaded = false;
+      _error = null;
+    });
+    try {
+      final value = await ref
+          .read(menuRepositoryProvider)
+          .fetchGrabModifierPrice(_savedId!);
+      if (!mounted) return;
+      setState(() {
+        _grabOriginal = value['price_cents'] as int?;
+        _grabOriginalPickup = value['pickup_price_cents'] as int?;
+        _grabExists = value['exists'] == true;
+        _grabController.text = _grabOriginal == null
+            ? ''
+            : formatPriceNumber(_grabOriginal!);
+        _grabPickupController.text = _grabOriginalPickup == null
+            ? ''
+            : formatPriceNumber(_grabOriginalPickup!);
+        _grabLoaded = true;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not load Grab price: $e');
+    }
   }
 
   @override
   void dispose() {
+    _grabController.dispose();
+    _grabPickupController.dispose();
     _nameController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _saving) return;
+    final grabPrice = parseMenuPrice(_grabController.text);
+    final grabPickupPrice = parseMenuPrice(_grabPickupController.text);
+    var primarySaved = false;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
 
     try {
       final repo = ref.read(menuRepositoryProvider);
-      if (widget.modifier != null) {
-        final updated = widget.modifier!.copyWith(
+      if (_savedId != null) {
+        final updated = ModifiersRow(
+          id: _savedId!,
           name: _nameController.text.trim(),
+          isDefault: _isDefault,
+          isAvailable: _isAvailable,
           priceDeltaCents: _priceDeltaCents,
           modifierGroupId: widget.groupId,
           sortOrder: _sortOrder,
@@ -694,23 +844,63 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
           modifierGroupId: widget.groupId,
           name: _nameController.text.trim(),
           priceDeltaCents: _priceDeltaCents,
+          isDefault: _isDefault,
+          isAvailable: _isAvailable,
           sortOrder: _sortOrder,
         );
-        await repo.createModifier(newMod);
+        final created = await repo.createModifier(newMod);
+        _savedId = created.id;
+      }
+      primarySaved = true;
+      final grabPriceChanged = grabPrice != _grabOriginal;
+      final grabPickupPriceChanged = grabPickupPrice != _grabOriginalPickup;
+      if (grabPriceChanged ||
+          grabPickupPriceChanged ||
+          _grabRetryNotification) {
+        final result = await repo.saveGrabPrice(
+          isModifier: true,
+          id: _savedId!,
+          priceCents: grabPrice,
+          expectedPriceCents: _grabOriginal,
+          expectedExists: _grabExists,
+          pickupPriceCents: grabPickupPrice,
+          expectedPickupPriceCents: _grabOriginalPickup,
+          updatePickupPrice: grabPickupPriceChanged,
+          updatePrice: grabPriceChanged,
+          retryNotification: _grabRetryNotification,
+        );
+        if (grabPriceChanged) _grabOriginal = grabPrice;
+        if (grabPickupPriceChanged) _grabOriginalPickup = grabPickupPrice;
+        if (grabPriceChanged || grabPickupPriceChanged) {
+          if (grabPrice != null || grabPickupPrice != null) _grabExists = true;
+        }
+        if (result['warning'] != null) {
+          _grabRetryNotification = true;
+          if (mounted) {
+            setState(
+              () => _error =
+                  '${result['warning']} You can push the menu to retry.',
+            );
+          }
+          return;
+        }
+        _grabRetryNotification = false;
       }
       if (mounted) {
         ref.invalidate(modifiersForGroupProvider(widget.groupId));
         Navigator.of(context).pop();
       }
     } catch (e) {
+      if (primarySaved) _grabRetryNotification = true;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save: $e'),
-            backgroundColor: AppColors.danger,
-          ),
+        setState(
+          () => _error = !primarySaved
+              ? 'Could not save modifier: $e'
+              : 'Modifier was saved, but the Grab price step failed: $e. Review and press Save to retry.',
         );
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -718,6 +908,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.modifier != null ? 'Edit Modifier' : 'New Modifier'),
+      scrollable: true,
       content: Form(
         key: _formKey,
         child: Column(
@@ -762,6 +953,64 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
                 ),
               ],
             ),
+            SwitchListTile(
+              title: const Text('Default'),
+              value: _isDefault,
+              onChanged: (v) => setState(() => _isDefault = v),
+            ),
+            SwitchListTile(
+              title: const Text('Available'),
+              value: _isAvailable,
+              onChanged: (v) => setState(() => _isAvailable = v),
+            ),
+            TextFormField(
+              controller: _grabController,
+              enabled: _grabLoaded,
+              decoration: const InputDecoration(
+                labelText: 'GrabFood price (optional)',
+                prefixText: 'RM ',
+                helperText: 'Leave blank to use the regular price',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              validator: (v) {
+                try {
+                  parseMenuPrice(v ?? '');
+                  return null;
+                } on FormatException {
+                  return 'Enter a valid price up to RM 99999.99';
+                }
+              },
+            ),
+            TextFormField(
+              controller: _grabPickupController,
+              enabled: _grabLoaded,
+              decoration: const InputDecoration(
+                labelText: 'GrabFood self pick-up price (optional)',
+                prefixText: 'RM ',
+                helperText: 'Leave blank to use the GrabFood price',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              validator: (v) {
+                try {
+                  parseMenuPrice(v ?? '');
+                  return null;
+                } on FormatException {
+                  return 'Enter a valid price up to RM 99999.99';
+                }
+              },
+            ),
+            if (_error != null) ...[
+              Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              if (_savedId != null)
+                TextButton(
+                  onPressed: _loadGrab,
+                  child: const Text('Reload Grab price'),
+                ),
+            ],
           ],
         ),
       ),
@@ -770,7 +1019,10 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Save')),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: const Text('Save'),
+        ),
       ],
     );
   }

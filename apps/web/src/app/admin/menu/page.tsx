@@ -36,10 +36,10 @@ import { notifyGrabMenuAfterChange } from "@/lib/grabfood/notify-client";
 import { isMissingColumnError, resolveGroupSelectionRange, visibleMenuCategories, visibleMenuItems } from "./menu-visibility";
 import { MenuItemActions } from "./menu-item-actions";
 
-const MENU_ITEM_SELECT = "*, channel_products(channel, price_cents)";
+const MENU_ITEM_SELECT = "*, channel_products(channel, price_cents, pickup_price_cents)";
 const CATEGORY_SELECT = "*";
 const MODIFIER_GROUP_SELECT = "*";
-const MODIFIER_SELECT = "*, channel_modifiers(channel, price_cents)";
+const MODIFIER_SELECT = "*, channel_modifiers(channel, price_cents, pickup_price_cents)";
 
 interface Category {
   archived_at?: string | null;
@@ -65,7 +65,7 @@ interface MenuItem {
   spice_level: number;
   ingredients: string[];
   is_signature: boolean;
-  channel_products?: Array<{ channel: string; price_cents: number | null }>;
+  channel_products?: Array<{ channel: string; price_cents: number | null; pickup_price_cents?: number | null }>;
 }
 
 interface ModifierGroup {
@@ -92,7 +92,7 @@ interface Modifier {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  channel_modifiers?: Array<{ channel: string; price_cents: number | null }>;
+  channel_modifiers?: Array<{ channel: string; price_cents: number | null; pickup_price_cents?: number | null }>;
 }
 
 function grabModifierPrice(modifier: Modifier): number | null {
@@ -101,6 +101,20 @@ function grabModifierPrice(modifier: Modifier): number | null {
 
 function grabItemPrice(item: MenuItem): number | null {
   return item.channel_products?.find((row) => row.channel === "grabfood")?.price_cents ?? null;
+}
+
+function grabPickupPrice(
+  row: { channel: string; pickup_price_cents?: number | null } | undefined
+): number | null {
+  return row?.pickup_price_cents ?? null;
+}
+
+function grabItemPickupPrice(item: MenuItem): number | null {
+  return grabPickupPrice(item.channel_products?.find((row) => row.channel === "grabfood"));
+}
+
+function grabModifierPickupPrice(modifier: Modifier): number | null {
+  return grabPickupPrice(modifier.channel_modifiers?.find((row) => row.channel === "grabfood"));
 }
 
 function SortableMenuItemRow({
@@ -137,6 +151,7 @@ function SortableMenuItemRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
   const grabPrice = grabItemPrice(item);
+  const grabPickup = grabItemPickupPrice(item);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -220,6 +235,14 @@ function SortableMenuItemRow({
               </span>
             </>
           )}
+          {grabPickup !== null && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="text-amber-500" aria-label={`GrabFood self pick-up price RM ${(grabPickup / 100).toFixed(2)}`}>
+                Pickup RM {(grabPickup / 100).toFixed(2)}
+              </span>
+            </>
+          )}
         </p>
       </div>
       <div className="col-start-2 sm:col-auto">
@@ -299,6 +322,7 @@ function SortableModifierRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: modifier.id, disabled: isSaving });
   const grabPrice = grabModifierPrice(modifier);
+  const grabPickup = grabModifierPickupPrice(modifier);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -361,6 +385,11 @@ function SortableModifierRow({
         {grabPrice !== null && (
           <Badge variant="outline" className="text-xs">
             Grab {formatPrice(grabPrice)}
+          </Badge>
+        )}
+        {grabPickup !== null && (
+          <Badge variant="outline" className="text-xs">
+            Pickup {formatPrice(grabPickup)}
           </Badge>
         )}
         {!modifier.is_available && (
@@ -516,9 +545,12 @@ export default function AdminMenuPage() {
       name: string;
       price: string;
       grabPrice: string;
+      grabPickupPrice: string;
       originalGrabPrice: number | null;
+      originalGrabPickupPrice: number | null;
       grabRowExists: boolean;
       grabPriceUnconfirmed?: boolean;
+      grabPickupUnconfirmed?: boolean;
       is_default: boolean;
       is_available: boolean;
     };
@@ -1238,7 +1270,9 @@ export default function AdminMenuPage() {
         name: "",
         price: "0",
         grabPrice: "",
+        grabPickupPrice: "",
         originalGrabPrice: null,
+        originalGrabPickupPrice: null,
         grabRowExists: false,
         is_default: false,
         is_available: true,
@@ -1249,6 +1283,7 @@ export default function AdminMenuPage() {
   const handleEditModifier = (modifier: Modifier) => {
     const grabRow = modifier.channel_modifiers?.find((row) => row.channel === "grabfood");
     const originalGrabPrice = grabRow?.price_cents ?? null;
+    const originalGrabPickupPrice = grabRow?.pickup_price_cents ?? null;
     setEditingModifier({
       groupId: modifier.modifier_group_id,
       modifier: {
@@ -1256,7 +1291,9 @@ export default function AdminMenuPage() {
         name: modifier.name,
         price: (modifier.price_delta_cents / 100).toFixed(2),
         grabPrice: originalGrabPrice === null ? "" : (originalGrabPrice / 100).toFixed(2),
+        grabPickupPrice: originalGrabPickupPrice === null ? "" : (originalGrabPickupPrice / 100).toFixed(2),
         originalGrabPrice,
+        originalGrabPickupPrice,
         grabRowExists: Boolean(grabRow),
         is_default: modifier.is_default,
         is_available: modifier.is_available,
@@ -1273,10 +1310,22 @@ export default function AdminMenuPage() {
       setEditingModifier((prev) => prev ? { ...prev, error: "Enter a valid GrabFood price with at most two decimal places" } : prev);
       return;
     }
+    const grabPickupInput = editingModifier.modifier.grabPickupPrice.trim();
+    const grabPickupCents = grabPickupInput === "" ? null : Math.round(Number(grabPickupInput) * 100);
+    if (grabPickupCents !== null && (!/^\d+(\.\d{1,2})?$/.test(grabPickupInput) || !Number.isSafeInteger(grabPickupCents) || grabPickupCents > 9999999)) {
+      setEditingModifier((prev) => prev ? { ...prev, error: "Enter a valid GrabFood self pick-up price with at most two decimal places" } : prev);
+      return;
+    }
     if (editingModifier.modifier.grabPriceUnconfirmed && grabPriceCents === editingModifier.modifier.originalGrabPrice) {
       setEditingModifier((prev) => prev ? { ...prev, error: "The previous GrabFood price save could not be confirmed. Cancel and reopen the option to review the current price." } : prev);
       return;
     }
+    if (editingModifier.modifier.grabPickupUnconfirmed && grabPickupCents === editingModifier.modifier.originalGrabPickupPrice) {
+      setEditingModifier((prev) => prev ? { ...prev, error: "The previous GrabFood self pick-up price save could not be confirmed. Cancel and reopen the option to review the current price." } : prev);
+      return;
+    }
+    const deliveryPriceChanged = grabPriceCents !== editingModifier.modifier.originalGrabPrice;
+    const pickupPriceChanged = grabPickupCents !== editingModifier.modifier.originalGrabPickupPrice;
     const supabase = getBrowserClient();
     setSaving(true);
     setEditingModifier((prev) => prev ? { ...prev, error: undefined } : prev);
@@ -1340,12 +1389,15 @@ export default function AdminMenuPage() {
         );
       }
 
-      if (grabPriceCents !== editingModifier.modifier.originalGrabPrice) {
+      if (deliveryPriceChanged || pickupPriceChanged) {
         const { data: session } = await supabase.auth.getSession();
         const body = JSON.stringify({
           modifier_id: modifierId,
           price_cents: grabPriceCents,
+          pickup_price_cents: grabPickupCents,
+          update_pickup_price: pickupPriceChanged,
           expected_price_cents: editingModifier.modifier.originalGrabPrice,
+          expected_pickup_price_cents: editingModifier.modifier.originalGrabPickupPrice,
           expected_exists: editingModifier.modifier.grabRowExists,
         });
         let response: Response;
@@ -1356,19 +1408,24 @@ export default function AdminMenuPage() {
             body,
           });
         } catch {
-          setEditingModifier((prev) => prev ? { ...prev, modifier: { ...prev.modifier, grabPriceUnconfirmed: true } } : prev);
-          throw new Error("Option saved, but the GrabFood price save could not be confirmed. Check your connection and save again.");
+          setEditingModifier((prev) => prev ? { ...prev, modifier: { ...prev.modifier, grabPriceUnconfirmed: deliveryPriceChanged, grabPickupUnconfirmed: pickupPriceChanged } } : prev);
+          throw new Error("Option saved, but the GrabFood prices could not be confirmed. Check your connection and save again.");
         }
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
           if (response.status >= 500) {
-            setEditingModifier((prev) => prev ? { ...prev, modifier: { ...prev.modifier, grabPriceUnconfirmed: true } } : prev);
+            setEditingModifier((prev) => prev ? { ...prev, modifier: { ...prev.modifier, grabPriceUnconfirmed: deliveryPriceChanged, grabPickupUnconfirmed: pickupPriceChanged } } : prev);
           }
-          throw new Error(`Option saved, but GrabFood price could not be saved: ${result.error || "Please save again."}`);
+          throw new Error(`Option saved, but GrabFood prices could not be saved: ${result.error || "Please save again."}`);
         }
-        setEditingModifier((prev) => prev && !prev.modifier.grabPriceUnconfirmed ? {
+        setEditingModifier((prev) => prev && !prev.modifier.grabPriceUnconfirmed && !prev.modifier.grabPickupUnconfirmed ? {
           ...prev,
-          modifier: { ...prev.modifier, originalGrabPrice: grabPriceCents, grabRowExists: prev.modifier.grabRowExists || grabPriceCents !== null },
+          modifier: {
+            ...prev.modifier,
+            originalGrabPrice: deliveryPriceChanged ? grabPriceCents : prev.modifier.originalGrabPrice,
+            originalGrabPickupPrice: pickupPriceChanged ? grabPickupCents : prev.modifier.originalGrabPickupPrice,
+            grabRowExists: prev.modifier.grabRowExists || grabPriceCents !== null || grabPickupCents !== null,
+          },
         } : prev);
       }
 
@@ -2180,7 +2237,7 @@ export default function AdminMenuPage() {
                     <div className="p-3 border-t">
                       {editingModifier?.groupId === group.id ? (
                         <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-                          <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                             <Input
                               disabled={saving}
                               value={editingModifier.modifier.name}
@@ -2232,9 +2289,27 @@ export default function AdminMenuPage() {
                               placeholder="GrabFood price (RM)"
                               aria-label="GrabFood price (RM)"
                             />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              disabled={saving}
+                              value={editingModifier.modifier.grabPickupPrice}
+                              onChange={(e) =>
+                                setEditingModifier({
+                                  ...editingModifier,
+                                  modifier: {
+                                    ...editingModifier.modifier,
+                                    grabPickupPrice: e.target.value,
+                                  },
+                                })
+                              }
+                              placeholder="GrabFood pickup price (RM)"
+                              aria-label="GrabFood self pick-up price (RM)"
+                            />
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            GrabFood price blank = same as the regular option price.
+                            GrabFood price blank = same as the regular option price. Pickup price blank = same as the GrabFood price.
                           </p>
                           <div className="flex items-center gap-4 text-sm">
                             <label className="flex items-center gap-2">

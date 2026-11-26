@@ -95,6 +95,71 @@ describe('GrabFood item price', () => {
     expect((await PUT(req)).status).toBe(200)
     expect(notify).toHaveBeenCalledOnce()
   })
+  it('stores a self pick-up price without changing the delivery price', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', menu_item_id: item, external_item_id: 'ext', price_cents: 1000, pickup_price_cents: null }])
+    client.mockReturnValue(db)
+    const req = new Request('http://localhost/api/integrations/grabfood/menu/price', {
+      method: 'PUT',
+      body: JSON.stringify({
+        menu_item_id: item,
+        price_cents: 1000,
+        update_price: false,
+        pickup_price_cents: 900,
+        update_pickup_price: true,
+        expected_pickup_price_cents: null,
+        expected_exists: true,
+      }),
+    }) as Parameters<typeof PUT>[0]
+    expect((await PUT(req)).status).toBe(200)
+    expect(db.rows[0]).toMatchObject({ price_cents: 1000, pickup_price_cents: 900 })
+    expect(notify).toHaveBeenCalledOnce()
+  })
+
+  it('clears a self pick-up price and keeps zero as a real price', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', menu_item_id: item, external_item_id: 'ext', price_cents: 1000, pickup_price_cents: 900 }])
+    client.mockReturnValue(db)
+    const zero = new Request('http://localhost/api/integrations/grabfood/menu/price', {
+      method: 'PUT',
+      body: JSON.stringify({ menu_item_id: item, price_cents: 1000, update_price: false, pickup_price_cents: 0, update_pickup_price: true }),
+    }) as Parameters<typeof PUT>[0]
+    expect((await PUT(zero)).status).toBe(200)
+    expect(db.rows[0].pickup_price_cents).toBe(0)
+
+    const clear = new Request('http://localhost/api/integrations/grabfood/menu/price', {
+      method: 'PUT',
+      body: JSON.stringify({ menu_item_id: item, price_cents: 1000, update_price: false, pickup_price_cents: null, update_pickup_price: true }),
+    }) as Parameters<typeof PUT>[0]
+    expect((await PUT(clear)).status).toBe(200)
+    expect(db.rows[0].pickup_price_cents).toBeNull()
+  })
+
+  it('rejects a stale self pick-up price', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', menu_item_id: item, external_item_id: 'ext', price_cents: 1000, pickup_price_cents: 800 }])
+    client.mockReturnValue(db)
+    const req = new Request('http://localhost/api/integrations/grabfood/menu/price', {
+      method: 'PUT',
+      body: JSON.stringify({
+        menu_item_id: item,
+        price_cents: 1000,
+        update_price: false,
+        pickup_price_cents: 900,
+        update_pickup_price: true,
+        expected_pickup_price_cents: 700,
+        expected_exists: true,
+      }),
+    }) as Parameters<typeof PUT>[0]
+    expect((await PUT(req)).status).toBe(409)
+    expect(db.rows[0].pickup_price_cents).toBe(800)
+  })
+
+  it('returns the self pick-up price from GET', async () => {
+    const db = database([{ id: 'g', channel: 'grabfood', menu_item_id: item, external_item_id: 'ext', price_cents: 1000, pickup_price_cents: 850 }])
+    client.mockReturnValue(db)
+    const res = await GET(request('GET'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ price_cents: 1000, pickup_price_cents: 850, exists: true })
+  })
+
   it('accepts seeded menu ids that Zod uuid rejects', async () => {
     const seeded = '00000004-0000-0000-0000-000000000001'
     const db = database([]); client.mockReturnValue(db)

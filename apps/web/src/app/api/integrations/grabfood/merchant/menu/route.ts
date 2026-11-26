@@ -56,11 +56,11 @@ export async function GET(req: NextRequest) {
       supabase.from('menu_items').select(`
           id, category_id, name, description, price_cents, image_url, is_available, archived_at,
           snooze_till, sort_order,
-          channel_products(channel, external_item_id, external_name, price_cents, is_available, snooze_till),
+          channel_products(channel, external_item_id, external_name, price_cents, pickup_price_cents, is_available, snooze_till),
           menu_item_modifier_groups(
             modifier_groups(
               id, name, min_selections, max_selections, sort_order, archived_at,
-              modifiers(id, name, price_delta_cents, is_available, sort_order, archived_at, channel_modifiers(channel, price_cents))
+              modifiers(id, name, price_delta_cents, is_available, sort_order, archived_at, channel_modifiers(channel, price_cents, pickup_price_cents))
             )
           )
         `),

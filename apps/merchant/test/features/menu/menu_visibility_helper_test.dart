@@ -95,6 +95,38 @@ void main() {
     expect(grabItemPriceCents(const {}), isNull);
   });
 
+  test('reads the GrabFood self pick-up price override', () {
+    expect(
+      grabItemPickupPriceCents({
+        'channel_products': [
+          {
+            'channel': 'grabfood',
+            'price_cents': 1200,
+            'pickup_price_cents': 1000,
+          },
+        ],
+      }),
+      1000,
+    );
+    expect(
+      grabItemPickupPriceCents({
+        'channel_products': [
+          {'channel': 'grabfood', 'price_cents': 1200, 'pickup_price_cents': 0},
+        ],
+      }),
+      0,
+    );
+    expect(
+      grabItemPickupPriceCents({
+        'channel_products': [
+          {'channel': 'grabfood', 'price_cents': 1200},
+        ],
+      }),
+      isNull,
+    );
+    expect(grabItemPickupPriceCents(const {}), isNull);
+  });
+
   test('confirms a delete only when the row is archived', () {
     ensureArchivedRow({
       'id': 'a',

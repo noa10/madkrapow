@@ -40,6 +40,20 @@ int? grabItemPriceCents(Map<String, dynamic> row) {
   return null;
 }
 
+/// The GrabFood self pick-up override embedded on a menu item row, or null
+/// when self pick-up uses the regular GrabFood price.
+int? grabItemPickupPriceCents(Map<String, dynamic> row) {
+  final rows = row['channel_products'];
+  if (rows is! List) return null;
+  for (final entry in rows) {
+    if (entry is! Map) continue;
+    if (entry['channel'] != 'grabfood') continue;
+    final price = entry['pickup_price_cents'];
+    return price is int ? price : null;
+  }
+  return null;
+}
+
 /// A DELETE filtered by RLS returns success without changing rows, so the
 /// caller must read the row back and confirm it was archived before reporting
 /// that the delete worked.

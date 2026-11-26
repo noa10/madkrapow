@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:madkrapow_merchant/core/utils/auth_exceptions.dart';
 import 'package:madkrapow_merchant/core/constants/roles.dart';
 import 'package:madkrapow_merchant/features/auth/providers/admin_auth_providers.dart';
 import 'package:madkrapow_merchant/features/notifications/data/device_identity.dart';
@@ -75,12 +77,20 @@ void main() {
   late FakeLocalOrderNotifications local;
   late ViewedOrderRegistry registry;
   late MockRealtimeChannel channel;
+  late MockMerchantApiClient api;
+  const printChannel = MethodChannel('com.madkrapow.merchant/receipt_print');
 
   setUp(() {
     local = FakeLocalOrderNotifications();
     registry = ViewedOrderRegistry();
     channel = MockRealtimeChannel();
+    api = MockMerchantApiClient();
     when(() => channel.unsubscribe()).thenAnswer((_) async => 'ok');
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, null);
   });
 
   Future<void> pumpDetail(
@@ -97,6 +107,7 @@ void main() {
           merchantOrderRepositoryProvider.overrideWithValue(
             FakeMerchantOrderRepository(channel),
           ),
+          merchantApiClientProvider.overrideWithValue(api),
           staffRoleProvider.overrideWithValue(StaffRole.manager),
           localOrderNotificationsProvider.overrideWithValue(local),
           orderViewAcknowledgerProvider.overrideWithValue(acknowledger),
@@ -109,6 +120,156 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('prints the fetched receipt once and prevents duplicate taps', (
+    tester,
+  ) async {
+    final response = Completer<Map<String, dynamic>>();
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) => response.future);
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(tester, acknowledger);
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is IconButton && widget.tooltip == 'Print receipt',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    response.complete({'html': '<p>Receipt</p>'});
+    await tester.pumpAndSettle();
+    verify(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).called(1);
+    expect(calls.single.method, 'printReceipt');
+    expect(calls.single.arguments, {'html': '<p>Receipt</p>'});
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('reports invalid receipt response without opening print dialog', (
+    tester,
+  ) async {
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) async => {'html': ''});
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(tester, acknowledger);
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not print receipt'), findsOneWidget);
+    expect(calls, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('authentication failure explains access and permits retry', (
+    tester,
+  ) async {
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenThrow(const AuthRequiredException('expired'));
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(tester, acknowledger);
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Session expired or access denied'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+    verify(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).called(2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('print dialog failure is reported and allows retry', (
+    tester,
+  ) async {
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (_) async {
+          throw PlatformException(code: 'print_error');
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(tester, acknowledger);
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not print receipt'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is IconButton && widget.tooltip == 'Print receipt',
+            ),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('does not open print dialog after screen disposal', (
+    tester,
+  ) async {
+    final response = Completer<Map<String, dynamic>>();
+    when(
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+    ).thenAnswer((_) => response.future);
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(printChannel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(tester, acknowledger);
+    await tester.tap(find.byTooltip('Print receipt'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    response.complete({'html': '<p>Receipt</p>'});
+    await tester.pump();
+    expect(calls, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('acknowledges the opened order after the first frame', (
     tester,

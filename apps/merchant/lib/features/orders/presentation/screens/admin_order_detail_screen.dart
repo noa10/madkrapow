@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/utils/order_fields.dart';
 import '../../../../core/widgets/async_value_widget.dart';
@@ -37,6 +40,41 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
   RealtimeChannel? _channel;
   Timer? _pollingTimer;
   bool _acknowledged = false;
+  bool _printing = false;
+  static const _printChannel = MethodChannel(
+    'com.madkrapow.merchant/receipt_print',
+  );
+
+  Future<void> _printReceipt() async {
+    if (_printing) return;
+    setState(() => _printing = true);
+    try {
+      final response = await ref
+          .read(merchantApiClientProvider)
+          .post('/print/jobs/receipt-document', {'order_id': widget.orderId})
+          .timeout(const Duration(seconds: 30));
+      final html = response['html'];
+      if (html is! String || html.trim().isEmpty) {
+        throw const FormatException('Invalid receipt document');
+      }
+      if (!mounted) return;
+      await _printChannel.invokeMethod<void>('printReceipt', {'html': html});
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not print receipt. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
 
   @override
   void initState() {
@@ -136,6 +174,22 @@ class _AdminOrderDetailScreenState extends ConsumerState<AdminOrderDetailScreen>
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          if (!kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android &&
+              detailAsync.valueOrNull != null)
+            IconButton(
+              tooltip: 'Print receipt',
+              onPressed: _printing ? null : _printReceipt,
+              icon: _printing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+            ),
+        ],
         title: Text(
           detailAsync.maybeWhen(
             data: (d) => getOrderDisplayCode(d.order),

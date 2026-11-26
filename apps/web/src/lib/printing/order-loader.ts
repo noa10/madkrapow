@@ -23,7 +23,7 @@ export async function loadPrintOrder(
   const { data: order, error } = await supabase
     .from('orders')
     .select(
-      'id, order_number, source, status, created_at, customer_name, subtotal_cents, total_cents, notes, delivery_type, table_label, pax'
+      'id, order_number, source, status, created_at, customer_name, subtotal_cents, delivery_fee_cents, discount_cents, total_cents, payment_method, notes, delivery_type, table_label, pax'
     )
     .eq('id', orderId)
     .maybeSingle()
@@ -54,6 +54,7 @@ export async function loadPrintOrder(
     name: row.menu_item_name as string,
     quantity: row.quantity as number,
     priceCents: row.menu_item_price_cents as number,
+    lineTotalCents: row.line_total_cents as number | null,
     notes: (row.notes as string | null) ?? undefined,
     modifiers: (modifiersByItem.get(row.id as string) ?? []).map((name) => ({ name, quantity: 1 })),
   }))
@@ -69,27 +70,40 @@ export async function loadPrintOrder(
     externalOrderNumber = channelOrder?.external_order_number ?? undefined
   }
 
-  const { data: payment } = await supabase
+  const { data: paymentRows, error: paymentsError } = await supabase
     .from('payments')
     .select('method, raw')
     .eq('order_id', orderId)
     .eq('status', 'succeeded')
-    .maybeSingle()
+    .order('created_at', { ascending: true })
+    .range(0, 99)
+  if (paymentsError) throw paymentsError
+  const payments = Array.isArray(paymentRows) ? (paymentRows as { method: string | null; raw: unknown }[]) : []
+  const payment = payments[0]
+  // A self-declared claim on any succeeded row must survive alongside later
+  // cashier-confirmed rows, otherwise the receipt could invite a free handover.
+  const paymentClaimedByDiner = payments.some((row) => isClaimedByDiner(row.raw))
 
   return {
     orderNumber: order.order_number as string,
     source: order.source as string,
+    status: (order.status as string | null) ?? null,
+    deliveryType: (order.delivery_type as string | null) ?? null,
     externalOrderNumber,
     createdAt: order.created_at as string,
     customerName: (order.customer_name as string | null) ?? null,
     orderNotes: (order.notes as string | null) ?? null,
     items,
     subtotalCents: order.subtotal_cents as number,
+    deliveryFeeCents: (order.delivery_fee_cents as number | null) ?? 0,
+    discountCents: (order.discount_cents as number | null) ?? 0,
     totalCents: order.total_cents as number,
+    hasSucceededPayment: payments.length > 0,
     paymentMethod: (payment?.method as string | null) ?? null,
+    snapshotPaymentMethod: (order.payment_method as string | null) ?? null,
     // The provenance marker the claim RPC writes: a diner saying "I've paid"
     // is not a cashier confirming the money, and the receipt has to say so.
-    paymentClaimedByDiner: isClaimedByDiner(payment?.raw),
+    paymentClaimedByDiner,
     fulfillmentLabel: order.delivery_type
       ? FULFILLMENT_LABELS[order.delivery_type as string]
       : undefined,

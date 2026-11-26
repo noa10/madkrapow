@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { getOrderDisplayCode } from "@/lib/utils/order-code"
-import { isPrintBridgeConfigured, printViaBridge } from "@/lib/printing/client"
+import { isPrintBridgeConfigured, printReceiptInBrowser, printViaBridge } from "@/lib/printing/client"
 import { useToastStore } from "@/stores/toast"
 import { cn } from "@/lib/utils"
 import type { Order } from "@/types/orders"
@@ -27,7 +27,7 @@ interface OrderOverflowMenuProps {
 
 /**
  * The `•••` overflow control for an order card: view details, view items,
- * print receipt (only when the LAN print bridge is configured), and the
+ * print receipt in the browser or through a configured LAN print bridge, and the
  * destructive cancel action. The trigger stops propagation so opening the
  * menu never navigates the surrounding card.
  *
@@ -48,6 +48,13 @@ export function OrderOverflowMenu({
 
   const handleViewDetails = () => {
     router.push(`/admin/orders/${order.id}`)
+  }
+
+  const handleBrowserPrint = async () => {
+    const result = await printReceiptInBrowser(order.id)
+    if (!result.ok) {
+      addToast({ type: "error", title: "Print failed", description: result.error })
+    }
   }
 
   const handlePrint = async () => {
@@ -86,7 +93,8 @@ export function OrderOverflowMenu({
         {onOpenItems && (
           <DropdownMenuItem onSelect={() => onOpenItems(order)}>View items</DropdownMenuItem>
         )}
-        {canPrint && <DropdownMenuItem onSelect={handlePrint}>Print receipt</DropdownMenuItem>}
+        <DropdownMenuItem onSelect={handleBrowserPrint}>Print receipt</DropdownMenuItem>
+        {canPrint && <DropdownMenuItem onSelect={handlePrint}>Print via bridge</DropdownMenuItem>}
         {canCancel && (
           <>
             <DropdownMenuSeparator />

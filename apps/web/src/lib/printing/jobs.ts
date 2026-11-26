@@ -17,12 +17,15 @@ export interface PrintOrderItem {
   modifiers?: { name: string; quantity: number }[]
   notes?: string
   priceCents: number
+  lineTotalCents?: number | null
 }
 
 export interface PrintOrder {
   orderNumber: string
   /** counter | grabfood | web | ... (orders.source) */
   source: string
+  status?: string | null
+  deliveryType?: string | null
   /** Grab's short order number (GF-xxx) when source is grabfood. */
   externalOrderNumber?: string
   createdAt: string
@@ -30,8 +33,13 @@ export interface PrintOrder {
   orderNotes?: string | null
   items: PrintOrderItem[]
   subtotalCents: number
+  deliveryFeeCents?: number | null
+  discountCents?: number | null
   totalCents: number
+  hasSucceededPayment?: boolean
   paymentMethod?: string | null
+  /** Saved order payment snapshot, for display when no succeeded payment exists. */
+  snapshotPaymentMethod?: string | null
   /**
    * True when the diner's own "I've paid" tap recorded this payment.
    *
@@ -91,7 +99,7 @@ function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {
     const qty = `${item.quantity}x`
     lines.push(
       withPrices
-        ? { kind: 'columns', label: `${qty} ${item.name}`, value: formatCents(item.priceCents * item.quantity) }
+        ? { kind: 'columns', label: `${qty} ${item.name}`, value: formatCents(item.lineTotalCents ?? item.priceCents * item.quantity) }
         : { kind: 'text', text: `${qty} ${item.name}`, style: { bold: true } }
     )
     for (const modifier of item.modifiers ?? []) {
@@ -167,6 +175,9 @@ export function buildReceipt(
   lines.push({ kind: 'text', text: store.address, style: { align: 'center' } })
   lines.push({ kind: 'text', text: store.phone, style: { align: 'center' } })
   lines.push({ kind: 'divider' })
+  if (order.status === 'cancelled') {
+    lines.push({ kind: 'text', text: '** CANCELLED - VOID **', style: { align: 'center', bold: true, double: true } })
+  }
   if (options.reprint) {
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
@@ -193,9 +204,19 @@ export function buildReceipt(
   lines.push(...itemLines(order, true))
   lines.push({ kind: 'divider' })
   lines.push({ kind: 'columns', label: 'Subtotal', value: formatCents(order.subtotalCents) })
+  if (order.deliveryFeeCents) {
+    lines.push({ kind: 'columns', label: 'Delivery', value: formatCents(order.deliveryFeeCents) })
+  }
+  if (order.discountCents) {
+    lines.push({ kind: 'columns', label: 'Discount', value: formatCents(-order.discountCents) })
+  }
   lines.push({ kind: 'columns', label: 'TOTAL', value: formatCents(order.totalCents), bold: true })
-  if (order.paymentMethod) {
-    lines.push({ kind: 'columns', label: 'Payment', value: order.paymentMethod.toUpperCase() })
+  const paymentMethod = order.paymentMethod ?? order.snapshotPaymentMethod
+  if (paymentMethod) {
+    lines.push({ kind: 'columns', label: 'Payment', value: paymentMethod.toUpperCase() })
+  }
+  if (order.status === 'pending' && !order.hasSucceededPayment) {
+    lines.push({ kind: 'text', text: '** PAYMENT NOT CONFIRMED **', style: { align: 'center', bold: true } })
   }
   if (order.paymentClaimedByDiner) {
     // The claim is self-declared: the diner said they paid, the server never

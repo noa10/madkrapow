@@ -103,6 +103,35 @@ describe('buildReceipt', () => {
     expect(texts).toContain('Payment|GRABFOOD')
   })
 
+  it('uses saved item totals and payment snapshots when available', () => {
+    const job = buildReceipt({
+      ...ORDER,
+      items: [{ name: 'Meal', quantity: 2, priceCents: 1000, lineTotalCents: 2500 }],
+      paymentMethod: null,
+      snapshotPaymentMethod: 'cash',
+    }, STORE)
+    expect(job.lines).toContainEqual({ kind: 'columns', label: '2x Meal', value: 'RM 25.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Payment', value: 'CASH' })
+  })
+
+  it('warns when a pending order has no successful payment', () => {
+    const job = buildReceipt({ ...ORDER, status: 'pending', paymentMethod: null }, STORE)
+    expect(job.lines).toContainEqual(expect.objectContaining({ text: '** PAYMENT NOT CONFIRMED **' }))
+  })
+
+  it('shows saved adjustments without changing the saved total', () => {
+    const job = buildReceipt({ ...ORDER, subtotalCents: 2500, deliveryFeeCents: 500, discountCents: 300, totalCents: 2700 }, STORE)
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Delivery', value: 'RM 5.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'Discount', value: '-RM 3.00' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'TOTAL', value: 'RM 27.00', bold: true })
+  })
+
+  it('prominently marks cancelled receipts', () => {
+    expect(buildReceipt({ ...ORDER, status: 'cancelled' }, STORE).lines).toContainEqual(
+      expect.objectContaining({ text: '** CANCELLED - VOID **', style: expect.objectContaining({ bold: true }) })
+    )
+  })
+
   it('prints the Grab short number as the Grab ref', () => {
     const job = buildReceipt(ORDER, STORE)
     const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))

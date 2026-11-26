@@ -249,6 +249,28 @@ describe("menu deletion", () => {
     expect(harness.states[18]).toBeNull();
   });
 
+  it("shows a retryable warning when Grab cannot be notified after a delete", async () => {
+    setup("modifiers");
+    harness.notify.mockResolvedValue("Grab API 429");
+    const page = render();
+    const confirm = nodes(page, (props) => props.children === "Confirm" && typeof props.onClick === "function")[0].onClick as () => Promise<void>;
+    await confirm();
+
+    const warning = harness.toast.mock.calls
+      .map((call) => call[0] as { type?: string; title?: string; description?: string; action?: { label?: string; onClick?: () => void } })
+      .find((toast) => toast.type === "warning");
+    expect(warning).toMatchObject({
+      type: "warning",
+      title: expect.stringMatching(/Grab sync will retry/),
+      description: "Grab API 429",
+      action: expect.objectContaining({ label: "Retry Grab sync" }),
+    });
+    expect(harness.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
+
+    warning?.action?.onClick?.();
+    expect(harness.notify).toHaveBeenCalledTimes(2);
+  });
+
   function clientWithRefreshFailure(failure: { message: string }) {
     harness.client.mockReturnValue({ from: () => {
       let operation = "read";

@@ -13,6 +13,11 @@
  *   - Unknown order-state pushes return a retryable result (HTTP 503), so
  *     Grab retries while the order is being imported, instead of silently
  *     acknowledging a state that was never applied.
+ *   - Order-state transitions are applied with compare-and-set. When a
+ *     concurrent writer (for example the local readiness confirmation) wins
+ *     the race, the handler re-reads the order and replans from the observed
+ *     state. Terminal states are never overwritten, and sustained contention
+ *     leaves the event retryable instead of acknowledging an unapplied push.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -34,6 +39,8 @@ export interface GrabOrderActions {
 /** Promised ready time reported to Grab on acceptance (configurable later). */
 export const DEFAULT_READY_TIME_MINUTES = 20
 export const MAX_EVENT_ATTEMPTS = 6
+/** CAS rounds allowed when concurrent writers keep invalidating a transition. */
+export const MAX_STATE_TRANSITION_ROUNDS = 3
 const LEASE_MS = 60_000
 
 export type HandlerResult = {
@@ -379,6 +386,19 @@ export async function processSubmitOrder(
   return result
 }
 
+async function readOrderStatus(
+  supabase: SupabaseClient,
+  orderId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('status')
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { status?: string } | null)?.status ?? null
+}
+
 async function processOrderState(
   supabase: SupabaseClient,
   payload: GrabOrderStatePayload,
@@ -406,22 +426,57 @@ async function processOrderState(
     return { status: 'unknown_order' }
   }
 
-  const currentStatus = (channelOrder.orders as { status?: string } | null)?.status ?? 'pending'
-  const steps = planInternalTransitions(currentStatus, { ...payload, state })
+  let currentStatus = (channelOrder.orders as { status?: string } | null)?.status ?? 'pending'
   const applied: string[] = []
-  let status = currentStatus
-  for (const step of steps) {
-    // Atomic conditional update: only transition if still in the expected state.
-    const { data: updated, error: updateError } = await supabase
-      .from('orders')
-      .update({ status: step })
-      .eq('id', channelOrder.order_id)
-      .eq('status', status)
-      .select('id')
-    if (updateError) throw updateError
-    if (!updated || updated.length === 0) break
-    applied.push(step)
-    status = step
+  let sawContention = false
+  let rounds = 0
+
+  // Apply the plan with compare-and-set. If another writer (for example the
+  // local readiness confirmation) changes the order first, re-read and replan
+  // from the observed state instead of acknowledging a transition that never
+  // ran. planInternalTransitions never yields steps out of a terminal state,
+  // so a concurrent delivery/cancellation is never overwritten.
+  for (;;) {
+    const steps = planInternalTransitions(currentStatus, { ...payload, state })
+    if (steps.length === 0) break
+    if (rounds >= MAX_STATE_TRANSITION_ROUNDS) {
+      // Sustained contention: keep the event retryable (HTTP 503) rather than
+      // reporting success for a transition we never applied.
+      await markRetry(supabase, eventId, attempts, 'order status changed concurrently')
+      return {
+        status: 'busy',
+        order_id: channelOrder.order_id,
+        detail: 'order status changed concurrently',
+      }
+    }
+    rounds += 1
+
+    let contended = false
+    for (const step of steps) {
+      // Atomic conditional update: only transition if still in the expected state.
+      const { data: updated, error: updateError } = await supabase
+        .from('orders')
+        .update({ status: step })
+        .eq('id', channelOrder.order_id)
+        .eq('status', currentStatus)
+        .select('id')
+      if (updateError) throw updateError
+      if (!updated || updated.length === 0) {
+        contended = true
+        sawContention = true
+        break
+      }
+      applied.push(step)
+      currentStatus = step
+    }
+    if (!contended) break
+
+    const freshStatus = await readOrderStatus(supabase, channelOrder.order_id)
+    if (freshStatus === null) {
+      await markFailed(supabase, eventId, attempts, 'order missing during state transition')
+      return { status: 'error', detail: 'order missing during state transition' }
+    }
+    currentStatus = freshStatus
   }
 
   await supabase
@@ -430,10 +485,13 @@ async function processOrderState(
     .eq('id', channelOrder.id)
 
   await markProcessed(supabase, eventId, 'processed', attempts)
+  let detail = 'no external kitchen transition'
+  if (applied.length > 0) detail = `applied: ${applied.join('->')}`
+  else if (sawContention) detail = `no external kitchen transition; local status is ${currentStatus}`
   return {
     status: applied.length > 0 ? 'created' : 'noop',
     order_id: channelOrder.order_id,
-    detail: applied.length > 0 ? `applied: ${applied.join('->')}` : 'no external kitchen transition',
+    detail,
   }
 }
 

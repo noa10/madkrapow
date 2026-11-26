@@ -142,18 +142,20 @@ POSTing a payload to the webhook route with the webhook secret unset.
 
 ## Webhook signature verification
 
-Implemented in `lib/grabfood/verify.ts`: HMAC-SHA256 over the raw request body
-with `GRABFOOD_WEBHOOK_SECRET`, compared via `timingSafeEqual`. The exact
-header/algorithm is part of Grab's partner-gated onboarding; align
-`GRABFOOD_WEBHOOK_SIGNATURE_HEADER` (and, if needed, the scheme in
-`verify.ts`) when it is confirmed in staging — both webhook routes read that
-configured header (default `x-grab-signature`).
+**Grab's confirmed production model is OAuth bearer authentication only.**
+Grab Support stated on 26 Nov 2026: "All webhook/APIs will be using OAuth bearer
+authentication." Production runs with `GRABFOOD_WEBHOOK_HMAC_REQUIRED=false`;
+`lib/grabfood/partner-auth.ts` still requires a valid partner bearer token on
+every callback, and that is the check that protects the routes.
 
-The input for signed bodyless Get Menu requests has not been confirmed with
-Grab. With `GRABFOOD_WEBHOOK_HMAC_REQUIRED=true`, Get Menu returns 503 until
-Grab confirms the signing input and the route implements it; an absent input is
-never assumed to be an empty body. Confirm the POST algorithm too before
-turning HMAC on.
+An optional HMAC layer remains in `lib/grabfood/verify.ts` as defence in depth:
+HMAC-SHA256 over the raw request body with `GRABFOOD_WEBHOOK_SECRET`, compared
+via `timingSafeEqual`, reading the header named by
+`GRABFOOD_WEBHOOK_SIGNATURE_HEADER` (default `x-grab-signature`). Grab has not
+published a signing scheme, so leave `GRABFOOD_WEBHOOK_HMAC_REQUIRED=false`
+unless Grab starts signing; turning it on without an agreed scheme rejects every
+callback. The input for signed bodyless Get Menu requests was never confirmed —
+with HMAC required, Get Menu returns 503 rather than assuming an empty body.
 
 Verification **fails closed**: if `GRABFOOD_WEBHOOK_SECRET` is missing in a
 production process, or `GRABFOOD_ENV` is `staging`/`production`, the routes

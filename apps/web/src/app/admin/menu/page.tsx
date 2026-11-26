@@ -36,7 +36,7 @@ import { notifyGrabMenuAfterChange } from "@/lib/grabfood/notify-client";
 import { isMissingColumnError, resolveGroupSelectionRange, visibleMenuCategories, visibleMenuItems } from "./menu-visibility";
 import { MenuItemActions } from "./menu-item-actions";
 
-const MENU_ITEM_SELECT = "*";
+const MENU_ITEM_SELECT = "*, channel_products(channel, price_cents)";
 const CATEGORY_SELECT = "*";
 const MODIFIER_GROUP_SELECT = "*";
 const MODIFIER_SELECT = "*, channel_modifiers(channel, price_cents)";
@@ -65,6 +65,7 @@ interface MenuItem {
   spice_level: number;
   ingredients: string[];
   is_signature: boolean;
+  channel_products?: Array<{ channel: string; price_cents: number | null }>;
 }
 
 interface ModifierGroup {
@@ -96,6 +97,10 @@ interface Modifier {
 
 function grabModifierPrice(modifier: Modifier): number | null {
   return modifier.channel_modifiers?.find((row) => row.channel === "grabfood")?.price_cents ?? null;
+}
+
+function grabItemPrice(item: MenuItem): number | null {
+  return item.channel_products?.find((row) => row.channel === "grabfood")?.price_cents ?? null;
 }
 
 function SortableMenuItemRow({
@@ -131,6 +136,7 @@ function SortableMenuItemRow({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
+  const grabPrice = grabItemPrice(item);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -206,6 +212,14 @@ function SortableMenuItemRow({
           <span className="sr-only">Category: </span>{categoryName}
           <span aria-hidden="true"> · </span>
           <span className="sr-only">, Price: </span>RM {(item.price_cents / 100).toFixed(2)}
+          {grabPrice !== null && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="text-amber-500" aria-label={`GrabFood price RM ${(grabPrice / 100).toFixed(2)}`}>
+                Grab RM {(grabPrice / 100).toFixed(2)}
+              </span>
+            </>
+          )}
         </p>
       </div>
       <div className="col-start-2 sm:col-auto">

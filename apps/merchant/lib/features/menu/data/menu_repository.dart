@@ -116,13 +116,13 @@ class MenuRepository {
     if (categoryId != null) {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select('*, categories(name), channel_products(channel, price_cents)')
           .eq('category_id', categoryId)
           .order('sort_order', ascending: true);
     } else {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select('*, categories(name), channel_products(channel, price_cents)')
           .order('sort_order', ascending: true);
     }
 

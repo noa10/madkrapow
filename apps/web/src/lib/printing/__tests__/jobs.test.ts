@@ -73,6 +73,12 @@ describe('buildKitchenDocket', () => {
     expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
   })
 
+  it('prints the MK short code under the Grab number', () => {
+    const job = buildKitchenDocket({ ...ORDER, displayCode: 'MK-3243' })
+    expect(job.lines[1]).toMatchObject({ text: 'GF-659' })
+    expect(job.lines[2]).toMatchObject({ text: 'MK-3243', style: { double: true } })
+  })
+
   it('indents modifiers and flags item notes', () => {
     const modifier = job.lines.find((l) => l.kind === 'text' && l.text === '   + Extra spicy')
     const note = job.lines.find((l) => l.kind === 'text' && l.text === '   ! less rice')
@@ -159,16 +165,16 @@ describe('buildReceipt', () => {
     )
   })
 
-  it('prints the Grab short number as the Grab ref', () => {
+  it('drops the separate Grab ref row now that the number is the headline', () => {
     const job = buildReceipt(ORDER, STORE)
     const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
-    expect(texts).toContain('Grab ref|GF-659')
+    expect(texts).not.toContain('Grab ref|GF-659')
   })
 
-  it('skips a whitespace-only Grab ref', () => {
-    const job = buildReceipt({ ...ORDER, externalOrderNumber: '   ' }, STORE)
-    const texts = job.lines.map((l) => (l.kind === 'columns' ? `${l.label}|${l.value}` : l.kind))
-    expect(texts.some((text) => String(text).startsWith('Grab ref|'))).toBe(false)
+  it('falls back to the MK short code when the Grab number is blank', () => {
+    const job = buildReceipt({ ...ORDER, externalOrderNumber: '   ', displayCode: 'MK-77' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['MK-77'])
   })
 
   it('flags a diner-claimed QR payment for the cashier', () => {
@@ -222,14 +228,20 @@ describe('buildReceipt layout', () => {
     ])
   })
 
-  it('prints the order number as the biggest text on the receipt, not a labelled row', () => {
-    const job = buildReceipt(ORDER, STORE)
+  it('prints the Grab number and the MK short code as the biggest text, not labelled rows', () => {
+    const job = buildReceipt({ ...ORDER, displayCode: 'MK-3243' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['GF-659', 'MK-3243'])
+    expect(texts(job)).not.toContain('Order|MKTEST1234')
+  })
+
+  it('falls back to the internal number when no short code exists', () => {
+    const job = buildReceipt({ ...ORDER, externalOrderNumber: undefined }, STORE)
     expect(job.lines).toContainEqual({
       kind: 'text',
       text: 'MKTEST1234',
       style: { align: 'center', bold: true, double: true },
     })
-    expect(texts(job)).not.toContain('Order|MKTEST1234')
   })
 
   it('labels a copy REPRINT and leaves the original unmarked', () => {

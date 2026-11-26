@@ -24,6 +24,8 @@ export interface PrintOrderItem {
 
 export interface PrintOrder {
   orderNumber: string
+  /** MK-NNN short code the customer and kitchen already read out loud. */
+  displayCode?: string
   /** counter | grabfood | web | ... (orders.source) */
   source: string
   status?: string | null
@@ -150,9 +152,10 @@ export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boole
   }
   lines.push({ kind: 'text', text: SOURCE_LABELS[order.source] ?? order.source.toUpperCase(), style: { align: 'center' } })
   const shortNumber = order.externalOrderNumber?.trim()
-  lines.push({ kind: 'text', text: shortNumber || order.orderNumber, style: { align: 'center', bold: true, double: true } })
-  if (shortNumber && shortNumber !== order.orderNumber) {
-    lines.push({ kind: 'text', text: `MK ref: ${order.orderNumber}`, style: { align: 'center' } })
+  const shortCode = order.displayCode?.trim()
+  lines.push({ kind: 'text', text: shortNumber || shortCode || order.orderNumber, style: { align: 'center', bold: true, double: true } })
+  if (shortNumber && shortCode) {
+    lines.push({ kind: 'text', text: shortCode, style: { align: 'center', bold: true, double: true } })
   }
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
   if (order.tableLabel) {
@@ -180,7 +183,7 @@ export function buildGrabfoodTicket(order: PrintOrder, options: { reprint?: bool
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'text', text: 'GRABFOOD ORDER', style: { align: 'center', bold: true, double: true } })
-  lines.push({ kind: 'text', text: order.externalOrderNumber?.trim() || order.orderNumber, style: { align: 'center', bold: true } })
+  lines.push({ kind: 'text', text: order.externalOrderNumber?.trim() || order.displayCode?.trim() || order.orderNumber, style: { align: 'center', bold: true } })
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
   if (order.customerName) {
     lines.push({ kind: 'text', text: `Eater: ${order.customerName}` })
@@ -200,7 +203,8 @@ export function buildGrabfoodTicket(order: PrintOrder, options: { reprint?: bool
  * Customer receipt, laid out top to bottom:
  *
  *   logo → store name → address → company (registration) → phone → rule
- *   → [REPRINT / CANCELLED] → order number (large, bold) → date → channel
+ *   → [REPRINT / CANCELLED] → Grab number and MK-NNN short code (large, bold)
+ *   → date → channel
  *   → fulfilment → customer → rule → items → rule
  *   → subtotal → discount → delivery → SST (included) → TOTAL → payment
  *   → warnings → footer
@@ -240,14 +244,21 @@ export function buildReceipt(
   }
 
   // The order number is what staff and customers read out loud — give it the
-  // largest type the printer has.
-  lines.push({ kind: 'text', text: order.orderNumber, style: { align: 'center', bold: true, double: true } })
+  // largest type the printer has. A Grab order shows both codes: the rider
+  // quotes GF-xxxx and the shop quotes MK-NNN.
+  const grabRef = order.externalOrderNumber?.trim()
+  const shortCode = order.displayCode?.trim()
+  if (grabRef) {
+    lines.push({ kind: 'text', text: grabRef, style: { align: 'center', bold: true, double: true } })
+  }
+  if (shortCode) {
+    lines.push({ kind: 'text', text: shortCode, style: { align: 'center', bold: true, double: true } })
+  }
+  if (!grabRef && !shortCode) {
+    lines.push({ kind: 'text', text: order.orderNumber, style: { align: 'center', bold: true, double: true } })
+  }
   lines.push({ kind: 'columns', label: 'Date', value: timestamp(order.createdAt).trim() })
   lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })
-  const grabRef = order.externalOrderNumber?.trim()
-  if (grabRef) {
-    lines.push({ kind: 'columns', label: 'Grab ref', value: grabRef })
-  }
   if (order.fulfillmentLabel) {
     lines.push({ kind: 'columns', label: 'Type', value: order.fulfillmentLabel })
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase/server'
+import { isBridgeRequest } from '@/lib/printing/bridge-auth'
 import { loadPrintOrder } from '@/lib/printing/order-loader'
 import { buildJobBytes, jobTypesForOrder, printedMarkerFor } from '@/lib/printing/dispatch'
 import { toBase64 } from '@/lib/printing/escpos'
@@ -27,8 +28,7 @@ function assertBridgeAuth(req: NextRequest): NextResponse | null {
     }
     return null
   }
-  const auth = req.headers.get('authorization') ?? ''
-  if (auth !== `Bearer ${secret}`) {
+  if (!isBridgeRequest(req.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Invalid bridge credentials' }, { status: 401 })
   }
   return null

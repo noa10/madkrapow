@@ -3,7 +3,8 @@
  * render routes so the bridge and manual reprints stay byte-identical.
  *
  * Job matrix (v2):
- * - GrabFood orders print a GrabFood ticket.
+ * - GrabFood orders print a kitchen docket + customer receipt, exactly like a
+ *   counter sale. The GrabFood ticket is only printed on demand.
  * - Counter orders print a kitchen docket + customer receipt. Counter sales
  *   are always paid now; the `pending` branch below remains for legacy
  *   pay-later tickets created before that was removed.
@@ -35,7 +36,10 @@ export function jobTypesForOrder(order: {
   status?: string | null
   delivery_type?: string | null
 }): PrintJobType[] {
-  if (order.source === 'grabfood') return ['grabfood_ticket']
+  // Grab already pays us, so the counter needs a receipt as much as a counter
+  // sale does, and the kitchen needs the same docket. The Grab ticket is a
+  // courier slip, not the kitchen's copy — it stays a manual reprint.
+  if (order.source === 'grabfood') return ['kitchen_docket', 'receipt']
   if (order.status === 'pending') {
     // The kitchen starts before payment for dine-in and legacy counter
     // tickets. Everything else unpaid — a web checkout in progress — is not

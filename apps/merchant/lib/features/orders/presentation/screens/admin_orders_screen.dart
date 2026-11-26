@@ -50,6 +50,14 @@ class _AdminOrdersScreenState extends ConsumerState<AdminOrdersScreen>
         unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
       },
     );
+
+    // Anything that arrived while the app was closed or asleep never fired an
+    // event, so claim once the first frame is up. The server only hands out
+    // jobs from the last half hour, and only once across devices.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
+    });
   }
 
   @override

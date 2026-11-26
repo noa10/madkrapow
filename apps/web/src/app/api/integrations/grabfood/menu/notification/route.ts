@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/admin/require-role'
-import { createGrabFoodClient } from '@/lib/grabfood/client'
+import { createGrabFoodClient, GrabFoodApiError } from '@/lib/grabfood/client'
 import { requireGrabFoodEnabled } from '@/lib/grabfood/guard'
 import { env } from '@/lib/validators/env'
 
@@ -28,6 +28,13 @@ export async function POST(req: NextRequest) {
     await createGrabFoodClient().notifyMenuUpdate(merchantId)
     return NextResponse.json({ ok: true, notified: true })
   } catch (err) {
+    // Grab coalesces menu syncs and rejects a second request within its
+    // cooldown. That is not a failed edit: the database outbox already holds
+    // the change and the worker will retry after the cooldown. Report it as
+    // accepted so the admin does not see a false delete/save error.
+    if (err instanceof GrabFoodApiError && err.status === 409) {
+      return NextResponse.json({ ok: true, notified: false, deferred: true })
+    }
     return NextResponse.json(
       {
         error: 'Menu notification failed',

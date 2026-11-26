@@ -82,6 +82,13 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
 
+  -- Take every group's advisory lock in sorted order before deleting rows.
+  -- Group archival takes the same lock first and then deletes bindings, so
+  -- acquiring it here avoids the DELETE-then-lock/insert deadlock (40P01).
+  PERFORM public.lock_menu_parent('modifier_groups', gid)
+  FROM unnest(v_groups) AS gid
+  ORDER BY gid;
+
   DELETE FROM public.menu_item_modifier_groups AS b WHERE b.menu_item_id = p_menu_item_id;
 
   RETURN QUERY

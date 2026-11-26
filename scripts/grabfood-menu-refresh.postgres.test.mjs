@@ -30,6 +30,8 @@ const available = container !== null && (() => {
 })()
 const database = `menu_refresh_test_${process.pid}_${Date.now()}_${randomUUID().slice(0, 8)}`
 const migration = readFileSync(new URL('../supabase/migrations/20261126130000_grabfood_menu_refresh.sql', import.meta.url), 'utf8')
+const backoffMigration = readFileSync(new URL('../supabase/migrations/20261127110000_menu_refresh_backoff.sql', import.meta.url), 'utf8')
+const marginMigration = readFileSync(new URL('../supabase/migrations/20261127120000_menu_refresh_cooldown_margin.sql', import.meta.url), 'utf8')
 const psql = (statement, db = database) => execFileSync('docker', [
   'exec', '-i', container, 'psql', '-X', '-q', '-At', '-U', 'postgres', '-d', db,
   '-v', 'ON_ERROR_STOP=1', '-c', statement,
@@ -83,6 +85,8 @@ beforeAll(() => {
     CREATE TABLE channel_modifiers(id int PRIMARY KEY, modifier_id int, channel text, price_cents int);
   `)
   sql(migration)
+  sql(backoffMigration)
+  sql(marginMigration)
 })
 afterAll(() => {
   if (!available) return
@@ -131,6 +135,16 @@ describe.skipIf(!available)('GrabFood menu refresh with real PostgreSQL', () => 
     const second = Number(psql(`SELECT covered_revision FROM claim_grabfood_menu_refresh('${randomUUID()}')`).trim())
     expect(second).toBe(4)
     expect(Number(psql('SELECT count(*) FROM grabfood_menu_refresh').trim())).toBe(1)
+  })
+  it('waits out the Grab cooldown before retrying a rejected notification', () => {
+    reset()
+    sql("INSERT INTO categories(id,name) VALUES (1,'one')")
+    const token = randomUUID()
+    const revision = Number(psql(`SELECT covered_revision FROM claim_grabfood_menu_refresh('${token}')`).trim())
+    psql(`SELECT finish_grabfood_menu_refresh('${token}', ${revision}, 'GrabFood API failed (409): sync menu too frequently')`)
+    const seconds = Number(psql("SELECT extract(epoch FROM (available_at - now()))::int FROM grabfood_menu_refresh").trim())
+    expect(seconds).toBeGreaterThanOrEqual(145)
+    expect(seconds).toBeLessThanOrEqual(155)
   })
   it('accepts concurrent writers without lock contention', async () => {
     reset()

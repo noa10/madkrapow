@@ -19,11 +19,15 @@ class MenuRepository {
   Future<Map<String, dynamic>> fetchGrabModifierPrice(String modifierId) async {
     final row = await _supabase
         .from('channel_modifiers')
-        .select('price_cents')
+        .select('price_cents, pickup_price_cents')
         .eq('channel', 'grabfood')
         .eq('modifier_id', modifierId)
         .maybeSingle();
-    return {'exists': row != null, 'price_cents': row?['price_cents']};
+    return {
+      'exists': row != null,
+      'price_cents': row?['price_cents'],
+      'pickup_price_cents': row?['pickup_price_cents'],
+    };
   }
 
   Future<Map<String, dynamic>> saveGrabPrice({
@@ -32,6 +36,9 @@ class MenuRepository {
     required int? priceCents,
     required int? expectedPriceCents,
     required bool expectedExists,
+    int? pickupPriceCents,
+    int? expectedPickupPriceCents,
+    bool updatePickupPrice = false,
     bool updatePrice = true,
     bool regularPriceChanged = false,
     bool retryNotification = false,
@@ -41,6 +48,9 @@ class MenuRepository {
     priceCents: priceCents,
     expectedPriceCents: expectedPriceCents,
     expectedExists: expectedExists,
+    pickupPriceCents: pickupPriceCents,
+    expectedPickupPriceCents: expectedPickupPriceCents,
+    updatePickupPrice: updatePickupPrice,
     updatePrice: updatePrice,
     regularPriceChanged: regularPriceChanged,
     retryNotification: retryNotification,
@@ -116,13 +126,17 @@ class MenuRepository {
     if (categoryId != null) {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select(
+            '*, categories(name), channel_products(channel, price_cents, pickup_price_cents)',
+          )
           .eq('category_id', categoryId)
           .order('sort_order', ascending: true);
     } else {
       response = await _supabase
           .from('menu_items')
-          .select('*, categories(name)')
+          .select(
+            '*, categories(name), channel_products(channel, price_cents, pickup_price_cents)',
+          )
           .order('sort_order', ascending: true);
     }
 

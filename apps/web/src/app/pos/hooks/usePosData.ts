@@ -108,6 +108,7 @@ export function usePosData(enabled: boolean) {
           .select('*')
           .in('modifier_group_id', groupIds)
           .eq('is_available', true)
+          .is('archived_at', null)
           .order('sort_order', { ascending: true }),
       ])
       if (groupsResult.error || modifiersResult.error) {
@@ -194,6 +195,7 @@ export function usePosData(enabled: boolean) {
           .select('*')
           .in('modifier_group_id', groupIds)
           .eq('is_available', true)
+          .is('archived_at', null)
           .order('sort_order', { ascending: true }),
       ])
 

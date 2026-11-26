@@ -57,6 +57,9 @@ class ModifierFake extends Fake implements MenuRepository {
     required int? priceCents,
     required int? expectedPriceCents,
     required bool expectedExists,
+    int? pickupPriceCents,
+    int? expectedPickupPriceCents,
+    bool updatePickupPrice = false,
     bool updatePrice = true,
     bool regularPriceChanged = false,
     bool retryNotification = false,
@@ -188,5 +191,45 @@ void main() {
     expect(repo.grabPrice, 1250);
     expect(repo.expectedPrice, isNull);
     expect(repo.expectedExists, isFalse);
+  });
+
+  testWidgets('resets the selected group when it disappears from the list', (
+    tester,
+  ) async {
+    const firstId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const secondId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    final groupsState = StateProvider<List<ModifierGroupsRow>>(
+      (ref) => [
+        ModifierGroupsRow(id: firstId, name: 'First'),
+        ModifierGroupsRow(id: secondId, name: 'Second'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          menuRepositoryProvider.overrideWithValue(ModifierFake()),
+          modifierGroupsProvider.overrideWith((ref) => ref.watch(groupsState)),
+          modifiersForGroupProvider.overrideWith(
+            (ref, id) async => <ModifiersRow>[],
+          ),
+        ],
+        child: const MaterialApp(home: ModifierManagementScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(Tab, 'Modifiers'));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ModifierManagementScreen)),
+    );
+    container.read(groupsState.notifier).state = [
+      ModifierGroupsRow(id: secondId, name: 'Second'),
+    ];
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Second'), findsOneWidget);
   });
 }

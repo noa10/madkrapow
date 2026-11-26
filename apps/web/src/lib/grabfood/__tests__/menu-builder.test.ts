@@ -197,6 +197,46 @@ describe('buildGrabMenu', () => {
     expect(buildGrabMenu(rows).categories[0].items[0].modifierGroups?.[0].modifiers?.[1].price).toBe(100)
   })
 
+  it('emits self pick-up advanced pricing for items and modifiers', () => {
+    const rows = structuredClone(ROWS)
+    const item = rows[0].menu_items![0]
+    const mapping = (item.channel_products as Array<{ pickup_price_cents?: number | null }>)[0]
+    mapping.pickup_price_cents = 1200
+    const links = item.menu_item_modifier_groups!
+    const group = Array.isArray(links[0].modifier_groups) ? links[0].modifier_groups[0] : links[0].modifier_groups!
+    group.modifiers![1].channel_modifiers = [
+      { channel: 'grabfood', price_cents: 250, pickup_price_cents: 0 },
+    ]
+
+    const menu = buildGrabMenu(rows)
+    const builtItem = menu.categories[0].items[0]
+    const builtModifier = builtItem.modifierGroups?.[0].modifiers?.[1]
+
+    expect(builtItem.price).toBe(1500)
+    expect(builtItem.advancedPricing).toEqual({
+      SelfPickUp_OnDemand_GrabApp: 1200,
+      SelfPickUp_OnDemand_StoreFront: 1200,
+    })
+    expect(builtModifier).toMatchObject({
+      price: 250,
+      advancedPricing: {
+        SelfPickUp_OnDemand_GrabApp: 0,
+        SelfPickUp_OnDemand_StoreFront: 0,
+      },
+    })
+  })
+
+  it('omits advanced pricing when the pick-up override is null', () => {
+    const rows = structuredClone(ROWS)
+    const mapping = (rows[0].menu_items![0].channel_products as Array<{ pickup_price_cents?: number | null }>)[0]
+    mapping.pickup_price_cents = null
+
+    const builtItem = buildGrabMenu(rows).categories[0].items[0]
+
+    expect(builtItem).not.toHaveProperty('advancedPricing')
+    expect(JSON.stringify(builtItem)).not.toContain('SelfPickUp')
+  })
+
   it('maps modifiers with local UUIDs and price deltas', () => {
     const menu = buildGrabMenu(ROWS)
     const groups = menu.categories[0].items[0].modifierGroups

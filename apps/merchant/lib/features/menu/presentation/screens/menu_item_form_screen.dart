@@ -33,9 +33,11 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
   late int _sortOrder;
   bool _isSubmitting = false;
   late final TextEditingController _grabPriceController;
+  late final TextEditingController _grabPickupPriceController;
   late bool _isSignature;
   String? _savedItemId;
   int? _grabOriginalPrice;
+  int? _grabOriginalPickupPrice;
   bool _grabOriginalExists = false;
   bool _grabLoaded = false;
   bool _grabRetryNotification = false;
@@ -73,6 +75,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     _isSignature = widget.item?.toJson()['is_signature'] == true;
     _savedItemId = widget.item?.id;
     _grabPriceController = TextEditingController();
+    _grabPickupPriceController = TextEditingController();
     if (_savedItemId == null) {
       _grabLoaded = true;
     } else {
@@ -92,10 +95,14 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       if (!mounted) return;
       setState(() {
         _grabOriginalPrice = result['price_cents'] as int?;
+        _grabOriginalPickupPrice = result['pickup_price_cents'] as int?;
         _grabOriginalExists = result['exists'] == true;
         _grabPriceController.text = _grabOriginalPrice == null
             ? ''
             : formatPriceNumber(_grabOriginalPrice!);
+        _grabPickupPriceController.text = _grabOriginalPickupPrice == null
+            ? ''
+            : formatPriceNumber(_grabOriginalPickupPrice!);
         _grabLoaded = true;
       });
     } catch (e) {
@@ -111,6 +118,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     _descriptionController.dispose();
     _priceController.dispose();
     _grabPriceController.dispose();
+    _grabPickupPriceController.dispose();
     super.dispose();
   }
 
@@ -270,6 +278,7 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
     }
 
     final grabPrice = parseMenuPrice(_grabPriceController.text);
+    final grabPickupPrice = parseMenuPrice(_grabPickupPriceController.text);
     final regularPriceChanged =
         _savedItemId != null &&
         widget.item != null &&
@@ -335,20 +344,33 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
       primarySaved = true;
 
       final grabPriceChanged = grabPrice != _grabOriginalPrice;
-      if (grabPriceChanged || regularPriceChanged || _grabRetryNotification) {
+      final grabPickupPriceChanged =
+          grabPickupPrice != _grabOriginalPickupPrice;
+      if (grabPriceChanged ||
+          grabPickupPriceChanged ||
+          regularPriceChanged ||
+          _grabRetryNotification) {
         final result = await repo.saveGrabPrice(
           isModifier: false,
           id: _savedItemId!,
           priceCents: grabPrice,
           expectedPriceCents: _grabOriginalPrice,
           expectedExists: _grabOriginalExists,
+          pickupPriceCents: grabPickupPrice,
+          expectedPickupPriceCents: _grabOriginalPickupPrice,
+          updatePickupPrice: grabPickupPriceChanged,
           updatePrice: grabPriceChanged,
           regularPriceChanged: regularPriceChanged,
           retryNotification: _grabRetryNotification,
         );
-        if (grabPriceChanged) {
-          _grabOriginalPrice = grabPrice;
-          if (grabPrice != null) _grabOriginalExists = true;
+        if (grabPriceChanged) _grabOriginalPrice = grabPrice;
+        if (grabPickupPriceChanged) {
+          _grabOriginalPickupPrice = grabPickupPrice;
+        }
+        if (grabPriceChanged || grabPickupPriceChanged) {
+          if (grabPrice != null || grabPickupPrice != null) {
+            _grabOriginalExists = true;
+          }
         }
         if (result['warning'] != null) {
           _grabRetryNotification = true;
@@ -720,6 +742,27 @@ class _MenuItemFormScreenState extends ConsumerState<MenuItemFormScreen> {
                   labelText: 'GrabFood price (optional)',
                   prefixText: 'RM ',
                   helperText: 'Leave blank to use the regular price',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) {
+                  try {
+                    parseMenuPrice(value ?? '');
+                    return null;
+                  } on FormatException {
+                    return 'Enter a valid price up to RM 99999.99';
+                  }
+                },
+              ),
+              TextFormField(
+                controller: _grabPickupPriceController,
+                enabled: _grabLoaded,
+                decoration: const InputDecoration(
+                  labelText: 'GrabFood self pick-up price (optional)',
+                  prefixText: 'RM ',
+                  helperText: 'Leave blank to use the GrabFood price',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(

@@ -8,9 +8,10 @@ vi.mock('@/lib/validators/env', () => ({
 import { jobTypesForOrder } from '../dispatch'
 
 describe('jobTypesForOrder', () => {
-  it('prints a GrabFood ticket for Grab orders', () => {
+  it('prints a docket and receipt for Grab orders, not the courier ticket', () => {
     expect(jobTypesForOrder({ source: 'grabfood', status: 'paid' })).toEqual([
-      'grabfood_ticket',
+      'kitchen_docket',
+      'receipt',
     ])
   })
 

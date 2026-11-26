@@ -132,6 +132,13 @@ Cron routes (Bearer `CRON_SECRET`):
   when present (migration 071) and fall back to `modifiers.price_delta_cents`
   otherwise. A NULL override means "same as the regular add-on price"; zero is
   a real price.
+- Self pick-up prices live in `channel_products.pickup_price_cents` and
+  `channel_modifiers.pickup_price_cents` (migration `20261127130000`). A NULL
+  means the normal GrabFood price. Get Menu emits the override under Grab's
+  Service Based Menu keys `SelfPickUp_OnDemand_GrabApp` and
+  `SelfPickUp_OnDemand_StoreFront`; any service type not listed falls back to
+  `price`. Apply this migration before deploying the code that selects the
+  columns.
 - Catalogue and mapping changes append a durable database event in the same
   transaction, including changes made directly through Supabase or the merchant
   API. A snooze expiry also schedules an event, so the restored state is pushed
@@ -148,12 +155,13 @@ Cron routes (Bearer `CRON_SECRET`):
   disabled rather than treating it as an idle queue.
 - Rollout order: apply the archival migration `20261126131000` first because
   the deployed Get Menu and storefront select `archived_at`; then the atomic
-  binding RPC `20261126132000` and the menu write security migration
-  `20261126140000`, then the Grab refresh queue `20261126130000`, then deploy
-  the worker and enable the schedule. The integration's existing runtime switch
-  must be enabled before it sends; after enabling it, run the worker once by
-  hand to send the initial notification for the menu as it stands, because the
-  queue only holds edits made after this migration.
+  binding RPC `20261126132000`, its lock-order follow-up
+  `20261127100000`, and the menu write security migration `20261126140000`,
+  then the Grab refresh queue `20261126130000`, then deploy the worker and
+  enable the schedule. The integration's existing runtime switch must be
+  enabled before it sends; after enabling it, run the worker once by hand to
+  send the initial notification for the menu as it stands, because the queue
+  only holds edits made after this migration.
   An accepted notification means Grab was asked to pull, not that Grab applied
   the menu; use the Grab menu trace to inspect upstream status. Existing manual
   and immediate notifications can duplicate a scheduled request, and retries

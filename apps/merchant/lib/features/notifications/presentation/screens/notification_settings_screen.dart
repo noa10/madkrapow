@@ -115,7 +115,7 @@ class _NotificationSettingsScreenState
               NotificationPermissionState.denied => const _PermissionCard(
                 title: 'Notifications are blocked',
                 body:
-                    'Allow notifications for Mad Krapow Merchant in system '
+                    'Allow notifications for MadKrapow Merchant in system '
                     'settings to receive order alerts.',
                 actionLabel: 'Open system settings',
                 onPressed: openAppSettings,

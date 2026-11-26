@@ -91,7 +91,10 @@ describe('pullHubboMenu', () => {
 
   const fakeClient = { getMenu: async () => MENU }
 
-  function supabaseMock(existingMapping: { id: string; external_item_id: string | null } | null = null) {
+  function supabaseMock(
+    existingMapping: { id: string; external_item_id: string | null } | null = null,
+    existingRows: Record<string, unknown[]> = {}
+  ) {
     const calls: Array<{ table: string; op: string; payload?: unknown }> = []
     const client = {
       from(table: string) {
@@ -123,7 +126,7 @@ describe('pullHubboMenu', () => {
           is(_col: string, _val: unknown) { return builder },
           maybeSingle: async () => ({ data: table === 'channel_products' ? existingMapping : null, error: null }),
           then(resolve: (v: { data: unknown[]; error: null }) => void) {
-            resolve({ data: [], error: null })
+            resolve({ data: existingRows[table] ?? [], error: null })
           },
         }
         return builder
@@ -177,5 +180,22 @@ describe('pullHubboMenu', () => {
       external_item_id: 'GF-NL-1',
       price_cents: 1300, // 13.00 RM
     })
+  })
+
+  it('skips locally archived categories and items instead of reactivating them', async () => {
+    const { client, calls } = supabaseMock(null, {
+      categories: [
+        { id: 'category-archived', hubbo_pos_external_id: '1', archived_at: '2026-11-26T00:00:00Z' },
+      ],
+      menu_items: [
+        { id: 'item-archived', hubbo_pos_external_id: '10', archived_at: '2026-11-26T00:00:00Z' },
+      ],
+    })
+    const result = await pullHubboMenu(client as unknown as SupabaseClient, { client: fakeClient })
+
+    expect(result.categoriesUpserted).toBe(0)
+    expect(result.itemsUpserted).toBe(0)
+    expect(result.warnings.join(' ')).toContain('archived locally')
+    expect(calls.filter((call) => call.op === 'update')).toHaveLength(0)
   })
 })

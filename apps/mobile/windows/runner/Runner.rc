@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.madkrapow" "\0"
-            VALUE "FileDescription", "madkrapow_mobile" "\0"
+            VALUE "FileDescription", "MadKrapow" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "madkrapow_mobile" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.madkrapow. All rights reserved." "\0"
             VALUE "OriginalFilename", "madkrapow_mobile.exe" "\0"
-            VALUE "ProductName", "madkrapow_mobile" "\0"
+            VALUE "ProductName", "MadKrapow" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

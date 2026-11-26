@@ -209,11 +209,13 @@ export async function pullHubboMenu(
   // --- categories: upsert by external id (source-tagged rows only) ---
   const { data: existingCategories } = await supabase
     .from('categories')
-    .select('id, hubbo_pos_external_id')
+    .select('id, hubbo_pos_external_id, archived_at')
     .eq('hubbo_pos_source', HUBBO_MERCHANT_SOURCE)
   const categoryByExternalId = new Map<string, string>()
+  const archivedCategoryIds = new Set<string>()
   for (const row of existingCategories ?? []) {
     if (row.hubbo_pos_external_id) categoryByExternalId.set(row.hubbo_pos_external_id, row.id)
+    if (row.archived_at) archivedCategoryIds.add(row.id)
   }
 
   for (const category of plan.categories) {
@@ -227,6 +229,10 @@ export async function pullHubboMenu(
     }
     const existingId = categoryByExternalId.get(category.externalId)
     if (existingId) {
+      if (archivedCategoryIds.has(existingId)) {
+        result.warnings.push(`category "${category.name}": archived locally — skipped`)
+        continue
+      }
       const { error } = await supabase.from('categories').update(payload).eq('id', existingId)
       if (error) throw new Error(`category update failed: ${error.message}`)
     } else {
@@ -246,11 +252,13 @@ export async function pullHubboMenu(
   // --- items: upsert by external id, resolved against pulled categories ---
   const { data: existingItems } = await supabase
     .from('menu_items')
-    .select('id, hubbo_pos_external_id')
+    .select('id, hubbo_pos_external_id, archived_at')
     .eq('hubbo_pos_source', HUBBO_MERCHANT_SOURCE)
   const itemByExternalId = new Map<string, string>()
+  const archivedItemIds = new Set<string>()
   for (const row of existingItems ?? []) {
     if (row.hubbo_pos_external_id) itemByExternalId.set(row.hubbo_pos_external_id, row.id)
+    if (row.archived_at) archivedItemIds.add(row.id)
   }
 
   const upsertedExternalIds = new Set<string>()
@@ -260,6 +268,10 @@ export async function pullHubboMenu(
       : null
     if (!categoryId) {
       result.warnings.push(`item "${item.name}": category not in pull — skipped`)
+      continue
+    }
+    if (archivedCategoryIds.has(categoryId)) {
+      result.warnings.push(`item "${item.name}": category archived locally — skipped`)
       continue
     }
     const payload = {
@@ -275,6 +287,10 @@ export async function pullHubboMenu(
     }
     let localItemId = itemByExternalId.get(item.externalId)
     if (localItemId) {
+      if (archivedItemIds.has(localItemId)) {
+        result.warnings.push(`item "${item.name}": archived locally — skipped`)
+        continue
+      }
       const { error } = await supabase.from('menu_items').update(payload).eq('id', localItemId)
       if (error) throw new Error(`item update failed: ${error.message}`)
     } else {

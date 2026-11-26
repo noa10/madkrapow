@@ -59,6 +59,9 @@ class MenuApiClient {
     required int? priceCents,
     required int? expectedPriceCents,
     required bool expectedExists,
+    int? pickupPriceCents,
+    int? expectedPickupPriceCents,
+    bool updatePickupPrice = false,
     bool updatePrice = true,
     bool regularPriceChanged = false,
     bool retryNotification = false,
@@ -72,6 +75,9 @@ class MenuApiClient {
         'price_cents': priceCents,
         'expected_price_cents': expectedPriceCents,
         'expected_exists': expectedExists,
+        'pickup_price_cents': pickupPriceCents,
+        'expected_pickup_price_cents': expectedPickupPriceCents,
+        'update_pickup_price': updatePickupPrice,
         'update_price': updatePrice,
         'regular_price_changed': regularPriceChanged,
         'retry_notification': retryNotification,
@@ -274,7 +280,6 @@ class MenuApiClient {
     String? description,
     int minSelections = 0,
     int maxSelections = 1,
-    bool isRequired = false,
     int sortOrder = 0,
   }) async {
     final response = await _http.post(
@@ -285,7 +290,6 @@ class MenuApiClient {
         'description': description,
         'min_selections': minSelections,
         'max_selections': maxSelections,
-        'is_required': isRequired,
         'sort_order': sortOrder,
       }),
     );
@@ -300,7 +304,6 @@ class MenuApiClient {
     String? description,
     int? minSelections,
     int? maxSelections,
-    bool? isRequired,
     int? sortOrder,
   }) async {
     final body = <String, dynamic>{};
@@ -308,7 +311,6 @@ class MenuApiClient {
     if (hasDescription) body['description'] = description;
     if (minSelections != null) body['min_selections'] = minSelections;
     if (maxSelections != null) body['max_selections'] = maxSelections;
-    if (isRequired != null) body['is_required'] = isRequired;
     if (sortOrder != null) body['sort_order'] = sortOrder;
 
     final response = await _http.patch(

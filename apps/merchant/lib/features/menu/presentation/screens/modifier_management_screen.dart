@@ -500,7 +500,9 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
           );
         }
 
-        _selectedGroupId ??= groups.first.id;
+        if (!groups.any((group) => group.id == _selectedGroupId)) {
+          _selectedGroupId = groups.first.id;
+        }
 
         final modifiersAsync = ref.watch(
           modifiersForGroupProvider(_selectedGroupId!),
@@ -514,6 +516,7 @@ class _ModifiersTabState extends ConsumerState<_ModifiersTab> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      key: ValueKey(_selectedGroupId),
                       initialValue: _selectedGroupId,
                       decoration: const InputDecoration(
                         labelText: 'Modifier Group',
@@ -750,8 +753,10 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   late bool _isDefault;
   late bool _isAvailable;
   late final TextEditingController _grabController;
+  late final TextEditingController _grabPickupController;
   String? _savedId;
   int? _grabOriginal;
+  int? _grabOriginalPickup;
   bool _grabExists = false;
   bool _grabLoaded = false;
   bool _grabRetryNotification = false;
@@ -768,6 +773,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
     _isAvailable = widget.modifier?.isAvailable ?? true;
     _savedId = widget.modifier?.id;
     _grabController = TextEditingController();
+    _grabPickupController = TextEditingController();
     if (_savedId == null) {
       _grabLoaded = true;
     } else {
@@ -787,10 +793,14 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
       if (!mounted) return;
       setState(() {
         _grabOriginal = value['price_cents'] as int?;
+        _grabOriginalPickup = value['pickup_price_cents'] as int?;
         _grabExists = value['exists'] == true;
         _grabController.text = _grabOriginal == null
             ? ''
             : formatPriceNumber(_grabOriginal!);
+        _grabPickupController.text = _grabOriginalPickup == null
+            ? ''
+            : formatPriceNumber(_grabOriginalPickup!);
         _grabLoaded = true;
       });
     } catch (e) {
@@ -801,6 +811,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   @override
   void dispose() {
     _grabController.dispose();
+    _grabPickupController.dispose();
     _nameController.dispose();
     super.dispose();
   }
@@ -808,6 +819,7 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _saving) return;
     final grabPrice = parseMenuPrice(_grabController.text);
+    final grabPickupPrice = parseMenuPrice(_grabPickupController.text);
     var primarySaved = false;
     setState(() {
       _saving = true;
@@ -841,19 +853,26 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
       }
       primarySaved = true;
       final grabPriceChanged = grabPrice != _grabOriginal;
-      if (grabPriceChanged || _grabRetryNotification) {
+      final grabPickupPriceChanged = grabPickupPrice != _grabOriginalPickup;
+      if (grabPriceChanged ||
+          grabPickupPriceChanged ||
+          _grabRetryNotification) {
         final result = await repo.saveGrabPrice(
           isModifier: true,
           id: _savedId!,
           priceCents: grabPrice,
           expectedPriceCents: _grabOriginal,
           expectedExists: _grabExists,
+          pickupPriceCents: grabPickupPrice,
+          expectedPickupPriceCents: _grabOriginalPickup,
+          updatePickupPrice: grabPickupPriceChanged,
           updatePrice: grabPriceChanged,
           retryNotification: _grabRetryNotification,
         );
-        if (grabPriceChanged) {
-          _grabOriginal = grabPrice;
-          if (grabPrice != null) _grabExists = true;
+        if (grabPriceChanged) _grabOriginal = grabPrice;
+        if (grabPickupPriceChanged) _grabOriginalPickup = grabPickupPrice;
+        if (grabPriceChanged || grabPickupPriceChanged) {
+          if (grabPrice != null || grabPickupPrice != null) _grabExists = true;
         }
         if (result['warning'] != null) {
           _grabRetryNotification = true;
@@ -951,6 +970,26 @@ class _ModifierFormDialogState extends ConsumerState<_ModifierFormDialog> {
                 labelText: 'GrabFood price (optional)',
                 prefixText: 'RM ',
                 helperText: 'Leave blank to use the regular price',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              validator: (v) {
+                try {
+                  parseMenuPrice(v ?? '');
+                  return null;
+                } on FormatException {
+                  return 'Enter a valid price up to RM 99999.99';
+                }
+              },
+            ),
+            TextFormField(
+              controller: _grabPickupController,
+              enabled: _grabLoaded,
+              decoration: const InputDecoration(
+                labelText: 'GrabFood self pick-up price (optional)',
+                prefixText: 'RM ',
+                helperText: 'Leave blank to use the GrabFood price',
               ),
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,

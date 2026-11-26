@@ -1,6 +1,6 @@
 {
-    "name": "madkrapow_mobile",
-    "short_name": "madkrapow_mobile",
+    "name": "MadKrapow",
+    "short_name": "MadKrapow",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

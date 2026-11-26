@@ -1,12 +1,13 @@
 'use client'
 
-import { X, CheckCircle, AlertCircle, Info, Tag } from 'lucide-react'
+import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Tag } from 'lucide-react'
 import { useToastStore, type ToastType } from '@/stores/toast'
 import { cn } from '@/lib/utils'
 
 const toastStyles: Record<ToastType, string> = {
   success: 'border-green-500/30 bg-green-500/10 text-green-400',
   error: 'border-red-500/30 bg-red-500/10 text-red-400',
+  warning: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
   info: 'border-primary/30 bg-primary/10 text-primary',
   promo: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
 }
@@ -14,6 +15,7 @@ const toastStyles: Record<ToastType, string> = {
 const toastIcons: Record<ToastType, React.ReactNode> = {
   success: <CheckCircle className="h-4 w-4 text-green-400" />,
   error: <AlertCircle className="h-4 w-4 text-red-400" />,
+  warning: <AlertTriangle className="h-4 w-4 text-amber-400" />,
   info: <Info className="h-4 w-4 text-primary" />,
   promo: <Tag className="h-4 w-4 text-amber-400" />,
 }

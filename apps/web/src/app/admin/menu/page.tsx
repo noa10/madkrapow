@@ -438,10 +438,19 @@ export default function AdminMenuPage() {
   const notifyGrabAfterMenuChange = async (label: string, action: "saved" | "deleted" = "saved") => {
     const warning = await notifyGrabMenuAfterChange();
     if (warning) {
+      // The database queue captured this change before the immediate request
+      // ran, so a failed immediate notification is recoverable rather than a
+      // failed save. Keep the message calm and offer an explicit retry.
       addToast({
-        type: "error",
-        title: `${label} ${action}, but Grab menu was not refreshed`,
+        type: "warning",
+        title: `${label} ${action}; Grab sync will retry`,
         description: warning,
+        action: {
+          label: "Retry Grab sync",
+          onClick: () => {
+            void notifyGrabAfterMenuChange(label, action);
+          },
+        },
       });
     } else {
       addToast({

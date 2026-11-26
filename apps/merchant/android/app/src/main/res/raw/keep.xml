@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  These alert sounds are referenced only by name from Dart
-  (RawResourceAndroidNotificationSound), so the release resource shrinker
-  cannot see the reference and removes them. Keep all three in release builds;
-  a missing raw resource makes NotificationManager.show() fail and the
-  notification never appears.
+  These resources are referenced only by name from Dart
+  (RawResourceAndroidNotificationSound and the notification icon), so the
+  release resource shrinker cannot see the references and removes them. Keep
+  them in release builds; a missing raw resource makes NotificationManager
+  show() fail and the notification never appears.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@raw/krapow_mallet,@raw/service_bell,@raw/light_chime" />
+    tools:keep="@raw/krapow_mallet,@raw/service_bell,@raw/light_chime,@drawable/ic_order_notification" />
+

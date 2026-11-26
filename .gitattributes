@@ -1,0 +1,2 @@
+# Migrations are hashed and replayed verbatim; keep checkout line endings stable.
+supabase/migrations/*.sql text eol=lf

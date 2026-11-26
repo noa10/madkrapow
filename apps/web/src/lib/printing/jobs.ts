@@ -111,6 +111,19 @@ function timestamp(iso: string): string {
     .slice(0, 19)
 }
 
+/**
+ * GrabFood and the POS pack several remarks into one notes string separated by
+ * " | ". Staff read the docket top to bottom, so each remark gets its own line
+ * instead of one long row that wraps in the middle of an addon.
+ */
+function splitNotes(notes: string | undefined): string[] {
+  if (!notes) return []
+  return notes
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
 function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {
   const lines: PrintLine[] = []
   for (const item of order.items) {
@@ -123,8 +136,8 @@ function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {
     for (const modifier of item.modifiers ?? []) {
       lines.push({ kind: 'text', text: `   + ${modifier.quantity > 1 ? `${modifier.quantity}x ` : ''}${modifier.name}` })
     }
-    if (item.notes) {
-      lines.push({ kind: 'text', text: `   ! ${item.notes}`, style: { bold: true } })
+    for (const note of splitNotes(item.notes)) {
+      lines.push({ kind: 'text', text: `   ! ${note}`, style: { bold: true } })
     }
   }
   return lines

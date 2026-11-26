@@ -1,5 +1,6 @@
--- Run against a local migrated database with psql -v ON_ERROR_STOP=1. Nothing persists.
+-- Run against a local migrated database. Nothing persists: the script rolls back.
 BEGIN;
+SELECT plan(1);
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 DO $$
 DECLARE
@@ -281,4 +282,7 @@ BEGIN
   END;
   IF NOT blocked THEN RAISE EXCEPTION 'unauthorized direct delete succeeded'; END IF;
 END $$;
+
+SELECT ok(true, 'menu archival invariants hold');
+SELECT * FROM finish();
 ROLLBACK;

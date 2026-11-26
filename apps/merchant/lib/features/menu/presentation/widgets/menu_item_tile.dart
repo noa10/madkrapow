@@ -18,6 +18,7 @@ class MenuItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
     final grabPrice = _grabPriceCents();
+    final grabPickupPrice = grabItemPickupPriceCents(item.toJson());
 
     Widget leadingWidget;
     if (hasImage) {
@@ -62,6 +63,13 @@ class MenuItemTile extends StatelessWidget {
               const TextSpan(text: ' · '),
               TextSpan(
                 text: 'Grab ${formatPrice(grabPrice)}',
+                style: const TextStyle(color: AppColors.sesame),
+              ),
+            ],
+            if (grabPickupPrice != null) ...[
+              const TextSpan(text: ' · '),
+              TextSpan(
+                text: 'Pickup ${formatPrice(grabPickupPrice)}',
                 style: const TextStyle(color: AppColors.sesame),
               ),
             ],

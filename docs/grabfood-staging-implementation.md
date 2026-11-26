@@ -132,6 +132,13 @@ Cron routes (Bearer `CRON_SECRET`):
   when present (migration 071) and fall back to `modifiers.price_delta_cents`
   otherwise. A NULL override means "same as the regular add-on price"; zero is
   a real price.
+- Self pick-up prices live in `channel_products.pickup_price_cents` and
+  `channel_modifiers.pickup_price_cents` (migration `20261127130000`). A NULL
+  means the normal GrabFood price. Get Menu emits the override under Grab's
+  Service Based Menu keys `SelfPickUp_OnDemand_GrabApp` and
+  `SelfPickUp_OnDemand_StoreFront`; any service type not listed falls back to
+  `price`. Apply this migration before deploying the code that selects the
+  columns.
 - Catalogue and mapping changes append a durable database event in the same
   transaction, including changes made directly through Supabase or the merchant
   API. A snooze expiry also schedules an event, so the restored state is pushed

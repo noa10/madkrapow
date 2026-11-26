@@ -52,11 +52,12 @@ function findNodes(node: unknown, predicate: (props: Record<string, unknown>) =>
   return [...(predicate(props) ? [props] : []), ...findNodes(props.children, predicate)];
 }
 
-function setup(options: { price?: string; original?: number | null; created?: boolean; priceFails?: boolean; timeout?: boolean; concurrentPrice?: number; readFails?: string; pausePrice?: Promise<void> } = {}) {
+function setup(options: { price?: string; pickup?: string; original?: number | null; originalPickup?: number | null; created?: boolean; priceFails?: boolean; timeout?: boolean; concurrentPrice?: number; readFails?: string; pausePrice?: Promise<void> } = {}) {
   const events: string[] = [];
   const group = { id: "group", name: "Extras", min_selections: 0, max_selections: 1, modifiers: [] };
   const local = { id: "option", modifier_group_id: "group", name: "Edited", price_delta_cents: 100 };
   let serverPrice = options.concurrentPrice ?? options.original ?? null;
+  let serverPickup = options.originalPickup ?? null;
   let timeout = options.timeout;
   const query = (table: string) => {
     let operation = "read";
@@ -84,7 +85,9 @@ function setup(options: { price?: string; original?: number | null; created?: bo
     events.push("price");
     if (options.pausePrice) await options.pausePrice;
     if (options.priceFails) return Response.json({ error: "price conflict" }, { status: 409 });
-    serverPrice = JSON.parse(init.body as string).price_cents;
+    const body = JSON.parse(init.body as string);
+    serverPrice = body.price_cents;
+    if (body.update_pickup_price) serverPickup = body.pickup_price_cents;
     if (timeout) { timeout = false; throw new Error("connection lost"); }
     return Response.json({ ok: true });
   }));
@@ -93,9 +96,9 @@ function setup(options: { price?: string; original?: number | null; created?: bo
   harness.states[3] = false;
   harness.states[14] = [group];
   harness.states[15] = new Set(["group"]);
-  harness.states[17] = { groupId: "group", modifier: { id: options.created ? undefined : "option", name: "Edited", price: "1", grabPrice: options.price ?? "2.00", originalGrabPrice: options.original ?? null, grabRowExists: options.original != null, is_default: false, is_available: true } };
+  harness.states[17] = { groupId: "group", modifier: { id: options.created ? undefined : "option", name: "Edited", price: "1", grabPrice: options.price ?? "2.00", grabPickupPrice: options.pickup ?? "", originalGrabPrice: options.original ?? null, originalGrabPickupPrice: options.originalPickup ?? null, grabRowExists: options.original != null || options.originalPickup != null, is_default: false, is_available: true } };
   const save = () => { harness.index = 0; const handler = findSave(AdminMenuPage()); if (!handler) throw new Error("Save button missing"); return handler(); };
-  return { events, save, getServerPrice: () => serverPrice };
+  return { events, save, getServerPrice: () => serverPrice, getServerPickup: () => serverPickup };
 }
 
 beforeEach(() => { vi.restoreAllMocks(); harness.client.mockReset(); harness.invalidate.mockReset(); harness.notify.mockReset(); });
@@ -107,6 +110,15 @@ describe("modifier saves", () => {
     await save();
     expect(events).toEqual(["local", "invalidate", "price", "notify", "read:modifier_groups", "read:modifiers"]);
     expect(getServerPrice()).toBe(200);
+    expect(harness.states[17]).toBeNull();
+  });
+
+  it("saves a self pick-up price without changing the delivery price", async () => {
+    const { events, save, getServerPrice, getServerPickup } = setup({ original: 100, price: "1.00", pickup: "1.50" });
+    await save();
+    expect(events).toEqual(["local", "invalidate", "price", "notify", "read:modifier_groups", "read:modifiers"]);
+    expect(getServerPrice()).toBe(100);
+    expect(getServerPickup()).toBe(150);
     expect(harness.states[17]).toBeNull();
   });
 

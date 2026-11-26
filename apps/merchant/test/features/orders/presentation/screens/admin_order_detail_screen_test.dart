@@ -170,7 +170,7 @@ void main() {
   ) async {
     final response = Completer<Map<String, dynamic>>();
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) => response.future);
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -200,7 +200,7 @@ void main() {
     response.complete({'html': '<p>Receipt</p>'});
     await tester.pumpAndSettle();
     verify(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).called(1);
     expect(calls.single.method, 'printReceipt');
     expect(calls.single.arguments, {'html': '<p>Receipt</p>'});
@@ -211,7 +211,7 @@ void main() {
     tester,
   ) async {
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) async => {'html': ''});
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -235,7 +235,7 @@ void main() {
     tester,
   ) async {
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenThrow(const AuthRequiredException('expired'));
     final acknowledger = OrderViewAcknowledger.withRpc(
       (_, _) async => true,
@@ -251,7 +251,7 @@ void main() {
     await tester.tap(find.byTooltip('Print receipt'));
     await tester.pumpAndSettle();
     verify(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).called(2);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -260,7 +260,7 @@ void main() {
     tester,
   ) async {
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(printChannel, (_) async {
@@ -293,7 +293,7 @@ void main() {
   ) async {
     final response = Completer<Map<String, dynamic>>();
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) => response.future);
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -357,6 +357,41 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('prints the kitchen docket when the docket action is tapped', (
+    tester,
+  ) async {
+    final printer = FakeEscPosPrinter();
+    when(() => api.post('/print/jobs/render', any())).thenAnswer(
+      (_) async => {
+        'bytes': base64Encode([0x1B, 0x40, 0x44]),
+      },
+    );
+    final acknowledger = OrderViewAcknowledger.withRpc(
+      (_, _) async => true,
+      FakeDeviceIdentity(),
+    );
+    await pumpDetail(
+      tester,
+      acknowledger,
+      printerSettings: const PrinterSettings(host: '192.168.0.99', port: 9100),
+      printer: printer,
+    );
+
+    await tester.tap(find.byTooltip('Print kitchen docket'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => api.post('/print/jobs/render', {
+        'order_id': orderId,
+        'type': 'kitchen_docket',
+        'reprint': true,
+      }),
+    ).called(1);
+    expect(printer.printed.single, [0x1B, 0x40, 0x44]);
+    expect(find.text('Kitchen docket sent to printer'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('offers the system dialog when the printer is unreachable', (
     tester,
   ) async {
@@ -371,7 +406,7 @@ void main() {
       },
     );
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -404,7 +439,7 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).called(1);
     expect(calls.single.method, 'printReceipt');
     expect(calls.single.arguments, {'html': '<p>Receipt</p>'});
@@ -447,7 +482,7 @@ void main() {
       },
     );
     when(
-      () => api.post('/print/jobs/receipt-document', {'order_id': orderId}),
+      () => api.post('/print/jobs/receipt-document', {'order_id': orderId, 'type': 'receipt'}),
     ).thenAnswer((_) async => {'html': '<p>Receipt</p>'});
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

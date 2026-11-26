@@ -21,7 +21,10 @@ class ReceiptNotAvailableException implements Exception {
 /// the print button can never spin forever.
 const _renderTimeout = Duration(seconds: 30);
 
-/// Fetches the rendered receipt from the web API and prints it over ESC/POS.
+/// Fetches a rendered print job from the web API and prints it over ESC/POS.
+///
+/// [type] is `receipt`, `kitchen_docket` or `grabfood_ticket`; the server builds
+/// every job so the app never recomputes order totals.
 ///
 /// Throws [FormatException] when the server response carries no usable bytes,
 /// [ReceiptNotAvailableException] when the order is not printable by this
@@ -32,13 +35,14 @@ Future<void> printReceipt({
   required EscPosPrinter printer,
   required PrinterSettings settings,
   required String orderId,
+  String type = 'receipt',
 }) async {
   final Map<String, dynamic> response;
   try {
     response = await api
         .post('/print/jobs/render', {
           'order_id': orderId,
-          'type': 'receipt',
+          'type': type,
           'reprint': true,
         })
         .timeout(_renderTimeout);

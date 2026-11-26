@@ -6,7 +6,7 @@ import {
   renderJob,
   formatCents,
 } from '../jobs'
-import type { PrintOrder } from '../jobs'
+import type { PrintJob, PrintOrder } from '../jobs'
 
 const ORDER: PrintOrder = {
   orderNumber: 'MKTEST1234',
@@ -30,7 +30,15 @@ const ORDER: PrintOrder = {
   paymentMethod: 'grabfood',
 }
 
-const STORE = { name: 'Mad Krapow', address: '123 Thai Food Street, Shah Alam', phone: '+60123456789' }
+const STORE = {
+  storeName: 'Mad Krapow',
+  address: '123 Thai Food Street, Shah Alam',
+  phone: '+60123456789',
+  companyName: 'Bakaris Enterprise',
+  companyRegistration: '201903057932',
+  footer: 'Powered by Mad Krapow',
+  taxRatePercent: 6,
+}
 
 describe('formatCents', () => {
   it('formats sen amounts and negatives', () => {
@@ -169,6 +177,85 @@ describe('buildReceipt', () => {
       STORE
     )
     expect(JSON.stringify(job.lines)).not.toContain('CLAIMED BY CUSTOMER')
+  })
+})
+
+describe('buildReceipt layout', () => {
+  const kinds = (job: { lines: Array<{ kind: string }> }) => job.lines.map((line) => line.kind)
+  const texts = (job: { lines: PrintJob['lines'] }) =>
+    job.lines.map((line) =>
+      line.kind === 'text'
+        ? line.text
+        : line.kind === 'columns'
+          ? `${line.label}|${line.value}`
+          : line.kind
+    )
+
+  it('leads with the logo, then the store block in the order staff signed off on', () => {
+    const job = buildReceipt(ORDER, STORE)
+    expect(kinds(job).slice(0, 6)).toEqual(['logo', 'text', 'text', 'text', 'text', 'divider'])
+    expect(texts(job).slice(0, 5)).toEqual([
+      'logo',
+      'Mad Krapow',
+      '123 Thai Food Street, Shah Alam',
+      'Bakaris Enterprise (201903057932)',
+      '+6012-345-6789',
+    ])
+  })
+
+  it('prints the order number as the biggest text on the receipt, not a labelled row', () => {
+    const job = buildReceipt(ORDER, STORE)
+    expect(job.lines).toContainEqual({
+      kind: 'text',
+      text: 'MKTEST1234',
+      style: { align: 'center', bold: true, double: true },
+    })
+    expect(texts(job)).not.toContain('Order|MKTEST1234')
+  })
+
+  it('labels a copy REPRINT and leaves the original unmarked', () => {
+    expect(texts(buildReceipt(ORDER, STORE, { reprint: true }))).toContain('** REPRINT **')
+    expect(texts(buildReceipt(ORDER, STORE))).not.toContain('** REPRINT **')
+  })
+
+  it('reports SST as already included and never inflates the saved total', () => {
+    const job = buildReceipt(ORDER, STORE)
+    // RM 29.50 inclusive at 6% contains RM 1.67 of tax (2950 * 6 / 106).
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'SST 6% (included)', value: 'RM 1.67' })
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'TOTAL', value: 'RM 29.50', bold: true })
+  })
+
+  it('computes the included tax on the discounted taxable base', () => {
+    const job = buildReceipt({ ...ORDER, subtotalCents: 2500, discountCents: 300 }, STORE)
+    // (2500 - 300) * 6 / 106 = 124.5 -> RM 1.25
+    expect(job.lines).toContainEqual({ kind: 'columns', label: 'SST 6% (included)', value: 'RM 1.25' })
+  })
+
+  it('hides the SST row when the rate is zero', () => {
+    const job = buildReceipt(ORDER, { ...STORE, taxRatePercent: 0 })
+    expect(JSON.stringify(job.lines)).not.toContain('SST')
+  })
+
+  it('prints the editable footer line, and nothing when it is blank', () => {
+    expect(texts(buildReceipt(ORDER, STORE))).toContain('Powered by Mad Krapow')
+    expect(texts(buildReceipt(ORDER, { ...STORE, footer: '' }))).not.toContain('Powered by Mad Krapow')
+  })
+
+  it('omits the company registration when none is configured', () => {
+    const job = buildReceipt(ORDER, { ...STORE, companyRegistration: '' })
+    expect(texts(job)).toContain('Bakaris Enterprise')
+    expect(texts(job)).not.toContain('Bakaris Enterprise ()')
+  })
+
+  it('draws the logo as a GS v 0 raster before the header text', () => {
+    const bytes = Array.from(renderJob(buildReceipt(ORDER, STORE)))
+    const rasterAt = bytes.findIndex(
+      (byte, i) => byte === 0x1d && bytes[i + 1] === 0x76 && bytes[i + 2] === 0x30
+    )
+    expect(rasterAt).toBeGreaterThan(-1)
+    // The store name must come after the raster, never before it.
+    const nameAt = bytes.indexOf(0x4d) // 'M' of "Mad Krapow"
+    expect(nameAt).toBeGreaterThan(rasterAt)
   })
 })
 

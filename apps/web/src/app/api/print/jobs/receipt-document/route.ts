@@ -3,12 +3,15 @@ import { z } from 'zod'
 import { requireRole } from '@/lib/admin/require-role'
 import { getServiceClient } from '@/lib/supabase/server'
 import { loadPrintOrder } from '@/lib/printing/order-loader'
-import { buildReceipt } from '@/lib/printing/jobs'
+import { buildGrabfoodTicket, buildKitchenDocket, buildReceipt } from '@/lib/printing/jobs'
 import { renderReceiptHtml } from '@/lib/printing/receipt-html'
+import { loadPrintStoreSettings } from '@/lib/printing/store-settings'
 import { canStaffPrintOrder } from '@/lib/printing/staff-access'
-import { env } from '@/lib/validators/env'
 
-const schema = z.object({ order_id: z.string().uuid() })
+const schema = z.object({
+  order_id: z.string().uuid(),
+  type: z.enum(['kitchen_docket', 'receipt', 'grabfood_ticket']).optional().default('receipt'),
+})
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['admin', 'manager', 'cashier', 'kitchen'])
@@ -24,8 +27,11 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid order ID' }, { status: 400 })
 
   let order
+  let store
   try {
-    order = await loadPrintOrder(getServiceClient(), parsed.data.order_id)
+    const supabase = getServiceClient()
+    order = await loadPrintOrder(supabase, parsed.data.order_id)
+    store = await loadPrintStoreSettings(supabase)
   } catch {
     return NextResponse.json({ error: 'Unable to load receipt' }, { status: 503 })
   }
@@ -33,10 +39,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   }
 
-  const receipt = buildReceipt(order, {
-    name: 'Mad Krapow',
-    address: env.STORE_ADDRESS ?? '',
-    phone: env.STORE_PHONE ?? '',
-  }, { reprint: true })
-  return NextResponse.json({ html: renderReceiptHtml(receipt) }, { headers: { 'Cache-Control': 'no-store' } })
+  const job = parsed.data.type === 'kitchen_docket'
+    ? buildKitchenDocket(order, { reprint: true })
+    : parsed.data.type === 'grabfood_ticket'
+      ? buildGrabfoodTicket(order, { reprint: true })
+      : buildReceipt(order, store, { reprint: true })
+  return NextResponse.json(
+    // The popup is about:blank, so the logo needs an absolute URL.
+    { html: renderReceiptHtml(job, { logoUrl: new URL('/madkrapow-logo.png', req.nextUrl.origin).toString() }) },
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }

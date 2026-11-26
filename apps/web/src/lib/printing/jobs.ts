@@ -10,6 +10,8 @@
 
 import { EscPosBuilder, CHARS_PER_LINE } from './escpos'
 import type { CharsPerLine } from './escpos'
+import { LOGO_RASTER } from './logo-raster'
+import { formatStorePhone, includedTaxCents } from './store-settings'
 
 export interface PrintOrderItem {
   name: string
@@ -58,11 +60,27 @@ export interface PrintOrder {
 
 export type PrintJobType = 'kitchen_docket' | 'receipt' | 'grabfood_ticket'
 
+/** The identity printed on the receipt header, editable in /admin/settings. */
+export interface PrintStore {
+  /** Branch name on paper, e.g. "Mad Krapow Subang Permai". */
+  storeName: string
+  address: string
+  phone: string
+  companyName: string
+  companyRegistration: string
+  /** Free-text line at the foot of the receipt; empty hides it. */
+  footer: string
+  /** SST percentage already included in menu prices; 0 hides the tax row. */
+  taxRatePercent: number
+}
+
 export type PrintLine =
   | { kind: 'text'; text: string; style?: { align?: 'left' | 'center' | 'right'; bold?: boolean; double?: boolean } }
   | { kind: 'divider' }
   | { kind: 'columns'; label: string; value: string; bold?: boolean }
   | { kind: 'blank' }
+  /** The store logo, rendered as a raster on ESC/POS and an image in HTML. */
+  | { kind: 'logo' }
 
 export interface PrintJob {
   type: PrintJobType
@@ -165,29 +183,58 @@ export function buildGrabfoodTicket(order: PrintOrder, options: { reprint?: bool
   return { type: 'grabfood_ticket', lines }
 }
 
+/**
+ * Customer receipt, laid out top to bottom:
+ *
+ *   logo → store name → address → company (registration) → phone → rule
+ *   → [REPRINT / CANCELLED] → order number (large, bold) → date → channel
+ *   → fulfilment → customer → rule → items → rule
+ *   → subtotal → discount → delivery → SST (included) → TOTAL → payment
+ *   → warnings → footer
+ *
+ * The store identity comes from `store_settings`, so a branch rename or a new
+ * company registration number never needs a deploy. Money is display-only:
+ * every figure is the saved value on the order, never recomputed here.
+ */
 export function buildReceipt(
   order: PrintOrder,
-  store: { name: string; address: string; phone: string },
+  store: PrintStore,
   options: { reprint?: boolean } = {}
 ): PrintJob {
   const lines: PrintLine[] = []
-  lines.push({ kind: 'text', text: store.name, style: { align: 'center', bold: true } })
-  lines.push({ kind: 'text', text: store.address, style: { align: 'center' } })
-  lines.push({ kind: 'text', text: store.phone, style: { align: 'center' } })
+  lines.push({ kind: 'logo' })
+  lines.push({ kind: 'text', text: store.storeName, style: { align: 'center', bold: true } })
+  if (store.address) {
+    lines.push({ kind: 'text', text: store.address, style: { align: 'center' } })
+  }
+  const company = store.companyRegistration
+    ? `${store.companyName} (${store.companyRegistration})`
+    : store.companyName
+  if (company) {
+    lines.push({ kind: 'text', text: company, style: { align: 'center' } })
+  }
+  if (store.phone) {
+    lines.push({ kind: 'text', text: formatStorePhone(store.phone), style: { align: 'center' } })
+  }
   lines.push({ kind: 'divider' })
+
+  // Only a copy is labelled: the first print is the original and says nothing.
   if (order.status === 'cancelled') {
     lines.push({ kind: 'text', text: '** CANCELLED - VOID **', style: { align: 'center', bold: true, double: true } })
   }
   if (options.reprint) {
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
-  lines.push({ kind: 'columns', label: 'Order', value: order.orderNumber })
+
+  // The order number is what staff and customers read out loud — give it the
+  // largest type the printer has.
+  lines.push({ kind: 'text', text: order.orderNumber, style: { align: 'center', bold: true, double: true } })
+  lines.push({ kind: 'columns', label: 'Date', value: timestamp(order.createdAt).trim() })
+  lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })
   const grabRef = order.externalOrderNumber?.trim()
   if (grabRef) {
     lines.push({ kind: 'columns', label: 'Grab ref', value: grabRef })
   }
-  lines.push({ kind: 'columns', label: 'Date', value: timestamp(order.createdAt).trim() })
-  lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })
   if (order.fulfillmentLabel) {
     lines.push({ kind: 'columns', label: 'Type', value: order.fulfillmentLabel })
   }
@@ -203,12 +250,25 @@ export function buildReceipt(
   lines.push({ kind: 'divider' })
   lines.push(...itemLines(order, true))
   lines.push({ kind: 'divider' })
+
   lines.push({ kind: 'columns', label: 'Subtotal', value: formatCents(order.subtotalCents) })
+  if (order.discountCents) {
+    lines.push({ kind: 'columns', label: 'Discount', value: formatCents(-order.discountCents) })
+  }
   if (order.deliveryFeeCents) {
     lines.push({ kind: 'columns', label: 'Delivery', value: formatCents(order.deliveryFeeCents) })
   }
-  if (order.discountCents) {
-    lines.push({ kind: 'columns', label: 'Discount', value: formatCents(-order.discountCents) })
+  // SST is already inside the menu prices, so this row reports the tax
+  // contained in the taxable base (subtotal less discount, excluding delivery)
+  // rather than adding a charge — TOTAL stays the saved total.
+  const taxableBase = Math.max(0, order.subtotalCents - (order.discountCents ?? 0))
+  const taxCents = includedTaxCents(taxableBase, store.taxRatePercent)
+  if (taxCents > 0) {
+    lines.push({
+      kind: 'columns',
+      label: `SST ${formatRate(store.taxRatePercent)}% (included)`,
+      value: formatCents(taxCents),
+    })
   }
   lines.push({ kind: 'columns', label: 'TOTAL', value: formatCents(order.totalCents), bold: true })
   const paymentMethod = order.paymentMethod ?? order.snapshotPaymentMethod
@@ -224,9 +284,16 @@ export function buildReceipt(
     lines.push({ kind: 'text', text: '** CLAIMED BY CUSTOMER - VERIFY TRANSFER **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'blank' })
-  lines.push({ kind: 'text', text: 'Powered by Mad Krapow', style: { align: 'center' } })
+  if (store.footer) {
+    lines.push({ kind: 'text', text: store.footer, style: { align: 'center' } })
+  }
   lines.push({ kind: 'blank' }, { kind: 'blank' })
   return { type: 'receipt', lines }
+}
+
+/** 6 -> "6", 6.5 -> "6.5" — the SST label reads naturally either way. */
+function formatRate(percent: number): string {
+  return String(Math.round(percent * 100) / 100)
 }
 
 /** Render a job's line model into ESC/POS bytes. */
@@ -248,6 +315,9 @@ export function renderJob(
         break
       case 'blank':
         builder.lineFeed(1)
+        break
+      case 'logo':
+        builder.image(LOGO_RASTER)
         break
     }
   }

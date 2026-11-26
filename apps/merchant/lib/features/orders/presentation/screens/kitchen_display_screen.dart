@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../providers/kitchen_providers.dart';
 import '../../../../generated/tables/orders.dart';
@@ -48,6 +51,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       onNewOrder: () {
         if (!mounted) return;
         ref.invalidate(kitchenOrderCardsProvider);
+        unawaited(ref.read(autoPrintServiceProvider).printPendingJobs());
       },
     );
   }

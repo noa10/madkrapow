@@ -65,6 +65,21 @@ const renderDetail = () => {
   return page.type(page.props)
 }
 
+type ElementLike = { props?: Record<string, unknown> }
+const findByAriaLabel = (node: unknown, label: string): ElementLike | undefined => {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findByAriaLabel(child, label)
+      if (match) return match
+    }
+    return undefined
+  }
+  if (!node || typeof node !== 'object') return undefined
+  const element = node as ElementLike
+  if (element.props?.['aria-label'] === label) return element
+  return findByAriaLabel(element.props?.children, label)
+}
+
 describe('order detail refresh errors', () => {
   it.each(['grabfood', 'web'])('shows the Grab delivery card only for GrabFood (source %s)', (source) => {
     state.index = 0; state.id = 'one'
@@ -168,5 +183,13 @@ describe('order detail refresh errors', () => {
     state.values = [order, null, false, 'offline', [], null, false]
     const result = renderDetail()
     expect(result.type).toBe('div')
+  })
+
+  it('offers print controls in the order header', () => {
+    state.index = 0; state.id = 'one'
+    state.values = [order, null, false, null, [], null, false]
+    const view = renderDetail()
+    expect(findByAriaLabel(view, 'Print order')).toBeDefined()
+    expect(findByAriaLabel(view, 'Print actions')).toBeDefined()
   })
 })

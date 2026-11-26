@@ -47,9 +47,18 @@ describe('jobTypesForOrder', () => {
     ).toEqual(['kitchen_docket', 'receipt'])
   })
 
-  it('never adds a receipt to other web orders', () => {
+  it('prints the docket and receipt for a paid web order', () => {
     expect(
       jobTypesForOrder({ source: 'web', status: 'paid', delivery_type: 'delivery' })
-    ).toEqual(['kitchen_docket'])
+    ).toEqual(['kitchen_docket', 'receipt'])
+  })
+
+  it('prints nothing for an unpaid web order — an abandoned checkout is not food', () => {
+    expect(
+      jobTypesForOrder({ source: 'web', status: 'pending', delivery_type: 'delivery' })
+    ).toEqual([])
+    expect(
+      jobTypesForOrder({ source: 'web', status: 'pending', delivery_type: 'pickup' })
+    ).toEqual([])
   })
 })

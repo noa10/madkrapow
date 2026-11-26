@@ -11,12 +11,21 @@ vi.mock('@/lib/validators/env', () => ({ env: { STORE_ADDRESS: 'Store address', 
 
 vi.mock('@/lib/printing/jobs', () => import('../../../../../lib/printing/jobs'))
 vi.mock('@/lib/printing/receipt-html', () => import('../../../../../lib/printing/receipt-html'))
+// Plain function (not vi.fn) so beforeEach's resetAllMocks cannot strip the value.
+vi.mock('@/lib/printing/store-settings', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/printing/store-settings')>(),
+  loadPrintStoreSettings: async () => ({
+    storeName: 'Mad Krapow', address: 'Store address', phone: '0123',
+    companyName: '', companyRegistration: '', footer: '', taxRatePercent: 0,
+    paperWidth: '80', autoPrintEnabled: true,
+  }),
+}))
 
 const { POST } = await import('../receipt-document/route')
 const id = '6a1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d'
-const request = (orderId: string) => new NextRequest('http://localhost/api/print/jobs/browser-receipt', {
+const request = (orderId: string, type?: 'kitchen_docket' | 'receipt' | 'grabfood_ticket') => new NextRequest('http://localhost/api/print/jobs/browser-receipt', {
   method: 'POST',
-  body: JSON.stringify({ order_id: orderId }),
+  body: JSON.stringify(type ? { order_id: orderId, type } : { order_id: orderId }),
 })
 
 beforeEach(() => {
@@ -86,8 +95,32 @@ describe('browser receipt', () => {
     expect(html).toContain('** REPRINT **')
     expect(html).toContain('&lt;script&gt;bad&lt;/script&gt;')
     expect(html).toContain('&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt;')
-    expect(html).not.toContain('<img')
+    // The static store logo is the only image; customer text must stay escaped.
+    expect(html).not.toContain('<img src=x')
     expect(html).not.toContain('<script')
-    expect(html).not.toMatch(/https?:\/\//)
+    expect(html).not.toContain('https://')
+  })
+
+  it('renders a kitchen docket without prices when requested', async () => {
+    loadPrintOrder.mockResolvedValue({
+      orderNumber: 'MK123', source: 'web', createdAt: '2026-11-26T10:00:00Z',
+      items: [{ name: 'Nasi Lemak', quantity: 2, priceCents: 1250 }],
+      subtotalCents: 2500, totalCents: 2500,
+    })
+    const response = await POST(request(id, 'kitchen_docket'))
+    expect(response.status).toBe(200)
+    const { html } = await response.json()
+    expect(html).toContain('2x Nasi Lemak')
+    expect(html).toContain('Total items')
+    expect(html).toContain('** REPRINT **')
+    expect(html).not.toContain('RM 25.00')
+  })
+
+  it('rejects an unknown print job type', async () => {
+    const req = new NextRequest('http://localhost/api/print/jobs/receipt-document', {
+      method: 'POST', body: JSON.stringify({ order_id: id, type: 'poster' }),
+    })
+    expect((await POST(req)).status).toBe(400)
+    expect(loadPrintOrder).not.toHaveBeenCalled()
   })
 })

@@ -7,7 +7,14 @@ function escapeHtml(value: string): string {
 }
 
 /** Render the thermal receipt line model as a standalone, escaped HTML document. */
-export function renderReceiptHtml(job: PrintJob): string {
+export function renderReceiptHtml(
+  job: PrintJob,
+  options: { logoUrl?: string } = {}
+): string {
+  // The print popup is opened with window.open('') and filled via
+  // document.write, so a relative URL would resolve against about:blank and
+  // the logo would silently fail to load. Callers pass an absolute URL.
+  const logoUrl = options.logoUrl ?? '/madkrapow-logo.png'
   const lines = job.lines.map((line) => {
     switch (line.kind) {
       case 'text': {
@@ -23,6 +30,8 @@ export function renderReceiptHtml(job: PrintJob): string {
         return '<hr class="divider">'
       case 'blank':
         return '<div class="blank" aria-hidden="true"></div>'
+      case 'logo':
+        return `<img class="logo" src="${escapeHtml(logoUrl)}" alt="Mad Krapow">`
     }
   }).join('')
 
@@ -34,10 +43,11 @@ export function renderReceiptHtml(job: PrintJob): string {
     .value { text-align: right; }
     .divider { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
     .blank { height: 1em; }
+    .logo { display: block; width: 26mm; height: auto; margin: 0 auto 4px; }
     .bold { font-weight: bold; }
     .center { text-align: center; }
     .right { text-align: right; }
-    .double { font-size: 1.4em; }
+    .double { font-size: 1.7em; line-height: 1.2; }
     @media print { body { padding: 0; } }
   </style></head><body><main aria-label="Receipt">${lines}</main></body></html>`
 }

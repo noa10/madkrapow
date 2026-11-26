@@ -6,6 +6,7 @@ import { loadPrintOrder } from '@/lib/printing/order-loader'
 import { canStaffPrintOrder } from '@/lib/printing/staff-access'
 import { isBridgeRequest } from '@/lib/printing/bridge-auth'
 import { buildJobBytes } from '@/lib/printing/dispatch'
+import { loadPrintStoreSettings } from '@/lib/printing/store-settings'
 import { toBase64 } from '@/lib/printing/escpos'
 
 /**
@@ -57,7 +58,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   }
 
-  const bytes = buildJobBytes(order, parsed.data.type, { reprint: parsed.data.reprint })
+  const settings = await loadPrintStoreSettings(supabase)
+  const bytes = buildJobBytes(order, parsed.data.type, {
+    reprint: parsed.data.reprint,
+    store: settings,
+  })
   return NextResponse.json({
     ok: true,
     order_id: parsed.data.order_id,

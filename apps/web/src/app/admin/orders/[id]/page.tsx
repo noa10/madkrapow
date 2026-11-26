@@ -9,13 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone, AlertTriangle } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft, Zap, Loader2, Clock, CheckCircle, Circle, Globe, MessageCircle, MessageSquare, Smartphone, AlertTriangle, Printer } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { getOrderDisplayCode } from "@/lib/utils/order-code";
 import { ADMIN_ORDER_DETAIL_SELECT } from "@/lib/admin/order-select";
 import { orderSubtotalCents, orderTotalCents } from "@/lib/orders/money";
 import { isClaimedByDiner } from "@/lib/pos/receipt";
+import { printJobInBrowser, type PrintJobType } from "@/lib/printing/client";
+import { useToastStore } from "@/stores/toast";
 import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButtons";
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
@@ -443,6 +445,17 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, order?.status, shipment?.dispatch_status]);
 
+  const handlePrint = async (type: PrintJobType) => {
+    const result = await printJobInBrowser(orderId, type);
+    if (!result.ok) {
+      useToastStore.getState().addToast({
+        type: "error",
+        title: "Print failed",
+        description: result.error,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
@@ -495,6 +508,26 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
           <ProviderBadges order={order} size="sm" className="mt-2" />
         </div>
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+          <div className="inline-flex" role="group" aria-label="Print actions">
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Print order"
+              onClick={() => void handlePrint('receipt')}
+              className="rounded-r-none"
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handlePrint('kitchen_docket')}
+              className="-ml-px rounded-l-none"
+            >
+              Kitchen docket
+            </Button>
+          </div>
           <Badge className={statusConfig.color}>
             {statusConfig.label}
           </Badge>

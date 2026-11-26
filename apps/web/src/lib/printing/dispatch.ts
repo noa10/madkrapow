@@ -2,7 +2,7 @@
  * Which jobs an order prints, and how they render — shared by the claim and
  * render routes so the bridge and manual reprints stay byte-identical.
  *
- * Job matrix (v1):
+ * Job matrix (v2):
  * - GrabFood orders print a GrabFood ticket.
  * - Counter orders print a kitchen docket + customer receipt. Counter sales
  *   are always paid now; the `pending` branch below remains for legacy
@@ -10,7 +10,9 @@
  * - Table-QR dine-in orders print the docket while still unpaid (`pending`,
  *   the kitchen starts immediately) and additionally print a receipt once the
  *   diner claims payment or the POS settles it.
- * - Other sources print a kitchen docket.
+ * - Web orders print the docket + receipt once paid. A pending web order is
+ *   an abandoned checkout, not food, so it prints nothing.
+ * - Any other source prints a kitchen docket.
  */
 
 import {
@@ -20,7 +22,11 @@ import {
   renderJob,
 } from './jobs'
 import type { PrintJobType, PrintOrder } from './jobs'
-import { env } from '@/lib/validators/env'
+import {
+  DEFAULT_PRINT_STORE_SETTINGS,
+  charsPerLineFor,
+} from './store-settings'
+import type { PrintStoreSettings } from './store-settings'
 
 export const PRINTED_EVENT_PREFIX = 'printed_'
 
@@ -30,19 +36,15 @@ export function jobTypesForOrder(order: {
   delivery_type?: string | null
 }): PrintJobType[] {
   if (order.source === 'grabfood') return ['grabfood_ticket']
-  if (order.source === 'counter') {
-    // Legacy pay-later tickets (no longer created) print the kitchen docket
-    // immediately; the receipt waits until the POS settles them.
-    return order.status === 'pending'
+  if (order.status === 'pending') {
+    // The kitchen starts before payment for dine-in and legacy counter
+    // tickets. Everything else unpaid — a web checkout in progress — is not
+    // an order yet and must never reach paper.
+    return order.delivery_type === 'dine_in' || order.source === 'counter'
       ? ['kitchen_docket']
-      : ['kitchen_docket', 'receipt']
+      : []
   }
-  if (order.delivery_type === 'dine_in') {
-    return order.status === 'pending'
-      ? ['kitchen_docket']
-      : ['kitchen_docket', 'receipt']
-  }
-  return ['kitchen_docket']
+  return ['kitchen_docket', 'receipt']
 }
 
 export function printedMarkerFor(type: PrintJobType): string {
@@ -52,6 +54,8 @@ export function printedMarkerFor(type: PrintJobType): string {
 export interface RenderOptions {
   reprint?: boolean
   charsPerLine?: 32 | 48
+  /** Store identity for receipts; defaults to the built-in Mad Krapow block. */
+  store?: PrintStoreSettings
 }
 
 export function buildJobBytes(
@@ -59,27 +63,24 @@ export function buildJobBytes(
   type: PrintJobType,
   options: RenderOptions = {}
 ): Uint8Array {
+  const store = options.store ?? DEFAULT_PRINT_STORE_SETTINGS
+  const renderOptions = {
+    reprint: options.reprint,
+    charsPerLine: options.charsPerLine ?? charsPerLineFor(store.paperWidth),
+  }
   const cashDrawer =
     type === 'receipt' &&
     order.paymentMethod === 'cash' &&
     (order.source === 'counter' || Boolean(order.tableLabel))
   switch (type) {
     case 'kitchen_docket':
-      return renderJob(buildKitchenDocket(order, { reprint: options.reprint }), options)
+      return renderJob(buildKitchenDocket(order, renderOptions), renderOptions)
     case 'grabfood_ticket':
-      return renderJob(buildGrabfoodTicket(order, { reprint: options.reprint }), options)
+      return renderJob(buildGrabfoodTicket(order, renderOptions), renderOptions)
     case 'receipt':
-      return renderJob(
-        buildReceipt(
-          order,
-          {
-            name: 'Mad Krapow',
-            address: env.STORE_ADDRESS ?? '',
-            phone: env.STORE_PHONE ?? '',
-          },
-          { reprint: options.reprint }
-        ),
-        { ...options, cashDrawer }
-      )
+      return renderJob(buildReceipt(order, store, renderOptions), {
+        ...renderOptions,
+        cashDrawer,
+      })
   }
 }

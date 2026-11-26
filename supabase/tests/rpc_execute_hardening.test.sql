@@ -1,10 +1,10 @@
--- Verifies the EXECUTE grants narrowed by 20261127101500_rpc_execute_hardening.sql.
+-- Verifies the EXECUTE grants narrowed by 20261127140000_rpc_execute_hardening.sql.
 --
 -- Run only on a disposable or local test database. All fixtures are rolled back.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(74);
+SELECT plan(84);
 
 -- ── anon loses every helper it never needed ───────────────────────────────────
 -- get_schema_info / get_enum_types exist only in the hosted project, not in a fresh
@@ -235,7 +235,33 @@ SELECT throws_ok(
 
 RESET ROLE;
 
--- ── the rewritten promo counter still behaves like 028_marketing_system.sql ──
+-- Insert through the real service role and trigger, then verify the reservation.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+SET LOCAL ROLE service_role;
+INSERT INTO public.orders (id, order_number, subtotal_cents, total_cents)
+VALUES ('f1111111-1111-1111-1111-111111111111', 'RPC-HARDENING-ORDER', 100, 100);
+RESET ROLE;
+
+SELECT ok((SELECT display_code IS NOT NULL AND display_code <> '' FROM public.orders
+           WHERE id = 'f1111111-1111-1111-1111-111111111111'),
+  'service_role order insert assigns a display code');
+SELECT is((SELECT count(*) FROM public.orders o
+           JOIN public.order_display_codes d ON d.code = o.display_code
+             AND d.code_date = public.kl_today()
+           WHERE o.id = 'f1111111-1111-1111-1111-111111111111'), 1::bigint,
+  'the assigned display code has a reservation for today');
+
+-- Convert unexpected exceptions to NULL so pgTAP reports a failure and continues.
+CREATE FUNCTION pg_temp.try_promo_increment(p_id uuid, p_increment integer)
+RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN public.increment_promo_code_usage(p_id, p_increment);
+EXCEPTION WHEN OTHERS THEN
+  RETURN NULL;
+END;
+$$;
+
+-- ── promo counter behavior ───────────────────────────────────────────────────
 INSERT INTO public.promo_codes (id, code, discount_type, discount_value, max_uses, current_uses) VALUES
   ('c1111111-1111-1111-1111-111111111111', 'PROMO-OPEN', 'fixed', 100, 2, 0),
   ('c2222222-2222-2222-2222-222222222222', 'PROMO-CAPPED', 'fixed', 100, 1, 1),
@@ -266,11 +292,31 @@ SELECT is(public.increment_promo_code_usage('c5555555-5555-5555-5555-55555555555
 SELECT is((SELECT current_uses FROM public.promo_codes
            WHERE id = 'c5555555-5555-5555-5555-555555555555'), 3,
   'the bulk counter advanced by three');
-SELECT is(public.increment_promo_code_usage('c5555555-5555-5555-5555-555555555555', -1), true,
-  'a negative increment is applied (service_role callers only)');
+SELECT is(public.increment_promo_code_usage('c5555555-5555-5555-5555-555555555555', 8), false,
+  'a capped promo refuses an increment above its remaining capacity');
 SELECT is((SELECT current_uses FROM public.promo_codes
-           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 2,
-  'the negative increment reduced the counter');
+           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 3,
+  'an oversized increment leaves the counter unchanged');
+SELECT is(pg_temp.try_promo_increment('c5555555-5555-5555-5555-555555555555', NULL), false,
+  'a null increment returns false');
+SELECT is((SELECT current_uses FROM public.promo_codes
+           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 3,
+  'a null increment leaves the counter unchanged');
+SELECT is(pg_temp.try_promo_increment('c5555555-5555-5555-5555-555555555555', 0), false,
+  'a zero increment returns false');
+SELECT is((SELECT current_uses FROM public.promo_codes
+           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 3,
+  'a zero increment leaves the counter unchanged');
+SELECT is(pg_temp.try_promo_increment('c5555555-5555-5555-5555-555555555555', -1), false,
+  'a negative increment returns false');
+SELECT is((SELECT current_uses FROM public.promo_codes
+           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 3,
+  'a negative increment leaves the counter unchanged');
+SELECT is(public.increment_promo_code_usage('c5555555-5555-5555-5555-555555555555', 7), true,
+  'an increment reaching the cap exactly succeeds');
+SELECT is((SELECT current_uses FROM public.promo_codes
+           WHERE id = 'c5555555-5555-5555-5555-555555555555'), 10,
+  'the counter reaches the cap');
 
 RESET ROLE;
 

@@ -64,9 +64,9 @@ REVOKE EXECUTE ON FUNCTION public.increment_promo_code_usage(uuid, integer)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.increment_promo_code_usage(uuid, integer) TO service_role;
 
--- Same body as 028_marketing_system.sql, with every name schema-qualified so the
--- search_path can be pinned to empty. Without this, pg_temp is searched first and a
--- caller could shadow promo_codes with a temp table.
+-- Qualify the table so the search_path can be pinned to empty, preventing a caller
+-- from shadowing promo_codes with a temp table. Preserve the existing cap behavior,
+-- while rejecting increments that cannot represent a promo redemption.
 CREATE OR REPLACE FUNCTION public.increment_promo_code_usage(
   p_promo_id uuid,
   p_increment integer DEFAULT 1
@@ -80,6 +80,10 @@ DECLARE
   v_max_uses integer;
   v_current_uses integer;
 BEGIN
+  IF p_increment IS NULL OR p_increment <= 0 THEN
+    RETURN false;
+  END IF;
+
   SELECT p.max_uses, p.current_uses INTO v_max_uses, v_current_uses
   FROM public.promo_codes p
   WHERE p.id = p_promo_id;

@@ -4,7 +4,7 @@ DECLARE
   body_hash text;
   definition text;
 BEGIN
-  SELECT md5(prosrc), pg_get_functiondef(oid)
+  SELECT md5(replace(prosrc, E'\r\n', E'\n')), pg_get_functiondef(oid)
     INTO body_hash, definition
   FROM pg_proc
   WHERE oid = 'public.apply_channel_order(jsonb)'::regprocedure;
@@ -22,7 +22,7 @@ BEGIN
     'delivery_fee_cents = COALESCE((v_order ->> ''delivery_fee_cents'')::integer, 0),'
   );
 
-  SELECT md5(prosrc) INTO body_hash
+  SELECT md5(replace(prosrc, E'\r\n', E'\n')) INTO body_hash
   FROM pg_proc
   WHERE oid = 'public.apply_channel_order(jsonb)'::regprocedure;
   IF body_hash <> '97ac1657edc9404a5ccd9a2e24843754' THEN

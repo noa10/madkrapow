@@ -388,6 +388,11 @@ END;
 $$;
 
 -- Backfill missing platform snapshots from the best available ledger entry.
+-- This is metadata repair, not an order update: preserve the operational
+-- updated_at timestamp so the admin timeline continues to reflect the last
+-- actual order event.
+ALTER TABLE orders DISABLE TRIGGER update_orders_updated_at;
+
 UPDATE orders o
 SET payment_method = p.method
 FROM (
@@ -402,5 +407,7 @@ WHERE p.order_id = o.id
     WHERE c.order_id = o.id
       AND c.channel IN ('grabfood', 'foodpanda', 'shopeefood')
   );
+
+ALTER TABLE orders ENABLE TRIGGER update_orders_updated_at;
 
 COMMIT;

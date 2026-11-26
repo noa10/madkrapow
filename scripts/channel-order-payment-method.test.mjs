@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 // Run the same pgTAP RPC probes with real PostgreSQL functions in memory.
 // Full-schema pgTAP remains authoritative for constraints and triggers.
 const sql = (path) => readFile(new URL(`../supabase/${path}`, import.meta.url), 'utf8')
+const toCrlf = (value) => value.replace(/\r?\n/g, '\r\n')
 const migrations = [
   'migrations/20261126063105_channel_order_payment_method.sql',
   'migrations/20261126063225_channel_order_payment_method_definition_correction.sql',
@@ -19,6 +20,14 @@ const schema = `
   CREATE TABLE payments(id uuid primary key default gen_random_uuid(), order_id uuid, method text, amount_cents int, status text CONSTRAINT payments_status_check CHECK (status IN ('pending', 'succeeded', 'failed', 'refunded')), external_ref text, paid_at timestamptz, raw jsonb, created_at timestamptz default now(), updated_at timestamptz);
   CREATE TABLE channel_orders(id uuid primary key default gen_random_uuid(), order_id uuid, channel text, external_order_id text, external_order_number text, external_store_id text, external_status text, raw_payload jsonb, updated_at timestamptz, CONSTRAINT channel_orders_channel_external_unique UNIQUE(channel, external_order_id));
   CREATE TABLE order_events(order_id uuid, event_type text, new_value jsonb);
+  CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$
+  BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+  END;
+  $$;
+  CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
   CREATE FUNCTION public.plan(integer) RETURNS text LANGUAGE sql AS $$ SELECT '1..' || $1::text $$;
   CREATE FUNCTION public.is(anyelement, anyelement, text) RETURNS text LANGUAGE plpgsql AS $$
   BEGIN
@@ -73,14 +82,14 @@ describe('channel order payment snapshots', () => {
   it('repairs the historical function only when its definition is expected', async () => {
     const db = await setup()
     try {
-      const hash = async () => (await db.query(`SELECT md5(prosrc) AS hash FROM pg_proc
+      const hash = async () => (await db.query(`SELECT md5(replace(prosrc, E'\\r\\n', E'\\n')) AS hash FROM pg_proc
         WHERE oid = 'public.apply_channel_order(jsonb)'::regprocedure`)).rows[0].hash
       const correction = await sql(migrations[1])
-      await db.exec(await sql(migrations[0]))
+      await db.exec(toCrlf(await sql(migrations[0])))
       expect(await hash()).toBe('6d4e6394bc08678ad2a4b863e3d2afa6')
-      await db.exec(correction)
+      await db.exec(toCrlf(correction))
       expect(await hash()).toBe('97ac1657edc9404a5ccd9a2e24843754')
-      await db.exec(correction)
+      await db.exec(toCrlf(correction))
       expect(await hash()).toBe('97ac1657edc9404a5ccd9a2e24843754')
       await db.exec(`DO $alter$
         BEGIN
@@ -125,13 +134,13 @@ describe('channel order payment snapshots', () => {
     const db = await setup()
     try {
       await db.exec(`
-        INSERT INTO orders(id, order_number, source, payment_method, total_cents) VALUES
-          ('f1000000-0000-4000-8000-000000000001', 'BACKFILL-1', 'grabfood', NULL, 101),
-          ('f1000000-0000-4000-8000-000000000002', 'BACKFILL-2', 'grabfood', NULL, 102),
-          ('f1000000-0000-4000-8000-000000000003', 'BACKFILL-3', 'grabfood', 'stripe', 103),
-          ('f1000000-0000-4000-8000-000000000004', 'BACKFILL-4', 'web', NULL, 104),
-          ('f1000000-0000-4000-8000-000000000005', 'BACKFILL-5', 'grabfood', NULL, 105),
-          ('f1000000-0000-4000-8000-000000000006', 'BACKFILL-6', 'foodpanda', NULL, 106);
+        INSERT INTO orders(id, order_number, source, payment_method, total_cents, updated_at) VALUES
+          ('f1000000-0000-4000-8000-000000000001', 'BACKFILL-1', 'grabfood', NULL, 101, '2026-01-01T01:00:00Z'),
+          ('f1000000-0000-4000-8000-000000000002', 'BACKFILL-2', 'grabfood', NULL, 102, '2026-01-02T01:00:00Z'),
+          ('f1000000-0000-4000-8000-000000000003', 'BACKFILL-3', 'grabfood', 'stripe', 103, '2026-01-03T01:00:00Z'),
+          ('f1000000-0000-4000-8000-000000000004', 'BACKFILL-4', 'web', NULL, 104, '2026-01-04T01:00:00Z'),
+          ('f1000000-0000-4000-8000-000000000005', 'BACKFILL-5', 'grabfood', NULL, 105, '2026-01-05T01:00:00Z'),
+          ('f1000000-0000-4000-8000-000000000006', 'BACKFILL-6', 'foodpanda', NULL, 106, '2026-01-06T01:00:00Z');
         INSERT INTO channel_orders(order_id,channel,external_order_id) VALUES
           ('f1000000-0000-4000-8000-000000000001', 'grabfood', 'backfill-1'),
           ('f1000000-0000-4000-8000-000000000002', 'grabfood', 'backfill-2'),
@@ -162,6 +171,20 @@ describe('channel order payment snapshots', () => {
         { order_number: 'BACKFILL-6', payment_method: 'foodpanda', total_cents: 106 },
       ])
       expect((await db.query('SELECT count(*)::int AS n FROM payments')).rows[0].n).toBe(8)
+      expect((await db.query(`
+        SELECT count(*)::int AS n
+        FROM orders
+        WHERE updated_at = CASE order_number
+          WHEN 'BACKFILL-1' THEN '2026-01-01T01:00:00Z'::timestamptz
+          WHEN 'BACKFILL-2' THEN '2026-01-02T01:00:00Z'::timestamptz
+          WHEN 'BACKFILL-3' THEN '2026-01-03T01:00:00Z'::timestamptz
+          WHEN 'BACKFILL-4' THEN '2026-01-04T01:00:00Z'::timestamptz
+          WHEN 'BACKFILL-5' THEN '2026-01-05T01:00:00Z'::timestamptz
+          WHEN 'BACKFILL-6' THEN '2026-01-06T01:00:00Z'::timestamptz
+        END
+      `)).rows[0].n).toBe(6)
+      expect((await db.query(`SELECT tgenabled FROM pg_trigger
+        WHERE tgrelid = 'public.orders'::regclass AND tgname = 'update_orders_updated_at'`)).rows[0].tgenabled).toBe('O')
     } finally {
       await db.close()
     }

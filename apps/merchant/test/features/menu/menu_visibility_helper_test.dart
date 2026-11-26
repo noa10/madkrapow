@@ -67,6 +67,34 @@ void main() {
     expect(isMissingColumnCode(null), isFalse);
   });
 
+  test('reads the GrabFood price override embedded on a menu item', () {
+    expect(
+      grabItemPriceCents({
+        'channel_products': [
+          {'channel': 'grabfood', 'price_cents': 1250},
+        ],
+      }),
+      1250,
+    );
+    expect(
+      grabItemPriceCents({
+        'channel_products': [
+          {'channel': 'foodpanda', 'price_cents': 1100},
+        ],
+      }),
+      isNull,
+    );
+    expect(
+      grabItemPriceCents({
+        'channel_products': [
+          {'channel': 'grabfood', 'price_cents': null},
+        ],
+      }),
+      isNull,
+    );
+    expect(grabItemPriceCents(const {}), isNull);
+  });
+
   test('confirms a delete only when the row is archived', () {
     ensureArchivedRow({
       'id': 'a',

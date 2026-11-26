@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../../../../generated/database.dart';
+import '../../data/menu_visibility.dart';
 
 class MenuItemTile extends StatelessWidget {
   const MenuItemTile({super.key, required this.item});
@@ -16,6 +17,7 @@ class MenuItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
+    final grabPrice = _grabPriceCents();
 
     Widget leadingWidget;
     if (hasImage) {
@@ -52,8 +54,19 @@ class MenuItemTile extends StatelessWidget {
           decoration: item.isAvailable ? null : TextDecoration.lineThrough,
         ),
       ),
-      subtitle: Text(
-        formatPrice(item.priceCents),
+      subtitle: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: formatPrice(item.priceCents)),
+            if (grabPrice != null) ...[
+              const TextSpan(text: ' · '),
+              TextSpan(
+                text: 'Grab ${formatPrice(grabPrice)}',
+                style: const TextStyle(color: AppColors.sesame),
+              ),
+            ],
+          ],
+        ),
         style: const TextStyle(
           fontWeight: FontWeight.w500,
           color: AppColors.emberText,
@@ -62,6 +75,8 @@ class MenuItemTile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right),
     );
   }
+
+  int? _grabPriceCents() => grabItemPriceCents(item.toJson());
 
   Widget _fallbackTile() {
     return Container(

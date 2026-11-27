@@ -63,6 +63,14 @@ interface AnalyticsResponse {
 
 type DateRange = "7d" | "30d" | "90d" | "custom";
 
+/**
+ * One slot for the settled outcome of a request, keyed by its query. Keeping a
+ * single slot means a failure can never outlive the request that replaced it.
+ */
+type AnalyticsState =
+  | { query: string; status: "success"; data: AnalyticsResponse }
+  | { query: string; status: "error"; message: string };
+
 const RANGE_OPTIONS: { value: Exclude<DateRange, "custom">; label: string }[] = [
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
@@ -70,6 +78,9 @@ const RANGE_OPTIONS: { value: Exclude<DateRange, "custom">; label: string }[] = 
 ];
 
 const MAX_RANGE_DAYS = 366;
+
+/** A stalled request must fail visibly instead of leaving the page spinning. */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const formatRinggit = (cents: number) => `RM ${(cents / 100).toFixed(2)}`;
 
@@ -108,8 +119,7 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [result, setResult] = useState<{ query: string; data: AnalyticsResponse } | null>(null);
-  const [failure, setFailure] = useState<{ query: string; message: string } | null>(null);
+  const [state, setState] = useState<AnalyticsState | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const customRangeError = useMemo(() => {
@@ -139,30 +149,46 @@ export default function AnalyticsPage() {
     // slips through after an abort is ignored when it is rendered.
     const controller = new AbortController();
     const requestedQuery = query;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
     fetch(`/api/admin/analytics?${requestedQuery}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Analytics request failed with status ${response.status}`);
         return (await response.json()) as AnalyticsResponse;
       })
       .then((payload) => {
-        if (!controller.signal.aborted) setResult({ query: requestedQuery, data: payload });
+        if (controller.signal.aborted) return;
+        setState({ query: requestedQuery, status: "success", data: payload });
       })
       .catch((fetchError: unknown) => {
-        if (controller.signal.aborted) return;
+        // A cleanup abort is not a failure: another range is already loading.
+        if (controller.signal.aborted && !timedOut) return;
         console.error("Failed to load analytics:", fetchError);
-        setFailure({
+        setState({
           query: requestedQuery,
-          message: "Unable to load analytics. Please try again or pick another date range.",
+          status: "error",
+          message: timedOut
+            ? "Analytics took too long to load. Please try again."
+            : "Unable to load analytics. Please try again or pick another date range.",
         });
-      });
-    return () => controller.abort();
+      })
+      .finally(() => clearTimeout(timeoutId));
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [hasAccess, guardLoading, query, reloadToken]);
 
-  // Loading is derived, not stored: a range is loading until a result or a
-  // failure exists for exactly that range.
-  const data = result?.query === query ? result.data : null;
-  const error = failure?.query === query ? failure.message : null;
-  const loading = Boolean(query) && data === null && error === null;
+  // Loading is derived, not stored: a range is loading until its own request
+  // settles. Only the newest query's outcome is kept, so a stale failure cannot
+  // hide a fresh success for the range the user returned to.
+  const current = state?.query === query ? state : null;
+  const data = current?.status === "success" ? current.data : null;
+  const error = current?.status === "error" ? current.message : null;
+  const loading = Boolean(query) && current === null;
 
   const salesData: SalesChartPoint[] = useMemo(() => {
     if (!data) return [];
@@ -324,7 +350,7 @@ export default function AnalyticsPage() {
           <button
             type="button"
             onClick={() => {
-              setFailure(null);
+              setState(null);
               setReloadToken((token) => token + 1);
             }}
             className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"

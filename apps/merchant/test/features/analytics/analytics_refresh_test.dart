@@ -130,6 +130,22 @@ void main() {
     );
   });
 
+  test('auto refresh timer is released once nothing watches it', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final subscription = container.listen(
+      analyticsAutoRefreshProvider,
+      (_, _) {},
+    );
+    expect(container.exists(analyticsAutoRefreshProvider), isTrue);
+
+    subscription.close();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(container.exists(analyticsAutoRefreshProvider), isFalse);
+  });
+
   testWidgets('failed loads show a useful retry without exposing raw errors', (
     tester,
   ) async {

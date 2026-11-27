@@ -129,8 +129,13 @@ beforeEach(() => {
   hooks.effects = [];
   requests.calls = [];
   vi.stubGlobal("fetch", vi.fn((url: string, init?: { signal?: AbortSignal }) =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       requests.calls.push({ url, signal: init?.signal, resolve });
+      init?.signal?.addEventListener("abort", () => {
+        const error = new Error("The operation was aborted.");
+        error.name = "AbortError";
+        reject(error);
+      });
     })
   ));
 });
@@ -225,5 +230,47 @@ describe("analytics page data source", () => {
     retry!.props.onClick();
     render();
     expect(requests.calls).toHaveLength(2);
+  });
+
+  it("shows fresh data when the user returns to a range that failed earlier", async () => {
+    render();
+    requests.calls[0].resolve({ ok: false, status: 500, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(text(render())).toContain("Unable to load analytics");
+
+    const rangeButton = (label: string) =>
+      find(render(), (element) => element.type === "button" && text(element.props.children) === label)!;
+
+    rangeButton("7 days").props.onClick();
+    render();
+    await respond(1, payload({ totals: { order_count: 2, revenue_cents: 5000 } }));
+    expect(text(render())).toContain("RM 50.00");
+
+    rangeButton("30 days").props.onClick();
+    render();
+    await respond(2, payload({ totals: { order_count: 4, revenue_cents: 4000 } }));
+
+    const tree = text(render());
+    expect(tree).not.toContain("Unable to load analytics");
+    expect(tree).toContain("RM 40.00");
+  });
+
+  it("times out a stalled request instead of loading forever", async () => {
+    vi.useFakeTimers();
+    try {
+      render();
+      expect(requests.calls).toHaveLength(1);
+      const signal = requests.calls[0].signal!;
+      expect(signal.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(signal.aborted).toBe(true);
+
+      const tree = text(render());
+      expect(tree).toContain("took too long");
+      expect(tree).toContain("Try again");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

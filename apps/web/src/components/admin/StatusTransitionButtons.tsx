@@ -98,8 +98,17 @@ export function StatusTransitionButtons({
           return;
         }
 
+        let savedStatus = targetStatus;
+        try {
+          const result = await response.json();
+          const parsedStatus = parseOrderStatus(result?.status);
+          if (parsedStatus !== "unknown") savedStatus = parsedStatus;
+        } catch {
+          // Older responses may not contain JSON; keep the requested status.
+        }
+
         if (onStatusUpdate) {
-          onStatusUpdate(targetStatus);
+          onStatusUpdate(savedStatus);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");

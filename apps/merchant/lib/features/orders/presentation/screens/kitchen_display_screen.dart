@@ -29,11 +29,16 @@ class KitchenDisplayScreen extends ConsumerStatefulWidget {
 
 class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   RealtimeChannel? _realtimeChannel;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _subscribeToNewOrders();
+    // Kitchen RLS hides completed rows, so their update events may be missed.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      ref.invalidate(kitchenOrderCardsProvider);
+    });
 
     // Anything that arrived while the app was closed or asleep never fired an
     // event, so claim once the first frame is up. The server only hands out
@@ -46,6 +51,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     if (_realtimeChannel != null) {
       _realtimeChannel!.unsubscribe();
       _realtimeChannel = null;
@@ -70,9 +76,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
+      final container = ProviderScope.containerOf(context, listen: false);
       await repo.updateOrderStatus(order.id, nextStatus);
-      if (!mounted) return;
-      ref.invalidate(kitchenOrderCardsProvider);
+      container.invalidate(kitchenOrderCardsProvider);
+      container.invalidate(adminOrdersProvider);
+      container.invalidate(adminOrderDetailProvider(order.id));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

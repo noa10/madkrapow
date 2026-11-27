@@ -4,6 +4,7 @@ import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
 import '../../../../core/constants/roles.dart';
 
@@ -105,8 +106,11 @@ class AdvanceStatusButton extends ConsumerWidget {
     if (nextStatus == null) return;
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
+      final container = ProviderScope.containerOf(context, listen: false);
       await repo.updateOrderStatus(orderId, nextStatus);
-      ref.invalidate(adminOrderDetailProvider(orderId));
+      container.invalidate(adminOrderDetailProvider(orderId));
+      container.invalidate(adminOrdersProvider);
+      container.invalidate(kitchenOrderCardsProvider);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

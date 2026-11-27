@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useLayoutEffect, useRef } from "react"
 import { useToastStore } from "@/stores/toast"
+import { parseOrderStatus } from "@/lib/orders/status"
 import {
   getPrimaryAction,
   getCancelAvailability,
@@ -62,6 +63,12 @@ export function useOrderStatusTransition({
   const [modal, setModal] = useState<OrderTransitionModal>(null)
   const [modalLoading, setModalLoading] = useState(false)
   const addToast = useToastStore((s) => s.addToast)
+  const serverRevision = useRef({ status: currentStatus, version: 0 })
+  useLayoutEffect(() => {
+    if (serverRevision.current.status !== currentStatus) {
+      serverRevision.current = { status: currentStatus, version: serverRevision.current.version + 1 }
+    }
+  }, [currentStatus])
 
   // The optimistic value is only a bridge until the server-provided status moves.
   // Once it does — our own refetch landing, or the kitchen advancing the order
@@ -81,6 +88,7 @@ export function useOrderStatusTransition({
 
   const doTransition = useCallback(
     async (targetStatus: string, note?: string) => {
+      const requestVersion = serverRevision.current.version
       // Optimistic update
       setOptimisticStatus(targetStatus)
 
@@ -106,14 +114,25 @@ export function useOrderStatusTransition({
           return
         }
 
-        onStatusChange?.(targetStatus)
+        let savedStatus = targetStatus
+        try {
+          const result = await response.json()
+          const parsedStatus = parseOrderStatus(result?.status)
+          if (parsedStatus !== "unknown") savedStatus = parsedStatus
+        } catch {
+          // Older responses may not contain JSON; keep the requested status.
+        }
+        if (serverRevision.current.version === requestVersion) {
+          setOptimisticStatus(savedStatus)
+          onStatusChange?.(savedStatus)
+        }
 
-        if (targetStatus === "cancelled") {
+        if (savedStatus === "cancelled") {
           addToast({ type: "success", title: "Refund initiated" })
         } else {
           addToast({
             type: "success",
-            title: `Order marked as ${targetStatus.charAt(0).toUpperCase() + targetStatus.slice(1)}`,
+            title: `Order marked as ${savedStatus.charAt(0).toUpperCase() + savedStatus.slice(1)}`,
           })
         }
       } catch (err) {

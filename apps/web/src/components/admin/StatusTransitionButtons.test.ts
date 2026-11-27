@@ -103,6 +103,36 @@ describe('GrabFood local readiness confirmation', () => {
     expect(getAdminAuth).not.toHaveBeenCalled()
   })
 
+  it('reports the actual returned status after marking a counter pickup ready', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ success: true, status: 'delivered' }),
+    }))
+    const onStatusUpdate = vi.fn()
+    await findButton(render('preparing', false, onStatusUpdate), 'Mark Ready')?.props.onClick()
+    expect(onStatusUpdate).toHaveBeenCalledWith('delivered')
+  })
+
+  it.each([
+    ['missing status', async () => ({ success: true })],
+    ['invalid status', async () => ({ status: 'bogus' })],
+    ['malformed JSON', async () => { throw new SyntaxError('bad JSON') }],
+  ])('falls back to the requested status for %s', async (_label, json) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json }))
+    const onStatusUpdate = vi.fn()
+    await findButton(render('preparing', false, onStatusUpdate), 'Mark Ready')?.props.onClick()
+    expect(onStatusUpdate).toHaveBeenCalledWith('ready')
+  })
+
+  it('preserves server error handling', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 409, json: async () => ({ error: 'Order changed' }),
+    }))
+    const onStatusUpdate = vi.fn()
+    await findButton(render('preparing', false, onStatusUpdate), 'Mark Ready')?.props.onClick()
+    expect(setters[2]).toHaveBeenCalledWith('Order changed')
+    expect(onStatusUpdate).not.toHaveBeenCalled()
+  })
+
   it('keeps the ordinary Mark Ready request unchanged', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)

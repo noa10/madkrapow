@@ -209,9 +209,16 @@ export async function POST(
       });
     }
 
+    // A paid counter takeaway has no delivery provider to complete it later.
+    // Marking it ready is the staff's final action for this POS order.
+    const savedStatus =
+      newStatus === 'ready' && order.source === 'counter' && order.delivery_type === 'self_pickup'
+        ? 'delivered'
+        : newStatus;
+
     const { data: updated, error: updateError } = await db
       .from('orders')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .update({ status: savedStatus, updated_at: new Date().toISOString() })
       .eq('id', id)
       // Optimistic concurrency: a concurrent settle/void may have moved the
       // order since the read above. Never overwrite that state.
@@ -233,19 +240,19 @@ export async function POST(
       order_id: id,
       event_type: 'status_changed',
       old_value: { status: order.status },
-      new_value: { status: newStatus },
+      new_value: { status: savedStatus },
       actor_id: user.id,
     });
 
     // Notify bot customers of status changes (best-effort, non-blocking)
     try {
       const { sendOrderStatusNotification } = await import('@/lib/bots/order-notifications')
-      await sendOrderStatusNotification(id, newStatus)
+      await sendOrderStatusNotification(id, savedStatus)
     } catch {
       // Notification failure must not break the order update
     }
 
-    return NextResponse.json({ success: true, status: newStatus });
+    return NextResponse.json({ success: true, status: savedStatus });
   } catch (error) {
     // Never echo an internal message to the client: it can carry SQL,
     // constraint names or connection details. The log keeps the full error.

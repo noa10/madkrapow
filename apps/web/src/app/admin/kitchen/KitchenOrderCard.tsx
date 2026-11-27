@@ -81,6 +81,7 @@ interface KitchenOrderCardProps {
   itemsLoading?: boolean;
   /** Injectable clock so the elapsed label is deterministic in tests. */
   now?: Date;
+  onStatusChange?: () => void;
 }
 
 /**
@@ -97,6 +98,7 @@ export function KitchenOrderCard({
   itemsUnavailable = false,
   itemsLoading = false,
   now,
+  onStatusChange,
 }: KitchenOrderCardProps) {
   const statusConfig = statusConfigFor(order.status);
   const currentTime = now ?? new Date();
@@ -281,6 +283,7 @@ export function KitchenOrderCard({
               orderId={order.id}
               currentStatus={order.status}
               source={order.source}
+              onStatusChange={onStatusChange}
             />
           </div>
         </div>
@@ -348,6 +351,7 @@ interface KitchenStatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
   source?: string;
+  onStatusChange?: () => void;
 }
 
 const KITCHEN_STATUS_FLOW = [
@@ -359,6 +363,7 @@ function KitchenStatusTransitionButtons({
   orderId,
   currentStatus,
   source,
+  onStatusChange,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
   const { addToast } = useToastStore();
@@ -411,6 +416,7 @@ function KitchenStatusTransitionButtons({
         });
         return;
       }
+      onStatusChange?.();
       if (data?.warning) {
         addToast({
           type: 'info',

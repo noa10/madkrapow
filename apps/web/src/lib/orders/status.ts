@@ -137,9 +137,9 @@ export const VALID_FORWARD_TRANSITIONS: Readonly<
 };
 
 /**
- * Subset of `VALID_FORWARD_TRANSITIONS` exposed to the admin status route.
- * `picked_up`/`delivered` come from Lalamove webhooks and are intentionally
- * NOT in this map.
+ * Subset of `VALID_FORWARD_TRANSITIONS` accepted as admin status requests.
+ * The route completes counter self-pickup orders when ready is requested;
+ * other `picked_up`/`delivered` updates normally come from provider webhooks.
  */
 export const ADMIN_VALID_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
   pending: ['paid', 'cancelled'],

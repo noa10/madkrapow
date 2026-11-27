@@ -8,6 +8,7 @@ import '../../../../core/utils/order_fields.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/orders_row_billplz.dart';
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import 'provider_badges.dart';
 
 /// Rounded order card matching the web mobile admin order list.
@@ -168,10 +169,11 @@ class OrderListTile extends ConsumerWidget {
   Future<void> _markReady(BuildContext context, WidgetRef ref) async {
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
+      final container = ProviderScope.containerOf(context, listen: false);
       await repo.updateOrderStatus(order.id, 'ready');
-      ref.invalidate(adminOrderDetailProvider(order.id));
-      ref.invalidate(adminOrdersProvider(OrderTab.preparing));
-      ref.invalidate(adminOrdersProvider(OrderTab.ready));
+      container.invalidate(adminOrderDetailProvider(order.id));
+      container.invalidate(adminOrdersProvider);
+      container.invalidate(kitchenOrderCardsProvider);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -447,6 +447,8 @@ class _OrderDetailContent extends StatelessWidget {
                 AdvanceStatusButton(
                   orderId: order.id,
                   currentStatus: order.status,
+                  source: order.source,
+                  deliveryType: order.deliveryType,
                 ),
               ],
             ),

@@ -35,7 +35,7 @@ export function ClientFooter() {
               sizes="46px"
             />
             <p className="max-w-[34ch] text-[13px] leading-5 text-muted-foreground">
-              Hot, bold Phad Kra Phao from Kampung Subang Baru, Shah Alam. Locally sourced
+              Hot, bold Phad Kra Phao from Kampung Baru Subang, Shah Alam. Locally sourced
               ingredients, cooked fresh and delivered fast.
             </p>
             <Link href="/about" className={colLink}>
@@ -54,8 +54,8 @@ export function ClientFooter() {
 
           <div className="flex min-w-0 flex-col gap-[9px]">
             <p className={colHeading}>Visit &amp; hours</p>
-            <span className={colText}>Kampung Subang Baru, Shah Alam</span>
-            <span className={colText}>Open daily 11:00–22:00 · Fri &amp; Sat till 23:00</span>
+            <span className={colText}>Kampung Baru Subang, Shah Alam</span>
+            <span className={colText}>Open daily 11:00–15:00 then 17:00 to 22:00 · Fri 11:00 to 12:30 then 17:00 to 22:00</span>
           </div>
 
           <div className="flex min-w-0 flex-col gap-[9px]">

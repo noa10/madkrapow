@@ -22,6 +22,7 @@ import {
   Utensils,
   PlusCircle,
   StickyNote,
+  CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { AdminOrder } from '@/hooks/useKitchenOrders';
@@ -29,6 +30,7 @@ import { useToastStore } from '@/stores/toast';
 import { isPrintBridgeConfigured, printViaBridge } from '@/lib/printing/client';
 import { getOrderDisplayCode } from '@/lib/utils/order-code';
 import { formatMoney, orderTotalCents } from '@/lib/orders/money';
+import { isCounterPickup } from '@/lib/orders/status';
 import { statusConfigFor } from './utils/order-status';
 import { formatElapsed, ticketAge, type TicketAge } from './utils/ticket-age';
 import type { KitchenItem } from './hooks/useKitchenOrderItems';
@@ -81,6 +83,7 @@ interface KitchenOrderCardProps {
   itemsLoading?: boolean;
   /** Injectable clock so the elapsed label is deterministic in tests. */
   now?: Date;
+  onStatusChange?: () => void;
 }
 
 /**
@@ -97,6 +100,7 @@ export function KitchenOrderCard({
   itemsUnavailable = false,
   itemsLoading = false,
   now,
+  onStatusChange,
 }: KitchenOrderCardProps) {
   const statusConfig = statusConfigFor(order.status);
   const currentTime = now ?? new Date();
@@ -281,6 +285,8 @@ export function KitchenOrderCard({
               orderId={order.id}
               currentStatus={order.status}
               source={order.source}
+              deliveryType={order.delivery_type}
+              onStatusChange={onStatusChange}
             />
           </div>
         </div>
@@ -348,6 +354,8 @@ interface KitchenStatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
   source?: string;
+  deliveryType?: string;
+  onStatusChange?: () => void;
 }
 
 const KITCHEN_STATUS_FLOW = [
@@ -359,13 +367,17 @@ function KitchenStatusTransitionButtons({
   orderId,
   currentStatus,
   source,
+  deliveryType,
+  onStatusChange,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
   const { addToast } = useToastStore();
 
   const currentStep = KITCHEN_STATUS_FLOW.find(
     (s) => s.status === currentStatus
-  ) ?? (source === 'grabfood' && currentStatus === 'ready'
+  ) ?? (currentStatus === 'ready' && isCounterPickup(source, deliveryType)
+    ? { status: 'ready', label: 'Complete Order', icon: CheckCircle2, next: 'delivered' }
+    : source === 'grabfood' && currentStatus === 'ready'
     ? { status: 'ready', label: 'Check / retry Grab notification', icon: Package, next: 'ready' }
     : undefined);
   const canTransition =
@@ -411,6 +423,7 @@ function KitchenStatusTransitionButtons({
         });
         return;
       }
+      onStatusChange?.();
       if (data?.warning) {
         addToast({
           type: 'info',

@@ -139,7 +139,7 @@ function itemLines(order: PrintOrder, withPrices: boolean, receiptDetails = with
       lines.push({ kind: 'text', text: `   ${receiptDetails ? '*' : '+'} ${modifier.quantity > 1 ? `${modifier.quantity}x ` : ''}${modifier.name}`, ...(receiptDetails ? { style: { indent: 3 } } : {}) })
     }
     for (const note of splitNotes(item.notes)) {
-      lines.push({ kind: 'text', text: `   ${receiptDetails ? '*' : '!'} ${note}`, style: { bold: true, ...(receiptDetails ? { indent: 3 } : {}) } })
+      lines.push({ kind: 'text', text: `   ${receiptDetails ? '*' : '!'} ${note}`, ...(receiptDetails ? { style: { indent: 3 } } : {}) })
     }
   }
   return lines

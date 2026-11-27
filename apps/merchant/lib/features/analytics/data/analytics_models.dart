@@ -21,7 +21,7 @@ class DailyPulse {
   factory DailyPulse.fromJson(Map<String, dynamic> json) => DailyPulse(
     orderCount: json['order_count'] as int? ?? 0,
     revenueCents: json['revenue_cents'] as int? ?? 0,
-    avgOrderCents: json['avg_order_cents'] as int? ?? 0,
+    avgOrderCents: (json['avg_order_cents'] as num?)?.round() ?? 0,
     deliveryCount: json['delivery_count'] as int? ?? 0,
     pickupCount: json['pickup_count'] as int? ?? 0,
     dineInCount: json['dine_in_count'] as int? ?? 0,

@@ -48,6 +48,34 @@ describe('getPrimaryAction', () => {
     const withAction = ORDER_STATUSES.filter((s) => getPrimaryAction(s) !== null);
     expect([...withAction]).toEqual(['pending', 'paid', 'preparing']);
   });
+
+  it('offers Complete Order for an existing ready counter take-away', () => {
+    expect(
+      getPrimaryAction('ready', { source: 'counter', deliveryType: 'self_pickup' })
+    ).toEqual({
+      label: 'Complete Order',
+      shortLabel: 'Complete',
+      nextStatus: 'delivered',
+    });
+  });
+
+  it.each([
+    ['web pickup', 'self_pickup', 'web'],
+    ['counter delivery', 'delivery', 'counter'],
+    ['counter dine-in', 'dine_in', 'counter'],
+    ['Grab pickup', 'self_pickup', 'grabfood'],
+  ])('keeps no action for a ready %s order', (_label, deliveryType, source) => {
+    expect(getPrimaryAction('ready', { source, deliveryType })).toBeNull();
+  });
+
+  it('does not let the counter take-away context change other statuses', () => {
+    expect(
+      getPrimaryAction('preparing', { source: 'counter', deliveryType: 'self_pickup' })
+    ).toMatchObject({ nextStatus: 'ready' });
+    expect(
+      getPrimaryAction('pending', { source: 'counter', deliveryType: 'self_pickup' })
+    ).toMatchObject({ nextStatus: 'paid' });
+  });
 });
 
 describe('getCancelAvailability', () => {

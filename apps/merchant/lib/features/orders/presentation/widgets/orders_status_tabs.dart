@@ -4,7 +4,9 @@ import 'package:madkrapow_ui/madkrapow_ui.dart';
 /// Pill-style status tabs matching the web admin order list.
 ///
 /// Wraps an existing [TabController] so swiping the page and tapping a pill
-/// stay in sync without changing the order-loading behavior.
+/// stay in sync without changing the order-loading behavior. The four tabs
+/// split the bar evenly so the whole width reads as one tab bar on both phone
+/// and tablet.
 class OrdersStatusTabs extends StatelessWidget {
   const OrdersStatusTabs({
     super.key,
@@ -22,18 +24,23 @@ class OrdersStatusTabs extends StatelessWidget {
       builder: (context, _) {
         return SizedBox(
           height: 54,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            itemCount: labels.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              return _StatusTab(
-                label: labels[index],
-                selected: controller.index == index,
-                onTap: () => controller.animateTo(index),
-              );
-            },
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < labels.length; index++) ...[
+                  if (index > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: _StatusTab(
+                      label: labels[index],
+                      selected: controller.index == index,
+                      onTap: () => controller.animateTo(index),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         );
       },
@@ -65,14 +72,21 @@ class _StatusTab extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          // Fills the column the tab was given, so the tap target is the whole
+          // pill rather than just the label.
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected ? AppColors.onAccent : AppColors.muted,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? AppColors.onAccent : AppColors.muted,
+                ),
               ),
             ),
           ),

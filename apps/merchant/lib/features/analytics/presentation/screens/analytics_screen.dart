@@ -22,50 +22,75 @@ class AnalyticsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Analytics')),
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.read(analyticsProvider.notifier).refresh(range: range);
-        },
+        onRefresh: () =>
+            ref.read(analyticsProvider.notifier).refresh(range: range),
         child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: ['7d', '30d', '90d']
-                      .map(
-                        (r) => _RangeChip(
-                          label: r,
-                          selected: range == r,
-                          onTap: () {
-                            ref.read(analyticsRangeProvider.notifier).state = r;
-                            ref
-                                .read(analyticsProvider.notifier)
-                                .refresh(range: r);
-                          },
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reporting period',
+                          style: Theme.of(context).textTheme.labelLarge,
                         ),
-                      )
-                      .toList(),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: ['7d', '30d', '90d']
+                              .map(
+                                (r) => _RangeChip(
+                                  label: r,
+                                  selected: range == r,
+                                  onTap: () {
+                                    ref
+                                            .read(
+                                              analyticsRangeProvider.notifier,
+                                            )
+                                            .state =
+                                        r;
+                                    ref
+                                        .read(analyticsProvider.notifier)
+                                        .refresh(range: r);
+                                  },
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: analytics.when(
-                  data: (data) {
-                    if (data == null) {
-                      return const _EmptyAnalyticsView();
-                    }
-                    return _AnalyticsContent(data: data);
-                  },
-                  loading: () => const _LoadingAnalyticsView(),
-                  error: (error, stack) => _ErrorAnalyticsView(
-                    error: error,
-                    onRetry: () {
-                      ref
-                          .read(analyticsProvider.notifier)
-                          .refresh(range: range);
-                    },
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: analytics.when(
+                      data: (data) {
+                        if (data == null) {
+                          return const _EmptyAnalyticsView();
+                        }
+                        return _AnalyticsContent(data: data);
+                      },
+                      loading: () => const _LoadingAnalyticsView(),
+                      error: (error, stack) => _ErrorAnalyticsView(
+                        onRetry: () {
+                          ref
+                              .read(analyticsProvider.notifier)
+                              .refresh(range: range);
+                        },
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -90,13 +115,10 @@ class _RangeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
-      child: FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-      ),
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
     );
   }
 }
@@ -141,17 +163,16 @@ class _LoadingAnalyticsView extends StatelessWidget {
 }
 
 class _ErrorAnalyticsView extends StatelessWidget {
-  final Object error;
   final VoidCallback onRetry;
 
-  const _ErrorAnalyticsView({required this.error, required this.onRetry});
+  const _ErrorAnalyticsView({required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     return AppEmptyState(
       icon: Icons.error_outline,
       title: 'Could not load analytics',
-      message: error.toString(),
+      message: 'Check your connection and try again.',
       action: OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
     );
   }

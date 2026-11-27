@@ -17,11 +17,11 @@ class PromoPerformanceCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Promo analytics available after promo system launch',
+              'Promo performance data is not available here yet',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
+                color: Theme.of(context).colorScheme.outline,
+              ),
             ),
           ],
         ),

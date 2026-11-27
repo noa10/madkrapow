@@ -3,23 +3,48 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
+import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/utils/order_fields.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/orders_row_billplz.dart';
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import 'provider_badges.dart';
+
+/// Next kitchen step offered on an order row. Mirrors the web admin list CTA:
+/// a paid ticket starts cooking, a cooking ticket leaves the pass.
+///
+/// `accepted` is deliberately absent — the canonical spec in
+/// `packages/madkrapow_orders/order_status.json` gives it no forward
+/// transition, so a button there would only earn a 400 from the API.
+const _advanceActions = <String, ({String label, String next})>{
+  'paid': (label: 'Start Preparing', next: 'preparing'),
+  'preparing': (label: 'Mark as Ready', next: 'ready'),
+};
 
 /// Rounded order card matching the web mobile admin order list.
 class OrderListTile extends ConsumerWidget {
-  const OrderListTile({super.key, required this.order});
+  const OrderListTile({
+    super.key,
+    required this.order,
+    this.showAdvanceAction = false,
+  });
 
   final OrdersRow order;
+
+  /// Shows the single dynamic forward button. The admin list only turns it on
+  /// for the Preparing tab; grouped lists (upcoming/history) leave it off.
+  final bool showAdvanceAction;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final canMarkReady = order.status == 'preparing';
+    final advance = showAdvanceAction ? _advanceActions[order.status] : null;
+    // Counter take-aways have no provider to close them, so staff complete
+    // them from the Ready tab — where the inline advance action is off.
+    final canComplete = order.status == 'ready' && order.isCounterPickup;
+    final updating = ref.watch(orderStatusUpdatesProvider).contains(order.id);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -140,14 +165,27 @@ class OrderListTile extends ConsumerWidget {
                     ),
                   ],
                 ),
-                if (canMarkReady) ...[
+                if (advance != null || canComplete) ...[
                   const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _markReady(context, ref),
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: const Text('Mark as Ready'),
+                      onPressed: updating
+                          ? null
+                          : () => _advance(
+                              context,
+                              ref,
+                              canComplete ? 'delivered' : advance!.next,
+                            ),
+                      icon: Icon(
+                        canComplete
+                            ? Icons.check_circle_outline
+                            : Icons.arrow_forward,
+                        size: 18,
+                      ),
+                      label: Text(
+                        canComplete ? 'Complete Order' : advance!.label,
+                      ),
                       style: ElevatedButton.styleFrom(
                         textStyle: const TextStyle(
                           fontSize: 14,
@@ -165,23 +203,46 @@ class OrderListTile extends ConsumerWidget {
     );
   }
 
-  Future<void> _markReady(BuildContext context, WidgetRef ref) async {
+  Future<void> _advance(
+    BuildContext context,
+    WidgetRef ref,
+    String nextStatus,
+  ) async {
+    // The tile can be disposed while the request is in flight: the list
+    // refreshes, or the order moves tabs. The ProviderScope above the list owns
+    // the container, so capture it before the await and invalidate through it
+    // afterwards; this tile's `ref` is unusable once disposed.
+    final container = ProviderScope.containerOf(context, listen: false);
+    final updates = ref.read(orderStatusUpdatesProvider.notifier);
+    if (!updates.begin(order.id)) return;
+
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
-      await repo.updateOrderStatus(order.id, 'ready');
-      ref.invalidate(adminOrderDetailProvider(order.id));
-      ref.invalidate(adminOrdersProvider(OrderTab.preparing));
-      ref.invalidate(adminOrdersProvider(OrderTab.ready));
-    } catch (e) {
+      await repo.updateOrderStatus(order.id, nextStatus);
+    } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not update order status. Please retry.',
+            ),
             backgroundColor: AppColors.danger,
           ),
         );
       }
+      return;
+    } finally {
+      updates.finish(order.id);
     }
+
+    // The order can move between any of the list views and the kitchen board
+    // after a transition, so refresh the whole family rather than guessing
+    // which tab now holds it.
+    container.invalidate(adminOrderDetailProvider(order.id));
+    container.invalidate(adminOrdersProvider);
+    container.invalidate(kitchenOrderCardsProvider);
   }
 
   String _formatTime(DateTime dt) {

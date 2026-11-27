@@ -22,7 +22,11 @@ class FlatOrderList extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       sliver: SliverList(
         delegate: SliverChildBuilderDelegate(
-          (context, index) => OrderListTile(order: orders[index]),
+          (context, index) => OrderListTile(
+            order: orders[index],
+            // Only the Preparing tab offers the inline forward action.
+            showAdvanceAction: tab == OrderTab.preparing,
+          ),
           childCount: orders.length,
         ),
       ),

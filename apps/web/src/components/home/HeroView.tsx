@@ -39,7 +39,7 @@ export function HeroView() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-sunk/80 px-2.5 py-1.5 text-[11px] font-bold leading-tight text-sesame backdrop-blur-sm">
             <MapPin className="h-3.5 w-3.5" />
-            Since February 2023 · Kampung Subang Baru, Shah Alam
+            Since February 2023 · Kampung Baru Subang, Shah Alam
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-herb/30 bg-herb/13 px-2.5 py-1.5 text-[11px] font-semibold leading-tight text-herb-text">
             <ShieldCheck className="h-3.5 w-3.5" />
@@ -56,17 +56,17 @@ export function HeroView() {
 
         <p className="max-w-[62ch] text-sm leading-6 text-muted-foreground md:text-[15px]">
           Craving bold Thai flavours? Mad Krapow serves fiery, flavourful plates of this iconic dish —
-          wok-fired fresh to order and delivered fast from Kampung Subang Baru, Shah Alam.
+          wok-fired fresh to order and delivered fast from Kampung Baru Subang, Shah Alam.
         </p>
 
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-semibold text-foreground">
           <li className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-ember-text" />
-            Open daily 11:00–22:00 · Fri &amp; Sat till 23:00
+            Open daily 11:00–15:00 then 17:00 to 22:00 · Fri 11:00 to 12:30 then 17:00 to 22:00
           </li>
           <li className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-ember-text" />
-            Kampung Subang Baru, Shah Alam
+            Kampung Baru Subang, Shah Alam
           </li>
         </ul>
 

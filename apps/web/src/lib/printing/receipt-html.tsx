@@ -22,7 +22,11 @@ export function renderReceiptHtml(
           line.style?.bold && 'bold', line.style?.double && 'double',
           line.style?.align === 'center' && 'center', line.style?.align === 'right' && 'right',
         ].filter(Boolean).join(' ')
-        return `<div class="${classes}">${escapeHtml(line.text)}</div>`
+        const indent = line.style?.indent ?? 0
+        const prefix = ' '.repeat(indent)
+        const text = indent && line.text.startsWith(prefix) ? line.text.slice(indent) : line.text
+        const indentStyle = indent ? ` style="padding-left:${indent}ch"` : ''
+        return `<div class="${classes}"${indentStyle}>${escapeHtml(text)}</div>`
       }
       case 'columns':
         return `<div class="columns${line.bold ? ' bold' : ''}"><span>${escapeHtml(line.label)}</span><span class="value">${escapeHtml(line.value)}</span></div>`

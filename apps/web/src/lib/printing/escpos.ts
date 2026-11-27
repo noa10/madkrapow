@@ -27,6 +27,8 @@ export interface TextStyle {
   bold?: boolean
   /** Double width + double height (GS ! 0x11). */
   double?: boolean
+  /** Spaces to retain at the start of each wrapped line. */
+  indent?: number
 }
 
 /** A 1-bit image the printer can render (see `logo-raster.ts`). */
@@ -144,8 +146,10 @@ export class EscPosBuilder {
     this.bytes.push(ESC, 0x61, alignmentByte(align))
     this.bytes.push(ESC, 0x45, style.bold ? 1 : 0)
     this.bytes.push(GS, 0x21, style.double ? 0x11 : 0x00)
-    const width = this.charsPerLine
-    for (const line of wrapText(text, width)) {
+    const indent = Math.min(Math.max(0, style.indent ?? 0), this.charsPerLine - 1)
+    const width = this.charsPerLine - indent
+    for (const wrapped of wrapText(text, width)) {
+      const line = `${' '.repeat(indent)}${wrapped}`
       for (let i = 0; i < line.length; i++) {
         this.bytes.push(line.charCodeAt(i))
       }

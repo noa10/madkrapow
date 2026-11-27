@@ -59,6 +59,31 @@ void main() {
       expect(find.text('Cutlery'), findsNothing);
     });
 
+    testWidgets('offers Start Preparing on a paid order', (tester) async {
+      await _pump(tester, _order(status: 'paid'));
+
+      expect(find.text('Start Preparing'), findsOneWidget);
+      expect(find.text('Mark as Ready'), findsNothing);
+    });
+
+    testWidgets('leaves the legacy accepted status without a forward action', (
+      tester,
+    ) async {
+      // The canonical spec gives `accepted` no forward transition, so the row
+      // must not offer one.
+      await _pump(tester, _order(status: 'accepted'));
+
+      expect(find.text('Start Preparing'), findsNothing);
+      expect(find.text('Mark as Ready'), findsNothing);
+    });
+
+    testWidgets('hides the action outside the preparing tab', (tester) async {
+      await _pump(tester, _order(status: 'preparing'), showAdvanceAction: false);
+
+      expect(find.text('Mark as Ready'), findsNothing);
+      expect(find.text('Start Preparing'), findsNothing);
+    });
+
     testWidgets('shows the table, pax and dine-in badge for a POS ticket', (
       tester,
     ) async {
@@ -93,13 +118,22 @@ void main() {
   });
 }
 
-Future<void> _pump(WidgetTester tester, OrdersRow order) async {
+Future<void> _pump(
+  WidgetTester tester,
+  OrdersRow order, {
+  bool showAdvanceAction = true,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         theme: AppTheme.darkTheme,
         home: Scaffold(
-          body: SingleChildScrollView(child: OrderListTile(order: order)),
+          body: SingleChildScrollView(
+            child: OrderListTile(
+              order: order,
+              showAdvanceAction: showAdvanceAction,
+            ),
+          ),
         ),
       ),
     ),

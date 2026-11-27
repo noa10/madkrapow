@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/admin/require-role';
-import { ADMIN_VALID_TRANSITIONS } from '@/lib/orders/status';
+import { ADMIN_VALID_TRANSITIONS, isCounterPickup } from '@/lib/orders/status';
 import { markGrabOrderReady } from '@/lib/grabfood/order-actions';
 import { getServiceClient } from '@/lib/supabase/server';
 import { z } from 'zod';
@@ -184,8 +184,21 @@ export async function POST(
       );
     }
 
+    // A counter take-away has no delivery provider to complete it later, so
+    // staff finish it explicitly. This also clears tickets that were already
+    // stranded in `ready` before the ready request started completing them.
+    // Deliberately scoped to counter self-pickup: web pickups, deliveries and
+    // Grab orders still complete through their own flows.
+    const completesCounterPickup =
+      newStatus === 'delivered' &&
+      order.status === 'ready' &&
+      isCounterPickup(order.source, order.delivery_type);
+
     const expectedNext = ADMIN_VALID_TRANSITIONS[order.status];
-    if (!expectedNext || !expectedNext.includes(newStatus)) {
+    if (
+      !completesCounterPickup &&
+      (!expectedNext || !expectedNext.includes(newStatus))
+    ) {
       return NextResponse.json(
         { error: `Invalid transition from '${order.status}' to '${newStatus}'. Expected one of: ${expectedNext?.join(', ') ?? 'none'}` },
         { status: 400 }
@@ -212,7 +225,7 @@ export async function POST(
     // A paid counter takeaway has no delivery provider to complete it later.
     // Marking it ready is the staff's final action for this POS order.
     const savedStatus =
-      newStatus === 'ready' && order.source === 'counter' && order.delivery_type === 'self_pickup'
+      newStatus === 'ready' && isCounterPickup(order.source, order.delivery_type)
         ? 'delivered'
         : newStatus;
 

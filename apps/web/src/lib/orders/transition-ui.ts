@@ -12,6 +12,7 @@ import { differenceInMinutes, parseISO } from 'date-fns';
 import {
   CANCELLABLE_STATUSES,
   TERMINAL_STATUSES,
+  isCounterPickup,
   parseOrderStatus,
 } from './status';
 
@@ -19,6 +20,12 @@ export interface PrimaryAction {
   label: string;
   shortLabel: string;
   nextStatus: string;
+}
+
+/** Order facts needed to resolve actions that depend on fulfilment. */
+export interface OrderTransitionContext {
+  source?: string | null;
+  deliveryType?: string | null;
 }
 
 /** Forward-action mapping shown on the admin order actions control. */
@@ -29,10 +36,31 @@ const PRIMARY_ACTIONS: Readonly<Record<string, PrimaryAction>> = {
 };
 
 /**
+ * Staff finish a counter take-away themselves. New tickets complete when
+ * marked ready; tickets already stranded in `ready` need this explicit action.
+ */
+const COMPLETE_COUNTER_PICKUP: PrimaryAction = {
+  label: 'Complete Order',
+  shortLabel: 'Complete',
+  nextStatus: 'delivered',
+};
+
+/**
  * Resolve the primary forward action for a status, or `null` when the
  * status has no admin forward action (terminal and non-flow statuses).
+ * Pass the order context so a ready counter take-away can be completed.
  */
-export function getPrimaryAction(status: string): PrimaryAction | null {
+export function getPrimaryAction(
+  status: string,
+  context?: OrderTransitionContext
+): PrimaryAction | null {
+  if (
+    status === 'ready' &&
+    context &&
+    isCounterPickup(context.source, context.deliveryType)
+  ) {
+    return COMPLETE_COUNTER_PICKUP;
+  }
   return PRIMARY_ACTIONS[status] ?? null;
 }
 

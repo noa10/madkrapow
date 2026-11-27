@@ -137,9 +137,25 @@ export const VALID_FORWARD_TRANSITIONS: Readonly<
 };
 
 /**
+ * A POS counter take-away. It has no delivery provider to complete it, so
+ * staff finish the ticket themselves — the route completes it when it is
+ * marked ready, and lets an existing `ready` ticket be completed explicitly.
+ * Keep the scope narrow: web pickups, deliveries and Grab orders keep their
+ * own completion flows.
+ */
+export function isCounterPickup(
+  source: string | null | undefined,
+  deliveryType: string | null | undefined
+): boolean {
+  return source === 'counter' && deliveryType === 'self_pickup';
+}
+
+/**
  * Subset of `VALID_FORWARD_TRANSITIONS` accepted as admin status requests.
  * The route completes counter self-pickup orders when ready is requested;
  * other `picked_up`/`delivered` updates normally come from provider webhooks.
+ * A `ready → delivered` request is additionally accepted only for an existing
+ * counter take-away (see `isCounterPickup`), never by widening this map.
  */
 export const ADMIN_VALID_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
   pending: ['paid', 'cancelled'],

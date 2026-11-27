@@ -769,6 +769,8 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
         orderId={order.id}
         currentStatus={order.status}
         isGrabFood={order.source === "grabfood"}
+        source={order.source}
+        deliveryType={order.delivery_type}
         onStatusUpdate={(newStatus) => setOrder(prev => prev ? { ...prev, status: newStatus } : null)}
       />
 

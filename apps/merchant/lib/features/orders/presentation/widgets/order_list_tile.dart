@@ -21,6 +21,8 @@ class OrderListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final canMarkReady = order.status == 'preparing';
+    // Counter take-aways have no provider to close them: staff complete them.
+    final canComplete = order.status == 'ready' && order.isCounterPickup;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -141,14 +143,25 @@ class OrderListTile extends ConsumerWidget {
                     ),
                   ],
                 ),
-                if (canMarkReady) ...[
+                if (canMarkReady || canComplete) ...[
                   const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _markReady(context, ref),
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: const Text('Mark as Ready'),
+                      onPressed: () => _updateStatus(
+                        context,
+                        ref,
+                        canComplete ? 'delivered' : 'ready',
+                      ),
+                      icon: Icon(
+                        canComplete
+                            ? Icons.check_circle_outline
+                            : Icons.arrow_forward,
+                        size: 18,
+                      ),
+                      label: Text(
+                        canComplete ? 'Complete Order' : 'Mark as Ready',
+                      ),
                       style: ElevatedButton.styleFrom(
                         textStyle: const TextStyle(
                           fontSize: 14,
@@ -166,11 +179,15 @@ class OrderListTile extends ConsumerWidget {
     );
   }
 
-  Future<void> _markReady(BuildContext context, WidgetRef ref) async {
+  Future<void> _updateStatus(
+    BuildContext context,
+    WidgetRef ref,
+    String status,
+  ) async {
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       final container = ProviderScope.containerOf(context, listen: false);
-      await repo.updateOrderStatus(order.id, 'ready');
+      await repo.updateOrderStatus(order.id, status);
       container.invalidate(adminOrderDetailProvider(order.id));
       container.invalidate(adminOrdersProvider);
       container.invalidate(kitchenOrderCardsProvider);

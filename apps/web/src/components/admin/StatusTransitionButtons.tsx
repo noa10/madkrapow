@@ -2,11 +2,12 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Package, X, Ban, BadgeDollarSign, ChefHat } from "lucide-react";
+import { Loader2, Package, X, Ban, BadgeDollarSign, ChefHat, CheckCircle2 } from "lucide-react";
 import { getAdminAuth, getCachedAdminAuth, subscribeAdminAuth } from "@/lib/admin/role-cache";
 import {
   CANCELLABLE_STATUSES,
   TERMINAL_STATUSES,
+  isCounterPickup,
   parseOrderStatus,
 } from "@/lib/orders/status";
 
@@ -14,6 +15,8 @@ interface StatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
   isGrabFood?: boolean;
+  source?: string | null;
+  deliveryType?: string | null;
   onStatusUpdate?: (newStatus: string) => void;
 }
 
@@ -34,6 +37,8 @@ export function StatusTransitionButtons({
   orderId,
   currentStatus,
   isGrabFood = false,
+  source,
+  deliveryType,
   onStatusUpdate,
 }: StatusTransitionButtonsProps) {
   const [forwardLoading, setForwardLoading] = useState(false);
@@ -63,6 +68,9 @@ export function StatusTransitionButtons({
   const canForward = currentStep !== undefined;
   const canCancel = parsed !== "unknown" && CANCELLABLE_STATUSES.has(parsed);
   const isTerminal = parsed !== "unknown" && TERMINAL_STATUSES.has(parsed);
+  // Existing counter take-aways can be stranded in `ready`; staff finish them.
+  const canCompleteCounterPickup =
+    currentStatus === "ready" && isCounterPickup(source, deliveryType);
 
   const handleTransition = useCallback(
     async (targetStatus: string, localReadyOnly = false) => {
@@ -120,7 +128,10 @@ export function StatusTransitionButtons({
     [orderId, onStatusUpdate]
   );
 
-  if (isTerminal || (!canForward && !canCancel && !canConfirmGrabReady)) {
+  if (
+    isTerminal ||
+    (!canForward && !canCancel && !canConfirmGrabReady && !canCompleteCounterPickup)
+  ) {
     return null;
   }
 
@@ -141,6 +152,21 @@ export function StatusTransitionButtons({
             <ForwardIcon className="h-4 w-4" />
           )}
           {currentStep.label}
+        </Button>
+      )}
+
+      {canCompleteCounterPickup && (
+        <Button
+          onClick={() => handleTransition("delivered")}
+          disabled={loading}
+          className="gap-2"
+        >
+          {forwardLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4" />
+          )}
+          Complete Order
         </Button>
       )}
 

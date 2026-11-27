@@ -9,6 +9,7 @@ import '../../../printing/providers/printer_providers.dart';
 import '../../providers/admin_order_providers.dart';
 import '../../providers/kitchen_providers.dart';
 import '../../../../generated/tables/orders.dart';
+import '../../../../core/utils/order_fields.dart';
 import '../widgets/kitchen_order_card.dart';
 
 /// The statuses the kitchen itself drives: start cooking a paid ticket, then
@@ -70,8 +71,24 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     );
   }
 
+  /// A ready counter take-away has no provider to close it, so the pass
+  /// completes it; every other ticket follows the two kitchen steps.
+  String? _nextStatusFor(OrdersRow order) {
+    final mapped = _kitchenTransitions[order.status];
+    if (mapped != null) return mapped;
+    if (order.status == 'ready' && order.isCounterPickup) return 'delivered';
+    return null;
+  }
+
+  String _actionLabelFor(OrdersRow order) {
+    if (order.status == 'ready' && order.isCounterPickup) {
+      return 'Complete Order';
+    }
+    return _kitchenActionLabels[order.status] ?? 'Mark Ready';
+  }
+
   Future<void> _advanceStatus(OrdersRow order) async {
-    final nextStatus = _kitchenTransitions[order.status];
+    final nextStatus = _nextStatusFor(order);
     if (nextStatus == null) return;
 
     try {
@@ -183,13 +200,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     child: KitchenOrderCard(
                       order: ticket.order,
                       items: ticket.items,
-                      actionLabel:
-                          _kitchenActionLabels[ticket.order.status] ??
-                          'Mark Ready',
-                      onMarkReady:
-                          _kitchenTransitions.containsKey(ticket.order.status)
-                          ? () => _advanceStatus(ticket.order)
-                          : null,
+                      actionLabel: _actionLabelFor(ticket.order),
+                      onMarkReady: _nextStatusFor(ticket.order) == null
+                          ? null
+                          : () => _advanceStatus(ticket.order),
                     ),
                   ),
               ],

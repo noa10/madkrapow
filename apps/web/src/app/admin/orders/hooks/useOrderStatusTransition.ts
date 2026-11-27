@@ -19,6 +19,9 @@ interface UseOrderStatusTransitionArgs {
   orderId: string
   currentStatus: string
   createdAt: string
+  /** Fulfilment facts; a ready counter take-away can be completed. */
+  source?: string | null
+  deliveryType?: string | null
   onStatusChange?: (newStatus: string) => void
 }
 
@@ -56,6 +59,8 @@ export function useOrderStatusTransition({
   orderId,
   currentStatus,
   createdAt,
+  source,
+  deliveryType,
   onStatusChange,
 }: UseOrderStatusTransitionArgs): UseOrderStatusTransitionResult {
   const [loading, setLoading] = useState<string | null>(null)
@@ -83,7 +88,7 @@ export function useOrderStatusTransition({
 
   const effectiveStatus = optimisticStatus ?? currentStatus
 
-  const primaryAction = getPrimaryAction(effectiveStatus)
+  const primaryAction = getPrimaryAction(effectiveStatus, { source, deliveryType })
   const { canCancel, isTerminal } = getCancelAvailability(effectiveStatus)
 
   const doTransition = useCallback(

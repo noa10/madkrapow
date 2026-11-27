@@ -159,6 +159,59 @@ describe('POST /api/admin/orders/[id]/status role gates', () => {
     expect(sendOrderStatusNotificationMock).not.toHaveBeenCalled()
   })
 
+  it('completes an existing ready POS take-away order', async () => {
+    const session = auth('kitchen', 'ready', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, status: 'delivered' })
+    expect(session.client.updates).toEqual([
+      expect.objectContaining({ status: 'delivered' }),
+    ])
+    expect(session.client.events).toEqual([
+      expect.objectContaining({
+        old_value: { status: 'ready' },
+        new_value: { status: 'delivered' },
+      }),
+    ])
+    expect(sendOrderStatusNotificationMock).toHaveBeenCalledWith(ORDER_ID, 'delivered')
+  })
+
+  it('does not complete a ready POS takeaway if its status changed concurrently', async () => {
+    const session = auth('kitchen', 'ready', 'self_pickup', 'counter', true)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(409)
+    expect(session.client.events).toEqual([])
+    expect(sendOrderStatusNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['web pickup', 'self_pickup', 'web'],
+    ['delivery', 'delivery', 'counter'],
+    ['dine-in', 'dine_in', 'counter'],
+    ['Grab pickup', 'self_pickup', 'grabfood'],
+  ])('does not let a ready %s order jump to delivered', async (_label, deliveryType, source) => {
+    const session = auth('kitchen', 'ready', deliveryType, source)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(400)
+    expect(session.client.updates).toEqual([])
+    expect(session.client.events).toEqual([])
+  })
+
+  it('keeps rejecting delivered for a counter take-away that is not ready', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(400)
+    expect(session.client.updates).toEqual([])
+  })
+
   it('uses the Grab ready service for Grab pickup orders', async () => {
     const session = auth('kitchen', 'preparing', 'self_pickup', 'grabfood')
     requireRoleMock.mockResolvedValue(session)

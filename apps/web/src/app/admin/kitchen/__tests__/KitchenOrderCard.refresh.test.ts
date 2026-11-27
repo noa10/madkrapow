@@ -24,9 +24,13 @@ function findTransition(element: unknown): ReactElement<{ onClick: () => Promise
   return findTransition(element.props.children)
 }
 
-function transition(source: 'counter' | 'grabfood', onStatusChange: () => void) {
+function transition(
+  source: 'counter' | 'grabfood',
+  onStatusChange: () => void,
+  status = 'preparing'
+) {
   const order = {
-    id: 'order-1', status: 'preparing', source, delivery_type: 'self_pickup',
+    id: 'order-1', status, source, delivery_type: 'self_pickup',
     created_at: '2026-10-17T19:30:00Z', total_cents: 1250,
     delivery_fee_cents: 0, notes: null,
   } as AdminOrder
@@ -52,6 +56,21 @@ describe('kitchen status refresh', () => {
     const refresh = vi.fn()
     await transition('counter', refresh)
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('completes a ready counter take-away from the kitchen board', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ status: 'delivered' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const refresh = vi.fn()
+    await transition('counter', refresh, 'ready')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/orders/order-1/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'delivered' }),
+    })
+    expect(refresh).toHaveBeenCalledOnce()
   })
 
   it('retains the Grab uncertain retry flow and refreshes after success', async () => {

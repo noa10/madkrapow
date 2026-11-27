@@ -36,6 +36,24 @@ function startTransition(response: unknown) {
   return { onStatusChange, setOptimisticStatus: setters[1] }
 }
 
+function startCompletion(response: unknown) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+  const onStatusChange = vi.fn()
+  // A fresh order would trip the ready warning if completion were a Ready action.
+  // React hooks are replaced with test doubles in this lightweight harness.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const hook = useOrderStatusTransition({
+    orderId: 'order-1',
+    currentStatus: 'ready',
+    createdAt: new Date().toISOString(),
+    source: 'counter',
+    deliveryType: 'self_pickup',
+    onStatusChange,
+  })
+  hook.handleForwardAction()
+  return { onStatusChange, setOptimisticStatus: setters[1], modal: hook.modal }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
@@ -73,5 +91,29 @@ describe('status transition response', () => {
     }))
     expect(setOptimisticStatus).toHaveBeenLastCalledWith(null)
     expect(onStatusChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('counter take-away completion', () => {
+  it('completes a ready counter take-away without the ready warning', async () => {
+    const { onStatusChange, setOptimisticStatus, modal } = startCompletion({
+      ok: true, json: async () => ({ success: true, status: 'delivered' }),
+    })
+    expect(modal).toBeNull()
+    expect(setOptimisticStatus).toHaveBeenCalledWith('delivered')
+    await vi.waitFor(() => expect(onStatusChange).toHaveBeenCalledWith('delivered'))
+    expect(addToast).toHaveBeenCalledWith({ type: 'success', title: 'Order marked as Delivered' })
+  })
+
+  it('offers no completion action without the counter take-away context', () => {
+    vi.stubGlobal('fetch', vi.fn())
+    // React hooks are replaced with test doubles in this lightweight harness.
+     
+    const hook = useOrderStatusTransition({
+      orderId: 'order-1',
+      currentStatus: 'ready',
+      createdAt: new Date().toISOString(),
+    })
+    expect(hook.primaryAction).toBeNull()
   })
 })

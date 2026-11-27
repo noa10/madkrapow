@@ -22,6 +22,7 @@ import {
   Utensils,
   PlusCircle,
   StickyNote,
+  CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { AdminOrder } from '@/hooks/useKitchenOrders';
@@ -29,6 +30,7 @@ import { useToastStore } from '@/stores/toast';
 import { isPrintBridgeConfigured, printViaBridge } from '@/lib/printing/client';
 import { getOrderDisplayCode } from '@/lib/utils/order-code';
 import { formatMoney, orderTotalCents } from '@/lib/orders/money';
+import { isCounterPickup } from '@/lib/orders/status';
 import { statusConfigFor } from './utils/order-status';
 import { formatElapsed, ticketAge, type TicketAge } from './utils/ticket-age';
 import type { KitchenItem } from './hooks/useKitchenOrderItems';
@@ -283,6 +285,7 @@ export function KitchenOrderCard({
               orderId={order.id}
               currentStatus={order.status}
               source={order.source}
+              deliveryType={order.delivery_type}
               onStatusChange={onStatusChange}
             />
           </div>
@@ -351,6 +354,7 @@ interface KitchenStatusTransitionButtonsProps {
   orderId: string;
   currentStatus: string;
   source?: string;
+  deliveryType?: string;
   onStatusChange?: () => void;
 }
 
@@ -363,6 +367,7 @@ function KitchenStatusTransitionButtons({
   orderId,
   currentStatus,
   source,
+  deliveryType,
   onStatusChange,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
@@ -370,7 +375,9 @@ function KitchenStatusTransitionButtons({
 
   const currentStep = KITCHEN_STATUS_FLOW.find(
     (s) => s.status === currentStatus
-  ) ?? (source === 'grabfood' && currentStatus === 'ready'
+  ) ?? (currentStatus === 'ready' && isCounterPickup(source, deliveryType)
+    ? { status: 'ready', label: 'Complete Order', icon: CheckCircle2, next: 'delivered' }
+    : source === 'grabfood' && currentStatus === 'ready'
     ? { status: 'ready', label: 'Check / retry Grab notification', icon: Package, next: 'ready' }
     : undefined);
   const canTransition =

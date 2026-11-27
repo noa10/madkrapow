@@ -13,7 +13,18 @@ extension OrderPosFields on OrdersRow {
 
   bool get isDineIn => deliveryType == 'dine_in';
   bool get isUnpaid => status == 'pending';
+
+  /// A counter take-away has no delivery provider to complete it, so staff
+  /// finish a ready ticket themselves. Mirrors web `isCounterPickup`.
+  bool get isCounterPickup =>
+      isCounterPickupOrder(source: source, deliveryType: deliveryType);
 }
+
+/// Whether the order is a counter take-away (the POS take-away flow).
+///
+/// Mirrors web `isCounterPickup` in `apps/web/src/lib/orders/status.ts`.
+bool isCounterPickupOrder({String? source, String? deliveryType}) =>
+    source == 'counter' && deliveryType == 'self_pickup';
 
 /// Human label for `orders.delivery_type`.
 String orderTypeLabel(String deliveryType) => switch (deliveryType) {

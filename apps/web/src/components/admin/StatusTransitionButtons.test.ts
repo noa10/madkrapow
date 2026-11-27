@@ -33,9 +33,14 @@ function findButton(node: ReactNode, label: string): ReactElement<{ onClick: () 
     .find((child) => child !== undefined)
 }
 
-function render(currentStatus = 'paid', isGrabFood = true, onStatusUpdate = vi.fn()) {
+function render(
+  currentStatus = 'paid',
+  isGrabFood = true,
+  onStatusUpdate = vi.fn(),
+  context: { source?: string; deliveryType?: string } = {}
+) {
   getCachedAdminAuth.mockReturnValue({ role: role.current })
-  return StatusTransitionButtons({ orderId: 'order-1', currentStatus, isGrabFood, onStatusUpdate })
+  return StatusTransitionButtons({ orderId: 'order-1', currentStatus, isGrabFood, onStatusUpdate, ...context })
 }
 
 const label = 'Already marked ready in Grab'
@@ -142,5 +147,42 @@ describe('GrabFood local readiness confirmation', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'ready' }),
     })
+  })
+})
+
+describe('counter take-away completion', () => {
+  const counterPickup = { source: 'counter', deliveryType: 'self_pickup' }
+
+  it('offers Complete Order for an existing ready counter take-away', () => {
+    expect(findButton(render('ready', false, vi.fn(), counterPickup), 'Complete Order')).toBeDefined()
+  })
+
+  it.each([
+    ['web pickup', 'web', 'self_pickup'],
+    ['counter delivery', 'counter', 'delivery'],
+    ['counter dine-in', 'counter', 'dine_in'],
+    ['Grab pickup', 'grabfood', 'self_pickup'],
+  ])('does not offer completion for a ready %s order', (_label, source, deliveryType) => {
+    expect(
+      findButton(render('ready', false, vi.fn(), { source, deliveryType }), 'Complete Order')
+    ).toBeUndefined()
+  })
+
+  it('sends the completion request and reports the delivered status', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ success: true, status: 'delivered' }),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const onStatusUpdate = vi.fn()
+
+    await findButton(render('ready', false, onStatusUpdate, counterPickup), 'Complete Order')
+      ?.props.onClick()
+
+    expect(fetch).toHaveBeenCalledWith('/api/admin/orders/order-1/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'delivered' }),
+    })
+    expect(onStatusUpdate).toHaveBeenCalledWith('delivered')
   })
 })

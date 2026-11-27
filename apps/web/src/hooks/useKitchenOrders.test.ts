@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   states: [] as unknown[],
   index: 0,
   effect: undefined as (() => void | (() => void)) | undefined,
+  cleanup: undefined as (() => void) | undefined,
   handlers: {} as Record<string, (payload: { new: Record<string, unknown> }) => void>,
   requests: [] as Array<(value: { data: unknown; error: { message: string } | null }) => void>,
+  signals: [] as AbortSignal[],
 }))
 
 vi.mock('react', () => ({
@@ -16,13 +18,26 @@ vi.mock('react', () => ({
       harness.states[index] = typeof value === 'function' ? value(harness.states[index]) : value
     }]
   },
-  useEffect: (effect: () => void | (() => void)) => { harness.effect = effect },
+  useEffect: (effect: () => void | (() => void)) => {
+    harness.effect = () => {
+      const cleanup = effect()
+      if (cleanup) harness.cleanup = cleanup
+      return cleanup
+    }
+  },
+  useRef: (initial: unknown) => {
+    const index = harness.index++
+    if (!(index in harness.states)) harness.states[index] = { current: initial }
+    return harness.states[index]
+  },
+  useCallback: (callback: unknown) => callback,
 }))
 
 vi.mock('@/lib/supabase/client', () => ({
   getBrowserClient: () => {
     const query = {
       select: () => query, or: () => query, order: () => query,
+      abortSignal: (signal: AbortSignal) => { harness.signals.push(signal); return query },
       limit: () => new Promise((resolve) => harness.requests.push(resolve)),
     }
     const channel = {
@@ -48,8 +63,15 @@ const resolve = async (index: number, data: unknown, error: { message: string } 
 }
 
 beforeEach(() => {
-  harness.states = []; harness.index = 0; harness.handlers = {}; harness.requests = []
+  harness.states = []; harness.index = 0; harness.handlers = {}; harness.requests = []; harness.signals = []; harness.cleanup = undefined
   vi.stubGlobal('window', { dispatchEvent: vi.fn() })
+})
+
+afterEach(() => {
+  harness.cleanup?.()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('kitchen order refresh', () => {
@@ -110,6 +132,52 @@ describe('kitchen order refresh', () => {
       expect(render().error).toBeNull()
       cleanup()
     } finally { vi.useRealTimers() }
+  })
+
+  it('reconciles a missed completion on the next periodic refresh and stops after unmount', async () => {
+    vi.useFakeTimers()
+    try {
+      render(); const cleanup = harness.effect!() as () => void
+      await resolve(0, [ticket('counter', 'preparing', 'counter')])
+      await vi.advanceTimersByTimeAsync(30000)
+      await resolve(1, [])
+      expect(render().orders).toEqual([])
+      cleanup()
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(harness.requests).toHaveLength(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('refreshes immediately when requested after a status change', async () => {
+    render(); const cleanup = harness.effect!() as () => void
+    await resolve(0, [ticket('counter', 'preparing', 'counter')])
+    render().refresh()
+    await resolve(1, [])
+    expect(render().orders).toEqual([])
+    cleanup()
+  })
+
+  it('continues reconciling when a request never resolves', async () => {
+    vi.useFakeTimers()
+    render(); harness.effect!()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(harness.requests.length).toBeGreaterThan(1)
+    expect(harness.signals[0].aborted).toBe(true)
+    await resolve(harness.requests.length - 1, [])
+    await resolve(0, [ticket('counter')])
+    expect(render().orders).toEqual([])
+    expect(render().hasLoaded).toBe(true)
+  })
+
+  it('reconciles again after an active realtime event overlaps a snapshot that omits the ticket', async () => {
+    render(); harness.effect!()
+    await resolve(0, [ticket('counter', 'preparing', 'counter')])
+    render().refresh()
+    harness.handlers.UPDATE({ new: ticket('counter', 'preparing', 'counter') })
+    await resolve(1, [])
+    expect(harness.requests).toHaveLength(3)
+    await resolve(2, [])
+    expect(render().orders).toEqual([])
   })
 
   it('ignores a response after unmount', async () => {

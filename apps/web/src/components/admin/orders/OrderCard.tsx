@@ -197,6 +197,8 @@ export function OrderCard({ order, onStatusChange, onOpenItems }: OrderCardProps
     orderId: order.id,
     currentStatus: order.status,
     createdAt: order.created_at,
+    source: order.source,
+    deliveryType: order.delivery_type,
     onStatusChange,
   })
 

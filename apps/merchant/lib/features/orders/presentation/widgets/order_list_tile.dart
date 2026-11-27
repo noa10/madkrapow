@@ -41,6 +41,9 @@ class OrderListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final advance = showAdvanceAction ? _advanceActions[order.status] : null;
+    // Counter take-aways have no provider to close them, so staff complete
+    // them from the Ready tab — where the inline advance action is off.
+    final canComplete = order.status == 'ready' && order.isCounterPickup;
     final updating = ref.watch(orderStatusUpdatesProvider).contains(order.id);
 
     return Padding(
@@ -162,16 +165,27 @@ class OrderListTile extends ConsumerWidget {
                     ),
                   ],
                 ),
-                if (advance != null) ...[
+                if (advance != null || canComplete) ...[
                   const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: updating
                           ? null
-                          : () => _advance(context, ref, advance.next),
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: Text(advance.label),
+                          : () => _advance(
+                              context,
+                              ref,
+                              canComplete ? 'delivered' : advance!.next,
+                            ),
+                      icon: Icon(
+                        canComplete
+                            ? Icons.check_circle_outline
+                            : Icons.arrow_forward,
+                        size: 18,
+                      ),
+                      label: Text(
+                        canComplete ? 'Complete Order' : advance!.label,
+                      ),
                       style: ElevatedButton.styleFrom(
                         textStyle: const TextStyle(
                           fontSize: 14,

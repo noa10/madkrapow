@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { isKitchenActive, KITCHEN_QUEUE_OR_FILTER } from "@/lib/orders/kitchen";
@@ -36,6 +36,8 @@ export function useKitchenOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const refreshRef = useRef<() => void>(() => {});
+  const refresh = useCallback(() => refreshRef.current(), []);
 
   useEffect(() => {
     const supabase = getBrowserClient();
@@ -45,12 +47,20 @@ export function useKitchenOrders() {
     let latestFailure = 0;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const pending = new Set<AdminOrder[]>();
+    const requests = new Map<AbortController, ReturnType<typeof setTimeout>>();
 
     const fetchOrders = async () => {
       const request = ++latestRequest;
       const changes: AdminOrder[] = [];
+      const controller = new AbortController();
       pending.add(changes);
-      const { data, error } = await supabase
+      const timeout = new Promise<{ data: null; error: { message: string } }>((resolve) => {
+        requests.set(controller, setTimeout(() => {
+          controller.abort();
+          resolve({ data: null, error: { message: "Kitchen orders request timed out" } });
+        }, 15000));
+      });
+      const { data, error } = await Promise.race([supabase
         .from("orders")
         .select("*, channel_orders(channel, external_order_number)")
         // Only tickets the kitchen board can show. This keeps completed
@@ -58,10 +68,17 @@ export function useKitchenOrders() {
         // tickets under the row cap.
         .or(KITCHEN_QUEUE_OR_FILTER)
         .order("created_at", { ascending: false })
-        .limit(200);
+        .abortSignal(controller.signal)
+        .limit(200), timeout]);
 
+      clearTimeout(requests.get(controller));
+      requests.delete(controller);
       pending.delete(changes);
-      if (!active || request < latestSuccess) return;
+      if (!active) return;
+      if (request < latestSuccess) {
+        if (changes.length) void fetchOrders();
+        return;
+      }
       if (error) {
         if (request >= latestFailure) {
           latestFailure = request;
@@ -87,9 +104,16 @@ export function useKitchenOrders() {
       }
       setOrders(snapshot);
       setLoading(false);
+      // A queued event can be older than this snapshot, so confirm again.
+      if (changes.length) void fetchOrders();
     };
 
-    fetchOrders();
+    refreshRef.current = () => void fetchOrders();
+    void fetchOrders();
+    // Realtime may not deliver updates to rows that leave the kitchen RLS set.
+    const interval = setInterval(() => {
+      if (pending.size === 0) void fetchOrders();
+    }, 30000);
 
     const channel = supabase
       .channel("admin-orders-hook")
@@ -138,10 +162,17 @@ export function useKitchenOrders() {
 
     return () => {
       active = false;
+      refreshRef.current = () => {};
+      clearInterval(interval);
       clearTimeout(retry);
+      for (const [controller, timeout] of requests) {
+        clearTimeout(timeout);
+        controller.abort();
+      }
+      requests.clear();
       supabase.removeChannel(channel);
     };
   }, []);
 
-  return { orders, loading, error, hasLoaded };
+  return { orders, loading, error, hasLoaded, refresh };
 }

@@ -1,6 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const requireRoleMock = vi.fn()
+const sendOrderStatusNotificationMock = vi.fn()
+const markGrabOrderReadyMock = vi.fn()
+const serviceClient = {}
+vi.mock('@/lib/grabfood/order-actions', () => ({
+  markGrabOrderReady: (...args: unknown[]) => markGrabOrderReadyMock(...args),
+}))
+vi.mock('@/lib/supabase/server', () => ({
+  getServiceClient: () => serviceClient,
+}))
+vi.mock('@/lib/bots/order-notifications', () => ({
+  sendOrderStatusNotification: (...args: unknown[]) => sendOrderStatusNotificationMock(...args),
+}))
 vi.mock('@/lib/admin/require-role', () => ({
   requireRole: (req: unknown, roles: string[]) => requireRoleMock(req, roles),
 }))
@@ -28,8 +40,10 @@ function clientFor(
   conflict = false
 ) {
   const updates: Record<string, unknown>[] = []
+  const events: Record<string, unknown>[] = []
   const client = {
     updates,
+    events,
     from: (table: string) => ({
       select: () => ({
         eq: () => ({
@@ -55,7 +69,10 @@ function clientFor(
           }),
         }
       },
-      insert: async () => ({ error: null }),
+      insert: async (event: Record<string, unknown>) => {
+        if (table === 'order_events') events.push(event)
+        return { error: null }
+      },
     }),
   }
   return client
@@ -79,6 +96,8 @@ function auth(
 describe('POST /api/admin/orders/[id]/status role gates', () => {
   beforeEach(() => {
     requireRoleMock.mockReset()
+    sendOrderStatusNotificationMock.mockReset()
+    markGrabOrderReadyMock.mockReset()
   })
 
   it('lets a cashier advance a paid ticket to preparing', async () => {
@@ -98,6 +117,139 @@ describe('POST /api/admin/orders/[id]/status role gates', () => {
 
     const response = await POST(makeRequest('ready') as never, context() as never)
     expect(response.status).toBe(200)
+  })
+
+  it('completes a preparing POS take-away order when marked ready', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, status: 'delivered' })
+    expect(session.client.updates).toEqual([
+      expect.objectContaining({ status: 'delivered' }),
+    ])
+    expect(session.client.events).toEqual([
+      expect.objectContaining({
+        old_value: { status: 'preparing' },
+        new_value: { status: 'delivered' },
+      }),
+    ])
+    expect(sendOrderStatusNotificationMock).toHaveBeenCalledWith(ORDER_ID, 'delivered')
+  })
+
+  it('does not complete an unpaid POS takeaway', async () => {
+    const session = auth('kitchen', 'pending', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(400)
+    expect(session.client.updates).toEqual([])
+    expect(session.client.events).toEqual([])
+    expect(sendOrderStatusNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it('does not complete a POS takeaway if its status changed concurrently', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'counter', true)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(409)
+    expect(session.client.events).toEqual([])
+    expect(sendOrderStatusNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it('completes an existing ready POS take-away order', async () => {
+    const session = auth('kitchen', 'ready', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, status: 'delivered' })
+    expect(session.client.updates).toEqual([
+      expect.objectContaining({ status: 'delivered' }),
+    ])
+    expect(session.client.events).toEqual([
+      expect.objectContaining({
+        old_value: { status: 'ready' },
+        new_value: { status: 'delivered' },
+      }),
+    ])
+    expect(sendOrderStatusNotificationMock).toHaveBeenCalledWith(ORDER_ID, 'delivered')
+  })
+
+  it('does not complete a ready POS takeaway if its status changed concurrently', async () => {
+    const session = auth('kitchen', 'ready', 'self_pickup', 'counter', true)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(409)
+    expect(session.client.events).toEqual([])
+    expect(sendOrderStatusNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['web pickup', 'self_pickup', 'web'],
+    ['delivery', 'delivery', 'counter'],
+    ['dine-in', 'dine_in', 'counter'],
+    ['Grab pickup', 'self_pickup', 'grabfood'],
+  ])('does not let a ready %s order jump to delivered', async (_label, deliveryType, source) => {
+    const session = auth('kitchen', 'ready', deliveryType, source)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(400)
+    expect(session.client.updates).toEqual([])
+    expect(session.client.events).toEqual([])
+  })
+
+  it('keeps rejecting delivered for a counter take-away that is not ready', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'counter')
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('delivered') as never, context() as never)
+    expect(response.status).toBe(400)
+    expect(session.client.updates).toEqual([])
+  })
+
+  it('uses the Grab ready service for Grab pickup orders', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'grabfood')
+    requireRoleMock.mockResolvedValue(session)
+    markGrabOrderReadyMock.mockResolvedValue({ ok: true })
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, status: 'ready' })
+    expect(markGrabOrderReadyMock).toHaveBeenCalledWith(serviceClient, ORDER_ID)
+    expect(session.client.updates).toEqual([])
+  })
+
+  it('does not complete a Grab pickup when notifying Grab fails', async () => {
+    const session = auth('kitchen', 'preparing', 'self_pickup', 'grabfood')
+    requireRoleMock.mockResolvedValue(session)
+    markGrabOrderReadyMock.mockResolvedValue({ ok: false, error: 'Grab unavailable', status: 503 })
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: 'Grab unavailable' })
+    expect(markGrabOrderReadyMock).toHaveBeenCalledWith(serviceClient, ORDER_ID)
+    expect(session.client.updates).toEqual([])
+  })
+
+  it.each([
+    ['dine-in', 'dine_in', 'counter'],
+    ['web pickup', 'self_pickup', 'web'],
+    ['delivery', 'delivery', 'counter'],
+  ])('keeps %s orders ready when marked ready', async (_label, deliveryType, source) => {
+    const session = auth('kitchen', 'preparing', deliveryType, source)
+    requireRoleMock.mockResolvedValue(session)
+
+    const response = await POST(makeRequest('ready') as never, context() as never)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, status: 'ready' })
+    expect(session.client.updates).toEqual([
+      expect.objectContaining({ status: 'ready' }),
+    ])
   })
 
   it('stops a cashier from marking an order paid manually', async () => {

@@ -15,7 +15,7 @@ export default function KitchenDisplayPage() {
     'manager',
     'kitchen',
   ]);
-  const { orders, loading, error, hasLoaded } = useKitchenOrders();
+  const { orders, loading, error, hasLoaded, refresh } = useKitchenOrders();
 
   // Filter orders to show only active ones for the kitchen. Pending dine-in
   // tickets are included: the diner orders from the table QR and pays at the
@@ -116,6 +116,7 @@ export default function KitchenDisplayPage() {
                 items={itemsByOrderId[order.id] ?? []}
                 itemsUnavailable={Boolean(itemsError)}
                 itemsLoading={itemsLoading}
+                onStatusChange={refresh}
               />
             ))}
           </div>

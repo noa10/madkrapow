@@ -4,8 +4,10 @@ import 'package:madkrapow_orders/order_status.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import '../../../../features/auth/providers/admin_auth_providers.dart';
 import '../../../../core/constants/roles.dart';
+import '../../../../core/utils/order_fields.dart';
 
 /// Button to advance an order to its next valid status. Forward transitions
 /// and role gating come from the shared `madkrapow_orders` package; the API
@@ -15,10 +17,17 @@ class AdvanceStatusButton extends ConsumerWidget {
     super.key,
     required this.orderId,
     required this.currentStatus,
+    this.source,
+    this.deliveryType,
   });
 
   final String orderId;
   final String currentStatus;
+
+  /// Fulfilment facts. A ready counter take-away can be completed by staff;
+  /// every other fulfilment completes through its own flow.
+  final String? source;
+  final String? deliveryType;
 
   StaffRoleForOrders? _mapRole(StaffRole? role) {
     switch (role) {
@@ -47,6 +56,22 @@ class AdvanceStatusButton extends ConsumerWidget {
     final staffRole = ref.watch(staffRoleProvider);
     final nextStatus = _roleAwareNextStatus(staffRole);
     final isTerminal = nextStatus == null;
+    // The shared status map has no ready → delivered step; staff close a ready
+    // counter take-away explicitly because no provider will do it.
+    final canCompleteCounterPickup =
+        currentStatus == 'ready' &&
+        isCounterPickupOrder(source: source, deliveryType: deliveryType);
+
+    if (nextStatus == null && canCompleteCounterPickup) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => _advanceStatus(context, ref, 'delivered'),
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Complete Order'),
+        ),
+      );
+    }
 
     if (isTerminal) {
       if (currentStatus == 'picked_up' || currentStatus == 'delivered') {
@@ -105,8 +130,11 @@ class AdvanceStatusButton extends ConsumerWidget {
     if (nextStatus == null) return;
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
+      final container = ProviderScope.containerOf(context, listen: false);
       await repo.updateOrderStatus(orderId, nextStatus);
-      ref.invalidate(adminOrderDetailProvider(orderId));
+      container.invalidate(adminOrderDetailProvider(orderId));
+      container.invalidate(adminOrdersProvider);
+      container.invalidate(kitchenOrderCardsProvider);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

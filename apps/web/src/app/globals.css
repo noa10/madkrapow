@@ -138,6 +138,14 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Native select popups need an opaque dark surface and matching text. */
+  select {
+    color-scheme: dark;
+  }
+  option, optgroup {
+    color: var(--fg);
+    background-color: var(--surface);
+  }
   ::selection {
     background: var(--accent);
     color: #fff;

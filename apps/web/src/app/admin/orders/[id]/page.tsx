@@ -22,6 +22,7 @@ import { StatusTransitionButtons } from "@/components/admin/StatusTransitionButt
 import { BulkOrderReview } from "@/components/admin/BulkOrderReview";
 import { AdminDriverTrackingCard } from "@/components/admin/AdminDriverTrackingCard";
 import { GrabDeliveryStatusCard } from "@/components/admin/orders/GrabDeliveryStatusCard";
+import { OrderItemNotes } from "@/components/admin/orders/OrderItemNotes";
 import { ProviderBadges } from "@/components/orders/ProviderBadges";
 import {
   ADMIN_STATUS_LABELS,
@@ -842,11 +843,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
                             ))}
                           </div>
                         )}
-                        {item.notes && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            <strong>Note:</strong> {item.notes}
-                          </p>
-                        )}
+                        <OrderItemNotes notes={item.notes} />
                       </div>
                     </div>
                     <p className="font-medium flex-shrink-0">

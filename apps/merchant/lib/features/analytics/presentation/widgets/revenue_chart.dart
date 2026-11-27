@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/analytics_models.dart';
@@ -11,150 +13,197 @@ class RevenueChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (trends.isEmpty) {
+    final theme = Theme.of(context);
+    final sorted = [...trends]
+      ..sort((a, b) => a.orderDate.compareTo(b.orderDate));
+    if (sorted.isEmpty) {
       return const Card(
-        child: SizedBox(
-          height: 200,
-          child: Center(
-            child: Text('No revenue data available'),
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Revenue trend'),
+              SizedBox(height: 16),
+              Text('No revenue data available for this period.'),
+            ],
           ),
         ),
       );
     }
 
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
-
-    final spots = <FlSpot>[];
-    final dateLabels = <String>[];
-    for (var i = 0; i < trends.length; i++) {
-      spots.add(FlSpot(i.toDouble(), trends[i].revenueCents / 100));
-      final date = DateTime.parse(trends[i].orderDate);
-      dateLabels.add(DateFormat('MMM d').format(date));
+    // UTC calendar days keep adjacent dates equally spaced across DST changes.
+    DateTime day(String value) {
+      final date = DateTime.parse(value);
+      return DateTime.utc(date.year, date.month, date.day);
     }
 
-    final maxY = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
-    final minY = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
+    final first = day(sorted.first.orderDate);
+    final spots = <FlSpot>[];
+    int? previousDay;
+    for (final point in sorted) {
+      final offset = day(point.orderDate).difference(first).inDays;
+      if (previousDay != null && offset - previousDay > 1) {
+        spots.add(FlSpot.nullSpot);
+      }
+      spots.add(FlSpot(offset.toDouble(), point.revenueCents / 100));
+      previousDay = offset;
+    }
+    final values = sorted.map((point) => point.revenueCents / 100);
+    final lowest = values.reduce(math.min);
+    final highest = values.reduce(math.max);
+    final minY = math.min(0.0, lowest * 1.1);
+    final maxY = highest > 0 ? highest * 1.15 : 1.0;
+    final span = day(sorted.last.orderDate).difference(first).inDays;
+    final axisInterval = math.max(1, (span / 3).ceil()).toDouble();
+    final dateFormat = DateFormat('MMM d');
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Revenue Trend',
+              'Revenue trend',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
+            Text(
+              'Daily revenue · gaps indicate missing data',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
             SizedBox(
-              height: 200,
+              height: 210,
               child: LineChart(
                 LineChartData(
+                  minX: span == 0 ? -0.5 : 0,
+                  maxX: span == 0 ? 0.5 : span.toDouble(),
+                  minY: minY,
+                  maxY: maxY,
                   gridData: FlGridData(
-                    show: true,
                     drawVerticalLine: false,
-                    horizontalInterval: _niceInterval(minY, maxY),
+                    getDrawingHorizontalLine: (_) => FlLine(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: .35,
+                      ),
+                      strokeWidth: 1,
+                    ),
                   ),
+                  borderData: FlBorderData(show: false),
                   titlesData: FlTitlesData(
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: _niceInterval(minY, maxY),
-                        reservedSize: 50,
-                        getTitlesWidget: (value, meta) {
-                          return Text(
-                            'RM ${value.toInt()}',
-                            style: theme.textTheme.bodySmall,
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: _bottomInterval(trends.length),
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= dateLabels.length) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              dateLabels[index],
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontSize: 10,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
                     topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
                     rightTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: true,
-                      curveSmoothness: 0.2,
-                      color: primaryColor,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: true),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          colors: [
-                            primaryColor.withValues(alpha: 0.1),
-                            primaryColor.withValues(alpha: 0.02),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 52,
+                        getTitlesWidget: (value, meta) => Text(
+                          value.abs() >= 1000
+                              ? '${(value / 1000).toStringAsFixed(1)}k'
+                              : value.toStringAsFixed(
+                                  value.abs() < 10 &&
+                                          value != value.roundToDouble()
+                                      ? 1
+                                      : 0,
+                                ),
+                          style: theme.textTheme.labelSmall,
                         ),
                       ),
                     ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 28,
+                        interval: axisInterval,
+                        getTitlesWidget: (value, meta) {
+                          if (value < 0 ||
+                              value > span ||
+                              value != value.roundToDouble()) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              dateFormat.format(
+                                first.add(Duration(days: value.toInt())),
+                              ),
+                              style: theme.textTheme.labelSmall,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touched) => touched.map((item) {
+                        final date = first.add(Duration(days: item.x.toInt()));
+                        return LineTooltipItem(
+                          '${dateFormat.format(date)}\n${formatCents((item.y * 100).round())}',
+                          (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+                            color: theme.colorScheme.onInverseSurface,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: false,
+                      color: theme.colorScheme.primary,
+                      barWidth: 2,
+                      dotData: FlDotData(
+                        show:
+                            sorted.length <= 7 || spots.any((s) => s.isNull()),
+                      ),
+                      belowBarData: BarAreaData(show: false),
+                    ),
                   ],
-                  minY: minY * 0.9,
-                  maxY: maxY * 1.1,
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Revenue (RM)',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'View daily values',
+                style: theme.textTheme.labelLarge,
+              ),
+              children: [
+                for (final point in sorted)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(dateFormat.format(day(point.orderDate))),
+                        ),
+                        Text(formatCents(point.revenueCents)),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
       ),
     );
-  }
-
-  double _niceInterval(double minY, double maxY) {
-    final range = maxY - minY;
-    if (range <= 0) return 10;
-    final rough = range / 4;
-    if (rough < 1) return rough > 0 ? (rough * 10).roundToDouble() / 10 : 1;
-    final magnitude = pow10(rough.floor().toString().length - 1);
-    final interval = (rough / magnitude).round().toDouble() * magnitude;
-    return interval > 0 ? interval : 1;
-  }
-
-  double _bottomInterval(int length) {
-    if (length <= 7) return 1;
-    if (length <= 30) return 5;
-    return 10;
-  }
-
-  double pow10(int n) {
-    if (n <= 0) return 1;
-    double result = 1;
-    for (var i = 0; i < n; i++) {
-      result *= 10;
-    }
-    return result;
   }
 }

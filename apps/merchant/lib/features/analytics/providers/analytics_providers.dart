@@ -17,6 +17,8 @@ final analyticsProvider = AsyncNotifierProvider<AnalyticsNotifier, AnalyticsData
 );
 
 class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
+  int _refreshVersion = 0;
+
   @override
   Future<AnalyticsData?> build() async {
     return _fetch();
@@ -28,8 +30,10 @@ class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
   }
 
   Future<void> refresh({String range = '7d'}) async {
+    final version = ++_refreshVersion;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetch(range: range));
+    final result = await AsyncValue.guard(() => _fetch(range: range));
+    if (version == _refreshVersion) state = result;
   }
 }
 

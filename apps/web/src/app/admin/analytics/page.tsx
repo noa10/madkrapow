@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { getBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChartSkeleton } from "@/components/admin/analytics/ChartSkeleton";
-import { format, subDays, startOfDay, endOfDay, eachDayOfInterval } from "date-fns";
-import { DollarSign, Package, ShoppingCart, TrendingUp, Calendar } from "lucide-react";
+import { Calendar, DollarSign, Package, ShoppingCart, TrendingUp } from "lucide-react";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+import type { SalesChartPoint } from "@/components/admin/analytics/RevenueCharts";
 
 // Recharts is fetched only when these chart sections render, not with every
 // admin page's initial JS.
@@ -19,12 +18,7 @@ const RevenueCharts = dynamic(
     ),
   {
     ssr: false,
-    loading: () => (
-      <div className="grid gap-4 md:grid-cols-2">
-        <ChartSkeleton />
-        <ChartSkeleton />
-      </div>
-    ),
+    loading: () => <ChartSkeleton />,
   }
 );
 
@@ -39,201 +33,164 @@ const OrdersBySourceChart = dynamic(
   }
 );
 
-interface TopSellingItem {
-  name: string;
-  quantity: number;
-  revenue: number;
+interface TrendRow {
+  order_date: string;
+  order_count: number;
+  revenue_cents: number;
 }
 
-interface AnalyticsOrder {
-  created_at: string;
-  customer_id: string | null;
-  total_cents: number | null;
-  source: string;
-}
-
-interface AnalyticsOrderItem {
-  menu_item_name: string;
-  quantity: number | null;
-  line_total_cents: number | null;
+interface AnalyticsResponse {
+  range: { from: string; to: string };
+  pulse: {
+    order_count: number;
+    revenue_cents: number;
+    avg_order_cents: number;
+    delivery_count: number;
+    pickup_count: number;
+    dine_in_count: number;
+  };
+  totals: { order_count: number; revenue_cents: number };
+  trends: TrendRow[];
+  top_items: {
+    menu_item_name: string;
+    menu_item_id: string | null;
+    total_quantity: number;
+    total_revenue_cents: number;
+  }[];
+  items_sold: number;
+  sources: { source: string; order_count: number }[];
 }
 
 type DateRange = "7d" | "30d" | "90d" | "custom";
 
+const RANGE_OPTIONS: { value: Exclude<DateRange, "custom">; label: string }[] = [
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+];
+
+const MAX_RANGE_DAYS = 366;
+
+const formatRinggit = (cents: number) => `RM ${(cents / 100).toFixed(2)}`;
+
+/** Inclusive list of YYYY-MM-DD strings, computed in UTC so no timezone shifts a day. */
+function enumerateDays(from: string, to: string): string[] {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return [];
+  const days: string[] = [];
+  for (let time = start; time <= end && days.length <= MAX_RANGE_DAYS; time += 86_400_000) {
+    days.push(new Date(time).toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function shortLabel(isoDate: string) {
+  const [, month, day] = isoDate.split("-").map(Number);
+  return `${day} ${MONTHS[month - 1]}`;
+}
+
+const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const SOURCE_LABELS: Record<string, string> = {
+  web: "Web",
+  counter: "Counter POS",
+  grabfood: "GrabFood",
+  foodpanda: "Foodpanda",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+};
+
 export default function AnalyticsPage() {
   const { hasAccess, isLoading: guardLoading } = useRoleGuard(["admin"]);
-  const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [result, setResult] = useState<{ query: string; data: AnalyticsResponse } | null>(null);
+  const [failure, setFailure] = useState<{ query: string; message: string } | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  const [stats, setStats] = useState({
-    totalRevenue: 0,
-    totalOrders: 0,
-    avgOrderValue: 0,
-    totalItemsSold: 0,
-  });
-  const [salesData, setSalesData] = useState<{ date: string; revenue: number; orders: number }[]>([]);
-  const [topSellingItems, setTopSellingItems] = useState<TopSellingItem[]>([]);
-  const [customerData, setCustomerData] = useState({ new: 0, returning: 0 });
-  const [sourceData, setSourceData] = useState<{ name: string; value: number }[]>([]);
-
-  const getDateRangeParams = useCallback(() => {
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date = now;
-
-    if (dateRange === "custom" && customStart && customEnd) {
-      startDate = new Date(customStart);
-      endDate = new Date(customEnd);
-    } else if (dateRange === "7d") {
-      startDate = subDays(now, 7);
-    } else if (dateRange === "30d") {
-      startDate = subDays(now, 30);
-    } else {
-      startDate = subDays(now, 90);
+  const customRangeError = useMemo(() => {
+    if (dateRange !== "custom") return null;
+    if (!isIsoDate(customStart) || !isIsoDate(customEnd)) return "Select a valid start and end date.";
+    if (customStart > customEnd) return "The start date must be on or before the end date.";
+    if (enumerateDays(customStart, customEnd).length > MAX_RANGE_DAYS) {
+      return `Pick a range of ${MAX_RANGE_DAYS} days or fewer.`;
     }
-
-    return { startDate, endDate };
+    return null;
   }, [dateRange, customStart, customEnd]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const supabase = getBrowserClient();
-    const { startDate, endDate } = getDateRangeParams();
+  const query = useMemo(() => {
+    if (dateRange === "custom") {
+      if (customRangeError) return null;
+      return `from=${customStart}&to=${customEnd}`;
+    }
+    return `range=${dateRange}`;
+  }, [dateRange, customRangeError, customStart, customEnd]);
 
-    const startISO = startOfDay(startDate).toISOString();
-    const endISO = endOfDay(endDate).toISOString();
-
-    const [ordersRes, itemsRes] = await Promise.all([
-      supabase
-        .from("orders")
-        .select("created_at, customer_id, total_cents, source")
-        .gte("created_at", startISO)
-        .lte("created_at", endISO)
-        .in("status", ["paid", "accepted", "preparing", "ready", "picked_up", "delivered"]),
-
-      supabase
-        .from("order_items")
-        .select("menu_item_name, quantity, line_total_cents")
-        .order("created_at", { ascending: false })
-        .limit(1000),
-    ]);
-
-    const ordersData: AnalyticsOrder[] = ordersRes.data ?? [];
-    const itemsData: AnalyticsOrderItem[] = itemsRes.data ?? [];
-
-    const totalRevenue = ordersData.reduce((sum, o) => sum + (o.total_cents || 0), 0);
-    const totalOrders = ordersData.length;
-    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    const totalItemsSold = itemsData.reduce((sum, item) => sum + (item.quantity || 0), 0);
-
-    setStats({
-      totalRevenue,
-      totalOrders,
-      avgOrderValue,
-      totalItemsSold,
-    });
-
-    const days = eachDayOfInterval({ start: startDate, end: endDate });
-    const salesByDay = days.map((day) => {
-      const dayOrders = ordersData.filter((o) => {
-        const orderDate = new Date(o.created_at);
-        return format(orderDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+  useEffect(() => {
+    if (guardLoading) return;
+    // Without a query the page renders the validation message instead of results.
+    if (!hasAccess || !query) return;
+    // The cleanup aborts the previous request, so a slow earlier range can never
+    // overwrite a newer one. Results are also keyed by query, so a response that
+    // slips through after an abort is ignored when it is rendered.
+    const controller = new AbortController();
+    const requestedQuery = query;
+    fetch(`/api/admin/analytics?${requestedQuery}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Analytics request failed with status ${response.status}`);
+        return (await response.json()) as AnalyticsResponse;
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted) setResult({ query: requestedQuery, data: payload });
+      })
+      .catch((fetchError: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load analytics:", fetchError);
+        setFailure({
+          query: requestedQuery,
+          message: "Unable to load analytics. Please try again or pick another date range.",
+        });
       });
+    return () => controller.abort();
+  }, [hasAccess, guardLoading, query, reloadToken]);
+
+  // Loading is derived, not stored: a range is loading until a result or a
+  // failure exists for exactly that range.
+  const data = result?.query === query ? result.data : null;
+  const error = failure?.query === query ? failure.message : null;
+  const loading = Boolean(query) && data === null && error === null;
+
+  const salesData: SalesChartPoint[] = useMemo(() => {
+    if (!data) return [];
+    const byDate = new Map(data.trends.map((row) => [row.order_date, row]));
+    return enumerateDays(data.range.from, data.range.to).map((day) => {
+      const row = byDate.get(day);
       return {
-        date: format(day, "MMM d"),
-        revenue: dayOrders.reduce((sum, o) => sum + (o.total_cents || 0), 0) / 100,
-        orders: dayOrders.length,
+        date: day,
+        label: shortLabel(day),
+        revenueCents: row ? row.revenue_cents : null,
+        orders: row ? row.order_count : null,
       };
     });
-    setSalesData(salesByDay);
+  }, [data]);
 
-    const itemMap = new Map<string, { quantity: number; revenue: number }>();
-    itemsData.forEach((item) => {
-      const existing = itemMap.get(item.menu_item_name) || { quantity: 0, revenue: 0 };
-      itemMap.set(item.menu_item_name, {
-        quantity: existing.quantity + (item.quantity || 0),
-        revenue: existing.revenue + (item.line_total_cents || 0) / 100,
-      });
-    });
+  const sourceData = useMemo(
+    () =>
+      (data?.sources ?? []).map((row) => ({
+        name: SOURCE_LABELS[row.source] ?? row.source,
+        value: row.order_count,
+      })),
+    [data]
+  );
 
-    const topItems = Array.from(itemMap.entries())
-      .map(([name, data]) => ({
-        name,
-        quantity: data.quantity,
-        revenue: data.revenue,
-      }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
-
-    setTopSellingItems(topItems);
-
-    const uniqueCustomers = new Set(ordersData.map((o) => o.customer_id).filter(Boolean));
-    const customerCount = uniqueCustomers.size;
-    const returningCount = Math.floor(customerCount * 0.3);
-    const newCount = customerCount - returningCount;
-
-    setCustomerData({
-      new: newCount || 1,
-      returning: returningCount || 1,
-    });
-
-    const sourceMap = new Map<string, number>();
-    ordersData.forEach((o) => {
-      const s = o.source || "web";
-      sourceMap.set(s, (sourceMap.get(s) || 0) + 1);
-    });
-    const sourcePie = Array.from(sourceMap.entries())
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }))
-      .sort((a, b) => b.value - a.value);
-    setSourceData(sourcePie);
-
-    setLoading(false);
-  }, [getDateRangeParams]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchData(); }, []);
-
-  const formatCurrency = (cents: number) => {
-    return `RM ${(cents / 100).toFixed(2)}`;
-  };
-
-  const statCards = [
-    {
-      title: "Total Revenue",
-      value: formatCurrency(stats.totalRevenue),
-      icon: DollarSign,
-      bgClass: "bg-primary/10",
-      colorClass: "text-primary",
-    },
-    {
-      title: "Total Orders",
-      value: stats.totalOrders,
-      icon: ShoppingCart,
-      bgClass: "bg-sky-400/10",
-      colorClass: "text-sky-400",
-    },
-    {
-      title: "Avg Order Value",
-      value: formatCurrency(stats.avgOrderValue),
-      icon: TrendingUp,
-      bgClass: "bg-emerald-400/10",
-      colorClass: "text-emerald-400",
-    },
-    {
-      title: "Items Sold",
-      value: stats.totalItemsSold,
-      icon: Package,
-      bgClass: "bg-amber-400/10",
-      colorClass: "text-amber-400",
-    },
-  ];
-
-  const customerPieData = [
-    { name: "New Customers", value: customerData.new },
-    { name: "Returning", value: customerData.returning },
-  ];
+  const maxItemRevenue = useMemo(
+    () => Math.max(0, ...(data?.top_items ?? []).map((item) => item.total_revenue_cents)),
+    [data]
+  );
 
   if (guardLoading) {
     return (
@@ -243,106 +200,255 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (!hasAccess) {
-    return null;
-  }
+  if (!hasAccess) return null;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
+  const totals = data?.totals ?? { order_count: 0, revenue_cents: 0 };
+  const avgOrderCents = totals.order_count > 0 ? Math.round(totals.revenue_cents / totals.order_count) : 0;
+
+  const statCards = [
+    {
+      title: "Revenue",
+      value: formatRinggit(totals.revenue_cents),
+      hint: "Excludes cancelled orders",
+      icon: DollarSign,
+      bgClass: "bg-primary/10",
+      colorClass: "text-primary",
+    },
+    {
+      title: "Orders",
+      value: totals.order_count,
+      hint: "Paid and fulfilled",
+      icon: ShoppingCart,
+      bgClass: "bg-sky-400/10",
+      colorClass: "text-sky-400",
+    },
+    {
+      title: "Avg order",
+      value: formatRinggit(avgOrderCents),
+      hint: "Revenue ÷ orders",
+      icon: TrendingUp,
+      bgClass: "bg-emerald-400/10",
+      colorClass: "text-emerald-400",
+    },
+    {
+      title: "Items sold",
+      value: data?.items_sold ?? 0,
+      hint: "Units across all items",
+      icon: Package,
+      bgClass: "bg-amber-400/10",
+      colorClass: "text-amber-400",
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-display">Analytics</h1>
-        
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as DateRange)}
-            className="bg-background border-border rounded-md px-3 py-2 text-sm"
-          >
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="custom">Custom Range</option>
-          </select>
-
-          {dateRange === "custom" && (
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-                className="border rounded-md px-2 py-1 text-sm"
-              />
-              <span className="text-muted-foreground">to</span>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-                className="border rounded-md px-2 py-1 text-sm"
-              />
-            </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-display">Analytics</h1>
+          {data && (
+            <p className="text-sm text-muted-foreground">
+              {data.range.from} to {data.range.to}
+            </p>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Date range">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={dateRange === option.value}
+                onClick={() => setDateRange(option.value)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  dateRange === option.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-pressed={dateRange === "custom"}
+              onClick={() => setDateRange("custom")}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                dateRange === "custom"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Custom
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((stat) => (
-          <Card key={stat.title} className="bg-card border-border shadow-sm rounded-xl">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-              <div className={`rounded-lg p-1.5 ${stat.bgClass}`}>
-                <stat.icon className={`h-4 w-4 ${stat.colorClass}`} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold font-display">{stat.value}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {dateRange === "custom" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="analytics-start">Start date</label>
+          <input
+            id="analytics-start"
+            type="date"
+            value={customStart}
+            onChange={(event) => setCustomStart(event.target.value)}
+            className="bg-background border-border rounded-md px-2 py-1 text-sm"
+          />
+          <span className="text-muted-foreground">to</span>
+          <label className="sr-only" htmlFor="analytics-end">End date</label>
+          <input
+            id="analytics-end"
+            type="date"
+            value={customEnd}
+            onChange={(event) => setCustomEnd(event.target.value)}
+            className="bg-background border-border rounded-md px-2 py-1 text-sm"
+          />
+        </div>
+      )}
 
-      <RevenueCharts salesData={salesData} />
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="bg-card border-border shadow-sm rounded-xl">
-          <CardHeader>
-            <CardTitle className="font-display">Top Selling Items</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {topSellingItems.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No data available</p>
-              ) : (
-                topSellingItems.map((item, index) => (
-                  <div
-                    key={item.name}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{index + 1}</Badge>
-                      <span className="font-medium">{item.name}</span>
+      {customRangeError ? (
+        <p className="text-sm text-muted-foreground" role="status">{customRangeError}</p>
+      ) : loading ? (
+        <div
+          className="flex items-center justify-center min-h-[400px]"
+          role="status"
+          aria-label="Loading analytics"
+        >
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-start gap-3" role="alert">
+          <p className="text-sm text-destructive">{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setFailure(null);
+              setReloadToken((token) => token + 1);
+            }}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+        <>
+          {data && (
+            <Card className="bg-card border-border shadow-sm rounded-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  Today
+                  <span className="text-xs font-normal text-muted-foreground/70">
+                    not affected by the range
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div>
+                    <div className="text-xl font-bold font-display">
+                      {formatRinggit(data.pulse.revenue_cents)}
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{formatCurrency(item.revenue * 100)}</div>
-                      <div className="text-sm text-muted-foreground">{item.quantity} sold</div>
+                    <div className="text-xs text-muted-foreground">Revenue</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold font-display">{data.pulse.order_count}</div>
+                    <div className="text-xs text-muted-foreground">Orders</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold font-display">
+                      {formatRinggit(data.pulse.avg_order_cents)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Avg order</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold font-display">
+                      {data.pulse.delivery_count + data.pulse.pickup_count + data.pulse.dine_in_count}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {data.pulse.delivery_count} delivery · {data.pulse.pickup_count} pickup ·{" "}
+                      {data.pulse.dine_in_count} dine-in
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-        <OrdersBySourceChart sourceData={sourceData} />
-      </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {statCards.map((stat) => (
+              <Card key={stat.title} className="bg-card border-border shadow-sm rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {stat.title}
+                  </CardTitle>
+                  <div className={`rounded-lg p-1.5 ${stat.bgClass}`}>
+                    <stat.icon className={`h-4 w-4 ${stat.colorClass}`} aria-hidden="true" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold font-display">{stat.value}</div>
+                  <p className="text-xs text-muted-foreground">{stat.hint}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <RevenueCharts salesData={salesData} />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="bg-card border-border shadow-sm rounded-xl">
+              <CardHeader>
+                <CardTitle className="font-display">Top selling items</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(data?.top_items.length ?? 0) === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground" role="status">
+                    No items sold in this range.
+                  </p>
+                ) : (
+                  <ol className="space-y-3">
+                    {data?.top_items.map((item, index) => {
+                      const share = maxItemRevenue > 0 ? item.total_revenue_cents / maxItemRevenue : 0;
+                      return (
+                        <li key={item.menu_item_id ?? item.menu_item_name} className="space-y-1">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Badge variant="secondary" className="shrink-0">{index + 1}</Badge>
+                              <span className="truncate font-medium">{item.menu_item_name}</span>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="font-semibold tabular-nums">
+                                {formatRinggit(item.total_revenue_cents)}
+                              </div>
+                              <div className="text-xs text-muted-foreground tabular-nums">
+                                {item.total_quantity} sold
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            className="h-1.5 rounded-full bg-muted"
+                            role="img"
+                            aria-label={`${item.menu_item_name}: ${formatRinggit(item.total_revenue_cents)}, ${item.total_quantity} sold`}
+                          >
+                            <div
+                              className="h-full rounded-full bg-primary"
+                              style={{ width: `${Math.max(share * 100, 2)}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </CardContent>
+            </Card>
+
+            <OrdersBySourceChart sourceData={sourceData} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

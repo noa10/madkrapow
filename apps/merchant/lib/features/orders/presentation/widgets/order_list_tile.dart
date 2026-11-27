@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
 
+import '../../../../core/utils/auth_exceptions.dart';
 import '../../../../core/utils/order_code.dart';
 import '../../../../core/utils/order_fields.dart';
 import '../../../../generated/tables/orders.dart';
 import '../../data/orders_row_billplz.dart';
 import '../../providers/admin_order_providers.dart';
+import '../../providers/kitchen_providers.dart';
 import 'provider_badges.dart';
 
 /// Next kitchen step offered on an order row. Mirrors the web admin list CTA:
@@ -39,6 +41,7 @@ class OrderListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final advance = showAdvanceAction ? _advanceActions[order.status] : null;
+    final updating = ref.watch(orderStatusUpdatesProvider).contains(order.id);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -164,7 +167,9 @@ class OrderListTile extends ConsumerWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _advance(context, ref, advance.next),
+                      onPressed: updating
+                          ? null
+                          : () => _advance(context, ref, advance.next),
                       icon: const Icon(Icons.arrow_forward, size: 18),
                       label: Text(advance.label),
                       style: ElevatedButton.styleFrom(
@@ -189,24 +194,41 @@ class OrderListTile extends ConsumerWidget {
     WidgetRef ref,
     String nextStatus,
   ) async {
+    // The tile can be disposed while the request is in flight: the list
+    // refreshes, or the order moves tabs. The ProviderScope above the list owns
+    // the container, so capture it before the await and invalidate through it
+    // afterwards; this tile's `ref` is unusable once disposed.
+    final container = ProviderScope.containerOf(context, listen: false);
+    final updates = ref.read(orderStatusUpdatesProvider.notifier);
+    if (!updates.begin(order.id)) return;
+
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       await repo.updateOrderStatus(order.id, nextStatus);
-      ref.invalidate(adminOrderDetailProvider(order.id));
-      // Both tabs can hold the order after the move (preparing stays put when
-      // it starts cooking), so refresh the pair rather than guessing.
-      ref.invalidate(adminOrdersProvider(OrderTab.preparing));
-      ref.invalidate(adminOrdersProvider(OrderTab.ready));
-    } catch (e) {
+    } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
+            content: Text(
+              error is AuthRequiredException
+                  ? 'Session expired or access denied. Please sign in again or contact an administrator.'
+                  : 'Could not update order status. Please retry.',
+            ),
             backgroundColor: AppColors.danger,
           ),
         );
       }
+      return;
+    } finally {
+      updates.finish(order.id);
     }
+
+    // The order can move between any of the list views and the kitchen board
+    // after a transition, so refresh the whole family rather than guessing
+    // which tab now holds it.
+    container.invalidate(adminOrderDetailProvider(order.id));
+    container.invalidate(adminOrdersProvider);
+    container.invalidate(kitchenOrderCardsProvider);
   }
 
   String _formatTime(DateTime dt) {

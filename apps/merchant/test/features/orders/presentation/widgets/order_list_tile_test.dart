@@ -1,9 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:madkrapow_merchant/features/orders/data/merchant_api_client.dart';
+import 'package:madkrapow_merchant/features/orders/data/merchant_order_repository.dart';
 import 'package:madkrapow_merchant/features/orders/presentation/widgets/order_list_tile.dart';
+import 'package:madkrapow_merchant/features/orders/providers/admin_order_providers.dart';
 import 'package:madkrapow_merchant/generated/tables/orders.dart';
 import 'package:madkrapow_ui/madkrapow_ui.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _createdAt = '2026-10-17T19:42:00';
 
@@ -115,7 +122,146 @@ void main() {
 
       expect(find.text('Dine in'), findsOneWidget);
     });
+
+    testWidgets(
+      'refreshes the list after a successful update even if the row was '
+      'disposed mid-request',
+      (tester) async {
+        final repository = _FakeOrderRepository();
+        final order = _order();
+
+        await tester.pumpWidget(_app(order: order, repository: repository));
+        await tester.pump();
+        expect(repository.fetchCalls, 1);
+
+        await tester.tap(find.text('Mark as Ready'));
+        await tester.pump();
+        expect(repository.calls, ['o1:ready']);
+
+        // The update succeeds after the row has already left the tree.
+        await tester.pumpWidget(_app(order: null, repository: repository));
+        repository.complete();
+
+        await tester.pump();
+        await tester.pump();
+        // Only an invalidation refetches the list; rebuilding the widget tree
+        // does not.
+        expect(repository.fetchCalls, 2);
+      },
+    );
+
+    testWidgets('ignores repeated taps while the update is in flight', (
+      tester,
+    ) async {
+      final repository = _FakeOrderRepository();
+      await tester.pumpWidget(_app(order: _order(), repository: repository));
+
+      await tester.tap(find.text('Mark as Ready'));
+      await tester.tap(find.text('Mark as Ready'));
+      await tester.pump();
+
+      expect(repository.calls, ['o1:ready']);
+
+      repository.complete();
+      await tester.pump();
+    });
+
+    testWidgets('reports a failed update and allows retrying it', (
+      tester,
+    ) async {
+      final repository = _FakeOrderRepository();
+      await tester.pumpWidget(_app(order: _order(), repository: repository));
+
+      await tester.tap(find.text('Mark as Ready'));
+      await tester.pump();
+      repository.fail(StateError('boom'));
+      await tester.pump();
+
+      expect(
+        find.text('Could not update order status. Please retry.'),
+        findsOneWidget,
+      );
+
+      // Let the failure snackbar time out: it must not cover the button, and
+      // its timer must not outlive the test.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('Mark as Ready'));
+      await tester.pump();
+
+      expect(repository.calls, ['o1:ready', 'o1:ready']);
+      repository.complete();
+      await tester.pump();
+    });
   });
+}
+
+Widget _app({required OrdersRow? order, required _FakeOrderRepository repository}) {
+  return ProviderScope(
+    overrides: [merchantOrderRepositoryProvider.overrideWithValue(repository)],
+    child: MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: Consumer(
+          builder: (context, ref, _) {
+            // Keep the list provider alive so an invalidation after the row is
+            // disposed shows up as a refetch.
+            ref.watch(adminOrdersProvider(OrderTab.preparing));
+
+            return Column(
+              children: [
+                if (order != null)
+                  OrderListTile(order: order, showAdvanceAction: true),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  );
+}
+
+class _MockSupabaseClient extends Mock implements SupabaseClient {}
+
+class _MockMerchantApiClient extends Mock implements MerchantApiClient {}
+
+class _FakeOrderRepository extends MerchantOrderRepository {
+  _FakeOrderRepository()
+      : super(_MockSupabaseClient(), _MockMerchantApiClient());
+
+  final List<String> calls = [];
+  final List<Completer<void>> _pending = [];
+  var fetchCalls = 0;
+
+  @override
+  Future<List<OrdersRow>> fetchOrders({
+    List<String>? statuses,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? orderKind,
+    String? fulfillmentType,
+  }) async {
+    fetchCalls++;
+    return const [];
+  }
+
+  @override
+  Future<void> updateOrderStatus(String orderId, String newStatus) {
+    calls.add('$orderId:$newStatus');
+    final completer = Completer<void>();
+    _pending.add(completer);
+    return completer.future;
+  }
+
+  void complete() {
+    _pending.removeAt(0).complete();
+  }
+
+  void fail(Object error) {
+    _pending.removeAt(0).completeError(error);
+  }
 }
 
 Future<void> _pump(

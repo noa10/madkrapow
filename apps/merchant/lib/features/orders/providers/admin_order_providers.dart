@@ -27,6 +27,36 @@ final merchantOrderRepositoryProvider = Provider<MerchantOrderRepository>((ref) 
   return MerchantOrderRepository(supabase, apiClient);
 });
 
+/// Order ids whose status update is currently in flight.
+///
+/// The guard lives in the provider scope rather than the row on purpose. The
+/// list can rebuild and replace a tile while its request is still running, and
+/// a row can be disposed before the request settles; keying the guard by order
+/// id means a fresh tile for the same order still sees the request in flight,
+/// so a second tap cannot submit the same transition. Keying by id (not by
+/// list position) also keeps the guard stable when rows reorder.
+class OrderStatusUpdates extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => const {};
+
+  /// Marks [orderId] in flight and returns whether the caller may proceed.
+  /// Returns false when a request for the same order is already pending.
+  bool begin(String orderId) {
+    if (state.contains(orderId)) return false;
+    state = {...state, orderId};
+    return true;
+  }
+
+  /// Clears the in-flight mark so a failed update can be retried.
+  void finish(String orderId) {
+    if (!state.contains(orderId)) return;
+    state = {...state.where((id) => id != orderId)};
+  }
+}
+
+final orderStatusUpdatesProvider =
+    NotifierProvider<OrderStatusUpdates, Set<String>>(OrderStatusUpdates.new);
+
 /// Currently selected date filter for the History tab.
 final dateFilterProvider = StateProvider<DateFilter>((ref) => DateFilter());
 

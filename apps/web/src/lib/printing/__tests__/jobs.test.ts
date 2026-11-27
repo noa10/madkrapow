@@ -94,7 +94,7 @@ describe('buildKitchenDocket', () => {
 
   it('indents modifiers and item notes with asterisks', () => {
     expect(job.lines).toContainEqual({ kind: 'text', text: '   * Extra spicy', style: { indent: 3 } })
-    expect(job.lines).toContainEqual({ kind: 'text', text: '   * less rice', style: { bold: true, indent: 3 } })
+    expect(job.lines).toContainEqual({ kind: 'text', text: '   * less rice', style: { indent: 3 } })
   })
 
   it('stamps a REPRINT watermark when reprinting', () => {

@@ -33,6 +33,21 @@ void main() {
       AppColors.muted,
     );
   });
+
+  testWidgets('stretches the four tabs across the full bar', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const _TabsHost());
+
+    // 400 wide, minus 32 of side padding and 24 of gaps, split four ways.
+    for (final label in ['Preparing', 'Ready', 'Upcoming', 'History']) {
+      final pill = find
+          .ancestor(of: find.text(label), matching: find.byType(InkWell))
+          .first;
+      expect(tester.getSize(pill).width, closeTo(86, 0.5));
+    }
+  });
 }
 
 class _TabsHost extends StatefulWidget {

@@ -110,7 +110,7 @@ describe('browser receipt', () => {
     const response = await POST(request(id))
     const { html } = await response.json()
     expect(html).toContain('<div class="" style="padding-left:3ch">* Extra &amp; spicy</div>')
-    expect(html).toContain('<div class="bold" style="padding-left:3ch">* A long note that can wrap</div>')
+    expect(html).toContain('<div class="" style="padding-left:3ch">* A long note that can wrap</div>')
   })
 
   it('renders a kitchen docket without prices when requested', async () => {
@@ -144,8 +144,8 @@ describe('browser receipt', () => {
     expect(html).toContain(`>${expected}</div>`)
     expect(html).not.toContain(absent)
     expect(html).toContain('<div class="" style="padding-left:3ch">* Extra &amp; spicy</div>')
-    expect(html).toContain('<div class="bold" style="padding-left:3ch">* Less rice</div>')
-    expect(html).toContain('<div class="bold" style="padding-left:3ch">* No egg</div>')
+    expect(html).toContain('<div class="" style="padding-left:3ch">* Less rice</div>')
+    expect(html).toContain('<div class="" style="padding-left:3ch">* No egg</div>')
   })
 
   it('rejects an unknown print job type', async () => {

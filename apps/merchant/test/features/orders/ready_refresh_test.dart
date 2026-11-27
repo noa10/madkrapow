@@ -158,7 +158,10 @@ void main() {
                               ? const SizedBox.shrink()
                               : switch (action) {
                                   'list' => SingleChildScrollView(
-                                    child: OrderListTile(order: order()),
+                                    child: OrderListTile(
+                                      order: order(),
+                                      showAdvanceAction: true,
+                                    ),
                                   ),
                                   'detail' => const AdvanceStatusButton(
                                     orderId: 'order-1',

@@ -77,7 +77,7 @@ export interface PrintStore {
 }
 
 export type PrintLine =
-  | { kind: 'text'; text: string; style?: { align?: 'left' | 'center' | 'right'; bold?: boolean; double?: boolean } }
+  | { kind: 'text'; text: string; style?: { align?: 'left' | 'center' | 'right'; bold?: boolean; double?: boolean; indent?: number } }
   | { kind: 'divider' }
   | { kind: 'columns'; label: string; value: string; bold?: boolean }
   | { kind: 'blank' }
@@ -126,7 +126,7 @@ function splitNotes(notes: string | undefined): string[] {
     .filter(Boolean)
 }
 
-function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {
+function itemLines(order: PrintOrder, withPrices: boolean, receiptDetails = withPrices): PrintLine[] {
   const lines: PrintLine[] = []
   for (const item of order.items) {
     const qty = `${item.quantity}x`
@@ -136,13 +136,17 @@ function itemLines(order: PrintOrder, withPrices: boolean): PrintLine[] {
         : { kind: 'text', text: `${qty} ${item.name}`, style: { bold: true } }
     )
     for (const modifier of item.modifiers ?? []) {
-      lines.push({ kind: 'text', text: `   + ${modifier.quantity > 1 ? `${modifier.quantity}x ` : ''}${modifier.name}` })
+      lines.push({ kind: 'text', text: `   ${receiptDetails ? '*' : '+'} ${modifier.quantity > 1 ? `${modifier.quantity}x ` : ''}${modifier.name}`, ...(receiptDetails ? { style: { indent: 3 } } : {}) })
     }
     for (const note of splitNotes(item.notes)) {
-      lines.push({ kind: 'text', text: `   ! ${note}`, style: { bold: true } })
+      lines.push({ kind: 'text', text: `   ${receiptDetails ? '*' : '!'} ${note}`, style: { bold: true, ...(receiptDetails ? { indent: 3 } : {}) } })
     }
   }
   return lines
+}
+
+function channelOrderNumber(order: PrintOrder): string {
+  return (order.source === 'grabfood' && order.externalOrderNumber?.trim()) || order.displayCode?.trim() || order.orderNumber
 }
 
 export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boolean } = {}): PrintJob {
@@ -151,12 +155,7 @@ export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boole
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
   lines.push({ kind: 'text', text: SOURCE_LABELS[order.source] ?? order.source.toUpperCase(), style: { align: 'center' } })
-  const shortNumber = order.externalOrderNumber?.trim()
-  const shortCode = order.displayCode?.trim()
-  lines.push({ kind: 'text', text: shortNumber || shortCode || order.orderNumber, style: { align: 'center', bold: true, double: true } })
-  if (shortNumber && shortCode) {
-    lines.push({ kind: 'text', text: shortCode, style: { align: 'center', bold: true, double: true } })
-  }
+  lines.push({ kind: 'text', text: channelOrderNumber(order), style: { align: 'center', bold: true, double: true } })
   lines.push({ kind: 'text', text: timestamp(order.createdAt), style: { align: 'center' } })
   if (order.tableLabel) {
     lines.push({
@@ -166,7 +165,7 @@ export function buildKitchenDocket(order: PrintOrder, options: { reprint?: boole
     })
   }
   lines.push({ kind: 'divider' })
-  lines.push(...itemLines(order, false))
+  lines.push(...itemLines(order, false, true))
   lines.push({ kind: 'divider' })
   const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0)
   lines.push({ kind: 'columns', label: 'Total items', value: String(totalItems) })
@@ -203,7 +202,7 @@ export function buildGrabfoodTicket(order: PrintOrder, options: { reprint?: bool
  * Customer receipt, laid out top to bottom:
  *
  *   logo → store name → address → company (registration) → phone → rule
- *   → [REPRINT / CANCELLED] → Grab number and MK-NNN short code (large, bold)
+ *   → [REPRINT / CANCELLED] → channel order number (large, bold)
  *   → date → channel
  *   → fulfilment → customer → rule → items → rule
  *   → subtotal → discount → delivery → SST (included) → TOTAL → payment
@@ -243,20 +242,8 @@ export function buildReceipt(
     lines.push({ kind: 'text', text: '** REPRINT **', style: { align: 'center', bold: true } })
   }
 
-  // The order number is what staff and customers read out loud — give it the
-  // largest type the printer has. A Grab order shows both codes: the rider
-  // quotes GF-xxxx and the shop quotes MK-NNN.
-  const grabRef = order.externalOrderNumber?.trim()
-  const shortCode = order.displayCode?.trim()
-  if (grabRef) {
-    lines.push({ kind: 'text', text: grabRef, style: { align: 'center', bold: true, double: true } })
-  }
-  if (shortCode) {
-    lines.push({ kind: 'text', text: shortCode, style: { align: 'center', bold: true, double: true } })
-  }
-  if (!grabRef && !shortCode) {
-    lines.push({ kind: 'text', text: order.orderNumber, style: { align: 'center', bold: true, double: true } })
-  }
+  // Use the number customers and staff know for this channel.
+  lines.push({ kind: 'text', text: channelOrderNumber(order), style: { align: 'center', bold: true, double: true } })
   lines.push({ kind: 'columns', label: 'Date', value: timestamp(order.createdAt).trim() })
   lines.push({ kind: 'columns', label: 'Channel', value: SOURCE_LABELS[order.source] ?? order.source.toUpperCase() })
   if (order.fulfillmentLabel) {

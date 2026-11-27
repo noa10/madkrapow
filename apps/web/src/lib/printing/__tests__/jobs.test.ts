@@ -73,17 +73,28 @@ describe('buildKitchenDocket', () => {
     expect(job.lines[1]).toMatchObject({ text: 'MKTEST1234' })
   })
 
-  it('prints the MK short code under the Grab number', () => {
+  it('prints only the Grab number for Grab orders', () => {
     const job = buildKitchenDocket({ ...ORDER, displayCode: 'MK-3243' })
-    expect(job.lines[1]).toMatchObject({ text: 'GF-659' })
-    expect(job.lines[2]).toMatchObject({ text: 'MK-3243', style: { double: true } })
+    const big = job.lines.flatMap((line) => line.kind === 'text' && line.style?.double ? [line.text] : [])
+    expect(big).toEqual(['GF-659'])
+    expect(JSON.stringify(job.lines)).not.toContain('MK-3243')
   })
 
-  it('indents modifiers and flags item notes', () => {
-    const modifier = job.lines.find((l) => l.kind === 'text' && l.text === '   + Extra spicy')
-    const note = job.lines.find((l) => l.kind === 'text' && l.text === '   ! less rice')
-    expect(modifier).toBeTruthy()
-    expect(note).toBeTruthy()
+  it('uses the MK code for web orders even when an external number exists', () => {
+    const job = buildKitchenDocket({ ...ORDER, source: 'web', displayCode: ' MK-3243 ' })
+    const big = job.lines.flatMap((line) => line.kind === 'text' && line.style?.double ? [line.text] : [])
+    expect(big).toEqual(['MK-3243'])
+    expect(JSON.stringify(job.lines)).not.toContain('GF-659')
+  })
+
+  it('falls back to the MK code for Grab orders without a Grab number', () => {
+    const job = buildKitchenDocket({ ...ORDER, externalOrderNumber: ' ', displayCode: ' MK-3243 ' })
+    expect(job.lines[1]).toMatchObject({ text: 'MK-3243' })
+  })
+
+  it('indents modifiers and item notes with asterisks', () => {
+    expect(job.lines).toContainEqual({ kind: 'text', text: '   * Extra spicy', style: { indent: 3 } })
+    expect(job.lines).toContainEqual({ kind: 'text', text: '   * less rice', style: { bold: true, indent: 3 } })
   })
 
   it('stamps a REPRINT watermark when reprinting', () => {
@@ -103,10 +114,10 @@ describe('buildKitchenDocket', () => {
     }
     const job = buildKitchenDocket(order)
     const texts = job.lines.flatMap((l) => (l.kind === 'text' ? [l.text] : []))
-    expect(texts).toContain('   ! Tak Pedas')
-    expect(texts).toContain('   ! Bekas Makanan (Photodegradable)')
-    expect(texts).toContain('   ! 135g')
-    expect(texts).toContain('   ! Thai Holy Basil')
+    expect(texts).toContain('   * Tak Pedas')
+    expect(texts).toContain('   * Bekas Makanan (Photodegradable)')
+    expect(texts).toContain('   * 135g')
+    expect(texts).toContain('   * Thai Holy Basil')
     expect(texts.some((t) => t.includes('|'))).toBe(false)
   })
 })
@@ -228,11 +239,23 @@ describe('buildReceipt layout', () => {
     ])
   })
 
-  it('prints the Grab number and the MK short code as the biggest text, not labelled rows', () => {
+  it('prints only the Grab number for Grab orders', () => {
     const job = buildReceipt({ ...ORDER, displayCode: 'MK-3243' }, STORE)
     const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
-    expect(big).toEqual(['GF-659', 'MK-3243'])
+    expect(big).toEqual(['GF-659'])
     expect(texts(job)).not.toContain('Order|MKTEST1234')
+  })
+
+  it('prints the MK code for other channels even if an external number is present', () => {
+    const job = buildReceipt({ ...ORDER, source: 'web', displayCode: ' MK-3243 ' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['MK-3243'])
+  })
+
+  it('falls back to the internal number for other channels with a blank MK code', () => {
+    const job = buildReceipt({ ...ORDER, source: 'counter', displayCode: '  ' }, STORE)
+    const big = job.lines.flatMap((l) => (l.kind === 'text' && l.style?.double ? [l.text] : []))
+    expect(big).toEqual(['MKTEST1234'])
   })
 
   it('falls back to the internal number when no short code exists', () => {
@@ -333,10 +356,11 @@ describe('dine-in tickets', () => {
       items: [{ ...ORDER.items[0], notes: 'Tak Pedas | Bekas Makanan | Thai Holy Basil' }],
     }
     const texts = textsOf(buildReceipt(order, STORE))
-    expect(texts).toContain('   ! Tak Pedas')
-    expect(texts).toContain('   ! Bekas Makanan')
-    expect(texts).toContain('   ! Thai Holy Basil')
-    const remarkLines = texts.filter((t) => t.trimStart().startsWith('!'))
+    expect(texts).toContain('   * Extra spicy')
+    expect(texts).toContain('   * Tak Pedas')
+    expect(texts).toContain('   * Bekas Makanan')
+    expect(texts).toContain('   * Thai Holy Basil')
+    const remarkLines = texts.filter((t) => t.trimStart().startsWith('*'))
     expect(remarkLines.every((t) => !t.includes('|'))).toBe(true)
   })
 })
@@ -347,6 +371,40 @@ describe('renderJob', () => {
     expect(bytes.slice(0, 2)).toEqual([0x1b, 0x40])
     expect(bytes.slice(-7)).toEqual([0x1b, 0x64, 0x03, 0x1d, 0x56, 0x42, 0x00])
     expect(bytes.at(-1)).toBe(0x00)
+  })
+
+  it('preserves receipt addon indentation in printer bytes at both paper widths', () => {
+    const order = {
+      ...ORDER,
+      items: [{ ...ORDER.items[0], notes: 'A long note that wraps to the next line on narrow receipt paper' }],
+    }
+    for (const charsPerLine of [32, 48] as const) {
+      const bytes = renderJob(buildReceipt(order, STORE), { charsPerLine })
+      const text = Buffer.from(bytes).toString('latin1')
+      expect(text).toContain('   * Extra spicy\n')
+      const noteStart = text.indexOf('   * A long note')
+      expect(noteStart).toBeGreaterThan(-1)
+      const noteLines = text.slice(noteStart).split('\x1b')[0].trimEnd().split('\n')
+      expect(noteLines.length).toBeGreaterThan(1)
+      expect(noteLines.every((line) => line.startsWith('   ') && line.length <= charsPerLine)).toBe(true)
+    }
+  })
+
+  it.each(['grabfood', 'web'])('preserves %s docket detail indentation in printer bytes at both paper widths', (source) => {
+    const order = {
+      ...ORDER,
+      source,
+      items: [{ ...ORDER.items[0], notes: 'A long note that wraps to the next line on narrow receipt paper' }],
+    }
+    for (const charsPerLine of [32, 48] as const) {
+      const text = Buffer.from(renderJob(buildKitchenDocket(order), { charsPerLine })).toString('latin1')
+      expect(text).toContain('   * Extra spicy\n')
+      const noteStart = text.indexOf('   * A long note')
+      expect(noteStart).toBeGreaterThan(-1)
+      const noteLines = text.slice(noteStart).split('\x1b')[0].trimEnd().split('\n')
+      expect(noteLines.length).toBeGreaterThan(1)
+      expect(noteLines.every((line) => line.startsWith('   ') && line.length <= charsPerLine)).toBe(true)
+    }
   })
 
   it('kicks the cash drawer on request (counter cash receipts)', () => {

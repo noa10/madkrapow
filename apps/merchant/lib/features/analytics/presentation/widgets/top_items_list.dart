@@ -9,76 +9,81 @@ class TopItemsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top10 = items.take(10).toList();
-    if (top10.isEmpty) {
-      return const Card(
-        child: SizedBox(
-          height: 200,
-          child: Center(
-            child: Text('No item data available'),
-          ),
-        ),
-      );
-    }
-
+    final theme = Theme.of(context);
+    final topItems = items.take(10).toList();
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Top Selling Items',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              'Top selling items',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Ranked by revenue',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 12),
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: top10.length,
-              separatorBuilder: (context, index) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final item = top10[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+            if (topItems.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No item data available for this period.'),
+              )
+            else
+              for (var index = 0; index < topItems.length; index++) ...[
+                if (index > 0) const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
-                        width: 32,
+                        width: 30,
                         child: Text(
-                          '${index + 1}',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: index < 3
-                                    ? Theme.of(context).colorScheme.primary
-                                    : null,
-                              ),
+                          '${index + 1}'.padLeft(2, '0'),
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       Expanded(
-                        child: Text(
-                          item.menuItemName,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              topItems[index].menuItemName,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${topItems[index].totalQuantity} sold',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(width: 12),
                       Text(
-                        '${item.totalQuantity}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        formatCents(item.totalRevenueCents),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                        formatCents(topItems[index].totalRevenueCents),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+              ],
           ],
         ),
       ),

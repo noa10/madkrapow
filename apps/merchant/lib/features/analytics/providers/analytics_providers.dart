@@ -17,6 +17,8 @@ final analyticsProvider = AsyncNotifierProvider<AnalyticsNotifier, AnalyticsData
 );
 
 class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
+  int _refreshVersion = 0;
+
   @override
   Future<AnalyticsData?> build() async {
     return _fetch();
@@ -28,8 +30,10 @@ class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
   }
 
   Future<void> refresh({String range = '7d'}) async {
+    final version = ++_refreshVersion;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetch(range: range));
+    final result = await AsyncValue.guard(() => _fetch(range: range));
+    if (version == _refreshVersion) state = result;
   }
 }
 
@@ -37,11 +41,15 @@ class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
 final analyticsRangeProvider = StateProvider<String>((ref) => '7d');
 
 /// Auto-refresh timer (30 seconds).
-final analyticsAutoRefreshProvider = Provider<Timer?>((ref) {
+///
+/// Auto-disposed so it stops when nothing watches it any more: a plain
+/// `Provider` lives as long as the container, which would keep polling the
+/// analytics API every 30 seconds after the screen is popped.
+final analyticsAutoRefreshProvider = Provider.autoDispose<Timer?>((ref) {
   final timer = Timer.periodic(const Duration(seconds: 30), (_) {
     final range = ref.read(analyticsRangeProvider);
     ref.read(analyticsProvider.notifier).refresh(range: range);
   });
-  ref.onDispose(() => timer.cancel());
+  ref.onDispose(timer.cancel);
   return timer;
 });

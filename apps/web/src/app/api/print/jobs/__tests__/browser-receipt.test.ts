@@ -101,6 +101,18 @@ describe('browser receipt', () => {
     expect(html).not.toContain('https://')
   })
 
+  it('indents receipt item details with CSS so wrapped lines stay aligned', async () => {
+    loadPrintOrder.mockResolvedValue({
+      orderNumber: 'MK123', source: 'web', createdAt: '2026-11-26T10:00:00Z',
+      items: [{ name: 'Meal', quantity: 1, priceCents: 1200, modifiers: [{ name: 'Extra & spicy', quantity: 1 }], notes: 'A long note that can wrap' }],
+      subtotalCents: 1200, totalCents: 1200,
+    })
+    const response = await POST(request(id))
+    const { html } = await response.json()
+    expect(html).toContain('<div class="" style="padding-left:3ch">* Extra &amp; spicy</div>')
+    expect(html).toContain('<div class="bold" style="padding-left:3ch">* A long note that can wrap</div>')
+  })
+
   it('renders a kitchen docket without prices when requested', async () => {
     loadPrintOrder.mockResolvedValue({
       orderNumber: 'MK123', source: 'web', createdAt: '2026-11-26T10:00:00Z',
@@ -114,6 +126,26 @@ describe('browser receipt', () => {
     expect(html).toContain('Total items')
     expect(html).toContain('** REPRINT **')
     expect(html).not.toContain('RM 25.00')
+  })
+
+  it.each([
+    { source: 'grabfood', expected: 'GF-659', absent: 'MK-77' },
+    { source: 'web', expected: 'MK-77', absent: 'GF-659' },
+  ])('renders the $source docket number and indented item details in HTML', async ({ source, expected, absent }) => {
+    loadPrintOrder.mockResolvedValue({
+      orderNumber: 'MK123', source, externalOrderNumber: 'GF-659', displayCode: 'MK-77',
+      createdAt: '2026-11-26T10:00:00Z',
+      items: [{ name: 'Meal', quantity: 1, priceCents: 1200, modifiers: [{ name: 'Extra & spicy', quantity: 1 }], notes: 'Less rice | No egg' }],
+      subtotalCents: 1200, totalCents: 1200,
+    })
+    const response = await POST(request(id, 'kitchen_docket'))
+    expect(response.status).toBe(200)
+    const { html } = await response.json()
+    expect(html).toContain(`>${expected}</div>`)
+    expect(html).not.toContain(absent)
+    expect(html).toContain('<div class="" style="padding-left:3ch">* Extra &amp; spicy</div>')
+    expect(html).toContain('<div class="bold" style="padding-left:3ch">* Less rice</div>')
+    expect(html).toContain('<div class="bold" style="padding-left:3ch">* No egg</div>')
   })
 
   it('rejects an unknown print job type', async () => {

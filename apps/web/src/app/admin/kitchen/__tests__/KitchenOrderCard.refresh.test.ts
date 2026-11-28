@@ -27,10 +27,11 @@ function findTransition(element: unknown): ReactElement<{ onClick: () => Promise
 function transition(
   source: 'counter' | 'grabfood',
   onStatusChange: () => void,
-  status = 'preparing'
+  status = 'preparing',
+  kitchenStatus?: 'paid' | 'preparing'
 ) {
   const order = {
-    id: 'order-1', status, source, delivery_type: 'self_pickup',
+    id: 'order-1', status, source, delivery_type: 'self_pickup', kitchen_status: kitchenStatus,
     created_at: '2026-10-17T19:30:00Z', total_cents: 1250,
     delivery_fee_cents: 0, notes: null,
   } as AdminOrder
@@ -69,6 +70,22 @@ describe('kitchen status refresh', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'delivered' }),
+    })
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['paid', 'preparing'],
+    ['preparing', 'ready'],
+  ] as const)('advances delivered pickup kitchen status from %s to %s', async (current, next) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const refresh = vi.fn()
+    await transition('counter', refresh, 'delivered', current)
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/orders/order-1/kitchen-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: next }),
     })
     expect(refresh).toHaveBeenCalledOnce()
   })

@@ -14,9 +14,11 @@ const ORDER_ID = z.string().uuid()
  *
  * Covers table-QR dine-in orders (pay at the counter) and legacy pay-later
  * counter tickets created before Pay-later was removed. This route records
- * the cash/QR Pay payment and moves the order to `paid` in one transaction
- * (`settle_dine_in_order`), so a double-tap cannot record two payments. The
- * kitchen already sees the pending ticket.
+ * the cash/QR Pay payment and completes the order in one transaction
+ * (`settle_dine_in_order`), so a double-tap cannot record two payments. A
+ * settled counter take_away order is persisted status='delivered' with
+ * kitchen_status='paid' (pickup is immediate); a settled dine_in order is
+ * status='paid'. The kitchen already sees the pending ticket.
  */
 export async function POST(
   req: NextRequest,

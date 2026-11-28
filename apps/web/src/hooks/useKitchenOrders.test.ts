@@ -75,6 +75,28 @@ afterEach(() => {
 })
 
 describe('kitchen order refresh', () => {
+  it('alerts for a delivered pickup entering the queue on update and removes it on ready', async () => {
+    render(); harness.effect!()
+    await resolve(0, [])
+    const pickup = { ...ticket('pickup', 'delivered', 'counter'), delivery_type: 'self_pickup', kitchen_status: 'paid' }
+    harness.handlers.UPDATE({ new: pickup })
+    expect(render().orders.map((order) => order.id)).toEqual(['pickup'])
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(1)
+    harness.handlers.UPDATE({ new: { ...pickup, kitchen_status: 'preparing' } })
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(1)
+    harness.handlers.UPDATE({ new: { ...pickup, kitchen_status: 'ready' } })
+    expect(render().orders).toEqual([])
+  })
+
+  it('does not alert twice when an existing pending counter ticket is paid', async () => {
+    render(); harness.effect!()
+    await resolve(0, [])
+    const pickup = { ...ticket('pickup', 'pending', 'counter'), delivery_type: 'self_pickup' }
+    harness.handlers.INSERT({ new: pickup })
+    harness.handlers.UPDATE({ new: { ...pickup, status: 'delivered', kitchen_status: 'paid' } })
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the board usable on background failure and clears the error after recovery', async () => {
     render(); harness.effect!()
     await resolve(0, [ticket('one')])

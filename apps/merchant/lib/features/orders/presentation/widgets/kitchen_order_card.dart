@@ -62,7 +62,7 @@ class KitchenOrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = AppStatusColors.of(order.status).foreground;
+    final statusColor = AppStatusColors.of(_ticketStatus(order)).foreground;
     final currentTime = now ?? DateTime.now();
     final note = order.notes?.trim();
 
@@ -164,7 +164,7 @@ class KitchenOrderCard extends StatelessWidget {
                   if (order.source != null &&
                       _sourceIcons.containsKey(order.source))
                     _SourceBadge(source: order.source!),
-                  StatusPill(status: order.status),
+                  StatusPill(status: _ticketStatus(order)),
                   if (order.isUnpaid)
                     const StatusPill(status: 'pending', label: 'Unpaid'),
                 ],
@@ -527,6 +527,16 @@ class KitchenOrderCard extends StatelessWidget {
     );
   }
 }
+
+/// The state the kitchen reads on the ticket.
+///
+/// A POS-completed counter take-away is already `delivered` when the board
+/// receives it, so the order status says nothing about the cooking. Its
+/// `kitchen_status` (paid / preparing) is the useful state.
+String _ticketStatus(OrdersRow order) =>
+    order.isDeliveredCounterPickup && order.kitchenStatus != null
+    ? order.kitchenStatus!
+    : order.status;
 
 Color _ageColor(BuildContext context, DateTime createdAt, DateTime now) {
   final theme = Theme.of(context);

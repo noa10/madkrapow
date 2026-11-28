@@ -11,6 +11,11 @@ extension OrderPosFields on OrdersRow {
   String? get paymentMethod => getField<String>('payment_method');
   String? get source => getField<String>('source');
 
+  /// Kitchen progress for a POS-completed counter take-away
+  /// (`20261128150000_pos_pickup_complete_on_payment`).
+  /// `paid` → `preparing` → `ready`; null for every other order.
+  String? get kitchenStatus => getField<String>('kitchen_status');
+
   bool get isDineIn => deliveryType == 'dine_in';
   bool get isUnpaid => status == 'pending';
 
@@ -18,6 +23,10 @@ extension OrderPosFields on OrdersRow {
   /// finish a ready ticket themselves. Mirrors web `isCounterPickup`.
   bool get isCounterPickup =>
       isCounterPickupOrder(source: source, deliveryType: deliveryType);
+
+  /// A counter take-away the POS completed on payment: the money is settled,
+  /// but the kitchen still has to cook it.
+  bool get isDeliveredCounterPickup => status == 'delivered' && isCounterPickup;
 }
 
 /// Whether the order is a counter take-away (the POS take-away flow).

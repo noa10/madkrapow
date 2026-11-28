@@ -9,7 +9,7 @@ vi.mock('@/lib/supabase/server', () => ({
       if (table !== 'orders') throw new Error(`unexpected table: ${table}`)
       const query = {
         select: () => query,
-        in: () => query,
+        or: () => query,
         gte: (column: string, value: string) => {
           orderQueries.gteArgs.push([column, value])
           return query

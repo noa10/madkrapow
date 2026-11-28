@@ -1304,6 +1304,7 @@ export type Database = {
           idempotency_key: string | null
           include_cutlery: boolean
           kitchen_lead_minutes: number | null
+          kitchen_status: string | null
           lalamove_order_id: string | null
           lalamove_quote_id: string | null
           lalamove_status: string | null
@@ -1372,6 +1373,7 @@ export type Database = {
           idempotency_key?: string | null
           include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
+          kitchen_status?: string | null
           lalamove_order_id?: string | null
           lalamove_quote_id?: string | null
           lalamove_status?: string | null
@@ -1440,6 +1442,7 @@ export type Database = {
           idempotency_key?: string | null
           include_cutlery?: boolean
           kitchen_lead_minutes?: number | null
+          kitchen_status?: string | null
           lalamove_order_id?: string | null
           lalamove_quote_id?: string | null
           lalamove_status?: string | null

@@ -18,6 +18,7 @@ vi.mock('@/lib/admin/require-role', () => ({
 }))
 
 const { GET: claimGET } = await import('../../jobs/claim/route')
+const { GET: claimStaffGET } = await import('../../jobs/claim-staff/route')
 const { POST: renderPOST } = await import('../../jobs/render/route')
 
 const ORDER_ID = '6a1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d'
@@ -28,6 +29,7 @@ const ORDER_ROW = {
   source: 'counter',
   status: 'paid',
   created_at: new Date(Date.now() - 60_000).toISOString(),
+  updated_at: new Date(Date.now() - 60_000).toISOString(),
   customer_name: null,
   subtotal_cents: 1250,
   total_cents: 1250,
@@ -53,14 +55,47 @@ interface Opts {
   liveOrderRow?: unknown
   /** Simulate a failing marker insert (e.g. a Postgres error code). */
   markerInsertError?: { code?: string; message: string } | null
+  /** Apply the emitted PostgREST filters and persist markers between polls. */
+  realisticClaims?: boolean
+}
+
+function matchesFilter(row: Record<string, unknown>, filter: string): boolean {
+  const group = /^(and|or)\((.*)\)$/.exec(filter)
+  if (group) {
+    let depth = 0
+    let start = 0
+    const parts: string[] = []
+    for (let i = 0; i < group[2].length; i++) {
+      if (group[2][i] === '(') depth++
+      if (group[2][i] === ')') depth--
+      if (group[2][i] === ',' && depth === 0) {
+        parts.push(group[2].slice(start, i))
+        start = i + 1
+      }
+    }
+    parts.push(group[2].slice(start))
+    return group[1] === 'and'
+      ? parts.every((part) => matchesFilter(row, part))
+      : parts.some((part) => matchesFilter(row, part))
+  }
+  const predicate = /^([\w]+)\.(eq|in|not\.is)\.(.*)$/.exec(filter)
+  if (!predicate) throw new Error(`Unsupported filter: ${filter}`)
+  const [, column, operator, value] = predicate
+  if (operator === 'eq') return row[column] === value
+  if (operator === 'not.is' && value === 'null') return row[column] != null
+  if (operator === 'in') return value.slice(1, -1).split(',').includes(String(row[column]))
+  throw new Error(`Unsupported filter: ${filter}`)
 }
 
 /** `orders` returning a row is not enough — `.maybeSingle()` gives the live row. */
 function buildMockClient(opts: Opts = {}) {
   const attemptedInserts: Array<{ table: string; payload: unknown }> = []
+  const markers = new Set<string>()
   return {
     attemptedInserts,
     from(table: string) {
+      const filters: Array<(row: Record<string, unknown>) => boolean> = []
+      const equals: Record<string, unknown> = {}
       const builder: {
         cols?: string
         select: (cols?: string) => unknown
@@ -79,16 +114,20 @@ function buildMockClient(opts: Opts = {}) {
           builder.cols = cols
           return builder
         },
-        eq(_col: string, _val: unknown) {
+        eq(col: string, val: unknown) {
+          equals[col] = val
           return builder
         },
-        in(_col: string, _vals: unknown[]) {
+        in(col: string, vals: unknown[]) {
+          filters.push((row) => vals.includes(row[col]))
           return builder
         },
-        gte(_col: string, _val: unknown) {
+        gte(col: string, val: unknown) {
+          filters.push((row) => String(row[col]) >= String(val))
           return builder
         },
-        or(_filter: string) {
+        or(filter: string) {
+          filters.push((row) => matchesFilter(row, `or(${filter})`))
           return builder
         },
         order(_col: string, _opts?: unknown) {
@@ -100,6 +139,10 @@ function buildMockClient(opts: Opts = {}) {
         },
         insert(payload: unknown) {
           attemptedInserts.push({ table, payload })
+          if (opts.realisticClaims && table === 'order_events' && !opts.markerInsertError) {
+            const marker = payload as { order_id: string; event_type: string }
+            markers.add(`${marker.order_id}:${marker.event_type}`)
+          }
           return {
             // Awaiting the insert yields `{ error }`; chaining `.select().single()`
             // is only used by callers that want the inserted row back.
@@ -114,17 +157,28 @@ function buildMockClient(opts: Opts = {}) {
           // "loadable but already deleted" and exercise the pre-flight alone.
           const isPreflight = builder.cols === 'id'
           if (table === 'orders') {
+            if (opts.realisticClaims) {
+              const rows = (opts.orders ?? []) as Array<Record<string, unknown>>
+              return { data: rows.find((row) => row.id === equals.id) ?? null, error: null }
+            }
             return { data: (isPreflight ? opts.liveOrderRow : opts.orderRow) ?? null, error: null }
           }
           return { data: null, error: null }
         },
         then(resolve: (v: { data: unknown; error: null }) => void) {
-          if (table === 'orders') resolve({ data: opts.orders ?? [], error: null })
+          if (table === 'orders') {
+            const orders = opts.orders ?? []
+            resolve({ data: opts.realisticClaims ? orders.filter((row) => filters.every((filter) => filter(row as Record<string, unknown>))) : orders, error: null })
+          }
           else if (table === 'order_items') resolve({ data: [ITEM_ROW], error: null })
           else if (table === 'order_item_modifiers') resolve({ data: [], error: null })
           else if (table === 'payments') resolve({ data: [{ method: 'cash', raw: null }], error: null })
-          else if (table === 'order_events')
-            resolve({ data: opts.printedMarkerExists ? [{ id: 'evt-0' }] : [], error: null })
+          else if (table === 'order_events') {
+            const exists = opts.realisticClaims
+              ? markers.has(`${equals.order_id}:${equals.event_type}`)
+              : opts.printedMarkerExists
+            resolve({ data: exists ? [{ id: 'evt-0' }] : [], error: null })
+          }
           else resolve({ data: null, error: null })
         },
       }
@@ -142,6 +196,23 @@ function bridgeRequest(url: string): Request {
   return new Request(url, {
     headers: { authorization: `Bearer ${envMock.PRINT_BRIDGE_SECRET}` },
   }) as unknown as Request
+}
+
+/**
+ * A POS counter take-away order that the database completes at payment time.
+ * `kitchen_status` is the marker that separates these new orders from
+ * historical `delivered` rows, which must never print.
+ */
+function completedPickup(overrides: Record<string, unknown> = {}) {
+  return {
+    ...ORDER_ROW,
+    id: 'c0ffee00-0000-4000-8000-000000000001',
+    status: 'delivered',
+    source: 'counter',
+    delivery_type: 'self_pickup',
+    kitchen_status: 'paid',
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
@@ -353,6 +424,167 @@ describe('GET /api/print/jobs/claim', () => {
     } finally {
       vi.unstubAllEnvs()
     }
+  })
+
+  it('claims a newly completed counter pickup for the LAN bridge', async () => {
+    const pickup = completedPickup()
+    const client = buildMockClient({ orders: [pickup], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.jobs.map((job: { type: string }) => job.type).sort()).toEqual([
+      'kitchen_docket',
+      'receipt',
+    ])
+    expect(json.jobs.every((job: { order_id: string }) => job.order_id === pickup.id)).toBe(true)
+    expect(markersOf(client).sort()).toEqual(['printed_kitchen_docket', 'printed_receipt'])
+  })
+
+  it('claims a newly completed counter pickup for the merchant app', async () => {
+    requireRoleMock.mockResolvedValue({ role: 'cashier' })
+    const pickup = completedPickup()
+    const client = buildMockClient({ orders: [pickup], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimStaffGET(
+      new Request('http://localhost/api/print/jobs/claim-staff', {
+        headers: { authorization: 'Bearer staff-token' },
+      }) as never
+    )
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.jobs.map((job: { type: string }) => job.type).sort()).toEqual([
+      'kitchen_docket',
+      'receipt',
+    ])
+  })
+
+  it('still claims a completed pickup after the kitchen marks it ready', async () => {
+    const pickup = completedPickup({ kitchen_status: 'ready' })
+    const client = buildMockClient({ orders: [pickup], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(json.jobs.map((job: { type: string }) => job.type).sort()).toEqual([
+      'kitchen_docket',
+      'receipt',
+    ])
+  })
+
+  it('never claims a historical delivered pickup without kitchen state', async () => {
+    const historical = completedPickup({ kitchen_status: null })
+    const client = buildMockClient({ orders: [historical], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(json.jobs).toHaveLength(0)
+    expect(markersOf(client)).toHaveLength(0)
+  })
+
+  it('does not claim a delivered web pickup even when kitchen state is present', async () => {
+    const webPickup = completedPickup({ source: 'web' })
+    const client = buildMockClient({ orders: [webPickup], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(json.jobs).toHaveLength(0)
+  })
+
+  it('does not claim a delivered counter order that is not a pickup', async () => {
+    const delivered = completedPickup({ delivery_type: 'delivery' })
+    const client = buildMockClient({ orders: [delivered], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+
+    expect(json.jobs).toHaveLength(0)
+  })
+
+  it('applies each channel cutoff to completed pickups', async () => {
+    const bridgeStale = completedPickup({
+      id: 'stale-bridge',
+      updated_at: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+    })
+    const bridgeClient = buildMockClient({ orders: [bridgeStale], realisticClaims: true })
+    serviceClientMock.mockReturnValue(bridgeClient)
+
+    const bridgeRes = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    expect((await bridgeRes.json()).jobs).toHaveLength(0)
+
+    requireRoleMock.mockResolvedValue({ role: 'cashier' })
+    const staffStale = completedPickup({
+      id: 'stale-staff',
+      updated_at: new Date(Date.now() - 31 * 60_000).toISOString(),
+    })
+    const staffClient = buildMockClient({ orders: [staffStale], realisticClaims: true })
+    serviceClientMock.mockReturnValue(staffClient)
+
+    const staffRes = await claimStaffGET(
+      new Request('http://localhost/api/print/jobs/claim-staff') as never
+    )
+    expect((await staffRes.json()).jobs).toHaveLength(0)
+  })
+
+  it('claims a completed pickup only once across repeated polls', async () => {
+    const pickup = completedPickup()
+    const client = buildMockClient({ orders: [pickup], realisticClaims: true })
+    serviceClientMock.mockReturnValue(client)
+
+    const first = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const second = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+
+    expect((await first.json()).jobs).toHaveLength(2)
+    expect((await second.json()).jobs).toHaveLength(0)
+    expect(markersOf(client)).toHaveLength(2)
+  })
+
+  it('keeps the existing job matrix for paid, pending and completed orders', async () => {
+    const paidWeb = {
+      ...ORDER_ROW,
+      id: 'paid-web',
+      source: 'web',
+      status: 'paid',
+      delivery_type: 'delivery',
+    }
+    const pendingWeb = {
+      ...ORDER_ROW,
+      id: 'pending-web',
+      source: 'web',
+      status: 'pending',
+      delivery_type: 'delivery',
+    }
+    const paidCounter = { ...ORDER_ROW, id: 'paid-counter' }
+    const pendingCounter = {
+      ...ORDER_ROW,
+      id: 'pending-counter',
+      status: 'pending',
+      delivery_type: 'self_pickup',
+    }
+    const completed = completedPickup({ id: 'completed-pickup' })
+    const client = buildMockClient({
+      orders: [paidWeb, pendingWeb, paidCounter, pendingCounter, completed],
+      realisticClaims: true,
+    })
+    serviceClientMock.mockReturnValue(client)
+
+    const res = await claimGET(bridgeRequest('http://localhost/api/print/jobs/claim') as never)
+    const json = await res.json()
+    const types = json.jobs.map((job: { type: string }) => job.type)
+
+    expect(types.filter((type: string) => type === 'kitchen_docket')).toHaveLength(4)
+    expect(types.filter((type: string) => type === 'receipt')).toHaveLength(3)
+    expect(json.jobs.some((job: { order_id: string }) => job.order_id === pendingWeb.id)).toBe(false)
   })
 })
 

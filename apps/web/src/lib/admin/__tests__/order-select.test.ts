@@ -30,6 +30,10 @@ describe("ADMIN_ORDER_LIST_SELECT", () => {
       "channel_orders(channel, external_order_number)"
     )
   })
+
+  it("selects kitchen_status so the kitchen board can queue completed pickups", () => {
+    expect(ADMIN_ORDER_LIST_SELECT).toContain("kitchen_status")
+  })
 })
 
 describe("ADMIN_ORDER_DETAIL_SELECT", () => {

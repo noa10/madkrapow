@@ -119,10 +119,16 @@ class MerchantOrderRepository {
   /// PostgREST `or=` expression mirroring the web kitchen's `isKitchenActive`:
   /// paid/accepted/preparing/ready, plus pending dine-in and pending counter
   /// tickets (the kitchen starts those before payment is collected).
+  ///
+  /// A paid counter take-away is completed by the POS the moment it is paid,
+  /// so it reaches the board as `delivered`; its `kitchen_status` carries the
+  /// cooking journey until `ready`, after which it drops off.
   static const kitchenQueueOrFilter =
       'status.in.(paid,accepted,preparing,ready),'
       'and(status.eq.pending,delivery_type.eq.dine_in),'
-      'and(status.eq.pending,source.eq.counter)';
+      'and(status.eq.pending,source.eq.counter),'
+      'and(status.eq.delivered,source.eq.counter,'
+      'delivery_type.eq.self_pickup,kitchen_status.in.(paid,preparing))';
 
   /// Active kitchen tickets, filtered at the database so abandoned checkouts
   /// and completed orders cannot crowd out the board.
@@ -258,6 +264,11 @@ class MerchantOrderRepository {
   /// Advance order status via the API route (server-side validation).
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
     await _apiClient.updateOrderStatus(orderId, newStatus);
+  }
+
+  /// Advance the kitchen's own progress on a delivered counter take-away.
+  Future<void> updateKitchenStatus(String orderId, String newStatus) async {
+    await _apiClient.updateKitchenStatus(orderId, newStatus);
   }
 
   /// Cancel an order via the API route.

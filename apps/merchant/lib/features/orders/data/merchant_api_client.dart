@@ -13,9 +13,11 @@ import '../../../core/utils/auth_exceptions.dart';
 /// All calls require a Supabase auth token in the Authorization header.
 /// Mirrors CheckoutRepository's Bearer token pattern.
 class MerchantApiClient {
-  MerchantApiClient(this._supabase);
+  MerchantApiClient(this._supabase, {http.Client? httpClient})
+    : _http = httpClient ?? http.Client();
 
   final SupabaseClient _supabase;
+  final http.Client _http;
 
   String get _baseUrl => resolveApiUrl(AppEnv.webApiUrl);
 
@@ -46,7 +48,7 @@ class MerchantApiClient {
     String path, [
     Map<String, dynamic>? body,
   ]) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api$path'),
       headers: await _buildHeaders(),
       body: body != null ? jsonEncode(body) : null,
@@ -58,7 +60,7 @@ class MerchantApiClient {
   /// Test HubboPOS connection via the web API.
   /// POST /api/admin/hubbopos/test-connection
   Future<void> testHubboPosConnection() async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/hubbopos/test-connection'),
       headers: await _buildHeaders(),
     );
@@ -69,7 +71,7 @@ class MerchantApiClient {
   /// Trigger a full HubboPOS sync via the web API.
   /// POST /api/admin/hubbopos/sync
   Future<void> syncHubboPos() async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/hubbopos/sync'),
       headers: await _buildHeaders(),
     );
@@ -80,8 +82,20 @@ class MerchantApiClient {
   /// Advance an order's status via the web API.
   /// POST /api/admin/orders/:id/status
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/status'),
+      headers: await _buildHeaders(),
+      body: jsonEncode({'status': newStatus}),
+    );
+
+    _handleResponse(response);
+  }
+
+  /// Advance a delivered counter take-away's kitchen progress via the web API.
+  /// POST /api/admin/orders/:id/kitchen-status
+  Future<void> updateKitchenStatus(String orderId, String newStatus) async {
+    final response = await _http.post(
+      Uri.parse('$_baseUrl/api/admin/orders/$orderId/kitchen-status'),
       headers: await _buildHeaders(),
       body: jsonEncode({'status': newStatus}),
     );
@@ -105,7 +119,7 @@ class MerchantApiClient {
       body['approved_total_cents'] = approvedTotalCents;
     }
 
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/approve'),
       headers: await _buildHeaders(),
       body: jsonEncode(body),
@@ -122,7 +136,7 @@ class MerchantApiClient {
   /// Cancel an order (set status to 'cancelled').
   /// This uses the status route since the server enforces valid transitions.
   Future<void> cancelOrder(String orderId) async {
-    final response = await http.post(
+    final response = await _http.post(
       Uri.parse('$_baseUrl/api/admin/orders/$orderId/status'),
       headers: await _buildHeaders(),
       body: jsonEncode({'status': 'cancelled'}),
@@ -141,7 +155,7 @@ class MerchantApiClient {
       queryParameters: queryParams.isNotEmpty ? queryParams : null,
     );
 
-    final response = await http.get(
+    final response = await _http.get(
       uri,
       headers: await _buildHeaders(),
     );

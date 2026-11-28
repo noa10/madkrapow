@@ -24,17 +24,19 @@ class MockChannel extends Mock implements RealtimeChannel {}
 class MockAutoPrint extends Mock implements AutoPrintService {}
 
 /// A ready counter take-away, as POS creates it.
-OrdersRow _counterPickup({String status = 'ready'}) => OrdersRow.fromJson({
-  'id': 'order-1',
-  'order_number': 'MK-1',
-  'status': status,
-  'subtotal_cents': 1000,
-  'total_cents': 1000,
-  'created_at': DateTime(2026, 11, 27, 18, 0).toIso8601String(),
-  'fulfillment_type': 'asap',
-  'source': 'counter',
-  'delivery_type': 'self_pickup',
-});
+OrdersRow _counterPickup({String status = 'ready', String? kitchenStatus}) =>
+    OrdersRow.fromJson({
+      'id': 'order-1',
+      'order_number': 'MK-1',
+      'status': status,
+      'subtotal_cents': 1000,
+      'total_cents': 1000,
+      'created_at': DateTime(2026, 11, 27, 18, 0).toIso8601String(),
+      'fulfillment_type': 'asap',
+      'source': 'counter',
+      'delivery_type': 'self_pickup',
+      'kitchen_status': ?kitchenStatus,
+    });
 
 /// A ready web pickup: it completes through the customer's own flow.
 OrdersRow _webPickup({String status = 'ready'}) => OrdersRow.fromJson({
@@ -150,6 +152,131 @@ void main() {
     );
 
     expect(find.text('Complete Order'), findsNothing);
+  });
+
+  for (final (current, label, next) in [
+    ('paid', 'Start Preparing', 'preparing'),
+    ('preparing', 'Mark Ready', 'ready'),
+  ]) {
+    testWidgets(
+      'delivered counter pickup progresses kitchen $current to $next',
+      (tester) async {
+        final repo = MockRepository();
+        final channel = MockChannel();
+        final printer = MockAutoPrint();
+        when(
+          () => repo.updateKitchenStatus('order-1', next),
+        ).thenAnswer((_) async {});
+        when(
+          () => repo.subscribeToNewOrders(onNewOrder: any(named: 'onNewOrder')),
+        ).thenReturn(channel);
+        when(() => channel.unsubscribe()).thenAnswer((_) async => 'ok');
+        when(() => printer.printPendingJobs()).thenAnswer((_) async => 0);
+        await _pump(
+          tester,
+          const KitchenDisplayScreen(),
+          repo: repo,
+          extraOverrides: [
+            autoPrintServiceProvider.overrideWithValue(printer),
+            kitchenOrderCardsProvider.overrideWith(
+              (ref) async => [
+                KitchenOrderCardData(
+                  order: _counterPickup(
+                    status: 'delivered',
+                    kitchenStatus: current,
+                  ),
+                  items: const [],
+                ),
+              ],
+            ),
+          ],
+        );
+        expect(
+          find.text(current == 'paid' ? 'Paid' : 'Preparing'),
+          findsOneWidget,
+        );
+        expect(find.text('Delivered'), findsNothing);
+        await tester.ensureVisible(find.text(label));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        verify(() => repo.updateKitchenStatus('order-1', next)).called(1);
+        verifyNever(() => repo.updateOrderStatus(any(), any()));
+      },
+    );
+  }
+
+  testWidgets(
+    'kitchen hides a delivered counter pickup whose kitchen work is done',
+    (tester) async {
+      final repo = MockRepository();
+      final channel = MockChannel();
+      final printer = MockAutoPrint();
+      when(
+        () => repo.subscribeToNewOrders(onNewOrder: any(named: 'onNewOrder')),
+      ).thenReturn(channel);
+      when(() => channel.unsubscribe()).thenAnswer((_) async => 'ok');
+      when(() => printer.printPendingJobs()).thenAnswer((_) async => 0);
+      await _pump(
+        tester,
+        const KitchenDisplayScreen(),
+        repo: repo,
+        extraOverrides: [
+          autoPrintServiceProvider.overrideWithValue(printer),
+          kitchenOrderCardsProvider.overrideWith(
+            (ref) async => [
+              KitchenOrderCardData(
+                order: _counterPickup(
+                  status: 'delivered',
+                  kitchenStatus: 'ready',
+                ),
+                items: const [],
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(find.text('No Active Orders'), findsOneWidget);
+      expect(find.text('1 active order'), findsNothing);
+      expect(find.text('MK-1'), findsNothing);
+      expect(find.text('Complete Order'), findsNothing);
+    },
+  );
+
+  testWidgets('kitchen keeps legacy ready counter take-away completion', (
+    tester,
+  ) async {
+    final repo = MockRepository();
+    final channel = MockChannel();
+    final printer = MockAutoPrint();
+    when(
+      () => repo.updateOrderStatus('order-1', 'delivered'),
+    ).thenAnswer((_) async {});
+    when(
+      () => repo.subscribeToNewOrders(onNewOrder: any(named: 'onNewOrder')),
+    ).thenReturn(channel);
+    when(() => channel.unsubscribe()).thenAnswer((_) async => 'ok');
+    when(() => printer.printPendingJobs()).thenAnswer((_) async => 0);
+    await _pump(
+      tester,
+      const KitchenDisplayScreen(),
+      repo: repo,
+      extraOverrides: [
+        autoPrintServiceProvider.overrideWithValue(printer),
+        kitchenOrderCardsProvider.overrideWith(
+          (ref) async => [
+            KitchenOrderCardData(
+              order: _counterPickup(status: 'ready'),
+              items: const [],
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(find.text('Complete Order'), findsOneWidget);
+    await tester.tap(find.text('Complete Order'));
+    await tester.pumpAndSettle();
+    verify(() => repo.updateOrderStatus('order-1', 'delivered')).called(1);
+    verifyNever(() => repo.updateKitchenStatus(any(), any()));
   });
 
   testWidgets('kitchen completes a ready counter take-away', (tester) async {

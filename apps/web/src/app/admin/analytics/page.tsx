@@ -198,8 +198,8 @@ export default function AnalyticsPage() {
       return {
         date: day,
         label: shortLabel(day),
-        revenueCents: row ? row.revenue_cents : null,
-        orders: row ? row.order_count : null,
+        revenueCents: row ? row.revenue_cents : 0,
+        orders: row ? row.order_count : 0,
       };
     });
   }, [data]);
@@ -233,7 +233,7 @@ export default function AnalyticsPage() {
 
   const statCards = [
     {
-      title: "Revenue",
+      title: "Range revenue",
       value: formatRinggit(totals.revenue_cents),
       hint: "Excludes cancelled orders",
       icon: DollarSign,
@@ -241,7 +241,7 @@ export default function AnalyticsPage() {
       colorClass: "text-primary",
     },
     {
-      title: "Orders",
+      title: "Range orders",
       value: totals.order_count,
       hint: "Paid and fulfilled",
       icon: ShoppingCart,
@@ -402,6 +402,8 @@ export default function AnalyticsPage() {
             </Card>
           )}
 
+          <RevenueCharts salesData={salesData} />
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {statCards.map((stat) => (
               <Card key={stat.title} className="bg-card border-border shadow-sm rounded-xl">
@@ -420,8 +422,6 @@ export default function AnalyticsPage() {
               </Card>
             ))}
           </div>
-
-          <RevenueCharts salesData={salesData} />
 
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="bg-card border-border shadow-sm rounded-xl">

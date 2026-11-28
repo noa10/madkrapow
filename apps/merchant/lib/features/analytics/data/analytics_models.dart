@@ -103,15 +103,21 @@ class AnalyticsData {
   final AnalyticsTotals totals;
   final List<TrendPoint> trends;
   final List<TopItem> topItems;
+  final String? fromDate;
+  final String? toDate;
 
   const AnalyticsData({
     required this.pulse,
     required this.totals,
     required this.trends,
     required this.topItems,
+    this.fromDate,
+    this.toDate,
   });
 
   factory AnalyticsData.fromJson(Map<String, dynamic> json) => AnalyticsData(
+    fromDate: (json['range'] as Map<String, dynamic>?)?['from'] as String?,
+    toDate: (json['range'] as Map<String, dynamic>?)?['to'] as String?,
     pulse: DailyPulse.fromJson(json['pulse'] as Map<String, dynamic>),
     totals: json['totals'] != null
         ? AnalyticsTotals.fromJson(json['totals'] as Map<String, dynamic>)

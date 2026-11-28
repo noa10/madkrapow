@@ -1,155 +1,144 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, TrendingUp } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 export interface SalesChartPoint {
-  /** Short axis label, e.g. "27 Nov". */
   label: string;
-  /** ISO business date, used as the stable key and in the data table. */
   date: string;
-  /** Revenue in cents, or null when the day had no sales. */
   revenueCents: number | null;
-  /** Order count, or null when the day had no sales. */
   orders: number | null;
 }
 
-type Metric = "revenue" | "orders";
+type Period = "Daily" | "Weekly" | "Monthly";
 
 function formatRinggit(cents: number) {
   return `RM ${(cents / 100).toFixed(2)}`;
 }
 
-function formatValue(metric: Metric, value: number | null) {
-  if (value === null) return "No sales";
-  return metric === "revenue" ? formatRinggit(value) : `${value} order${value === 1 ? "" : "s"}`;
+function periodKey(date: string, period: Period) {
+  if (period === "Daily") return date;
+  if (period === "Monthly") return date.slice(0, 7);
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
+  return day.toISOString().slice(0, 10);
 }
 
-/**
- * Recharts-heavy revenue trend, loaded through `next/dynamic` so the library
- * only enters the admin bundle when this section actually renders.
- *
- * One metric is plotted at a time: revenue and orders have different units, so
- * sharing a single axis would be misleading. Days without sales stay as gaps
- * instead of being drawn as zero-revenue days.
- */
 export function RevenueCharts({ salesData }: { salesData: SalesChartPoint[] }) {
-  const [metric, setMetric] = useState<Metric>("revenue");
-  const hasSales = salesData.some((point) => point.revenueCents !== null);
+  const [period, setPeriod] = useState<Period>("Daily");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
+  const [metric, setMetric] = useState<"Revenue" | "Orders">("Revenue");
+  const chartRef = useRef<HTMLDivElement>(null);
+  const intervals = salesData.reduce<Array<{ key: string; from: string; to: string; label: string; revenue: number; orders: number; revenueCount: number; ordersCount: number; incomplete: boolean }>>((groups, point) => {
+    const key = periodKey(point.date, period);
+    const previous = groups[groups.length - 1];
+    const current = previous?.key === key ? previous : null;
+    const next = {
+      key,
+      from: current?.from ?? point.date,
+      to: point.date,
+      label: current?.label ?? point.label,
+      revenue: (current?.revenue ?? 0) + (point.revenueCents ?? 0),
+      orders: (current?.orders ?? 0) + (point.orders ?? 0),
+      revenueCount: (current?.revenueCount ?? 0) + (point.revenueCents === null ? 0 : 1),
+      ordersCount: (current?.ordersCount ?? 0) + (point.orders === null ? 0 : 1),
+      incomplete: (current?.incomplete ?? false) || point.revenueCents === null || point.orders === null,
+    };
+    return current ? [...groups.slice(0, -1), next] : [...groups, next];
+  }, []);
+  const selected = intervals.find((item) => selectedDate !== null && selectedDate >= item.from && selectedDate <= item.to) ?? intervals[intervals.length - 1];
+  useEffect(() => {
+    const container = chartRef.current;
+    const bar = container?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+    if (!container || !bar || !expanded) return;
+    const viewport = container.getBoundingClientRect();
+    const bounds = bar.getBoundingClientRect();
+    if (bounds.right > viewport.right) container.scrollLeft += bounds.right - viewport.right;
+    else if (bounds.left < viewport.left) container.scrollLeft -= viewport.left - bounds.left;
+  }, [selected?.key, period, expanded]);
+  const maximum = Math.max(0, ...intervals.map((item) => metric === "Revenue" ? item.revenue : item.orders));
+  const intervalLabel = (item: { from: string; to: string }) => item.from === item.to ? item.from : `${item.from} to ${item.to}`;
+  const describeInterval = (item: typeof intervals[number]) => `${intervalLabel(item)}: ${item.revenueCount ? formatRinggit(item.revenue) : "No data"}, ${item.ordersCount ? `${item.orders} orders` : "No data"}${item.incomplete && (item.revenueCount || item.ordersCount) ? ", reported days only, incomplete data" : ""}`;
 
   return (
-    <Card className="bg-card border-border shadow-sm rounded-xl">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-        <CardTitle className="font-display">Sales trend</CardTitle>
-        <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Chart metric">
-          {(["revenue", "orders"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={metric === option}
-              onClick={() => setMetric(option)}
-              className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors ${
-                metric === option
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
+    <section className="space-y-3" aria-label="Sales insights">
+      <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl bg-muted p-1" role="group" aria-label="Insight period">
+        {(["Daily", "Weekly", "Monthly"] as const).map((option) => (
+          <button key={option} type="button" aria-pressed={period === option} onClick={() => { setPeriod(option); setSelectedDate(null); }}
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${period === option ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            {option}
+          </button>
+        ))}
+      </div>
+      <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center gap-4 p-5 sm:p-6">
+          <div className="rounded-xl bg-primary/10 p-3 text-primary"><TrendingUp className="h-6 w-6" aria-hidden="true" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-muted-foreground">Sales · {selected ? intervalLabel(selected) : "Selected range"}</p>
+            <p className="text-2xl font-bold tabular-nums sm:text-3xl">{selected?.revenueCount ? formatRinggit(selected.revenue) : "—"}</p>
+            {selected?.incomplete && <p className="text-xs text-muted-foreground">{selected.revenueCount || selected.ordersCount ? "Reported days only · incomplete data" : "No data for this interval"}</p>}
+          </div>
+          <div className="border-l border-border pl-5">
+            <p className="text-sm text-muted-foreground">Orders</p>
+            <p className="text-2xl font-bold tabular-nums">{selected?.ordersCount ? selected.orders : "—"}</p>
+          </div>
         </div>
-      </CardHeader>
-      <CardContent>
-        {!hasSales ? (
-          <p className="py-16 text-center text-sm text-muted-foreground" role="status">
-            No sales in this range.
-          </p>
-        ) : (
-          <>
-            {/* currentColor keeps the series on the brand accent token, which is
-                defined in oklch and therefore cannot be hardcoded as an hsl(). */}
-            <div className="text-primary">
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={salesData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="sales-trend-fill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="currentColor" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="currentColor" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" fontSize={12} minTickGap={24} tickLine={false} />
-                  <YAxis
-                    fontSize={12}
-                    width={metric === "revenue" ? 72 : 40}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value: number) =>
-                      metric === "revenue" ? `RM ${Math.round(value / 100)}` : String(value)
-                    }
-                  />
-                  <Tooltip
-                    formatter={(value) => [
-                      formatValue(metric, typeof value === "number" ? value : null),
-                      metric === "revenue" ? "Revenue" : "Orders",
-                    ]}
-                    labelFormatter={(label) => String(label)}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey={metric === "revenue" ? "revenueCents" : "orders"}
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    fill="url(#sales-trend-fill)"
-                    connectNulls={false}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            <details className="mt-4">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                View as a table
-              </summary>
-              <div className="mt-2 max-h-64 overflow-auto">
-                <table className="w-full text-left text-xs">
-                  <caption className="sr-only">Sales per day for the selected range</caption>
-                  <thead className="sticky top-0 bg-card text-muted-foreground">
-                    <tr>
-                      <th scope="col" className="py-1 pr-3 font-medium">Date</th>
-                      <th scope="col" className="py-1 pr-3 text-right font-medium">Revenue</th>
-                      <th scope="col" className="py-1 text-right font-medium">Orders</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {salesData.map((point) => (
-                      <tr key={point.date} className="border-t border-border/50">
-                        <td className="py-1 pr-3">{point.date}</td>
-                        <td className="py-1 pr-3 text-right tabular-nums">
-                          {point.revenueCents === null ? "—" : formatRinggit(point.revenueCents)}
-                        </td>
-                        <td className="py-1 text-right tabular-nums">{point.orders ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        <div id="sales-insight-chart" hidden={!expanded} className="border-t border-border p-5 sm:p-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">{metric} by {period.toLowerCase()} interval · within the selected date range</p>
+              <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Chart metric">
+                {(["Revenue", "Orders"] as const).map((option) => <button key={option} type="button" aria-pressed={metric === option} onClick={() => setMetric(option)} className={`rounded-md px-3 py-1 text-xs font-medium ${metric === option ? "bg-card text-primary shadow-sm" : "text-muted-foreground"}`}>{option}</button>)}
               </div>
-            </details>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            </div>
+            {intervals.length === 0 ? <p className="py-12 text-center text-sm text-muted-foreground" role="status">No sales in this range.</p> : (
+              <>
+                <div className="flex min-w-0 gap-2">
+                  <div aria-label="Chart scale" className="flex h-56 shrink-0 flex-col justify-between text-right text-xs tabular-nums text-muted-foreground">
+                    <span>{maximum > 0 ? (metric === "Revenue" ? formatRinggit(maximum) : maximum) : ""}</span>
+                    <span>{metric === "Revenue" ? formatRinggit(0) : "0"}</span>
+                  </div>
+                  <div ref={chartRef} className="min-w-0 flex-1 overflow-x-auto">
+                  <div className="flex h-56 items-end gap-1 border-b border-border" style={{ minWidth: `${Math.max(100, intervals.length * 34)}px` }}>
+                    {intervals.map((item) => (
+                      <button key={item.key} type="button" aria-pressed={selected?.key === item.key}
+                        aria-label={describeInterval(item)}
+                        title={describeInterval(item)}
+                        onClick={() => setSelectedDate(item.from)}
+                        className="group flex h-full min-w-7 flex-1 items-end justify-center rounded-t focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                        {(metric === "Revenue" ? item.revenueCount : item.ordersCount) > 0 && <span className={`w-3 max-w-full rounded-t ${selected?.key === item.key ? "bg-sesame" : "bg-muted-foreground group-hover:bg-foreground"}`} style={{ height: `${maximum > 0 ? (metric === "Revenue" ? item.revenue : item.orders) / maximum * 100 : 0}%` }} />}
+                      </button>
+                    ))}
+                  </div>
+                  <div aria-hidden={true} className="mt-2 flex gap-1 text-xs text-muted-foreground" style={{ minWidth: `${Math.max(100, intervals.length * 34)}px` }}>
+                    {intervals.map((item, index) => (
+                      <div key={item.key} className="relative min-w-7 flex-1">
+                        {index % 3 === 0 && <span className={`absolute whitespace-nowrap ${index === 0 ? "left-0" : "left-1/2 -translate-x-1/2"}`}>{item.label}</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="h-5" />
+                  </div>
+                </div>
+                <details className="mt-4">
+                  <summary className="cursor-pointer text-sm text-muted-foreground">View as a table</summary>
+                  <div className="mt-2 max-h-64 overflow-auto">
+                    <table className="w-full text-left text-xs">
+                      <caption className="sr-only">Sales by interval for the selected range</caption>
+                      <thead className="sticky top-0 bg-card text-muted-foreground"><tr><th scope="col" className="py-1 pr-3">Interval</th><th scope="col" className="py-1 pr-3 text-right">Revenue</th><th scope="col" className="py-1 text-right">Orders</th></tr></thead>
+                      <tbody>{intervals.map((item) => <tr key={item.key} className="border-t border-border/50"><td className="py-1 pr-3">{intervalLabel(item)}{item.incomplete && (item.revenueCount > 0 || item.ordersCount > 0) ? " (reported days only; incomplete data)" : ""}</td><td className="py-1 pr-3 text-right tabular-nums">{item.revenueCount ? formatRinggit(item.revenue) : "—"}</td><td className="py-1 text-right tabular-nums">{item.ordersCount ? item.orders : "—"}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            )}
+        </div>
+        <button type="button" aria-expanded={expanded} aria-controls="sales-insight-chart" onClick={() => setExpanded(!expanded)} className="flex w-full items-center justify-center gap-2 border-t border-border px-4 py-4 text-sm font-semibold text-primary hover:bg-muted/50">
+          {expanded ? "See less insight" : "See more insight"}
+          {expanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+        </button>
+      </Card>
+    </section>
   );
 }

@@ -6,203 +6,329 @@ import 'package:intl/intl.dart';
 
 import '../../data/analytics_models.dart';
 
-class RevenueChart extends StatelessWidget {
+class RevenueChart extends StatefulWidget {
   final List<TrendPoint> trends;
+  final AnalyticsTotals? totals;
+  final String? fromDate;
+  final String? toDate;
 
-  const RevenueChart({super.key, required this.trends});
+  const RevenueChart({
+    super.key,
+    required this.trends,
+    this.totals,
+    this.fromDate,
+    this.toDate,
+  });
+
+  @override
+  State<RevenueChart> createState() => _RevenueChartState();
+}
+
+class _RevenueChartState extends State<RevenueChart> {
+  String? _selectedDate;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final sorted = [...trends]
-      ..sort((a, b) => a.orderDate.compareTo(b.orderDate));
-    if (sorted.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Revenue trend'),
-              SizedBox(height: 16),
-              Text('No revenue data available for this period.'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // UTC calendar days keep adjacent dates equally spaced across DST changes.
     DateTime day(String value) {
       final date = DateTime.parse(value);
       return DateTime.utc(date.year, date.month, date.day);
     }
 
-    final first = day(sorted.first.orderDate);
-    final spots = <FlSpot>[];
-    int? previousDay;
-    for (final point in sorted) {
-      final offset = day(point.orderDate).difference(first).inDays;
-      if (previousDay != null && offset - previousDay > 1) {
-        spots.add(FlSpot.nullSpot);
-      }
-      spots.add(FlSpot(offset.toDouble(), point.revenueCents / 100));
-      previousDay = offset;
-    }
-    final values = sorted.map((point) => point.revenueCents / 100);
-    final lowest = values.reduce(math.min);
-    final highest = values.reduce(math.max);
-    final minY = math.min(0.0, lowest * 1.1);
-    final maxY = highest > 0 ? highest * 1.15 : 1.0;
-    final span = day(sorted.last.orderDate).difference(first).inDays;
-    final axisInterval = math.max(1, (span / 3).ceil()).toDouble();
-    final dateFormat = DateFormat('MMM d');
+    final existing = [...widget.trends]
+      ..sort((a, b) => a.orderDate.compareTo(b.orderDate));
+    final from =
+        widget.fromDate ?? (existing.isEmpty ? null : existing.first.orderDate);
+    final to =
+        widget.toDate ?? (existing.isEmpty ? null : existing.last.orderDate);
+    final byDate = {for (final point in existing) point.orderDate: point};
+    final sorted = <TrendPoint>[
+      if (from != null && to != null)
+        for (
+          var date = day(from);
+          !date.isAfter(day(to));
+          date = date.add(const Duration(days: 1))
+        )
+          byDate[date.toIso8601String().substring(0, 10)] ??
+              TrendPoint.fromJson({
+                'order_date': date.toIso8601String().substring(0, 10),
+              }),
+    ];
+    final selected =
+        sorted.where((p) => p.orderDate == _selectedDate).firstOrNull ??
+        (sorted.isEmpty ? null : sorted.first);
+    final dateFormat = DateFormat('MMM d, yyyy');
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Revenue trend',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Daily revenue · gaps indicate missing data',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 210,
-              child: LineChart(
-                LineChartData(
-                  minX: span == 0 ? -0.5 : 0,
-                  maxX: span == 0 ? 0.5 : span.toDouble(),
-                  minY: minY,
-                  maxY: maxY,
-                  gridData: FlGridData(
-                    drawVerticalLine: false,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: theme.colorScheme.outlineVariant.withValues(
-                        alpha: .35,
-                      ),
-                      strokeWidth: 1,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (selected != null || widget.totals != null) ...[
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    selected == null
+                        ? 'Selected period total'
+                        : 'Selected day · ${dateFormat.format(day(selected.orderDate))}',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 52,
-                        getTitlesWidget: (value, meta) => Text(
-                          value.abs() >= 1000
-                              ? '${(value / 1000).toStringAsFixed(1)}k'
-                              : value.toStringAsFixed(
-                                  value.abs() < 10 &&
-                                          value != value.roundToDouble()
-                                      ? 1
-                                      : 0,
-                                ),
-                          style: theme.textTheme.labelSmall,
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Sales'),
+                            Text(
+                              formatCents(
+                                selected?.revenueCents ??
+                                    widget.totals?.revenueCents ??
+                                    0,
+                              ),
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 28,
-                        interval: axisInterval,
-                        getTitlesWidget: (value, meta) {
-                          if (value < 0 ||
-                              value > span ||
-                              value != value.roundToDouble()) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              dateFormat.format(
-                                first.add(Duration(days: value.toInt())),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Orders'),
+                            Text(
+                              '${selected?.orderCount ?? widget.totals?.orderCount ?? 0} orders',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
                               ),
-                              style: theme.textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+          ],
+          if (selected == null)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Text('No revenue data available for this period.'),
+            )
+          else
+            Builder(
+              builder: (context) {
+                final first = day(sorted.first.orderDate);
+                final span = day(
+                  sorted.last.orderDate,
+                ).difference(first).inDays;
+                final points = {
+                  for (final p in sorted)
+                    day(p.orderDate).difference(first).inDays: p,
+                };
+                final highest = sorted
+                    .map((p) => p.revenueCents / 100)
+                    .reduce(math.max);
+                final lowest = sorted
+                    .map((p) => p.revenueCents / 100)
+                    .reduce(math.min);
+                final maxY = highest > 0 ? highest * 1.15 : 1.0;
+                final minY = lowest < 0 ? lowest * 1.15 : 0.0;
+                final labelEvery = math.min(3, math.max(1, (span / 4).ceil()));
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Daily revenue (RM) · days without sales show zero',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 20),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: math.max(
+                                constraints.maxWidth,
+                                (span + 1) * 36.0,
+                              ),
+                              height: 230,
+                              child: BarChart(
+                                BarChartData(
+                                  minY: minY,
+                                  maxY: maxY,
+                                  alignment: BarChartAlignment.spaceAround,
+                                  borderData: FlBorderData(show: false),
+                                  gridData: FlGridData(
+                                    drawVerticalLine: false,
+                                    getDrawingHorizontalLine: (_) => FlLine(
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: .45),
+                                      strokeWidth: 1,
+                                      dashArray: [5, 5],
+                                    ),
+                                  ),
+                                  titlesData: FlTitlesData(
+                                    topTitles: const AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
+                                    rightTitles: const AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
+                                    leftTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 45,
+                                        getTitlesWidget: (value, meta) => Text(
+                                          value.abs() >= 1000
+                                              ? '${(value / 1000).toStringAsFixed(1)}k'
+                                              : value.toStringAsFixed(
+                                                  value.abs() < 10 &&
+                                                          value !=
+                                                              value
+                                                                  .roundToDouble()
+                                                      ? 1
+                                                      : 0,
+                                                ),
+                                          style: theme.textTheme.labelSmall,
+                                        ),
+                                      ),
+                                    ),
+                                    bottomTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 28,
+                                        getTitlesWidget: (value, meta) {
+                                          final index = value.toInt();
+                                          if (index % labelEvery != 0) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 8,
+                                            ),
+                                            child: Text(
+                                              DateFormat('MMM d').format(
+                                                first.add(
+                                                  Duration(days: index),
+                                                ),
+                                              ),
+                                              style: theme.textTheme.labelSmall,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  barTouchData: BarTouchData(
+                                    touchCallback: (event, response) {
+                                      if (!event.isInterestedForInteractions ||
+                                          response?.spot == null) {
+                                        return;
+                                      }
+                                      final point =
+                                          points[response!
+                                              .spot!
+                                              .touchedBarGroup
+                                              .x];
+                                      if (point != null &&
+                                          point.orderDate !=
+                                              selected.orderDate) {
+                                        setState(
+                                          () => _selectedDate = point.orderDate,
+                                        );
+                                      }
+                                    },
+                                    touchTooltipData: BarTouchTooltipData(
+                                      getTooltipItem:
+                                          (group, groupIndex, rod, rodIndex) {
+                                            final point = points[group.x];
+                                            if (point == null) return null;
+                                            return BarTooltipItem(
+                                              '${dateFormat.format(day(point.orderDate))}\n${formatCents(point.revenueCents)} · ${point.orderCount} orders',
+                                              (theme.textTheme.labelMedium ??
+                                                      const TextStyle())
+                                                  .copyWith(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .onInverseSurface,
+                                                  ),
+                                            );
+                                          },
+                                    ),
+                                  ),
+                                  barGroups: [
+                                    for (var i = 0; i <= span; i++)
+                                      BarChartGroupData(
+                                        x: i,
+                                        barRods: [
+                                          if (points[i] case final point?)
+                                            BarChartRodData(
+                                              toY: point.revenueCents / 100,
+                                              width: 12,
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                    top: Radius.circular(4),
+                                                  ),
+                                              color: point.revenueCents == 0
+                                                  ? Colors.transparent
+                                                  : point.orderDate ==
+                                                        selected.orderDate
+                                                  ? theme.colorScheme.primary
+                                                  : theme.colorScheme.primary
+                                                        .withValues(alpha: .25),
+                                            ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ),
                           );
                         },
                       ),
-                    ),
-                  ),
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (touched) => touched.map((item) {
-                        final date = first.add(Duration(days: item.x.toInt()));
-                        return LineTooltipItem(
-                          '${dateFormat.format(date)}\n${formatCents((item.y * 100).round())}',
-                          (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
-                            color: theme.colorScheme.onInverseSurface,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: false,
-                      color: theme.colorScheme.primary,
-                      barWidth: 2,
-                      dotData: FlDotData(
-                        show:
-                            sorted.length <= 7 || spots.any((s) => s.isNull()),
-                      ),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Revenue (RM)',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Text(
-                'View daily values',
-                style: theme.textTheme.labelLarge,
-              ),
-              children: [
-                for (final point in sorted)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(dateFormat.format(day(point.orderDate))),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: Text(
+                          'View daily values',
+                          style: theme.textTheme.labelLarge,
                         ),
-                        Text(formatCents(point.revenueCents)),
-                      ],
-                    ),
+                        children: [
+                          for (final point in sorted)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              selected: point.orderDate == selected.orderDate,
+                              title: Text(
+                                dateFormat.format(day(point.orderDate)),
+                              ),
+                              subtitle: Text('${point.orderCount} orders'),
+                              trailing: Text(formatCents(point.revenueCents)),
+                              onTap: () => setState(
+                                () => _selectedDate = point.orderDate,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-              ],
+                );
+              },
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     let discountCents: number
     if (promo.discount_type === 'percentage') {
       const base = promo.scope === 'delivery' ? deliveryFeeCents : subtotalCents
-      discountCents = Math.round(base * (promo.discount_value / 100))
+      discountCents = Math.round((base * promo.discount_value) / 100)
     } else {
       discountCents = promo.discount_value
     }

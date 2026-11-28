@@ -84,7 +84,7 @@ export async function getAutoAppliedPromos(
         promo.scope === 'delivery' ? deliveryFeeCents : subtotalCents
       let discountCents =
         promo.discount_type === 'percentage'
-          ? Math.round(base * (promo.discount_value / 100))
+          ? Math.round((base * promo.discount_value) / 100)
           : promo.discount_value
 
       // Clamp

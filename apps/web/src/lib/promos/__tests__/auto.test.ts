@@ -67,6 +67,15 @@ describe('getAutoAppliedPromos', () => {
     })
   })
 
+  it('rounds percentages exactly as the database claim does', async () => {
+    const promos = await getAutoAppliedPromos(
+      client([base({ discount_value: 35 })]),
+      650,
+      0,
+    )
+    expect(promos[0].discountCents).toBe(228)
+  })
+
   it('clamps the discount to the configured cap and the base amount', async () => {
     const capped = await getAutoAppliedPromos(
       client([base({ max_discount_cents: 200 })]),

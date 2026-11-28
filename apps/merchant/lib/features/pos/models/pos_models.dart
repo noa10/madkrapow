@@ -353,6 +353,7 @@ class PosCreateOrderResult {
     required this.status,
     required this.tableLabel,
     required this.pax,
+    this.orderStatus,
   });
 
   factory PosCreateOrderResult.fromJson(Map<String, dynamic> json) {
@@ -376,6 +377,7 @@ class PosCreateOrderResult {
       status: 'paid',
       tableLabel: json['table_label'] as String?,
       pax: (json['pax'] as num?)?.toInt(),
+      orderStatus: json['order_status'] as String?,
     );
   }
 
@@ -383,7 +385,12 @@ class PosCreateOrderResult {
   final String orderNumber;
   final String? displayCode;
   final int totalCents;
+
+  /// Payment confirmation, always `paid`; it is not the persisted order status.
   final String status;
+
+  /// Persisted order status when the server reports it, else null (older API).
+  final String? orderStatus;
   final String? tableLabel;
   final int? pax;
 

@@ -11,7 +11,12 @@
 
 import { getServiceClient } from '@/lib/supabase/server'
 import { loadPrintOrder } from './order-loader'
-import { buildJobBytes, jobTypesForOrder, printedMarkerFor } from './dispatch'
+import {
+  AUTO_COMPLETED_PICKUP_OR_FILTER,
+  buildJobBytes,
+  jobTypesForOrder,
+  printedMarkerFor,
+} from './dispatch'
 import { toBase64 } from './escpos'
 import { loadPrintStoreSettings } from './store-settings'
 import type { PrintJobType } from './jobs'
@@ -57,10 +62,18 @@ export async function claimPendingJobs(via: 'bridge' | 'staff'): Promise<Claimed
   if (!settings.autoPrintEnabled) return []
 
   const since = new Date(Date.now() - CLAIM_WINDOW_MS[via]).toISOString()
+  // POS counter pickups are `delivered` the moment they are paid, so they sit
+  // outside ACTIVE_STATUSES. They join the claim only when `kitchen_status` is
+  // non-null, which is set on new POS orders and left null on historical
+  // delivered rows — those must never be resurrected by a poller.
+  const statusFilter = [
+    `status.in.(${[...ACTIVE_STATUSES, 'pending'].join(',')})`,
+    AUTO_COMPLETED_PICKUP_OR_FILTER,
+  ].join(',')
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('id, source, status, delivery_type')
-    .in('status', [...ACTIVE_STATUSES, 'pending'])
+    .select('id, source, status, delivery_type, kitchen_status')
+    .or(statusFilter)
     .gte('updated_at', since)
     .order('created_at', { ascending: true })
   if (error) throw new Error(`Failed to load orders: ${error.message}`)
@@ -72,6 +85,7 @@ export async function claimPendingJobs(via: 'bridge' | 'staff'): Promise<Claimed
       source: row.source as string,
       status: row.status as string,
       delivery_type: row.delivery_type as string | null,
+      kitchen_status: row.kitchen_status as string | null,
     })
     // A pending web checkout is an abandoned cart: no jobs, nothing to print.
     if (types.length === 0) continue

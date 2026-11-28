@@ -31,6 +31,16 @@ describe('isKitchenActive', () => {
     expect(isKitchenActive({ status: 'pending' })).toBe(false)
   })
 
+  it('keeps delivered counter pickups in the queue until kitchen ready', () => {
+    const pickup = { status: 'delivered', source: 'counter', delivery_type: 'self_pickup' }
+    expect(isKitchenActive({ ...pickup, kitchen_status: 'paid' })).toBe(true)
+    expect(isKitchenActive({ ...pickup, kitchen_status: 'preparing' })).toBe(true)
+    expect(isKitchenActive({ ...pickup, kitchen_status: 'ready' })).toBe(false)
+    expect(isKitchenActive({ ...pickup, kitchen_status: null })).toBe(false)
+    expect(isKitchenActive({ ...pickup, source: 'web', kitchen_status: 'paid' })).toBe(false)
+    expect(isKitchenActive({ ...pickup, delivery_type: 'dine_in', kitchen_status: 'paid' })).toBe(false)
+  })
+
   it('excludes terminal statuses', () => {
     for (const status of ['picked_up', 'delivered', 'cancelled']) {
       expect(isKitchenActive({ status, delivery_type: 'dine_in' })).toBe(false)
@@ -44,6 +54,9 @@ describe('isKitchenActive', () => {
     )
     expect(KITCHEN_QUEUE_OR_FILTER).toContain(
       'and(status.eq.pending,source.eq.counter)'
+    )
+    expect(KITCHEN_QUEUE_OR_FILTER).toContain(
+      'and(status.eq.delivered,source.eq.counter,delivery_type.eq.self_pickup,kitchen_status.in.(paid,preparing))'
     )
   })
 })

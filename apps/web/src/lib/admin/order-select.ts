@@ -49,6 +49,7 @@ export const ADMIN_ORDER_LIST_COLUMNS = [
   "order_kind",
   "source",
   "payment_method",
+  "kitchen_status",
   "stripe_payment_intent_id",
   "stripe_session_id",
   "billplz_bill_id",

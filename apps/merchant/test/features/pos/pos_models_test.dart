@@ -197,6 +197,30 @@ void main() {
       expect(result.totalCents, 2500);
     });
 
+    test('create result exposes the persisted order status separately', () {
+      for (final status in ['delivered', 'paid']) {
+        final result = PosCreateOrderResult.fromJson({
+          'order_id': 'o1',
+          'order_number': 'MK-0001',
+          'total_cents': 2500,
+          'status': 'paid',
+          'order_status': status,
+        });
+        expect(result.status, 'paid');
+        expect(result.orderStatus, status);
+      }
+    });
+
+    test('create result leaves order status unknown for older API responses', () {
+      final result = PosCreateOrderResult.fromJson({
+        'order_id': 'o1',
+        'order_number': 'MK-0001',
+        'total_cents': 2500,
+        'status': 'paid',
+      });
+      expect(result.orderStatus, isNull);
+    });
+
     test('an incomplete or unpaid create response cannot confirm payment', () {
       expect(
         () => PosCreateOrderResult.fromJson({

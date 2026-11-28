@@ -102,7 +102,11 @@ export function KitchenOrderCard({
   now,
   onStatusChange,
 }: KitchenOrderCardProps) {
-  const statusConfig = statusConfigFor(order.status);
+  const counterPickupKitchenStatus =
+    order.status === 'delivered' && isCounterPickup(order.source, order.delivery_type)
+      ? order.kitchen_status ?? null
+      : null;
+  const statusConfig = statusConfigFor(counterPickupKitchenStatus ?? order.status);
   const currentTime = now ?? new Date();
   const note = order.notes?.trim();
   const dishCount = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -286,6 +290,7 @@ export function KitchenOrderCard({
               currentStatus={order.status}
               source={order.source}
               deliveryType={order.delivery_type}
+              kitchenStatus={counterPickupKitchenStatus}
               onStatusChange={onStatusChange}
             />
           </div>
@@ -355,6 +360,7 @@ interface KitchenStatusTransitionButtonsProps {
   currentStatus: string;
   source?: string;
   deliveryType?: string;
+  kitchenStatus?: 'paid' | 'preparing' | 'ready' | null;
   onStatusChange?: () => void;
 }
 
@@ -368,21 +374,36 @@ function KitchenStatusTransitionButtons({
   currentStatus,
   source,
   deliveryType,
+  kitchenStatus,
   onStatusChange,
 }: KitchenStatusTransitionButtonsProps) {
   const [loading, setLoading] = useState(false);
   const { addToast } = useToastStore();
 
+  // A counter take-away completed at payment is already `delivered`; its
+  // kitchen progress lives in `kitchen_status` instead of `status`.
+  const usesKitchenRoute =
+    currentStatus === 'delivered' &&
+    isCounterPickup(source, deliveryType) &&
+    (kitchenStatus === 'paid' || kitchenStatus === 'preparing');
+
+  const kitchenStep = !usesKitchenRoute
+    ? undefined
+    : kitchenStatus === 'paid'
+    ? { status: 'paid', label: 'Start Preparing', icon: Flame, next: 'preparing' }
+    : { status: 'preparing', label: 'Mark Ready', icon: Package, next: 'ready' };
+
   const currentStep = KITCHEN_STATUS_FLOW.find(
     (s) => s.status === currentStatus
-  ) ?? (currentStatus === 'ready' && isCounterPickup(source, deliveryType)
+  ) ?? kitchenStep ?? (currentStatus === 'ready' && isCounterPickup(source, deliveryType)
     ? { status: 'ready', label: 'Complete Order', icon: CheckCircle2, next: 'delivered' }
     : source === 'grabfood' && currentStatus === 'ready'
     ? { status: 'ready', label: 'Check / retry Grab notification', icon: Package, next: 'ready' }
     : undefined);
   const canTransition =
     currentStep &&
-    !['picked_up', 'delivered', 'cancelled'].includes(currentStatus);
+    (usesKitchenRoute ||
+      !['picked_up', 'delivered', 'cancelled'].includes(currentStatus));
 
   const handleTransition = async () => {
     if (!currentStep) return;
@@ -392,10 +413,13 @@ function KitchenStatusTransitionButtons({
       // GrabFood orders must notify Grab; the dedicated route owns the
       // once-only Mark Ready rule and surfaces uncertain outcomes.
       const useGrabRoute = source === 'grabfood' && currentStep.next === 'ready';
-      let response = await fetch(
-        useGrabRoute
+      const endpoint = usesKitchenRoute
+        ? `/api/admin/orders/${orderId}/kitchen-status`
+        : useGrabRoute
           ? `/api/integrations/grabfood/orders/${orderId}/ready`
-          : `/api/admin/orders/${orderId}/status`,
+          : `/api/admin/orders/${orderId}/status`;
+      let response = await fetch(
+        endpoint,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

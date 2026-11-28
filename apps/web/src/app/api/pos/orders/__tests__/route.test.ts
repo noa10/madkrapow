@@ -36,6 +36,7 @@ interface MockOptions {
   /** Total returned by the RPC (the DB is the pricing authority). */
   rpcTotal?: number
   rpcTableLabel?: string | null
+  rpcOrderStatus?: string
 }
 
 function buildMockClient(options: MockOptions = {}) {
@@ -150,6 +151,7 @@ function buildMockClient(options: MockOptions = {}) {
             options.rpcTableLabel ??
             (order.table_id ? 'T7' : null),
           pax: order.pax ?? null,
+          ...(options.rpcOrderStatus === undefined ? {} : { order_status: options.rpcOrderStatus }),
         },
         error: null,
       })
@@ -240,6 +242,40 @@ describe('POST /api/pos/orders', () => {
     // RPC owns the whole transaction.
     expect(client.calls.find((c) => c.op === 'insert')).toBeUndefined()
     expect(client.calls.find((c) => c.op === 'delete')).toBeUndefined()
+  })
+
+  it.each([
+    ['take_away', 'cash', 'delivered'],
+    ['take_away', 'qr_pay', 'delivered'],
+    ['dine_in', 'cash', 'paid'],
+    ['dine_in', 'qr_pay', 'paid'],
+  ])('returns payment confirmation and RPC order status for %s paid by %s', async (orderType, paymentMethod, orderStatus) => {
+    const client = buildMockClient({ rpcTotal: 1250, rpcOrderStatus: orderStatus })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+
+    const res = await POST(makeRequest({
+      items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+      order_type: orderType,
+      payment_method: paymentMethod,
+      ...(orderType === 'dine_in' ? { table_id: TABLE_ID, pax: 2 } : {}),
+    }) as never)
+
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ status: 'paid', order_status: orderStatus })
+  })
+
+  it('does not invent an order status when the older RPC omits it', async () => {
+    const client = buildMockClient({ rpcTotal: 1250 })
+    requireRoleMock.mockResolvedValue({ user: { id: 'u' }, supabase: client })
+    const res = await POST(makeRequest({
+      items: [{ menu_item_id: SET_KRAPOW, quantity: 1 }],
+      payment_method: 'cash',
+    }) as never)
+
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.status).toBe('paid')
+    expect(body).not.toHaveProperty('order_status')
   })
 
   it('accepts seeded menu and modifier ids that are UUID-shaped but not RFC v4', async () => {

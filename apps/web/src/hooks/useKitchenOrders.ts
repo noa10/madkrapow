@@ -29,6 +29,12 @@ export interface AdminOrder {
   /** Whether the kitchen should pack cutlery. */
   include_cutlery: boolean;
   source: import("@/types/orders").OrderSource;
+  /**
+   * Kitchen progress of a counter take-away completed at payment. Null for
+   * every other order; such an order is `delivered` but still on the board
+   * until the kitchen marks it ready.
+   */
+  kitchen_status?: 'paid' | 'preparing' | 'ready' | null;
 }
 
 export function useKitchenOrders() {
@@ -37,6 +43,7 @@ export function useKitchenOrders() {
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const refreshRef = useRef<() => void>(() => {});
+  const visibleIdsRef = useRef<Set<string>>(new Set());
   const refresh = useCallback(() => refreshRef.current(), []);
 
   useEffect(() => {
@@ -97,6 +104,7 @@ export function useKitchenOrders() {
           ? current.map((order) => order.id === next.id ? mergeRealtimeOrder(order, next) : order)
           : [next, ...current];
       }, data || []);
+      visibleIdsRef.current = new Set(snapshot.map((order) => order.id));
       setHasLoaded(true);
       if (request > latestFailure) {
         clearTimeout(retry);
@@ -124,6 +132,7 @@ export function useKitchenOrders() {
           const nextOrder = payload.new as AdminOrder;
           if (!isKitchenActive(nextOrder)) return;
           for (const changes of pending) changes.push(nextOrder);
+          visibleIdsRef.current.add(nextOrder.id);
           setOrders((prev) =>
             prev.some((order) => order.id === nextOrder.id)
               ? prev.map((order) =>
@@ -141,10 +150,19 @@ export function useKitchenOrders() {
         (payload: RealtimePostgresChangesPayload<AdminOrder>) => {
           const nextOrder = payload.new as AdminOrder;
           for (const changes of pending) changes.push(nextOrder);
+          const activeNow = isKitchenActive(nextOrder);
+          const wasVisible = visibleIdsRef.current.has(nextOrder.id);
+          if (activeNow) visibleIdsRef.current.add(nextOrder.id);
+          else visibleIdsRef.current.delete(nextOrder.id);
+          // A counter take-away completed at payment enters the board on its
+          // UPDATE to `delivered`; alert once, when it first becomes a ticket.
+          if (activeNow && !wasVisible) {
+            window.dispatchEvent(new Event("new-order-alert"));
+          }
           setOrders((prev) => {
             // A ticket that left the active set (ready → picked_up, or a
             // cancellation) disappears from the board immediately.
-            if (!isKitchenActive(nextOrder)) {
+            if (!activeNow) {
               return prev.filter((order) => order.id !== nextOrder.id);
             }
             return prev.some((order) => order.id === nextOrder.id)

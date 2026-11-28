@@ -63,6 +63,16 @@ function render(
 }
 
 describe('KitchenOrderCard', () => {
+  it.each([
+    ['paid', 'Paid', 'Start Preparing'],
+    ['preparing', 'Preparing', 'Mark Ready'],
+  ] as const)('renders the kitchen status and action for a delivered pickup in %s', (kitchen_status, label, action) => {
+    const html = render(makeOrder({ status: 'delivered', source: 'counter', delivery_type: 'self_pickup', kitchen_status }))
+    expect(html).toContain(`>${label}<`)
+    expect(html).toContain(action)
+    expect(html).not.toContain('>Delivered<')
+  })
+
   it('keeps a Grab notification recovery action on ready tickets', () => {
     expect(render(makeOrder({ source: 'grabfood', status: 'ready' }))).toContain('Check / retry Grab notification')
     expect(render(makeOrder({ source: 'web', status: 'ready' }))).not.toContain('Check / retry Grab notification')

@@ -62,4 +62,59 @@ describe('jobTypesForOrder', () => {
       jobTypesForOrder({ source: 'web', status: 'pending', delivery_type: 'pickup' })
     ).toEqual([])
   })
+
+  it('prints a completed counter pickup that still carries kitchen state', () => {
+    expect(
+      jobTypesForOrder({
+        source: 'counter',
+        status: 'delivered',
+        delivery_type: 'self_pickup',
+        kitchen_status: 'paid',
+      })
+    ).toEqual(['kitchen_docket', 'receipt'])
+  })
+
+  it('still prints a completed pickup after the kitchen marks it ready', () => {
+    expect(
+      jobTypesForOrder({
+        source: 'counter',
+        status: 'delivered',
+        delivery_type: 'self_pickup',
+        kitchen_status: 'ready',
+      })
+    ).toEqual(['kitchen_docket', 'receipt'])
+  })
+
+  it('prints nothing for a historical delivered counter pickup without kitchen state', () => {
+    expect(
+      jobTypesForOrder({
+        source: 'counter',
+        status: 'delivered',
+        delivery_type: 'self_pickup',
+        kitchen_status: null,
+      })
+    ).toEqual([])
+  })
+
+  it('prints nothing for a delivered web pickup even when kitchen state is present', () => {
+    expect(
+      jobTypesForOrder({
+        source: 'web',
+        status: 'delivered',
+        delivery_type: 'self_pickup',
+        kitchen_status: 'paid',
+      })
+    ).toEqual([])
+  })
+
+  it('prints nothing for a delivered Grab order that kitchen state cannot make eligible', () => {
+    expect(
+      jobTypesForOrder({
+        source: 'grabfood',
+        status: 'delivered',
+        delivery_type: 'delivery',
+        kitchen_status: 'paid',
+      })
+    ).toEqual([])
+  })
 })

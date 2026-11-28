@@ -20,6 +20,10 @@ const _kitchenActionLabels = {
   'preparing': 'Mark Ready',
 };
 
+/// Kitchen progress for a counter take-away the POS completed on payment.
+/// These tickets are already `delivered`, so progress is tracked separately.
+const _kitchenStatusTransitions = {'paid': 'preparing', 'preparing': 'ready'};
+
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
 
@@ -71,6 +75,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     );
   }
 
+  /// The kitchen's own next step on a POS-completed counter take-away.
+  String? _nextKitchenStatusFor(OrdersRow order) {
+    if (!order.isDeliveredCounterPickup) return null;
+    return _kitchenStatusTransitions[order.kitchenStatus];
+  }
+
   /// A ready counter take-away has no provider to close it, so the pass
   /// completes it; every other ticket follows the two kitchen steps.
   String? _nextStatusFor(OrdersRow order) {
@@ -81,20 +91,31 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   }
 
   String _actionLabelFor(OrdersRow order) {
+    if (_nextKitchenStatusFor(order) != null) {
+      return _kitchenActionLabels[order.kitchenStatus] ?? 'Mark Ready';
+    }
     if (order.status == 'ready' && order.isCounterPickup) {
       return 'Complete Order';
     }
     return _kitchenActionLabels[order.status] ?? 'Mark Ready';
   }
 
+  bool _canAdvance(OrdersRow order) =>
+      _nextKitchenStatusFor(order) != null || _nextStatusFor(order) != null;
+
   Future<void> _advanceStatus(OrdersRow order) async {
+    final nextKitchenStatus = _nextKitchenStatusFor(order);
     final nextStatus = _nextStatusFor(order);
-    if (nextStatus == null) return;
+    if (nextKitchenStatus == null && nextStatus == null) return;
 
     try {
       final repo = ref.read(merchantOrderRepositoryProvider);
       final container = ProviderScope.containerOf(context, listen: false);
-      await repo.updateOrderStatus(order.id, nextStatus);
+      if (nextKitchenStatus != null) {
+        await repo.updateKitchenStatus(order.id, nextKitchenStatus);
+      } else {
+        await repo.updateOrderStatus(order.id, nextStatus!);
+      }
       container.invalidate(kitchenOrderCardsProvider);
       container.invalidate(adminOrdersProvider);
       container.invalidate(adminOrderDetailProvider(order.id));
@@ -118,7 +139,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       appBar: AppBar(title: const Text('Kitchen Display')),
       body: ordersAsync.when(
         data: (orders) {
-          if (orders.isEmpty) {
+          final visible = visibleKitchenCards(orders);
+          if (visible.isEmpty) {
             return _EmptyState();
           }
 
@@ -128,7 +150,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             },
             child: LayoutBuilder(
               builder: (context, constraints) =>
-                  _ticketBoard(context, orders, constraints.maxWidth),
+                  _ticketBoard(context, visible, constraints.maxWidth),
             ),
           );
         },
@@ -201,9 +223,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                       order: ticket.order,
                       items: ticket.items,
                       actionLabel: _actionLabelFor(ticket.order),
-                      onMarkReady: _nextStatusFor(ticket.order) == null
-                          ? null
-                          : () => _advanceStatus(ticket.order),
+                      onMarkReady: _canAdvance(ticket.order)
+                          ? () => _advanceStatus(ticket.order)
+                          : null,
                     ),
                   ),
               ],

@@ -39,6 +39,11 @@ export interface Order {
   pax?: number | null
   /** Payment-method snapshot written by the POS/settle paths (payments is the ledger). */
   payment_method?: string | null
+  /**
+   * Kitchen queue state for counter self-pickup orders that complete at
+   * payment. NULL for every other order; `status` is already `delivered`.
+   */
+  kitchen_status?: "paid" | "preparing" | "ready" | null
   stripe_payment_intent_id: string | null
   stripe_session_id: string | null
   billplz_bill_id: string | null

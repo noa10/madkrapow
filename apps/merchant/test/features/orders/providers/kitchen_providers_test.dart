@@ -8,7 +8,8 @@ void main() {
       MerchantOrderRepository.kitchenQueueOrFilter,
       'status.in.(paid,accepted,preparing,ready),'
       'and(status.eq.pending,delivery_type.eq.dine_in),'
-      'and(status.eq.pending,source.eq.counter)',
+      'and(status.eq.pending,source.eq.counter),'
+      'and(status.eq.delivered,source.eq.counter,delivery_type.eq.self_pickup,kitchen_status.in.(paid,preparing))',
     );
   });
 
@@ -47,6 +48,52 @@ void main() {
         isFalse,
       );
     });
+
+    test(
+      'keeps delivered counter pickups only while kitchen work is active',
+      () {
+        for (final kitchenStatus in ['paid', 'preparing']) {
+          expect(
+            isKitchenActive(
+              status: 'delivered',
+              source: 'counter',
+              deliveryType: 'self_pickup',
+              kitchenStatus: kitchenStatus,
+            ),
+            isTrue,
+          );
+        }
+        for (final kitchenStatus in [null, 'ready']) {
+          expect(
+            isKitchenActive(
+              status: 'delivered',
+              source: 'counter',
+              deliveryType: 'self_pickup',
+              kitchenStatus: kitchenStatus,
+            ),
+            isFalse,
+          );
+        }
+        expect(
+          isKitchenActive(
+            status: 'delivered',
+            source: 'web',
+            deliveryType: 'self_pickup',
+            kitchenStatus: 'paid',
+          ),
+          isFalse,
+        );
+        expect(
+          isKitchenActive(
+            status: 'delivered',
+            source: 'counter',
+            deliveryType: 'dine_in',
+            kitchenStatus: 'paid',
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('drops terminal states', () {
       for (final status in ['cancelled', 'completed', 'picked_up']) {

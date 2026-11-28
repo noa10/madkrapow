@@ -98,7 +98,17 @@ const POS_RPC_USER_ERRORS = [
  *
  * Prices are NEVER taken from the client: the route re-reads menu_items from
  * the database and recomputes the total. Orders are created as source='counter'
- * and always paid: status='paid', with a payments row recording cash/qr_pay.
+ * with a payments row recording cash/qr_pay. Payment is taken up front, so the
+ * order is persisted already complete: `dine_in` keeps status='paid' (the diner
+ * is still at the table) while counter `take_away` is status='delivered'
+ * because pickup is immediate, with kitchen progress tracked separately in
+ * `kitchen_status` (set to 'paid' at completion) rather than in the
+ * customer-facing status.
+ *
+ * The response keeps `status: 'paid'` as the payment confirmation installed
+ * merchant apps validate, and adds `order_status` with the persisted status.
+ * Older databases that omit `order_status` leave the field out rather than
+ * guessing.
  *
  * Pay-later was removed: the kitchen starts preparing as soon as a ticket
  * lands, so an unpaid POS order served food before anyone had paid for it.
@@ -398,7 +408,11 @@ export async function POST(req: NextRequest) {
       total_cents: number
       table_label: string | null
       pax: number | null
+      // Older RPCs omit this; the client treats a missing value as unknown.
+      order_status?: string | null
     }
+
+    const orderStatus = created.order_status
 
     return NextResponse.json(
       {
@@ -408,7 +422,10 @@ export async function POST(req: NextRequest) {
         total_cents: created.total_cents,
         order_type,
         payment_method,
+        // Confirms payment for installed merchant apps. It is not the order's
+        // persisted status; `order_status` carries that.
         status: 'paid',
+        ...(orderStatus ? { order_status: orderStatus } : {}),
         table_label: created.table_label ?? tableLabel,
         pax: created.pax ?? (order_type === 'dine_in' ? pax ?? null : null),
       },

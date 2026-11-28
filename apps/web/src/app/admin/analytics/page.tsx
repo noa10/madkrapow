@@ -1,37 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ChartSkeleton } from "@/components/admin/analytics/ChartSkeleton";
 import { Calendar, DollarSign, Package, ShoppingCart, TrendingUp } from "lucide-react";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+import { OrdersBySourceChart } from "@/components/admin/analytics/OrdersBySourceChart";
+import { RevenueCharts } from "@/components/admin/analytics/RevenueCharts";
 import type { SalesChartPoint } from "@/components/admin/analytics/RevenueCharts";
-
-// Recharts is fetched only when these chart sections render, not with every
-// admin page's initial JS.
-const RevenueCharts = dynamic(
-  () =>
-    import("@/components/admin/analytics/RevenueCharts").then(
-      (mod) => mod.RevenueCharts
-    ),
-  {
-    ssr: false,
-    loading: () => <ChartSkeleton />,
-  }
-);
-
-const OrdersBySourceChart = dynamic(
-  () =>
-    import("@/components/admin/analytics/OrdersBySourceChart").then(
-      (mod) => mod.OrdersBySourceChart
-    ),
-  {
-    ssr: false,
-    loading: () => <ChartSkeleton chartHeight={200} />,
-  }
-);
 
 interface TrendRow {
   order_date: string;

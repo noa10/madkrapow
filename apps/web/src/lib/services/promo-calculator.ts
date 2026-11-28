@@ -98,7 +98,7 @@ function computeDiscount(
     case 'order':
       base = cart.subtotalCents
       calculated = promo.discount_type === 'percentage'
-        ? Math.round(base * (promo.discount_value / 100))
+        ? Math.round((base * promo.discount_value) / 100)
         : promo.discount_value
       break
 
@@ -106,7 +106,7 @@ function computeDiscount(
       base = cart.deliveryFeeCents
       if (base === 0) return 0
       calculated = promo.discount_type === 'percentage'
-        ? Math.round(base * (promo.discount_value / 100))
+        ? Math.round((base * promo.discount_value) / 100)
         : promo.discount_value
       break
 
@@ -134,7 +134,7 @@ export function computePerItemDiscount(
   originalPriceCents: number,
 ): number {
   if (promo.discount_type === 'percentage') {
-    const discount = Math.round(originalPriceCents * (promo.discount_value / 100))
+    const discount = Math.round((originalPriceCents * promo.discount_value) / 100)
     const maxCap = promo.max_discount_cents ?? originalPriceCents
     return Math.min(discount, maxCap, originalPriceCents)
   }

@@ -496,8 +496,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
     }
 
     // ── Promo validation and discount calculation ──────────────────
+    // This snapshot is the single source of truth for the order total, the
+    // application rows and the database claim below. Re-reading promo codes
+    // later can disagree with the amount the customer actually approved.
     let totalDiscountCents = 0
     let orderPromoCodeId: string | null = null
+    const appliedPromos: Array<{
+      promo_id: string
+      scope: 'order' | 'delivery'
+      discount_cents: number
+    }> = []
 
     if (promoCodes.length > 0) {
       const now = new Date().toISOString()
@@ -524,22 +532,30 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         if (promo.min_order_amount_cents && base < promo.min_order_amount_cents) continue
 
         let discountCents = promo.discount_type === 'percentage'
-          ? Math.round(base * (promo.discount_value / 100))
+          ? Math.round((base * promo.discount_value) / 100)
           : promo.discount_value
 
         const maxCap = promo.max_discount_cents ?? base
         discountCents = Math.min(discountCents, maxCap, base)
 
+        if (discountCents <= 0) continue
+
         totalDiscountCents += discountCents
+        appliedPromos.push({
+          promo_id: promo.id,
+          scope: promo.scope,
+          discount_cents: discountCents,
+        })
         if (promo.scope === 'order' && !orderPromoCodeId) {
           orderPromoCodeId = promo.id
         }
       }
     }
 
-    // Clamp: discount cannot exceed cart total
-    totalDiscountCents = Math.min(totalDiscountCents, subtotalCents + effectiveDeliveryFee)
-
+    // Each promo discount is already capped at its own base (subtotal or
+    // delivery fee), so the applied snapshot cannot exceed the cart total.
+    // Keep the snapshot and the persisted order in exact agreement for the
+    // claim's sum check.
     const totalCents = subtotalCents + effectiveDeliveryFee - totalDiscountCents
 
     // Free Stripe sessions have no payment intent and cannot be finalized by
@@ -596,72 +612,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
         { success: false, error: 'Unable to create order. Please try again.', code: 'ORDER_FAILED' },
         { status: 500 }
       )
-    }
-
-    // Record order_promo_applications and increment usage counters
-    if (totalDiscountCents > 0 && promoCodes.length > 0) {
-      const now = new Date().toISOString()
-      const appliedPromos: Array<{
-        order_id: string
-        promo_id: string
-        scope: string
-        discount_cents: number
-      }> = []
-
-      const byScope = new Map<string, (typeof promoCodes)[number]>()
-      for (const entry of promoCodes) {
-        if (!byScope.has(entry.scope)) byScope.set(entry.scope, entry)
-      }
-
-      for (const entry of byScope.values()) {
-        const { data: promo } = await supabase
-          .from('promo_codes')
-          .select('id, scope, discount_type, discount_value, max_discount_cents, min_order_amount_cents')
-          .eq('code', entry.code.toLowerCase())
-          .eq('scope', entry.scope)
-          .eq('is_active', true)
-          .gte('valid_until', now)
-          .lte('valid_from', now)
-          .maybeSingle()
-
-        if (!promo) continue
-
-        const base = promo.scope === 'delivery' ? effectiveDeliveryFee : subtotalCents
-        if (promo.min_order_amount_cents && base < promo.min_order_amount_cents) continue
-
-        let discountCents = promo.discount_type === 'percentage'
-          ? Math.round(base * (promo.discount_value / 100))
-          : promo.discount_value
-
-        const maxCap = promo.max_discount_cents ?? base
-        discountCents = Math.min(discountCents, maxCap, base)
-
-        if (discountCents > 0) {
-          appliedPromos.push({
-            order_id: order.id,
-            promo_id: promo.id,
-            scope: promo.scope,
-            discount_cents: discountCents,
-          })
-        }
-      }
-
-      if (appliedPromos.length > 0) {
-        const { error: appError } = await supabase
-          .from('order_promo_applications')
-          .insert(appliedPromos)
-
-        if (appError) {
-          console.error('[API] Failed to record promo applications:', appError)
-        }
-
-        // Increment usage counters for each applied promo
-        for (const ap of appliedPromos) {
-          await supabase.rpc('increment_promo_code_usage', {
-            p_promo_id: ap.promo_id,
-          })
-        }
-      }
     }
 
     // Create shipment draft if quotation data is provided (delivery orders only)
@@ -756,6 +706,93 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckoutResul
       if (modError) {
         console.error('[API] Failed to insert order item modifiers:', modError)
         // Non-fatal: order and items exist, modifiers are supplementary
+      }
+    }
+
+    // ── Claim promo usage before a payment link can exist ─────────
+    // The cap check above runs outside a transaction, so two customers can
+    // both pass it. claim_order_promos locks every selected promo, revalidates
+    // the exact discounts this request calculated and increments all counters
+    // in one transaction. No gateway request is made unless it succeeds.
+    if (appliedPromos.length > 0) {
+      let claimError: { code?: string | null; message?: string | null } | null = null
+
+      try {
+        const result = await supabase.rpc('claim_order_promos', {
+          p_order_id: order.id,
+          p_promos: appliedPromos,
+        })
+        claimError = result.error
+      } catch (error) {
+        console.error('[API] Promo claim request threw:', error)
+        claimError = {
+          code: 'CLAIM_EXCEPTION',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        }
+      }
+
+      if (claimError) {
+        console.error('[API] Failed to claim promo usage:', claimError)
+        const unavailable =
+          claimError.code === 'P0001' &&
+          typeof claimError.message === 'string' &&
+          claimError.message.includes('PROMO_UNAVAILABLE')
+
+        // An error response does not prove the transaction rolled back: the
+        // response can be lost after the claim commits. Read the application
+        // rows before deleting an order that may already own the capacity.
+        let claimCommitted = false
+        if (!unavailable) {
+          try {
+            const { data: applications, error: applicationsError } = await supabase
+              .from('order_promo_applications')
+              .select('promo_id, scope, discount_cents')
+              .eq('order_id', order.id)
+
+            if (applicationsError) {
+              console.error('[API] Failed to inspect promo applications after claim error:', applicationsError)
+            } else if (applications && applications.length === appliedPromos.length) {
+              claimCommitted = appliedPromos.every((promo) =>
+                applications.some((application) =>
+                  application.promo_id === promo.promo_id &&
+                  application.scope === promo.scope &&
+                  application.discount_cents === promo.discount_cents
+                )
+              )
+            }
+          } catch (inspectException) {
+            console.error('[API] Inspecting promo applications after claim error threw:', inspectException)
+          }
+        }
+
+        if (!claimCommitted) {
+          try {
+            const { error: deleteError } = await supabase.from('orders').delete().eq('id', order.id)
+            if (deleteError) {
+              console.error('[API] Failed to delete unpayable order after promo claim failure:', deleteError)
+            }
+          } catch (deleteException) {
+            console.error('[API] Deleting unpayable order after promo claim failure threw:', deleteException)
+          }
+
+          if (unavailable) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: 'One of your promo codes is no longer available. Please review your cart and try again.',
+                code: 'PROMO_UNAVAILABLE',
+              },
+              { status: 409 }
+            )
+          }
+
+          return NextResponse.json(
+            { success: false, error: 'Unable to apply promo codes. Please try again.', code: 'PROMO_CLAIM_FAILED' },
+            { status: 500 }
+          )
+        }
+
+        console.warn('[API] Promo claim reported an error after committing; continuing with the committed applications.')
       }
     }
 

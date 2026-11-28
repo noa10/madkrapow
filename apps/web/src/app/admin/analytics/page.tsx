@@ -1,37 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ChartSkeleton } from "@/components/admin/analytics/ChartSkeleton";
 import { Calendar, DollarSign, Package, ShoppingCart, TrendingUp } from "lucide-react";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+import { OrdersBySourceChart } from "@/components/admin/analytics/OrdersBySourceChart";
+import { RevenueCharts } from "@/components/admin/analytics/RevenueCharts";
 import type { SalesChartPoint } from "@/components/admin/analytics/RevenueCharts";
-
-// Recharts is fetched only when these chart sections render, not with every
-// admin page's initial JS.
-const RevenueCharts = dynamic(
-  () =>
-    import("@/components/admin/analytics/RevenueCharts").then(
-      (mod) => mod.RevenueCharts
-    ),
-  {
-    ssr: false,
-    loading: () => <ChartSkeleton />,
-  }
-);
-
-const OrdersBySourceChart = dynamic(
-  () =>
-    import("@/components/admin/analytics/OrdersBySourceChart").then(
-      (mod) => mod.OrdersBySourceChart
-    ),
-  {
-    ssr: false,
-    loading: () => <ChartSkeleton chartHeight={200} />,
-  }
-);
 
 interface TrendRow {
   order_date: string;
@@ -198,8 +174,8 @@ export default function AnalyticsPage() {
       return {
         date: day,
         label: shortLabel(day),
-        revenueCents: row ? row.revenue_cents : null,
-        orders: row ? row.order_count : null,
+        revenueCents: row ? row.revenue_cents : 0,
+        orders: row ? row.order_count : 0,
       };
     });
   }, [data]);
@@ -233,7 +209,7 @@ export default function AnalyticsPage() {
 
   const statCards = [
     {
-      title: "Revenue",
+      title: "Range revenue",
       value: formatRinggit(totals.revenue_cents),
       hint: "Excludes cancelled orders",
       icon: DollarSign,
@@ -241,7 +217,7 @@ export default function AnalyticsPage() {
       colorClass: "text-primary",
     },
     {
-      title: "Orders",
+      title: "Range orders",
       value: totals.order_count,
       hint: "Paid and fulfilled",
       icon: ShoppingCart,
@@ -402,6 +378,8 @@ export default function AnalyticsPage() {
             </Card>
           )}
 
+          <RevenueCharts salesData={salesData} />
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {statCards.map((stat) => (
               <Card key={stat.title} className="bg-card border-border shadow-sm rounded-xl">
@@ -420,8 +398,6 @@ export default function AnalyticsPage() {
               </Card>
             ))}
           </div>
-
-          <RevenueCharts salesData={salesData} />
 
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="bg-card border-border shadow-sm rounded-xl">

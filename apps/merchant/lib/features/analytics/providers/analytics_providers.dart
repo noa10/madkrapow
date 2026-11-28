@@ -12,12 +12,16 @@ final analyticsRepositoryProvider = Provider<AnalyticsRepository>((ref) {
 });
 
 /// Analytics data provider (AsyncNotifier pattern).
-final analyticsProvider = AsyncNotifierProvider<AnalyticsNotifier, AnalyticsData?>(
-  AnalyticsNotifier.new,
-);
+final analyticsProvider =
+    AsyncNotifierProvider<AnalyticsNotifier, AnalyticsData?>(
+      AnalyticsNotifier.new,
+    );
 
 class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
   int _refreshVersion = 0;
+  bool _hasBackgroundError = false;
+
+  bool get hasBackgroundError => _hasBackgroundError;
 
   @override
   Future<AnalyticsData?> build() async {
@@ -29,11 +33,22 @@ class AnalyticsNotifier extends AsyncNotifier<AnalyticsData?> {
     return repo.fetchAnalytics(range: range);
   }
 
-  Future<void> refresh({String range = '7d'}) async {
+  Future<void> refresh({String range = '7d', bool background = false}) async {
     final version = ++_refreshVersion;
-    state = const AsyncLoading();
+    final keepPrevious =
+        background &&
+        state.hasValue &&
+        !state.isLoading &&
+        (!state.hasError || _hasBackgroundError);
+    if (!keepPrevious) {
+      _hasBackgroundError = false;
+      state = const AsyncLoading();
+    }
     final result = await AsyncValue.guard(() => _fetch(range: range));
-    if (version == _refreshVersion) state = result;
+    if (version == _refreshVersion) {
+      _hasBackgroundError = keepPrevious && result.hasError;
+      state = _hasBackgroundError ? result.copyWithPrevious(state) : result;
+    }
   }
 }
 
@@ -48,7 +63,9 @@ final analyticsRangeProvider = StateProvider<String>((ref) => '7d');
 final analyticsAutoRefreshProvider = Provider.autoDispose<Timer?>((ref) {
   final timer = Timer.periodic(const Duration(seconds: 30), (_) {
     final range = ref.read(analyticsRangeProvider);
-    ref.read(analyticsProvider.notifier).refresh(range: range);
+    ref
+        .read(analyticsProvider.notifier)
+        .refresh(range: range, background: true);
   });
   ref.onDispose(timer.cancel);
   return timer;

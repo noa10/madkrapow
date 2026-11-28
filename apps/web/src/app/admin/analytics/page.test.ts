@@ -55,7 +55,6 @@ const requests = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/use-role-guard", () => ({ useRoleGuard: () => ({ hasAccess: true, isLoading: false }) }));
-vi.mock("next/dynamic", () => ({ default: () => () => null }));
 
 import AnalyticsPage from "./page";
 

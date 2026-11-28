@@ -13,6 +13,8 @@ export interface SalesChartPoint {
 
 type Period = "Daily" | "Weekly" | "Monthly";
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 function formatRinggit(cents: number) {
   return `RM ${(cents / 100).toFixed(2)}`;
 }
@@ -59,6 +61,16 @@ export function RevenueCharts({ salesData }: { salesData: SalesChartPoint[] }) {
     else if (bounds.left < viewport.left) container.scrollLeft -= viewport.left - bounds.left;
   }, [selected?.key, period, expanded]);
   const maximum = Math.max(0, ...intervals.map((item) => metric === "Revenue" ? item.revenue : item.orders));
+  // Monthly bars are few (at most 13 in a year), so every month gets a tick and
+  // reads as a month rather than as its first day. Daily and weekly bars are
+  // dense, so they keep every third tick.
+  const labelEvery = period === "Monthly" ? 1 : 3;
+  const multiYear = new Set(intervals.map((item) => item.key.slice(0, 4))).size > 1;
+  const tickLabel = (item: { key: string; label: string }) => {
+    if (period !== "Monthly") return item.label;
+    const [year, month] = item.key.split("-").map(Number);
+    return multiYear ? `${MONTHS[month - 1]} '${String(year).slice(2)}` : MONTHS[month - 1];
+  };
   const intervalLabel = (item: { from: string; to: string }) => item.from === item.to ? item.from : `${item.from} to ${item.to}`;
   const describeInterval = (item: typeof intervals[number]) => `${intervalLabel(item)}: ${item.revenueCount ? formatRinggit(item.revenue) : "No data"}, ${item.ordersCount ? `${item.orders} orders` : "No data"}${item.incomplete && (item.revenueCount || item.ordersCount) ? ", reported days only, incomplete data" : ""}`;
 
@@ -114,7 +126,7 @@ export function RevenueCharts({ salesData }: { salesData: SalesChartPoint[] }) {
                   <div aria-hidden={true} className="mt-2 flex gap-1 text-xs text-muted-foreground" style={{ minWidth: `${Math.max(100, intervals.length * 34)}px` }}>
                     {intervals.map((item, index) => (
                       <div key={item.key} className="relative min-w-7 flex-1">
-                        {index % 3 === 0 && <span className={`absolute whitespace-nowrap ${index === 0 ? "left-0" : "left-1/2 -translate-x-1/2"}`}>{item.label}</span>}
+                        {index % labelEvery === 0 && <span className={`absolute whitespace-nowrap ${index === 0 ? "left-0" : "left-1/2 -translate-x-1/2"}`}>{tickLabel(item)}</span>}
                       </div>
                     ))}
                   </div>

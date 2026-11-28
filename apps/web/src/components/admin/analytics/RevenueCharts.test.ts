@@ -15,7 +15,6 @@ vi.mock("react", async (importOriginal) => ({
 }));
 
 vi.mock("@/hooks/use-role-guard", () => ({ useRoleGuard: () => ({ hasAccess: true, isLoading: false }) }));
-vi.mock("next/dynamic", () => ({ default: () => () => null }));
 
 import { RevenueCharts } from "./RevenueCharts";
 import AnalyticsPage from "../../../app/admin/analytics/page";
@@ -91,6 +90,31 @@ describe("sales insights", () => {
     expect(text(labels)).toContain("4 Nov");
     expect(text(labels)).toContain("7 Nov");
     expect(text(labels)).toContain("10 Nov");
+  });
+
+  it("labels every month by name instead of the first day", () => {
+    const data = [
+      { date: "2026-11-15", label: "15 Nov", revenueCents: 1000, orders: 1 },
+      { date: "2026-12-02", label: "2 Dec", revenueCents: 2000, orders: 2 },
+    ];
+    let tree = render(data);
+    button(tree, "Monthly").props.onClick();
+    tree = render(data);
+    const axis = find(tree, (element) => element.type === "div" && element.props["aria-hidden"] === true);
+    expect(text(axis)).toBe("Nov Dec");
+  });
+
+  it("keeps the same month distinguishable across years", () => {
+    const data = [
+      { date: "2026-11-15", label: "15 Nov", revenueCents: 1000, orders: 1 },
+      { date: "2026-12-02", label: "2 Dec", revenueCents: 2000, orders: 2 },
+      { date: "2027-01-10", label: "10 Jan", revenueCents: 3000, orders: 3 },
+    ];
+    let tree = render(data);
+    button(tree, "Monthly").props.onClick();
+    tree = render(data);
+    const axis = find(tree, (element) => element.type === "div" && element.props["aria-hidden"] === true);
+    expect(text(axis)).toBe("Nov '26 Dec '26 Jan '27");
   });
 
   it("scrolls the initially selected bar into the chart viewport", () => {
